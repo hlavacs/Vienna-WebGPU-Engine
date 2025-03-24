@@ -1,0 +1,69 @@
+{
+    "configurations": [
+        {
+            "name": "Win64 MSVC",
+            "includePath": [
+                "${workspaceFolder}/build/generators",  // Conan dependencies
+                "${workspaceFolder}/build",            // Ensure build includes
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/external/**/include",
+                "${workspaceFolder}/external/*/*",
+				"~/.conan2/**",
+                "C:/Users/${env:USERNAME}/.conan2/**"
+            ],
+            "defines": [],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64"
+        },
+        {
+            "name": "Win64 gcc",
+            "includePath": [
+                "${workspaceFolder}/build/generators",  // Conan dependencies
+                "${workspaceFolder}/build",            // Ensure build includes
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/external/**/include",
+                "${workspaceFolder}/external/*/*",
+				"~/.conan2/**",
+                "C:/Users/${env:USERNAME}/.conan2/**"
+            ],
+            "defines": [],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64"
+        },
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/build/generators",
+                "${workspaceFolder}/build",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/external/**/include",
+                "${workspaceFolder}/external/*/*",
+                "~/.conan2/**"
+            ],
+            "defines": [],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compilerPath": "/usr/bin/g++"
+        },
+        {
+            "name": "macOS",
+            "includePath": [
+                "${workspaceFolder}/build/generators",
+                "${workspaceFolder}/build",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/external/**/include",
+                "${workspaceFolder}/external/*/*",
+                "/Users/${env:USER}/.conan2/**"
+            ],
+            "defines": [],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "macos-clang-x64",
+            "compilerPath": "/usr/bin/clang++"
+        }
+    ],
+    "version": 4
+}
