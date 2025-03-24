@@ -1,0 +1,6 @@
+[submodule "external/webgpu"]
+	path = external/webgpu
+	url = https://github.com/eliemichel/WebGPU-distribution.git
+[submodule "external/sdl2webgpu"]
+	path = external/sdl2webgpu
+	url = https://github.com/eliemichel/sdl2webgpu.git

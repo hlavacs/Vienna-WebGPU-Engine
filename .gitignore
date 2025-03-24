@@ -1,0 +1,28 @@
+# CMake build directories
+/build/
+# Project build directories
+/bin/
+# Conan build directories
+/conan/
+# Conan package folders (when using a local cache or when installed in the repo)
+/conan_package/
+# CMake-specific files
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Makefile
+cmake_install.cmake
+CMakeDeps.cmake
+CMakeToolchain.cmake
+CTestTestfile.cmake
+# VS Code workspace files
+.vscode/*
+# Include tasks.json and launch.json, but exclude other personal settings
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/c_cpp_properties.json
+
+# Conan package metadata and temporary files
+conanfile.pyc
+*.conan
