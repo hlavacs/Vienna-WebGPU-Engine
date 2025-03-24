@@ -20,32 +20,47 @@ Ensure you have the following installed on your system:
 
 You may use `pip install -r requirements.txt`. It will install the versions used while development. Other versions may work as well.
 
-### Setup
+## Setup
 
-1. **Clone the repository**:
+1. **Clone the repository:**
+   
+   ```shell
+   git clone https://github.com/hlavacs/Vienna-WebGPU-Engine.git
+   cd Vienna-WebGPU-Engine
+   ```
 
-2. **Install the Prerequisites**
-    ```sh
-    pip install -r requirements.txt
-    ```
+2. **Initialize submodules:**
+   
+   ```shell
+   git submodule update --init --recursive
+   ```
 
-## Build
+3. **Install the Prerequisites**
+   
+   ```shell
+   pip install -r requirements.txt
+   ```
 
-### Conan Install
+Building the Project
+-------------------
+
+### Installing Dependencies with Conan
 
 To install the required dependencies using Conan, run:
 
-```cmd
+```shell
 conan install . -s build_type=Debug --build=missing
 
 conan install . -s build_type=Release --build=missing
 ```
 
-### WebGPU Native build
+### Building WebGPU Native
 
-Use the VSC launch settings provided or alterativly 
+Use the provided VS Code tasks or launch settings.
 
-```cmd
+Alternatively build manually:
+
+```shell
 cmake -S . -B ./bin/Windows -DCMAKE_BUILD_TYPE=Debug -DWEBGPU_BACKEND=WGPU -DWEBGPU_BUILD_FROM_SOURCE=OFF
 cmake --build ./bin/Windows --config Debug
 
@@ -53,18 +68,12 @@ cmake -S . -B ./bin/Windows -DCMAKE_BUILD_TYPE=Release -DWEBGPU_BACKEND=WGPU -DW
 cmake --build ./bin/Windows --config Release
 ```
 
-## Setup
-
-1. **Clone the repository**:
-
-2. **Install the Prerequisites**
-    ```sh
-    pip install -r requirements.txt
-    ```
-
 ### Contributing
+
 Feel free to contribute to the project by forking the repository and submitting pull requests. Contributions are welcome, especially in areas such as optimization, feature development, and educational content.
 
 ### License
+
 This project is licensed under the MIT License - see the LICENSE file for details.
+
 

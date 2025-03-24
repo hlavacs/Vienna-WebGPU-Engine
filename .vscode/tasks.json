@@ -1,101 +1,141 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        // 🟢 General
-        {
-            "label": "Configure General",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "-S", "${workspaceFolder}",
-                "-B", "${workspaceFolder}/bin/${input:platform}",
-                "-DCMAKE_BUILD_TYPE=${input:buildType}",
-				"-DWEBGPU_BACKEND=WGPU",
-				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
-            ],
-            "problemMatcher": [],
-            "group": "build"
-        },
-        {
-            "label": "Build General",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build", "${workspaceFolder}/bin/${input:platform}",
-                "--config", "${input:buildType}"
-            ],
-            "problemMatcher": [],
-            "group": "build",
-            "dependsOn": ["Configure General"]
-        },
-        // 🟢 Windows
-        {
-            "label": "Configure Debug (Windows)",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "-S", "${workspaceFolder}",
-                "-B", "${workspaceFolder}/bin/Windows",
-                "-DCMAKE_BUILD_TYPE=Debug",
-				"-DWEBGPU_BACKEND=WGPU",
-				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
-            ],
-            "group": "build",
-            "problemMatcher": []
-        },
+	"version": "2.0.0",
+	"tasks": [
+		// 🟢 Conan
 		{
-            "label": "Configure Release (Windows)",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "-S", "${workspaceFolder}",
-                "-B", "${workspaceFolder}/bin/Windows",
-                "-DCMAKE_BUILD_TYPE=Release",
+			"label": "Conan Install Missing",
+			"type": "shell",
+			"command": "conan",
+			"args": [
+				"install",
+				"${workspaceFolder}",
+				"--build=missing",
+				"-s",
+				"build_type=${input:buildType}"
+			],
+			"problemMatcher": [],
+			"group": "build"
+		},
+		// 🟢 General
+		{
+			"label": "Configure General",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"-S",
+				"${workspaceFolder}",
+				"-B",
+				"${workspaceFolder}/bin/${input:platform}",
+				"-DCMAKE_BUILD_TYPE=${input:buildType}",
 				"-DWEBGPU_BACKEND=WGPU",
 				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
-            ],
-            "group": "build",
-            "problemMatcher": []
-        },
-        {
-            "label": "Build Debug (Windows)",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build", "${workspaceFolder}/bin/Windows",
-				"--config", "Debug"
-            ],
-            "group": "build",
-            "dependsOn": "Configure Debug (Windows)",
-            "problemMatcher": []
-        },
-        {
-            "label": "Build Release (Windows)",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build", "${workspaceFolder}/bin/Windows",
-				"--config", "Release"
-            ],
-            "group": "build",
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"dependsOn": [
+				"Conan Install Missing"
+			]
+		},
+		{
+			"label": "Build General",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"${workspaceFolder}/bin/${input:platform}",
+				"--config",
+				"${input:buildType}"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"dependsOn": [
+				"Configure General"
+			]
+		},
+		// 🟢 Windows
+		{
+			"label": "Configure Debug (Windows)",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"-S",
+				"${workspaceFolder}",
+				"-B",
+				"${workspaceFolder}/bin/Windows",
+				"-DCMAKE_BUILD_TYPE=Debug",
+				"-DWEBGPU_BACKEND=WGPU",
+				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Configure Release (Windows)",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"-S",
+				"${workspaceFolder}",
+				"-B",
+				"${workspaceFolder}/bin/Windows",
+				"-DCMAKE_BUILD_TYPE=Release",
+				"-DWEBGPU_BACKEND=WGPU",
+				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Build Debug (Windows)",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"${workspaceFolder}/bin/Windows",
+				"--config",
+				"Debug"
+			],
+			"group": "build",
+			"dependsOn": "Configure Debug (Windows)",
+			"problemMatcher": []
+		},
+		{
+			"label": "Build Release (Windows)",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"${workspaceFolder}/bin/Windows",
+				"--config",
+				"Release"
+			],
+			"group": "build",
 			"dependsOn": "Configure Release (Windows)",
-            "problemMatcher": []
-        },
-    ],
-    "inputs": [
-        {
-            "id": "buildType",
-            "type": "pickString",
-            "description": "Select Build Type",
-            "options": ["Debug", "Release"],
-            "default": "Debug"
-        },
-        {
-            "id": "platform",
-            "type": "pickString",
-            "description": "Select Target Platform",
-            "options": ["Windows", "Linux", "Mac", "Emscripten"],
-            "default": "Windows"
-        }
-    ]
+			"problemMatcher": []
+		},
+	],
+	"inputs": [
+		{
+			"id": "buildType",
+			"type": "pickString",
+			"description": "Select Build Type",
+			"options": [
+				"Debug",
+				"Release"
+			],
+			"default": "Debug"
+		},
+		{
+			"id": "platform",
+			"type": "pickString",
+			"description": "Select Target Platform",
+			"options": [
+				"Windows",
+				"Linux",
+				"Mac",
+				"Emscripten"
+			],
+			"default": "Windows"
+		}
+	]
 }

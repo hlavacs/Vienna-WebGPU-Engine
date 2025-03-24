@@ -20,9 +20,9 @@ CTestTestfile.cmake
 # Include tasks.json and launch.json, but exclude other personal settings
 !.vscode/tasks.json
 !.vscode/launch.json
-!.vscode/settings.json
 !.vscode/c_cpp_properties.json
 
 # Conan package metadata and temporary files
 conanfile.pyc
 *.conan
+CMakeUserPresets.json
