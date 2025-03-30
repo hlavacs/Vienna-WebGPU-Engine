@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.15)
-project(WebGPU_Engine CXX)
+project(
+	WebGPU_Engine
+	VERSION 0.1.0
+	LANGUAGES CXX C
+)
 
 include(utils.cmake)
 
@@ -73,8 +77,18 @@ endif()
 
 set_target_properties(WebGPU_Engine PROPERTIES
 	CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    COMPILE_WARNING_AS_ERROR ON
 	VS_DEBUGGER_ENVIRONMENT "DAWN_DEBUG_BREAK_ON_ERROR=1"
 )
+
+if (XCODE)
+    set_target_properties(WebGPU_Engine PROPERTIES
+        XCODE_GENERATE_SCHEME ON
+        XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE "Metal"
+    )
+endif()
 
 if (MSVC)
 	# Ignore a warning that GLM requires to bypass
