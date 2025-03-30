@@ -27,7 +27,7 @@
 				"-B",
 				"${workspaceFolder}/bin/${input:platform}",
 				"-DCMAKE_BUILD_TYPE=${input:buildType}",
-				"-DWEBGPU_BACKEND=WGPU",
+				"-DWEBGPU_BACKEND=${input:backend}",
 				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
 			],
 			"problemMatcher": [],
@@ -63,7 +63,7 @@
 				"-B",
 				"${workspaceFolder}/bin/Windows",
 				"-DCMAKE_BUILD_TYPE=Debug",
-				"-DWEBGPU_BACKEND=WGPU",
+				"-DWEBGPU_BACKEND=${input:backend}",
 				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
 			],
 			"group": "build",
@@ -79,7 +79,7 @@
 				"-B",
 				"${workspaceFolder}/bin/Windows",
 				"-DCMAKE_BUILD_TYPE=Release",
-				"-DWEBGPU_BACKEND=WGPU",
+				"-DWEBGPU_BACKEND=${input:backend}",
 				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
 			],
 			"group": "build",
@@ -136,6 +136,16 @@
 				"Emscripten"
 			],
 			"default": "Windows"
+		},
+		{
+			"id": "backend",
+			"type": "pickString",
+			"description": "Select WebGPU Backend",
+			"options": [
+				"WGPU",
+				"DAWN",
+			],
+			"default": "WGPU"
 		}
 	]
 }
