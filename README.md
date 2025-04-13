@@ -17,6 +17,7 @@ Ensure you have the following installed on your system:
 - [Conan2](https://docs.conan.io/2/reference/commands/install.html)
 - [Cmake](https://cmake.org/download/)
 - [Ninja](https://ninja-build.org/) (optional, but recommended for building)
+- [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) Version **3.1.45** is required for emscripten build. Can be installed based on the given tutorial on the download side.
 
 You may use `pip install -r requirements.txt`. It will install the versions used while development. Other versions may work as well.
 

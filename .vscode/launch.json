@@ -52,12 +52,22 @@
             "preLaunchTask": "Build Debug (Linux)"
         },
         {
-            "name": "Launch in Browser (Emscripten)",
+            "name": "Launch in Browser (Debug Emscripten)",
             "type": "node",
             "request": "launch",
-            "program": "${workspaceFolder}/index.html",
+            "program": "${workspaceFolder}/bin/Emscripten/Debug/WebGPU_Engine.html",
             "runtimeExecutable": "python3",
             "runtimeArgs": ["-m", "http.server", "8080"],
+            "preLaunchTask": "Build Release (Emscripten)"
+        },
+        {
+            "name": "Launch in Browser (Release Emscripten)",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/Emscripten/Release/WebGPU_Engine.html",
+            "runtimeExecutable": "python3",
+            "runtimeArgs": ["-m", "http.server", "8080"],
+            "preLaunchTask": "Build Debug (Emscripten)"
         }
     ]
 }

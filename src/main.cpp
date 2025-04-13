@@ -1,9 +1,22 @@
 #define SDL_MAIN_HANDLED
 #define WEBGPU_CPP_IMPLEMENTATION
 
-#include "sdl2webgpu.h"
+
+#ifndef __EMSCRIPTEN__
+#include <sdl2webgpu.h>
 #include <SDL2/SDL.h>
-#include "webgpu/webgpu.hpp"
+#endif
+
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_FORCE_LEFT_HANDED
+#include <glm/glm.hpp>
+#include <glm/ext.hpp>
+
+#include <webgpu/webgpu.hpp>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten/html5.h>
+#endif
 
 #include <cassert>
 
@@ -441,11 +454,12 @@ int main()
 	desc.nextInChain = nullptr;
 
 // We create the instance using this descriptor
-#ifdef WEBGPU_BACKEND_EMSCRIPTEN
+#ifdef __EMSCRIPTEN__
 	WGPUInstance instance = wgpuCreateInstance(nullptr);
-#else  //  WEBGPU_BACKEND_EMSCRIPTEN
+#else  // __EMSCRIPTEN__
 	WGPUInstance instance = wgpuCreateInstance(&desc);
-#endif //  WEBGPU_BACKEND_EMSCRIPTEN
+#endif //  __EMSCRIPTEN__
+
 
 	if (SDL_Init(SDL_INIT_VIDEO) < 0)
 	{

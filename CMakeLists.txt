@@ -7,19 +7,29 @@ project(
 
 include(utils.cmake)
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWEBGPU_BACKEND_WGPU")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWEBGPU_BACKEND_WGPU")
+
 # Specify the C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(DEV_MODE "Set up development helper settings" ON)
-
-# Include Conan-generated files
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/build/generators/conan_toolchain.cmake")
-    include("${CMAKE_CURRENT_SOURCE_DIR}/build/generators/conan_toolchain.cmake")
+# Determine if this is a Web (Emscripten) build
+if (EMSCRIPTEN)
+    set(CONAN_GENERATORS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build-web/${CMAKE_BUILD_TYPE}/generators")
 else()
-	message(WARNING "Conan Toolchain was not found at:\n\t${CMAKE_CURRENT_SOURCE_DIR}/build/generators/conan_toolchain.cmake")
+    set(CONAN_GENERATORS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}/generators")
+endif()
+
+# Include the Conan toolchain if it exists
+set(CONAN_TOOLCHAIN_FILE "${CONAN_GENERATORS_DIR}/conan_toolchain.cmake")
+if(EXISTS "${CONAN_TOOLCHAIN_FILE}")
+    message(STATUS "Using Conan toolchain from:\n\t${CONAN_TOOLCHAIN_FILE}")
+    include("${CONAN_TOOLCHAIN_FILE}")
+else()
+    message(WARNING "Conan Toolchain was not found at:\n\t${CONAN_TOOLCHAIN_FILE}")
 endif()
 
 # Use Conan dependencies
@@ -33,7 +43,9 @@ endif()
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/webgpu")
 
 # Define the executable
-add_executable(WebGPU_Engine src/main.cpp)
+add_executable(WebGPU_Engine 
+	src/main.cpp
+)
 
 # Handle Debug and Release modes correctly
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -59,14 +71,6 @@ else()
     target_compile_definitions(WebGPU_Engine PRIVATE RESOURCE_DIR="./resources")
 endif()
 
-
-# Emscripten setup (This will only work if you have Emscripten installed and set up)
-if(EMSCRIPTEN)
-    message(STATUS "Building with Emscripten")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_WEBGPU=1 -s WASM=1")
-endif()
-
-
 # Link Libraries
 target_link_libraries(WebGPU_Engine PRIVATE webgpu)
 target_link_libraries(WebGPU_Engine PRIVATE glm::glm)
@@ -82,6 +86,8 @@ set_target_properties(WebGPU_Engine PROPERTIES
     COMPILE_WARNING_AS_ERROR ON
 	VS_DEBUGGER_ENVIRONMENT "DAWN_DEBUG_BREAK_ON_ERROR=1"
 )
+
+target_copy_webgpu_binaries(WebGPU_Engine)
 
 if (XCODE)
     set_target_properties(WebGPU_Engine PROPERTIES
@@ -105,15 +111,17 @@ endif (MSVC)
 if (EMSCRIPTEN)
 	# Add Emscripten-specific link options
 	target_link_options(WebGPU_Engine PRIVATE
-		-sUSE_GLFW=3 # Use Emscripten-provided GLFW
+		-sUSE_SDL=2 # Use Emscripten-provided GLFW
 		-sUSE_WEBGPU # Handle WebGPU symbols
 		-sASYNCIFY # Required by WebGPU-C++
 		-sALLOW_MEMORY_GROWTH
 		--preload-file "${CMAKE_CURRENT_SOURCE_DIR}/resources"
 	)
 
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s WASM=1")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s USE_WEBGPU=1")
+
 	# Generate a full web page rather than a simple WebAssembly module
 	set_target_properties(WebGPU_Engine PROPERTIES SUFFIX ".html")
 endif()
 
-target_copy_webgpu_binaries(WebGPU_Engine)

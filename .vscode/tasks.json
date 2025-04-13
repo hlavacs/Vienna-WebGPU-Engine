@@ -10,6 +10,28 @@
 				"install",
 				"${workspaceFolder}",
 				"--build=missing",
+				"-pr:b",
+				"$./profiles/{input:platform}",
+				"-pr:h",
+				"./profiles/${input:platform}",
+				"-s",
+				"build_type=${input:buildType}"
+			],
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Conan Install Missing (Emscripten)",
+			"type": "shell",
+			"command": "conan",
+			"args": [
+				"install",
+				"${workspaceFolder}",
+				"--build=missing",
+				"-pr:b",
+				"./profiles/${input:platform}",
+				"-pr:h",
+				"./profiles/Emscripten",
 				"-s",
 				"build_type=${input:buildType}"
 			],
@@ -113,6 +135,69 @@
 			"dependsOn": "Configure Release (Windows)",
 			"problemMatcher": []
 		},
+		// 🟢 Emscripten
+		{
+			"label": "Configure Debug (Emscripten)",
+			"type": "shell",
+			"command": "emcmake",
+			"args": [
+				"cmake",
+				"-G",
+				"Ninja",
+				"-S",
+				"${workspaceFolder}",
+				"-B",
+				"${workspaceFolder}/bin/Emscripten",
+				"-DCMAKE_BUILD_TYPE=Debug",
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Configure Release (Emscripten)",
+			"type": "shell",
+			"command": "emcmake",
+			"args": [
+				"cmake",
+				"-G",
+				"Ninja",
+				"-S",
+				"${workspaceFolder}",
+				"-B",
+				"${workspaceFolder}/bin/Emscripten",
+				"-DCMAKE_BUILD_TYPE=Release",
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Build Debug (Emscripten)",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"${workspaceFolder}/bin/Emscripten",
+				"--config",
+				"Debug"
+			],
+			"group": "build",
+			"dependsOn": "Configure Debug (Windows)",
+			"problemMatcher": []
+		},
+		{
+			"label": "Build Release (Emscripten)",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"${workspaceFolder}/bin/Emscripten",
+				"--config",
+				"Release"
+			],
+			"group": "build",
+			"dependsOn": "Configure Release (Emscripten)",
+			"problemMatcher": []
+		},
 	],
 	"inputs": [
 		{
@@ -132,8 +217,7 @@
 			"options": [
 				"Windows",
 				"Linux",
-				"Mac",
-				"Emscripten"
+				"Mac"
 			],
 			"default": "Windows"
 		}
