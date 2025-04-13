@@ -1,5 +1,6 @@
 # CMake build directories
 /build/
+/build-web/
 # Project build directories
 /bin/
 # Conan build directories

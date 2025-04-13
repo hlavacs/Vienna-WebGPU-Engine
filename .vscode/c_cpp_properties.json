@@ -11,7 +11,7 @@
 				"~/.conan2/**",
                 "C:/Users/${env:USERNAME}/.conan2/**"
             ],
-            "defines": [],
+            "defines": ["WEBGPU_BACKEND_WGPU"],
             "cStandard": "c17",
             "cppStandard": "c++17",
             "intelliSenseMode": "windows-msvc-x64"

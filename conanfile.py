@@ -1,24 +1,32 @@
 from conan import ConanFile
-from conan.tools.cmake import CMake, CMakeToolchain, CMakeDeps
+from conan.tools.cmake import CMake, CMakeToolchain, CMakeDeps, cmake_layout
 from conan.tools.files import copy
 import os
 
 class WebGPUEngineConan(ConanFile):
     name = "WebGPU_Engine"
     version = "0.1.0"
-    settings = "os", "arch", "compiler", "build_type"
-    generators = "CMakeDeps", "CMakeToolchain"
+    author = "Kalian Danzer"
+    license = "MIT License"
+    settings = "os", "compiler", "build_type", "arch"
+    generators = "CMakeToolchain", "CMakeDeps"
 
-    requires = [
-        "glm/0.9.9.8",
-        "sdl/2.28.3"
-    ]
-    exports_sources = "src/*", "CMakeLists.txt", "external/*"
+    def requirements(self):
+        if self.settings.os == "Emscripten":
+            # When building for Emscripten, use the appropriate dependencies
+            self.requires("sdl/2.28.3")  # Emscripten SDL2
+            self.requires("glm/0.9.9.8")  # For Emscripten
+        else:
+            # For other OS, use regular dependencies
+            self.requires("sdl/2.28.3")
+            self.requires("glm/0.9.9.8")
 
     def layout(self):
-        self.folders.build = "build"
-        self.folders.generators = os.path.join(self.folders.build, "generators")
-    
+        if self.settings.os == "Emscripten":
+            cmake_layout(self, build_folder="build-web")
+        else:
+            cmake_layout(self)
+
     def package(self):
         copy(self, "*.h", src=self.source_folder, dst=os.path.join(self.package_folder, "include"))
         copy(self, "*.lib", src=self.build_folder, dst=os.path.join(self.package_folder, "lib"))
