@@ -1,73 +1,36 @@
- {
+{
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug (Windows MSVC)",
+            "name": "Windows (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/bin/Windows/Debug/WebGPU_Engine.exe",
-            "symbolSearchPath": "${workspaceFolder}/bin/Windows/Debug",
+            "program": "${workspaceFolder}/build/Windows/Debug/WebGPU_Engine.exe",
+            "symbolSearchPath": "${workspaceFolder}/build/Windows/Debug",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "preLaunchTask": "Build Debug (Windows)"
+            "preLaunchTask": "Build Windows (Debug)"
         },
         {
-            "name": "Launch Release (Windows MSVC)",
-            "type": "cppdbg",
+            "name": "Emscripten (Debug) [Host Windows]",
+            "type": "chrome",
             "request": "launch",
-            "program": "${workspaceFolder}/bin/Windows/Release/WebGPU_Engine.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "MIMode": "gdb",
-            "preLaunchTask": "Build Release (Windows)"
-        },
-        {
-            "name": "Debug (Linux)",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/bin/Linux/Debug/WebGPU_Engine",
-            "args": [],
-			"stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-			"environment": [],
-			"externalConsole": false,
-			"MIMode": "gdb",
-            
-			"setupCommands": [
-				{
-					"description": "Enable pretty-printing for gdb",
-					"text": "-enable-pretty-printing",
-					"ignoreFailures": true
-				},
-				{
-					"description": "Set Disassembly Flavor to Intel",
-					"text": "-gdb-set disassembly-flavor intel",
-					"ignoreFailures": true
-				}
-			],
-            "preLaunchTask": "Build Debug (Linux)"
-        },
-        {
-            "name": "Launch in Browser (Debug Emscripten)",
-            "type": "node",
-            "request": "launch",
-            "program": "${workspaceFolder}/bin/Emscripten/Debug/WebGPU_Engine.html",
-            "runtimeExecutable": "python3",
-            "runtimeArgs": ["-m", "http.server", "8080"],
-            "preLaunchTask": "Build Release (Emscripten)"
-        },
-        {
-            "name": "Launch in Browser (Release Emscripten)",
-            "type": "node",
-            "request": "launch",
-            "program": "${workspaceFolder}/bin/Emscripten/Release/WebGPU_Engine.html",
-            "runtimeExecutable": "python3",
-            "runtimeArgs": ["-m", "http.server", "8080"],
-            "preLaunchTask": "Build Debug (Emscripten)"
+            "url": "http://localhost:8080/build/Emscripten/Debug/WebGPU_Engine.html",
+            "webRoot": "${workspaceFolder}",
+            "runtimeExecutable": "C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe",
+            "runtimeArgs": [
+                "--remote-debugging-port=9222"
+            ],
+            "preLaunchTask": "Start Emscripten Dev Server",
+            "sourceMaps": true,
+            "resolveSourceMapLocations": [
+                "${workspaceFolder}/**",
+                "!**/node_modules/**"
+            ],
+            "outputCapture": "std",
+            "cwd": "${workspaceFolder}"
         }
     ]
 }

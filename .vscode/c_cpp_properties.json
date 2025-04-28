@@ -1,68 +1,38 @@
 {
     "configurations": [
         {
-            "name": "Win64 MSVC",
-            "includePath": [
-                "${workspaceFolder}/build/generators",  // Conan dependencies
-                "${workspaceFolder}/build",            // Ensure build includes
-                "${workspaceFolder}/src",
-                "${workspaceFolder}/external/**/include",
-                "${workspaceFolder}/external/*/*",
-				"~/.conan2/**",
-                "C:/Users/${env:USERNAME}/.conan2/**"
+            "name": "Win64 MSVC (Debug)",
+            "includePath": [ // Not needed once the project is build and it is included in compile_commands.json
+                // "${workspaceFolder}/build/Windows/Debug/generators",  // Conan dependencies
+                // "${workspaceFolder}/build/Windows/Debug",            // Ensure build includes
+                // "${workspaceFolder}/src",
+                // "${workspaceFolder}/external/**/include",
+                // "${workspaceFolder}/external/*/*",
+                // "C:/Users/${env:USERNAME}/.conan2/**"
             ],
-            "defines": ["WEBGPU_BACKEND_WGPU"],
             "cStandard": "c17",
             "cppStandard": "c++17",
-            "intelliSenseMode": "windows-msvc-x64"
+            "intelliSenseMode": "windows-msvc-x64",
+            "compileCommands": "${workspaceFolder}/build/Windows/Debug/compile_commands.json"
         },
         {
-            "name": "Win64 gcc",
-            "includePath": [
-                "${workspaceFolder}/build/generators",  // Conan dependencies
-                "${workspaceFolder}/build",            // Ensure build includes
-                "${workspaceFolder}/src",
-                "${workspaceFolder}/external/**/include",
-                "${workspaceFolder}/external/*/*",
-				"~/.conan2/**",
-                "C:/Users/${env:USERNAME}/.conan2/**"
+            "name": "Emscripten (Debug)",
+            "includePath": [ // Not needed once the project is build and it is included in compile_commands.json
+                // "${workspaceFolder}/build/Emscripten/Debug/generators",  // Conan dependencies
+                // "${workspaceFolder}/build/Emscripten/Debug",            // Ensure build includes
+                // "${workspaceFolder}/src",
+                // "${workspaceFolder}/external/**/include",
+                // "${workspaceFolder}/external/*/*",
+                // "${env:EMSDK}/upstream/emscripten/system/include",
+				// "~/.conan2/**",
+                // "C:/Users/${env:USERNAME}/.conan2/**",
+                "${env:EMSDK}/upstream/emscripten/cache/sysroot/include"
             ],
-            "defines": [],
             "cStandard": "c17",
             "cppStandard": "c++17",
-            "intelliSenseMode": "windows-gcc-x64"
-        },
-        {
-            "name": "Linux",
-            "includePath": [
-                "${workspaceFolder}/build/generators",
-                "${workspaceFolder}/build",
-                "${workspaceFolder}/src",
-                "${workspaceFolder}/external/**/include",
-                "${workspaceFolder}/external/*/*",
-                "~/.conan2/**"
-            ],
-            "defines": [],
-            "cStandard": "c17",
-            "cppStandard": "c++17",
-            "intelliSenseMode": "linux-gcc-x64",
-            "compilerPath": "/usr/bin/g++"
-        },
-        {
-            "name": "macOS",
-            "includePath": [
-                "${workspaceFolder}/build/generators",
-                "${workspaceFolder}/build",
-                "${workspaceFolder}/src",
-                "${workspaceFolder}/external/**/include",
-                "${workspaceFolder}/external/*/*",
-                "/Users/${env:USER}/.conan2/**"
-            ],
-            "defines": [],
-            "cStandard": "c17",
-            "cppStandard": "c++17",
-            "intelliSenseMode": "macos-clang-x64",
-            "compilerPath": "/usr/bin/clang++"
+            "compilerPath": "${env:EMSDK}/upstream/emscripten/em++",
+            "intelliSenseMode": "windows-clang-x64",
+            "compileCommands": "${workspaceFolder}/build/Emscripten/Debug/compile_commands.json"
         }
     ],
     "version": 4

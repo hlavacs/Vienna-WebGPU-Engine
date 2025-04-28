@@ -27,3 +27,4 @@ CTestTestfile.cmake
 conanfile.pyc
 *.conan
 CMakeUserPresets.json
+/local
