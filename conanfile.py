@@ -12,20 +12,15 @@ class WebGPUEngineConan(ConanFile):
     generators = "CMakeToolchain", "CMakeDeps"
 
     def requirements(self):
-        if self.settings.os == "Emscripten":
-            # When building for Emscripten, use the appropriate dependencies
-            self.requires("sdl/2.28.3")  # Emscripten SDL2
-            self.requires("glm/0.9.9.8")  # For Emscripten
-        else:
-            # For other OS, use regular dependencies
+        if self.settings.os != "Emscripten":
             self.requires("sdl/2.28.3")
-            self.requires("glm/0.9.9.8")
+        self.requires("glm/0.9.9.8")
 
     def layout(self):
-        if self.settings.os == "Emscripten":
-            cmake_layout(self, build_folder="build-web")
-        else:
-            cmake_layout(self)
+        cmake_layout(self, build_folder="build")
+        self.folders.build = os.path.join("build", str(self.settings.os), str(self.settings.build_type))
+        self.folders.generators = os.path.join(self.folders.build, "generators")
+
 
     def package(self):
         copy(self, "*.h", src=self.source_folder, dst=os.path.join(self.package_folder, "include"))
@@ -34,3 +29,5 @@ class WebGPUEngineConan(ConanFile):
         copy(self, "*.dll", src=self.build_folder, dst=os.path.join(self.package_folder, "bin"))
         copy(self, "*.so*", src=self.build_folder, dst=os.path.join(self.package_folder, "bin"))
         copy(self, "*.dylib", src=self.build_folder, dst=os.path.join(self.package_folder, "bin"))
+
+        

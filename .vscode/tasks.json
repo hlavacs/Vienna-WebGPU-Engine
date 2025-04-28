@@ -11,7 +11,7 @@
 				"${workspaceFolder}",
 				"--build=missing",
 				"-pr:b",
-				"$./profiles/{input:platform}",
+				"./profiles/${input:platform}",
 				"-pr:h",
 				"./profiles/${input:platform}",
 				"-s",
@@ -38,166 +38,81 @@
 			"problemMatcher": [],
 			"group": "build"
 		},
-		// 🟢 General
-		{
-			"label": "Configure General",
-			"type": "shell",
-			"command": "cmake",
-			"args": [
-				"-S",
-				"${workspaceFolder}",
-				"-B",
-				"${workspaceFolder}/bin/${input:platform}",
-				"-DCMAKE_BUILD_TYPE=${input:buildType}",
-				"-DWEBGPU_BACKEND=WGPU",
-				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
-			],
-			"problemMatcher": [],
-			"group": "build",
-			"dependsOn": [
-				"Conan Install Missing"
-			]
-		},
-		{
-			"label": "Build General",
-			"type": "shell",
-			"command": "cmake",
-			"args": [
-				"--build",
-				"${workspaceFolder}/bin/${input:platform}",
-				"--config",
-				"${input:buildType}"
-			],
-			"problemMatcher": [],
-			"group": "build",
-			"dependsOn": [
-				"Configure General"
-			]
-		},
 		// 🟢 Windows
 		{
-			"label": "Configure Debug (Windows)",
+			"label": "Build Windows (Debug)",
 			"type": "shell",
-			"command": "cmake",
+			"command": "scripts/build.bat",
 			"args": [
-				"-S",
-				"${workspaceFolder}",
-				"-B",
-				"${workspaceFolder}/bin/Windows",
-				"-DCMAKE_BUILD_TYPE=Debug",
-				"-DWEBGPU_BACKEND=WGPU",
-				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
+				"Debug",
+				"WGPU"
 			],
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
-			"label": "Configure Release (Windows)",
+			"label": "Build Windows (Release)",
 			"type": "shell",
-			"command": "cmake",
+			"command": "scripts/build.bat",
 			"args": [
-				"-S",
-				"${workspaceFolder}",
-				"-B",
-				"${workspaceFolder}/bin/Windows",
-				"-DCMAKE_BUILD_TYPE=Release",
-				"-DWEBGPU_BACKEND=WGPU",
-				"-DWEBGPU_BUILD_FROM_SOURCE=OFF"
+				"Release",
+				"WGPU"
 			],
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
-			"label": "Build Debug (Windows)",
+			"label": "Build Emscripten (Debug) [Host Windows]",
 			"type": "shell",
-			"command": "cmake",
+			"command": "scripts/build.bat",
 			"args": [
-				"--build",
-				"${workspaceFolder}/bin/Windows",
-				"--config",
-				"Debug"
-			],
-			"group": "build",
-			"dependsOn": "Configure Debug (Windows)",
-			"problemMatcher": []
-		},
-		{
-			"label": "Build Release (Windows)",
-			"type": "shell",
-			"command": "cmake",
-			"args": [
-				"--build",
-				"${workspaceFolder}/bin/Windows",
-				"--config",
-				"Release"
-			],
-			"group": "build",
-			"dependsOn": "Configure Release (Windows)",
-			"problemMatcher": []
-		},
-		// 🟢 Emscripten
-		{
-			"label": "Configure Debug (Emscripten)",
-			"type": "shell",
-			"command": "emcmake",
-			"args": [
-				"cmake",
-				"-G",
-				"Ninja",
-				"-S",
-				"${workspaceFolder}",
-				"-B",
-				"${workspaceFolder}/bin/Emscripten",
-				"-DCMAKE_BUILD_TYPE=Debug",
+				"Debug",
+				"Emscripten"
 			],
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
-			"label": "Configure Release (Emscripten)",
+			"label": "Build Emscripten (Release) [Host Windows]",
 			"type": "shell",
-			"command": "emcmake",
+			"command": "scripts/build.bat",
 			"args": [
-				"cmake",
-				"-G",
-				"Ninja",
-				"-S",
-				"${workspaceFolder}",
-				"-B",
-				"${workspaceFolder}/bin/Emscripten",
-				"-DCMAKE_BUILD_TYPE=Release",
+				"Release",
+				"Emscripten"
 			],
 			"group": "build",
 			"problemMatcher": []
 		},
+		// 🟢 Other
 		{
-			"label": "Build Debug (Emscripten)",
+			"label": "Start Emscripten Dev Server",
 			"type": "shell",
-			"command": "cmake",
+			"command": "python",
 			"args": [
-				"--build",
-				"${workspaceFolder}/bin/Emscripten",
-				"--config",
-				"Debug"
+				"-m",
+				"http.server",
+				"8080"
 			],
-			"group": "build",
-			"dependsOn": "Configure Debug (Windows)",
-			"problemMatcher": []
-		},
-		{
-			"label": "Build Release (Emscripten)",
-			"type": "shell",
-			"command": "cmake",
-			"args": [
-				"--build",
-				"${workspaceFolder}/bin/Emscripten",
-				"--config",
-				"Release"
-			],
-			"group": "build",
-			"dependsOn": "Configure Release (Emscripten)",
-			"problemMatcher": []
-		},
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"isBackground": true,
+			"problemMatcher": {
+				"pattern": [
+					{
+						"regexp": ".*",
+						"file": 1,
+						"location": 2,
+						"message": 3
+					}
+				],
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "Serving HTTP on",
+					"endsPattern": "Serving HTTP on"
+				}
+			}
+		}
 	],
 	"inputs": [
 		{
@@ -217,7 +132,7 @@
 			"options": [
 				"Windows",
 				"Linux",
-				"Mac"
+				"Darwin"
 			],
 			"default": "Windows"
 		}
