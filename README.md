@@ -17,10 +17,10 @@ The Project uses the [**wgpu-native** v0.19.4.1]()
 
 Ensure you have the following installed on your system:
 
-- [Conan2](https://docs.conan.io/2/reference/commands/install.html)
 - [CMake](https://cmake.org/download/)
 - [Ninja](https://ninja-build.org/) (optional, but recommended for building)
-- [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) Version **4.0.5** is required for emscripten build. Can be installed based on the given tutorial on the download side.
+- [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) Version **4.0.6** is required for emscripten build. Can be installed 
+- [http-server](https://www.npmjs.com/package/http-server) for emscripten debuging.
 
 You may use `pip install -r requirements.txt`. It will install the versions used while development. Other versions may work as well.
 
@@ -47,16 +47,6 @@ You may use `pip install -r requirements.txt`. It will install the versions used
 
 ## Building the Project
 
-### Installing Dependencies with Conan
-
-To install the required dependencies using Conan, run:
-
-```shell
-conan install . -s build_type=Debug --build=missing
-
-conan install . -s build_type=Release --build=missing
-```
-
 ### Building WebGPU Native
 
 Use the provided VS Code tasks or launch settings.
@@ -78,7 +68,7 @@ ToDo
 
 ### Building WebGPU for Web
 
-**Required:** [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) Version **4.0.7** is required for emscripten build. Can be installed based on the given tutorial on the download side. <br>
+**Required:** [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) Version **4.0.6** is required for emscripten build. Can be installed based on the given tutorial on the download side. <br>
 Use the provided VS Code tasks or launch settings. 
 
 Alternatively build manually:

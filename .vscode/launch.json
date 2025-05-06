@@ -23,14 +23,15 @@
             "runtimeArgs": [
                 "--remote-debugging-port=9222"
             ],
-            "preLaunchTask": "Start Emscripten Dev Server",
             "sourceMaps": true,
             "resolveSourceMapLocations": [
                 "${workspaceFolder}/**",
                 "!**/node_modules/**"
             ],
             "outputCapture": "std",
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "start server",
+            "postDebugTask": "stop server"
         }
     ]
 }
