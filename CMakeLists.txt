@@ -111,7 +111,9 @@ if(EMSCRIPTEN)
             -sUSE_WEBGPU
             -sASYNCIFY
             -sALLOW_MEMORY_GROWTH
+			-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
             --preload-file "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+    		--shell-file "${CMAKE_CURRENT_SOURCE_DIR}/src/${SHELL_FILE}"
             -gsource-map
             --source-map-base "http://localhost:8080/build/Emscripten/Debug/"
         )
@@ -128,9 +130,16 @@ if(EMSCRIPTEN)
             -sUSE_WEBGPU
             -sASYNCIFY
             -sALLOW_MEMORY_GROWTH
+			-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
             --preload-file "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+    		--shell-file "${CMAKE_CURRENT_SOURCE_DIR}/src/${SHELL_FILE}"
         )
     endif()
+	set_property(
+		TARGET WebGPU_Engine
+		PROPERTY LINK_DEPENDS
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/${SHELL_FILE}"
+	)
 endif()
 
 # Post-build: copy WebGPU binaries (defined in utils.cmake)
