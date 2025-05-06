@@ -26,8 +26,6 @@
 
 #include "Application.h"
 
-#include <SDL.h>
-
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
 #endif
@@ -35,12 +33,13 @@
 Application app;
 
 #ifdef __EMSCRIPTEN__
+#include <SDL.h>
 EM_JS(int, get_canvas_width, (), {
-    return Module.canvas.width;
+	return Module.canvas.width;
 });
 
 EM_JS(int, get_canvas_height, (), {
-    return Module.canvas.height;
+	return Module.canvas.height;
 });
 
 extern "C" EMSCRIPTEN_KEEPALIVE void my_notify_fullscreen()
