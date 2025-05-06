@@ -32,9 +32,10 @@
 #define GLM_FORCE_LEFT_HANDED
 #include <glm/glm.hpp>
 #include <glm/ext.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/polar_coordinates.hpp>
 
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <sdl2webgpu.h>
 
 #include <imgui.h>
@@ -126,12 +127,12 @@ void Application::onFrame()
 	RenderPassColorAttachment renderPassColorAttachment{};
 	renderPassColorAttachment.view = nextTexture;
 	renderPassColorAttachment.resolveTarget = nullptr;
+#ifdef __EMSCRIPTEN__
+	renderPassColorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
 	renderPassColorAttachment.loadOp = LoadOp::Clear;
 	renderPassColorAttachment.storeOp = StoreOp::Store;
 	renderPassColorAttachment.clearValue = Color{0.05, 0.05, 0.05, 1.0};
-#ifndef WEBGPU_BACKEND_WGPU
-	renderPassColorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
 	renderPassDesc.colorAttachmentCount = 1;
 	renderPassDesc.colorAttachments = &renderPassColorAttachment;
 
@@ -183,7 +184,9 @@ void Application::onFrame()
 #ifdef WEBGPU_BACKEND_WGPU
 	m_surface.present();
 #else
+#ifndef __EMSCRIPTEN__
 	m_swapChain.present();
+#endif
 #endif
 
 #ifdef WEBGPU_BACKEND_DAWN
@@ -194,14 +197,16 @@ void Application::onFrame()
 
 void Application::processSDLEvents()
 {
+
 	SDL_Event event;
 	while (SDL_PollEvent(&event))
 	{
+		ImGui_ImplSDL2_ProcessEvent(&event);
+
 		ImGuiIO &io = ImGui::GetIO();
 		if (io.WantCaptureMouse || io.WantCaptureKeyboard)
 		{
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			return;
+			continue;
 		}
 		switch (event.type)
 		{
@@ -210,7 +215,7 @@ void Application::processSDLEvents()
 			break;
 
 		case SDL_WINDOWEVENT:
-			if (event.window.event == SDL_WINDOWEVENT_RESIZED)
+			if (event.window.event == SDL_WINDOWEVENT_RESIZED || event.window.event == SDL_WINDOW_FULLSCREEN)
 			{
 				onResize(); // No need to fetch width/height unless you want to
 			}
@@ -231,6 +236,12 @@ void Application::processSDLEvents()
 
 		case SDL_MOUSEWHEEL:
 			onScroll(event.wheel.x, event.wheel.y);
+			break;
+
+		case SDL_KEYDOWN:
+		case SDL_KEYUP:
+		case SDL_TEXTINPUT:
+			// handle key event
 			break;
 		}
 	}
@@ -311,28 +322,43 @@ void Application::onScroll(double /* xoffset */, double yoffset)
 ///////////////////////////////////////////////////////////////////////////////
 // Private methods
 
+#ifdef __EMSCRIPTEN__
+EM_JS(void, setCanvasNativeSize, (int width, int height), {
+	Module.setCanvasSize(width, height, true);
+});
+#endif
+
 bool Application::initWindowAndDevice()
 {
+#ifdef __EMSCRIPTEN__
+	m_instance = wgpuCreateInstance(nullptr);
+#else
 	m_instance = createInstance(InstanceDescriptor{});
+#endif
+
 	if (!m_instance)
 	{
 		std::cerr << "Could not initialize WebGPU!" << std::endl;
 		return false;
 	}
 
-	if (SDL_Init(SDL_INIT_VIDEO) < 0)
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
 	{
 		std::cerr << "Could not initialize SDL2: " << SDL_GetError() << std::endl;
 		return false;
 	}
 	Uint32 windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
 
+	int width = 640, height = 480;
 	m_window = SDL_CreateWindow("Learn WebGPU",
 								SDL_WINDOWPOS_CENTERED,
 								SDL_WINDOWPOS_CENTERED,
-								640,
-								480,
+								width,
+								height,
 								windowFlags);
+#ifdef __EMSCRIPTEN__
+	setCanvasNativeSize(width, height);
+#endif
 
 	if (!m_window)
 	{
@@ -368,7 +394,7 @@ bool Application::initWindowAndDevice()
 	requiredLimits.limits.maxInterStageShaderComponents = 17;
 	//                                                    ^^ This was a 11
 #else
-	// requiredLimits.limits.maxInterStageShaderComponents = 8;
+	requiredLimits.limits.maxInterStageShaderComponents = 0xffffffffu; // undefined
 #endif
 	requiredLimits.limits.maxBindGroups = 2;
 	requiredLimits.limits.maxUniformBuffersPerShaderStage = 2;
@@ -424,6 +450,7 @@ void Application::terminateWindowAndDevice()
 
 bool Application::initSurface()
 {
+	m_surface = SDL_GetWGPUSurface(m_instance, m_window);
 	// Get the current size of the window's framebuffer:
 	int width, height;
 	SDL_GL_GetDrawableSize(m_window, &width, &height);
@@ -444,7 +471,7 @@ bool Application::initSurface()
 	desc.height = static_cast<uint32_t>(height);
 	desc.usage = TextureUsage::RenderAttachment;
 	desc.format = m_swapChainFormat;
-	desc.presentMode = static_cast<WGPUPresentMode>(2); // Is PresentMode::Fifo but Emscripten is bugged
+	desc.presentMode = PresentMode::Fifo;
 	m_swapChain = wgpuDeviceCreateSwapChain(m_device, m_surface, &desc);
 #endif // WEBGPU_BACKEND_WGPU
 

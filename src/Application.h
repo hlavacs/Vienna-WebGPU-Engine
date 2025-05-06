@@ -97,7 +97,10 @@ private:
 	bool initGui();										// called in onInit
 	void terminateGui();								// called in onFinish
 	void updateGui(wgpu::RenderPassEncoder renderPass); // called in onFrame
-	void processSDLEvents(); // called in onFrame
+	void processSDLEvents();							// called in onFrame
+	
+public:
+	SDL_Window *m_window = nullptr;
 
 private:
 	bool m_shouldClose = false;
@@ -167,12 +170,12 @@ private:
 	};
 
 	// Window and Device
-	SDL_Window*m_window = nullptr;
+	int m_currentWidth = 0, m_currentHeight = 0;
 	wgpu::Instance m_instance = nullptr;
 	wgpu::Surface m_surface = nullptr;
 #ifndef WEBGPU_BACKEND_WGPU
 	// To this date, Dawn still needs a SwapChain
-	wgpu::SwapChain m_swapChain;
+	wgpu::SwapChain m_swapChain = nullptr;
 #endif // WEBGPU_BACKEND_DAWN
 	wgpu::Device m_device = nullptr;
 	wgpu::Queue m_queue = nullptr;
@@ -215,5 +218,4 @@ private:
 
 	CameraState m_cameraState;
 	DragState m_drag;
-	
 };

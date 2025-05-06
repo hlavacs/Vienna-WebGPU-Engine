@@ -1,20 +1,20 @@
 /**
  * This file is part of the "Learn WebGPU for C++" book.
  *   https://github.com/eliemichel/LearnWebGPU
- * 
+ *
  * MIT License
  * Copyright (c) 2022-2023 Elie Michel
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -26,28 +26,58 @@
 
 #include "Application.h"
 
+#include <SDL.h>
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
 #endif
 
-int main(int, char**) {
-	Application app;
+Application app;
+
+#ifdef __EMSCRIPTEN__
+EM_JS(int, get_canvas_width, (), {
+    return Module.canvas.width;
+});
+
+EM_JS(int, get_canvas_height, (), {
+    return Module.canvas.height;
+});
+
+extern "C" EMSCRIPTEN_KEEPALIVE void my_notify_fullscreen()
+{
+	if (app.m_window)
+	{
+		int width = get_canvas_width(), height = get_canvas_height();
+		SDL_SetWindowSize(app.m_window, width, height);
+		app.onResize();
+		printf("Updated SDL window size to: %d x %d\n", width, height);
+	}
+	else
+	{
+		printf("Window not initialized!\n");
+	}
+}
+#endif
+
+int main(int, char **)
+{
 	app.onInit();
 
 #ifdef __EMSCRIPTEN__
 
 	emscripten_set_main_loop_arg(
-		[](void *userData) {
-			Application& app = *reinterpret_cast<Application*>(userData);
+		[](void *userData)
+		{
+			Application &app = *reinterpret_cast<Application *>(userData);
 			app.onFrame();
 		},
-		(void*)&app,
-		0, true
-	);
+		(void *)&app,
+		0, true);
 
 #else // __EMSCRIPTEN__
 
-	while (app.isRunning()) {
+	while (app.isRunning())
+	{
 		app.onFrame();
 	}
 	app.onFinish();
