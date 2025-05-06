@@ -1,43 +1,6 @@
 {
 	"version": "2.0.0",
 	"tasks": [
-		// 🟢 Conan
-		{
-			"label": "Conan Install Missing",
-			"type": "shell",
-			"command": "conan",
-			"args": [
-				"install",
-				"${workspaceFolder}",
-				"--build=missing",
-				"-pr:b",
-				"./profiles/${input:platform}",
-				"-pr:h",
-				"./profiles/${input:platform}",
-				"-s",
-				"build_type=${input:buildType}"
-			],
-			"problemMatcher": [],
-			"group": "build"
-		},
-		{
-			"label": "Conan Install Missing (Emscripten)",
-			"type": "shell",
-			"command": "conan",
-			"args": [
-				"install",
-				"${workspaceFolder}",
-				"--build=missing",
-				"-pr:b",
-				"./profiles/${input:platform}",
-				"-pr:h",
-				"./profiles/Emscripten",
-				"-s",
-				"build_type=${input:buildType}"
-			],
-			"problemMatcher": [],
-			"group": "build"
-		},
 		// 🟢 Windows
 		{
 			"label": "Build Windows (Debug)",
@@ -108,11 +71,52 @@
 				],
 				"background": {
 					"activeOnStart": true,
-					"beginsPattern": "Serving HTTP on",
-					"endsPattern": "Serving HTTP on"
+					"beginsPattern": {
+						"regexp": "."
+					},
+					"endsPattern": {
+						"regexp": "."
+					},
 				}
 			}
-		}
+		},
+		{
+			"label": "start server",
+			"type": "shell",
+			"isBackground": true,
+			"command": "http-server",
+			"args": ["-c-1"],
+			"presentation": {
+				"reveal": "silent"
+			},
+			"problemMatcher": [
+				{
+					"pattern": [
+						{
+							"regexp": ".",
+							"file": 1,
+							"line": 1,
+							"column": 1,
+							"message": 1
+						}
+					],
+					"background": {
+						"activeOnStart": true,
+						"beginsPattern": {
+							"regexp": "."
+						},
+						"endsPattern": {
+							"regexp": "."
+						}
+					},
+				}
+			]
+		},
+		{
+			"label": "stop server",
+			"command": "echo ${input:terminate}",
+			"type": "shell"
+		},
 	],
 	"inputs": [
 		{
@@ -135,6 +139,12 @@
 				"Darwin"
 			],
 			"default": "Windows"
+		},
+		{
+			"id": "terminate",
+			"type": "command",
+			"command": "workbench.action.tasks.terminate",
+			"args": "terminateAll"
 		}
 	]
 }

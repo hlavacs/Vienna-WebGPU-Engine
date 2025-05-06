@@ -29,14 +29,15 @@ set PROFILE_HOST_PATH=profiles\%PROFILE_HOST%
 set BUILD_DIR=build\%PROFILE_HOST%\%BUILDTYPE%
 
 :: Conan install
-conan install . --build=missing -pr:b %PROFILE_BUILD% -pr:h %PROFILE_HOST_PATH% -s build_type=%BUILDTYPE% -c tools.cmake.cmaketoolchain:generator=Ninja
+rem conan install . --build=missing -pr:b %PROFILE_BUILD% -pr:h %PROFILE_HOST_PATH% -s build_type=%BUILDTYPE% -c tools.cmake.cmaketoolchain:generator=Ninja
 
 :: Configure project based on the host and backend
 if /I "%WEBGPU_BACKEND%"=="Emscripten" (
     echo emcmake cmake -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=%BUILDTYPE% && cmake --build "%BUILD_DIR%" --parallel
     emcmake cmake -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=%BUILDTYPE% && cmake --build "%BUILD_DIR%" --parallel
 ) else (
-    call scripts\launch-vsdevcmd.bat
+    rem call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
+	call scripts\launch-vsdevcmd.bat
     if /I "%WEBGPU_BACKEND%"=="DAWN" (
         echo cmake -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=%BUILDTYPE% -DWEBGPU_BACKEND=DAWN -DWEBGPU_BUILD_FROM_SOURCE=ON
         cmake -S . -B "%BUILD_DIR%" -G Ninja ^
