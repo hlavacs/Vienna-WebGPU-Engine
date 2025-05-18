@@ -26,13 +26,23 @@ endif()
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/sdl2webgpu")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/webgpu")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/tinygltf")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/spdlog")
+
+# Gather all headers and source files recursively
+file(GLOB_RECURSE HEADER_FILES
+    "${CMAKE_SOURCE_DIR}/src/*.h"
+    "${CMAKE_SOURCE_DIR}/src/*.hpp"
+)
+
+file(GLOB_RECURSE SOURCE_FILES
+    "${CMAKE_SOURCE_DIR}/src/*.cpp"
+)
 
 # Main executable
 add_executable(WebGPU_Engine
-    src/main.cpp
-    src/Application.h src/Application.cpp
-    src/ResourceManager.h src/ResourceManager.cpp
-    src/implementations.cpp
+    ${HEADER_FILES}  # optional but recommended to have headers listed for IDEs
+    ${SOURCE_FILES}
 )
 
 target_include_directories(WebGPU_Engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/external/glm")
@@ -44,6 +54,8 @@ target_link_libraries(WebGPU_Engine PRIVATE
     imgui
     sdl2webgpu
     webgpu
+	tinygltf
+	spdlog
 )
 
 # imgui compiler warnings
