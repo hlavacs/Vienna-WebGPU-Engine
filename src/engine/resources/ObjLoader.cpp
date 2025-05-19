@@ -1,8 +1,8 @@
-#include "ObjLoader.h"
+#include "engine/resources/ObjLoader.h"
 #include <unordered_map>
 #include <filesystem>
 
-namespace engine::io
+namespace engine::resources
 {
 	ObjLoader::ObjLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger)
 		: GeometryLoader(std::move(basePath), std::move(logger)) {}
@@ -160,4 +160,4 @@ namespace engine::io
 		return {std::move(vertices), std::move(indices)};
 	}
 
-} // namespace engine::io
+} // namespace engine::resources

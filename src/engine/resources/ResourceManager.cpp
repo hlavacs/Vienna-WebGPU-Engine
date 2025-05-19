@@ -24,17 +24,16 @@
  * SOFTWARE.
  */
 
-#include "ResourceManager.h"
-
-#include "stb_image.h"
-#include "tiny_obj_loader.h"
+#include "engine/resources/ResourceManager.h"
+#include "engine/stb_image.h"
+#include "engine/io/tiny_obj_loader.h"
 
 #include <fstream>
 #include <cstring>
 
 using namespace wgpu;
 
-namespace engine::core
+namespace engine::resources
 {
 
 	ResourceManager::ResourceManager(std::filesystem::path baseDir)
@@ -45,7 +44,7 @@ namespace engine::core
 			loggerObjLoader = spdlog::stdout_color_mt("ObjLoader");
 			loggerObjLoader->set_level(spdlog::level::info); // Default log level
 		}
-		m_objLoader = std::make_unique<engine::io::ObjLoader>(baseDir, loggerObjLoader);
+		m_objLoader = std::make_unique<engine::resources::ObjLoader>(baseDir, loggerObjLoader);
 	}
 
 	ShaderModule ResourceManager::loadShaderModule(const path &path, Device device)

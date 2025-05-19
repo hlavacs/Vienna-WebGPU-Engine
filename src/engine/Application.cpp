@@ -25,9 +25,9 @@
  */
 
 #define SDL_MAIN_HANDLED
-#include "Application.h"
+#include "engine/Application.h"
 #include "engine/core/PathProvider.h"
-#include "ResourceManager.h"
+#include "engine/resources/ResourceManager.h"
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_LEFT_HANDED
@@ -51,7 +51,7 @@
 #include <array>
 
 using namespace wgpu;
-using VertexAttributes = engine::rendering::Vertex;
+using engine::rendering::Vertex;
 
 constexpr float PI = 3.14159265358979323846f;
 
@@ -67,11 +67,18 @@ namespace ImGui
 	}
 } // namespace ImGui
 
-namespace engine::core
+namespace engine
 {
 	Application::Application()
 	{
-		m_resourceManager = std::make_shared<engine::core::ResourceManager>(PathProvider::getResourceRoot());
+#ifdef DEBUG_ROOT_DIR
+		engine::core::PathProvider::initialize(DEBUG_ROOT_DIR, ASSETS_ROOT_DIR);
+#else
+		PathProvider::initialize();
+#endif
+		spdlog::info("EXE Root: {}", engine::core::PathProvider::getExecutableRoot().string());
+		spdlog::info("LIB Root: {}", engine::core::PathProvider::getLibraryRoot().string());
+		m_resourceManager = std::make_shared<engine::resources::ResourceManager>(engine::core::PathProvider::getResourceRoot());
 	}
 
 	///////////////////////////////////////////////////////////////////////////////
@@ -167,7 +174,7 @@ namespace engine::core
 
 		renderPass.setPipeline(m_pipeline);
 
-		renderPass.setVertexBuffer(0, m_vertexBuffer, 0, m_vertexCount * sizeof(VertexAttributes));
+		renderPass.setVertexBuffer(0, m_vertexBuffer, 0, m_vertexCount * sizeof(Vertex));
 		if (m_indexCount > 0)
 			renderPass.setIndexBuffer(m_indexBuffer, IndexFormat::Uint32, 0, m_indexCount * sizeof(uint32_t));
 
@@ -399,8 +406,8 @@ namespace engine::core
 		requiredLimits.limits.maxVertexAttributes = 6;
 		//                                          ^ This was a 4
 		requiredLimits.limits.maxVertexBuffers = 1;
-		requiredLimits.limits.maxBufferSize = 150000 * sizeof(VertexAttributes);
-		requiredLimits.limits.maxVertexBufferArrayStride = sizeof(VertexAttributes);
+		requiredLimits.limits.maxBufferSize = 150000 * sizeof(Vertex);
+		requiredLimits.limits.maxVertexBufferArrayStride = sizeof(Vertex);
 		requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
 		requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
 #ifdef WEBGPU_BACKEND_WGPU
@@ -546,7 +553,7 @@ namespace engine::core
 
 	bool Application::initRenderPipeline()
 	{
-		m_shaderModule = engine::core::ResourceManager::loadShaderModule(PathProvider::getResource("shader.wgsl"), m_device);
+		m_shaderModule = engine::resources::ResourceManager::loadShaderModule(engine::core::PathProvider::getResource("shader.wgsl"), m_device);
 		std::cout << "Shader module: " << m_shaderModule << std::endl;
 
 		std::cout << "Creating render pipeline..." << std::endl;
@@ -563,32 +570,32 @@ namespace engine::core
 		// Normal attribute
 		vertexAttribs[1].shaderLocation = 1;
 		vertexAttribs[1].format = VertexFormat::Float32x3;
-		vertexAttribs[1].offset = offsetof(VertexAttributes, normal);
+		vertexAttribs[1].offset = offsetof(Vertex, normal);
 
 		// Color attribute
 		vertexAttribs[2].shaderLocation = 2;
 		vertexAttribs[2].format = VertexFormat::Float32x3;
-		vertexAttribs[2].offset = offsetof(VertexAttributes, color);
+		vertexAttribs[2].offset = offsetof(Vertex, color);
 
 		// UV attribute
 		vertexAttribs[3].shaderLocation = 3;
 		vertexAttribs[3].format = VertexFormat::Float32x2;
-		vertexAttribs[3].offset = offsetof(VertexAttributes, uv);
+		vertexAttribs[3].offset = offsetof(Vertex, uv);
 
 		// Tangent attribute
 		vertexAttribs[4].shaderLocation = 4;
 		vertexAttribs[4].format = VertexFormat::Float32x3;
-		vertexAttribs[4].offset = offsetof(VertexAttributes, tangent);
+		vertexAttribs[4].offset = offsetof(Vertex, tangent);
 
 		// Bitangent attribute
 		vertexAttribs[5].shaderLocation = 5;
 		vertexAttribs[5].format = VertexFormat::Float32x3;
-		vertexAttribs[5].offset = offsetof(VertexAttributes, bitangent);
+		vertexAttribs[5].offset = offsetof(Vertex, bitangent);
 
 		VertexBufferLayout vertexBufferLayout;
 		vertexBufferLayout.attributeCount = (uint32_t)vertexAttribs.size();
 		vertexBufferLayout.attributes = vertexAttribs.data();
-		vertexBufferLayout.arrayStride = sizeof(VertexAttributes);
+		vertexBufferLayout.arrayStride = sizeof(Vertex);
 		vertexBufferLayout.stepMode = VertexStepMode::Vertex;
 
 		pipelineDesc.vertex.bufferCount = 1;
@@ -689,16 +696,16 @@ namespace engine::core
 		m_sampler = m_device.createSampler(samplerDesc);
 
 		// Create textures
-		// m_baseColorTexture = engine::core::ResourceManager::loadTexture(PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg", m_device, &m_baseColorTextureView);
-		m_baseColorTexture = engine::core::ResourceManager::loadTexture(PathProvider::getResource("fourareen2K_albedo.jpg"), m_device, &m_baseColorTextureView);
+		// m_baseColorTexture = engine::resources::ResourceManager::loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg", m_device, &m_baseColorTextureView);
+		m_baseColorTexture = engine::resources::ResourceManager::loadTexture(engine::core::PathProvider::getResource("fourareen2K_albedo.jpg"), m_device, &m_baseColorTextureView);
 		if (!m_baseColorTexture)
 		{
 			std::cerr << "Could not load base color texture!" << std::endl;
 			return false;
 		}
 
-		// m_normalTexture = engine::core::ResourceManager::loadTexture(PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png"), m_device, &m_normalTextureView);
-		m_normalTexture = engine::core::ResourceManager::loadTexture(PathProvider::getResource("fourareen2K_normals.png"), m_device, &m_normalTextureView);
+		// m_normalTexture = engine::resources::ResourceManager::loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png"), m_device, &m_normalTextureView);
+		m_normalTexture = engine::resources::ResourceManager::loadTexture(engine::core::PathProvider::getResource("fourareen2K_normals.png"), m_device, &m_normalTextureView);
 		if (!m_normalTexture)
 		{
 			std::cerr << "Could not load normal texture!" << std::endl;
@@ -723,8 +730,8 @@ namespace engine::core
 	{
 		// Load mesh data from OBJ file
 		engine::rendering::Mesh mesh{};
-		// bool success = ResourceManager::loadGeometryFromObj(PathProvider::getResource("fourareen.obj"), vertexData);
-		bool success = m_resourceManager->loadGeometryFromObj(PathProvider::getResource("fourareen.obj"), mesh, true);
+		// bool success = ResourceManager::loadGeometryFromObj(engine::core::PathProvider::getResource("fourareen.obj"), vertexData);
+		bool success = m_resourceManager->loadGeometryFromObj(engine::core::PathProvider::getResource("fourareen.obj"), mesh, true);
 		if (!success)
 		{
 			std::cerr << "Could not load geometry!" << std::endl;
@@ -733,7 +740,7 @@ namespace engine::core
 
 		// Create vertex buffer
 		BufferDescriptor bufferDesc;
-		bufferDesc.size = mesh.vertices.size() * sizeof(VertexAttributes);
+		bufferDesc.size = mesh.vertices.size() * sizeof(Vertex);
 		bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Vertex;
 		bufferDesc.mappedAtCreation = false;
 		m_vertexBuffer = m_device.createBuffer(bufferDesc);

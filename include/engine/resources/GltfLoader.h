@@ -1,6 +1,8 @@
-#include "GeometryLoader.h"
 
-namespace engine::io
+#include "engine/resources/GeometryLoader.h"
+#include "engine/io/tiny_obj_loader.h"
+
+namespace engine::resources
 {
 	class GltfLoader : public GeometryLoader
 	{

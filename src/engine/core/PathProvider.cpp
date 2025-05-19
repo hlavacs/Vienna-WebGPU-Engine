@@ -1,5 +1,3 @@
-#include "PathProvider.h"
-
 #if defined(_WIN32)
 #include <windows.h>
 #elif defined(__linux__)
@@ -8,6 +6,8 @@
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
+
+#include "engine/core/PathProvider.h"
 namespace engine::core
 {
 	std::filesystem::path PathProvider::basePath;

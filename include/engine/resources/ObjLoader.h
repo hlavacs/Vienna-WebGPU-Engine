@@ -1,9 +1,9 @@
 #pragma once
 
-#include "GeometryLoader.h"
-#include "../../tiny_obj_loader.h"
+#include "engine/resources/GeometryLoader.h"
+#include "engine/io/tiny_obj_loader.h"
 
-namespace engine::io
+namespace engine::resources
 {
 	/**
 	 * @class ObjLoader
@@ -42,4 +42,4 @@ namespace engine::io
 		std::vector<engine::rendering::Vertex> buildVerticesNonIndexed(const std::vector<tinyobj::shape_t>& shapes, const tinyobj::attrib_t &attrib);
 	};
 
-} // namespace engine::io
+} // namespace engine::resources

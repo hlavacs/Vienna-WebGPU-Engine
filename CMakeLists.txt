@@ -26,14 +26,10 @@ endif()
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/sdl2webgpu")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/webgpu")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/tinygltf")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/spdlog")
 
-# Gather all headers and source files recursively
-file(GLOB_RECURSE HEADER_FILES
-    "${CMAKE_SOURCE_DIR}/src/*.h"
-    "${CMAKE_SOURCE_DIR}/src/*.hpp"
-)
+# Add include dir so #include "engine/core/..." works everywhere
+include_directories(${CMAKE_SOURCE_DIR}/include)
 
 file(GLOB_RECURSE SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/src/*.cpp"
@@ -41,20 +37,21 @@ file(GLOB_RECURSE SOURCE_FILES
 
 # Main executable
 add_executable(WebGPU_Engine
-    ${HEADER_FILES}  # optional but recommended to have headers listed for IDEs
     ${SOURCE_FILES}
 )
 
+# glm is header-only — no build needed
 target_include_directories(WebGPU_Engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/external/glm")
 
+# tinygltf is header-only — no build needed
+target_include_directories(WebGPU_Engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/external/tinygltf")
+
 # Link libraries
-# (order reflects dependency: sdl2webgpu depends on SDL2 & webgpu, imgui is independent)
 target_link_libraries(WebGPU_Engine PRIVATE
     SDL2::SDL2
     imgui
     sdl2webgpu
     webgpu
-	tinygltf
 	spdlog
 )
 
@@ -71,7 +68,7 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     message(STATUS "Configuring Debug build")
     if(MSVC)
-        target_compile_options(WebGPU_Engine PRIVATE /Zi /Od)
+        target_compile_options(WebGPU_Engine PRIVATE /Zi /Od "/diagnostics:caret")
         target_link_options(WebGPU_Engine PRIVATE /DEBUG)
     else()
         target_compile_options(WebGPU_Engine PRIVATE -g -O0 -ferror-limit=0)
@@ -90,6 +87,7 @@ else()
                 "${CMAKE_SOURCE_DIR}/resources"
                 "${CMAKE_CURRENT_BINARY_DIR}/resources")
 endif()
+
 
 # General target properties
 set_target_properties(WebGPU_Engine PROPERTIES
