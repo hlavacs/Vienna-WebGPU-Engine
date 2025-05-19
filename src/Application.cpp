@@ -50,7 +50,7 @@
 #include <array>
 
 using namespace wgpu;
-using VertexAttributes = ResourceManager::VertexAttributes;
+using VertexAttributes = engine::rendering::Vertex;
 
 constexpr float PI = 3.14159265358979323846f;
 
@@ -65,6 +65,11 @@ namespace ImGui
 		return changed;
 	}
 } // namespace ImGui
+
+Application::Application()
+{
+	m_resourceManager = std::make_shared<engine::core::ResourceManager>(RESOURCE_DIR);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Public methods
@@ -160,11 +165,16 @@ void Application::onFrame()
 	renderPass.setPipeline(m_pipeline);
 
 	renderPass.setVertexBuffer(0, m_vertexBuffer, 0, m_vertexCount * sizeof(VertexAttributes));
+	if (m_indexCount > 0)
+		renderPass.setIndexBuffer(m_indexBuffer, IndexFormat::Uint32, 0, m_indexCount * sizeof(uint32_t));
 
 	// Set binding group
 	renderPass.setBindGroup(0, m_bindGroup, 0, nullptr);
 
-	renderPass.draw(m_vertexCount, 1, 0, 0);
+	if (m_indexCount)
+		renderPass.drawIndexed(m_indexCount, 1, 0, 0, 0);
+	else
+		renderPass.draw(m_vertexCount, 1, 0, 0);
 
 	// We add the GUI drawing commands to the render pass
 	updateGui(renderPass);
@@ -534,7 +544,7 @@ void Application::terminateDepthBuffer()
 bool Application::initRenderPipeline()
 {
 	std::cout << "Creating shader module..." << std::endl;
-	m_shaderModule = ResourceManager::loadShaderModule(RESOURCE_DIR "/shader.wgsl", m_device);
+	m_shaderModule = engine::core::ResourceManager::loadShaderModule(RESOURCE_DIR "/shader.wgsl", m_device);
 	std::cout << "Shader module: " << m_shaderModule << std::endl;
 
 	std::cout << "Creating render pipeline..." << std::endl;
@@ -677,16 +687,16 @@ bool Application::initTextures()
 	m_sampler = m_device.createSampler(samplerDesc);
 
 	// Create textures
-	m_baseColorTexture = ResourceManager::loadTexture(RESOURCE_DIR "/cobblestone_floor_08_diff_2k.jpg", m_device, &m_baseColorTextureView);
-	// m_baseColorTexture = ResourceManager::loadTexture(RESOURCE_DIR "/fourareen2K_albedo.jpg", m_device, &m_baseColorTextureView);
+	// m_baseColorTexture = engine::core::ResourceManager::loadTexture(RESOURCE_DIR "/cobblestone_floor_08_diff_2k.jpg", m_device, &m_baseColorTextureView);
+	m_baseColorTexture = engine::core::ResourceManager::loadTexture(RESOURCE_DIR "/fourareen2K_albedo.jpg", m_device, &m_baseColorTextureView);
 	if (!m_baseColorTexture)
 	{
 		std::cerr << "Could not load base color texture!" << std::endl;
 		return false;
 	}
 
-	m_normalTexture = ResourceManager::loadTexture(RESOURCE_DIR "/cobblestone_floor_08_nor_gl_2k.png", m_device, &m_normalTextureView);
-	// m_normalTexture = ResourceManager::loadTexture(RESOURCE_DIR "/fourareen2K_normals.png", m_device, &m_normalTextureView);
+	// m_normalTexture = engine::core::ResourceManager::loadTexture(RESOURCE_DIR "/cobblestone_floor_08_nor_gl_2k.png", m_device, &m_normalTextureView);
+	m_normalTexture = engine::core::ResourceManager::loadTexture(RESOURCE_DIR "/fourareen2K_normals.png", m_device, &m_normalTextureView);
 	if (!m_normalTexture)
 	{
 		std::cerr << "Could not load normal texture!" << std::endl;
@@ -710,9 +720,9 @@ void Application::terminateTextures()
 bool Application::initGeometry()
 {
 	// Load mesh data from OBJ file
-	std::vector<VertexAttributes> vertexData;
-	bool success = ResourceManager::loadGeometryFromObj(RESOURCE_DIR "/cylinder.obj", vertexData);
-	// bool success = ResourceManager::loadGeometryFromObj(RESOURCE_DIR "/fourareen.obj", vertexData);
+	engine::rendering::Mesh mesh{};
+	// bool success = ResourceManager::loadGeometryFromObj("cylinder.obj", vertexData);
+	bool success = m_resourceManager->loadGeometryFromObj("fourareen.obj", mesh, true);
 	if (!success)
 	{
 		std::cerr << "Could not load geometry!" << std::endl;
@@ -721,15 +731,32 @@ bool Application::initGeometry()
 
 	// Create vertex buffer
 	BufferDescriptor bufferDesc;
-	bufferDesc.size = vertexData.size() * sizeof(VertexAttributes);
+	bufferDesc.size = mesh.vertices.size() * sizeof(VertexAttributes);
 	bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Vertex;
 	bufferDesc.mappedAtCreation = false;
 	m_vertexBuffer = m_device.createBuffer(bufferDesc);
-	m_queue.writeBuffer(m_vertexBuffer, 0, vertexData.data(), bufferDesc.size);
+	m_queue.writeBuffer(m_vertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
 
-	m_vertexCount = static_cast<int>(vertexData.size());
+	m_vertexCount = static_cast<int32_t>(mesh.vertices.size());
 
-	return m_vertexBuffer != nullptr;
+	if (mesh.isIndexed())
+	{
+		BufferDescriptor indexBufferDesc;
+		indexBufferDesc.size = mesh.indices.size() * sizeof(uint32_t); // Assuming indices are uint32_t
+		indexBufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Index;
+		indexBufferDesc.mappedAtCreation = false;
+		m_indexBuffer = m_device.createBuffer(indexBufferDesc);
+		m_queue.writeBuffer(m_indexBuffer, 0, mesh.indices.data(), indexBufferDesc.size);
+
+		m_indexCount = static_cast<int32_t>(mesh.indices.size());
+		return m_vertexBuffer != nullptr && m_indexBuffer != nullptr;
+	}
+	else
+	{
+		m_indexBuffer = nullptr; // No index buffer
+		m_indexCount = 0;
+		return m_vertexBuffer != nullptr;
+	}
 }
 
 void Application::terminateGeometry()
@@ -737,6 +764,12 @@ void Application::terminateGeometry()
 	m_vertexBuffer.destroy();
 	m_vertexBuffer.release();
 	m_vertexCount = 0;
+	if (m_indexBuffer)
+	{
+		m_indexBuffer.destroy();
+		m_indexBuffer.release();
+		m_indexCount = 0;
+	}
 }
 
 bool Application::initUniforms()
