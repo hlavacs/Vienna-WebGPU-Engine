@@ -26,10 +26,12 @@
 
 #pragma once
 
+#include "ResourceManager.h"
 #include <webgpu/webgpu.hpp>
 #include <glm/glm.hpp>
 
 #include <array>
+#include <memory>
 
 // Forward declare
 struct SDL_Window;
@@ -38,6 +40,8 @@ union SDL_Event;
 class Application
 {
 public:
+	explicit Application();
+
 	// A function called only once at the beginning. Returns false is init failed.
 	bool onInit();
 
@@ -103,6 +107,8 @@ public:
 	SDL_Window *m_window = nullptr;
 
 private:
+	std::shared_ptr<engine::core::ResourceManager> m_resourceManager; 
+
 	bool m_shouldClose = false;
 
 	// (Just aliases to make notations lighter)
@@ -201,7 +207,9 @@ private:
 
 	// Geometry
 	wgpu::Buffer m_vertexBuffer = nullptr;
-	int m_vertexCount = 0;
+	wgpu::Buffer m_indexBuffer = nullptr;
+	int32_t m_vertexCount = 0;
+	int32_t m_indexCount = 0;
 
 	// Uniforms
 	wgpu::Buffer m_uniformBuffer = nullptr;
