@@ -25,10 +25,14 @@
  */
 
 #include "Application.h"
+#include "engine/core/PathProvider.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
 #endif
+
+using engine::core::Application;
+using engine::core::PathProvider;
 
 Application app;
 
@@ -58,8 +62,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE void my_notify_fullscreen()
 }
 #endif
 
-int main(int, char **)
+int main(int argc, char **argv)
 {
+	#ifdef DEBUG_ROOT_DIR
+	PathProvider::initialize(DEBUG_ROOT_DIR, ASSETS_ROOT_DIR);
+	#else
+	PathProvider::initialize();
+	#endif
+	spdlog::info("EXE Root: {}", PathProvider::getExecutableRoot().string());
+	spdlog::info("LIB Root: {}", PathProvider::getLibraryRoot().string());
+
 	app.onInit();
 
 #ifdef __EMSCRIPTEN__

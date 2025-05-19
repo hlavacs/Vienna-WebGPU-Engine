@@ -76,7 +76,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     else()
         target_compile_options(WebGPU_Engine PRIVATE -g -O0 -ferror-limit=0)
     endif()
-    target_compile_definitions(WebGPU_Engine PRIVATE RESOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources")
+    target_compile_definitions(WebGPU_Engine PRIVATE DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(WebGPU_Engine PRIVATE ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 else()
     message(STATUS "Configuring Release build")
     if(MSVC)
@@ -84,7 +85,10 @@ else()
     else()
         target_compile_options(WebGPU_Engine PRIVATE -O3)
     endif()
-    target_compile_definitions(WebGPU_Engine PRIVATE RESOURCE_DIR="./resources")
+	add_custom_command(TARGET WebGPU_Engine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_SOURCE_DIR}/resources"
+                "${CMAKE_CURRENT_BINARY_DIR}/resources")
 endif()
 
 # General target properties
@@ -143,7 +147,6 @@ if(EMSCRIPTEN)
             -sASYNCIFY
             -sALLOW_MEMORY_GROWTH
 			-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
-            --preload-file "${CMAKE_CURRENT_SOURCE_DIR}/resources"
     		--shell-file "${CMAKE_CURRENT_SOURCE_DIR}/src/${SHELL_FILE}"
         )
     endif()
