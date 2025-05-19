@@ -26,18 +26,19 @@
 
 #pragma once
 
-#include "ResourceManager.h"
+#include <array>
+#include <memory>
+
 #include <webgpu/webgpu.hpp>
 #include <glm/glm.hpp>
 
-#include <array>
-#include <memory>
+#include "engine/resources/ResourceManager.h"
 
 // Forward declare
 struct SDL_Window;
 union SDL_Event;
 
-namespace engine::core
+namespace engine
 {
 	class Application
 	{
@@ -109,7 +110,7 @@ namespace engine::core
 		SDL_Window *m_window = nullptr;
 
 	private:
-		std::shared_ptr<engine::core::ResourceManager> m_resourceManager;
+		std::shared_ptr<engine::resources::ResourceManager> m_resourceManager;
 
 		bool m_shouldClose = false;
 

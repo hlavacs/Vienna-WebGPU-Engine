@@ -26,16 +26,18 @@
 
 #pragma once
 
-#include <webgpu/webgpu.hpp>
-#include <glm/glm.hpp>
-#include "engine/rendering/Vertex.h"
-#include "engine/io/ObjLoader.h"
-#include <spdlog/spdlog.h>
-
 #include <vector>
 #include <filesystem>
 
-namespace engine::core
+#include <webgpu/webgpu.hpp>
+#include <glm/glm.hpp>
+#include <spdlog/spdlog.h>
+
+#include "engine/rendering/Vertex.h"
+#include "engine/resources/ObjLoader.h"
+
+
+namespace engine::resources
 {
 	class ResourceManager
 	{
@@ -59,6 +61,6 @@ namespace engine::core
 		static wgpu::Texture loadTexture(const path &path, wgpu::Device device, wgpu::TextureView *pTextureView = nullptr);
 
 	private:
-		std::unique_ptr<engine::io::ObjLoader> m_objLoader;
+		std::unique_ptr<engine::resources::ObjLoader> m_objLoader;
 	};
 }

@@ -9,10 +9,10 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-#include "../rendering/Mesh.h"
-#include "../debug/Loggable.h"
+#include "engine/rendering/Mesh.h"
+#include "engine/debug/Loggable.h"
 
-namespace engine::io
+namespace engine::resources
 {
 	/**
 	 * @class GeometryLoader
@@ -64,4 +64,4 @@ namespace engine::io
 		static glm::mat3x3 computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN);
 	};
 
-} // namespace engine::io
+} // namespace engine::resources
