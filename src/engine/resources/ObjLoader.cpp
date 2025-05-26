@@ -10,12 +10,12 @@ namespace engine::resources
 	std::optional<engine::rendering::Mesh> ObjLoader::load(const std::filesystem::path &file, bool indexed)
 	{
 		std::string filePath = (m_basePath / file).string();
-		logInfo("Loading indexed OBJ file: " + filePath);
+		logInfo("Loading OBJ file: " + filePath);
 
 		tinyobj::attrib_t attrib;
 		std::vector<tinyobj::shape_t> shapes;
 		std::vector<tinyobj::material_t> materials;
-		std::string warn, err;
+		std::string err, warn;
 
 		bool triangulate = true;
 		bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.c_str(), m_basePath.string().c_str(), triangulate);

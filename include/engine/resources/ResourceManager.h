@@ -35,6 +35,9 @@
 
 #include "engine/rendering/Vertex.h"
 #include "engine/resources/ObjLoader.h"
+#include "engine/resources/GltfLoader.h"
+#include "engine/resources/TextureLoader.h"
+#include "engine/resources/TextureManager.h"
 
 
 namespace engine::resources
@@ -48,7 +51,7 @@ namespace engine::resources
 		using vec2 = glm::vec2;
 		using mat3x3 = glm::mat3x3;
 
-		explicit ResourceManager(std::filesystem::path baseDir);
+		explicit ResourceManager(path baseDir);
 
 		// Load a shader from a WGSL file into a new shader module
 		static wgpu::ShaderModule loadShaderModule(const path &path, wgpu::Device device);
@@ -58,9 +61,15 @@ namespace engine::resources
 
 		// Load an image from a standard image file into a new texture object
 		// NB: The texture must be destroyed after use
-		static wgpu::Texture loadTexture(const path &path, wgpu::Device device, wgpu::TextureView *pTextureView = nullptr);
+		wgpu::Texture loadTexture(const path &path, wgpu::Device device, wgpu::TextureView *pTextureView = nullptr);
+
+		// Normal Texture thats a neutral and doesnt change anything
+		wgpu::Texture createNeutralNormalTexture(wgpu::Device device, wgpu::TextureView* pTextureView = nullptr);
 
 	private:
 		std::unique_ptr<engine::resources::ObjLoader> m_objLoader;
+		std::unique_ptr<engine::resources::GltfLoader> m_gltfLoader;
+		std::unique_ptr<engine::resources::TextureLoader> m_textureLoader;
+		std::unique_ptr<engine::resources::TextureManager> m_textureManager;
 	};
 }
