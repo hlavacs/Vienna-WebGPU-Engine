@@ -696,16 +696,19 @@ namespace engine
 		m_sampler = m_device.createSampler(samplerDesc);
 
 		// Create textures
-		// m_baseColorTexture = engine::resources::ResourceManager::loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg", m_device, &m_baseColorTextureView);
-		m_baseColorTexture = engine::resources::ResourceManager::loadTexture(engine::core::PathProvider::getResource("fourareen2K_albedo.jpg"), m_device, &m_baseColorTextureView);
+		// m_baseColorTexture =  m_resourceManager->loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg", m_device, &m_baseColorTextureView);
+		m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_albedo.jpg"), m_device, &m_baseColorTextureView);
+		// m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fox/Texture.png"), m_device, &m_baseColorTextureView);
 		if (!m_baseColorTexture)
 		{
 			std::cerr << "Could not load base color texture!" << std::endl;
 			return false;
 		}
 
-		// m_normalTexture = engine::resources::ResourceManager::loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png"), m_device, &m_normalTextureView);
-		m_normalTexture = engine::resources::ResourceManager::loadTexture(engine::core::PathProvider::getResource("fourareen2K_normals.png"), m_device, &m_normalTextureView);
+		// m_normalTexture =  m_resourceManager->loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png"), m_device, &m_normalTextureView);
+		m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_normals.png"), m_device, &m_normalTextureView);
+		// m_normalTexture = m_resourceManager->createNeutralNormalTexture(m_device, &m_normalTextureView);
+		// m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fox/neutral_normal.png"), m_device, &m_normalTextureView);
 		if (!m_normalTexture)
 		{
 			std::cerr << "Could not load normal texture!" << std::endl;
@@ -720,7 +723,8 @@ namespace engine
 		m_baseColorTextureView.release();
 		m_baseColorTexture.destroy();
 		m_baseColorTexture.release();
-		m_normalTextureView.release();
+		if (m_normalTextureView)
+			m_normalTextureView.release();
 		m_normalTexture.destroy();
 		m_normalTexture.release();
 		m_sampler.release();
@@ -730,8 +734,9 @@ namespace engine
 	{
 		// Load mesh data from OBJ file
 		engine::rendering::Mesh mesh{};
-		// bool success = ResourceManager::loadGeometryFromObj(engine::core::PathProvider::getResource("fourareen.obj"), vertexData);
+		// bool success = ResourceManager::loadGeometryFromObj(engine::core::PathProvider::getResource("cylinder.obj"), vertexData);
 		bool success = m_resourceManager->loadGeometryFromObj(engine::core::PathProvider::getResource("fourareen.obj"), mesh, true);
+		// bool success = m_resourceManager->loadGeometryFromObj(engine::core::PathProvider::getResource("fox/Fox.gltf"), mesh, true);
 		if (!success)
 		{
 			std::cerr << "Could not load geometry!" << std::endl;
@@ -914,8 +919,11 @@ namespace engine
 		bindings[1].binding = 1;
 		bindings[1].textureView = m_baseColorTextureView;
 
-		bindings[2].binding = 2;
-		bindings[2].textureView = m_normalTextureView;
+		if (m_normalTextureView)
+		{
+			bindings[2].binding = 2;
+			bindings[2].textureView = m_normalTextureView;
+		}
 
 		bindings[3].binding = 3;
 		bindings[3].sampler = m_sampler;

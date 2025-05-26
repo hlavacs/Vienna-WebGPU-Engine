@@ -6,8 +6,6 @@
 #include <memory>
 #include <optional>
 #include <glm/glm.hpp>
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "engine/rendering/Mesh.h"
 #include "engine/debug/Loggable.h"

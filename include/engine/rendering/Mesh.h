@@ -11,7 +11,7 @@ namespace engine::rendering
 	struct Mesh
 	{
 		std::vector<Vertex> vertices;
-		std::vector<uint32_t> indices; // optional
+		std::vector<uint32_t> indices;
 
 		Mesh() = default;
 
@@ -67,4 +67,4 @@ namespace engine::rendering
 		return os;
 	}
 
-}
+} // namespace engine::rendering

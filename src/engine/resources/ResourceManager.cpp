@@ -36,19 +36,30 @@ using namespace wgpu;
 namespace engine::resources
 {
 
-	ResourceManager::ResourceManager(std::filesystem::path baseDir)
+	std::shared_ptr<spdlog::logger> getOrCreateLogger(const std::string &name, spdlog::level::level_enum level = spdlog::level::info)
 	{
-		auto loggerObjLoader = spdlog::get("ObjLoader");
-		if (!loggerObjLoader)
+		auto logger = spdlog::get(name);
+		if (!logger)
 		{
-			loggerObjLoader = spdlog::stdout_color_mt("ObjLoader");
-			loggerObjLoader->set_level(spdlog::level::info); // Default log level
+			logger = spdlog::stdout_color_mt(name);
+			logger->set_level(level);
 		}
-		m_objLoader = std::make_unique<engine::resources::ObjLoader>(baseDir, loggerObjLoader);
+		return logger;
+	}
+
+	ResourceManager::ResourceManager(path baseDir)
+	{
+		m_objLoader = std::make_unique<engine::resources::ObjLoader>(baseDir, getOrCreateLogger("ResourceManager_ObjLoader"));
+
+		m_gltfLoader = std::make_unique<engine::resources::GltfLoader>(baseDir, getOrCreateLogger("ResourceManager_GltfLoader"));
+
+		m_textureLoader = std::make_unique<engine::resources::TextureLoader>(baseDir, getOrCreateLogger("ResourceManager_TextureLoader"));
+		m_textureManager = std::make_unique<engine::resources::TextureManager>(std::move(m_textureLoader));
 	}
 
 	ShaderModule ResourceManager::loadShaderModule(const path &path, Device device)
 	{
+		// ToDo: Shader Factory in some way
 		std::ifstream file(path);
 		if (!file.is_open())
 		{
@@ -73,73 +84,25 @@ namespace engine::resources
 
 		return device.createShaderModule(shaderDesc);
 	}
-	
-
-	static void calculateTangentBitangent(
-		const glm::vec3 &pos1, const glm::vec3 &pos2, const glm::vec3 &pos3,
-		const glm::vec2 &uv1, const glm::vec2 &uv2, const glm::vec2 &uv3,
-		glm::vec3 &outTangent, glm::vec3 &outBitangent)
-	{
-		glm::vec3 edge1 = pos2 - pos1;
-		glm::vec3 edge2 = pos3 - pos1;
-
-		glm::vec2 deltaUV1 = uv2 - uv1;
-		glm::vec2 deltaUV2 = uv3 - uv1;
-
-		float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
-
-		outTangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
-		outTangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
-		outTangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
-
-		outBitangent.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
-		outBitangent.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
-		outBitangent.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
-	}
-
-	static void computeTangents(engine::rendering::Mesh &mesh)
-	{
-		// Reset tangents and bitangents
-		for (auto &v : mesh.vertices)
-		{
-			v.tangent = glm::vec3(0.0f);
-			v.bitangent = glm::vec3(0.0f);
-		}
-
-		for (size_t i = 0; i < mesh.indices.size(); i += 3)
-		{
-			engine::rendering::Vertex &v0 = mesh.vertices[mesh.indices[i]];
-			engine::rendering::Vertex &v1 = mesh.vertices[mesh.indices[i + 1]];
-			engine::rendering::Vertex &v2 = mesh.vertices[mesh.indices[i + 2]];
-
-			glm::vec3 tangent, bitangent;
-			calculateTangentBitangent(v0.position, v1.position, v2.position,
-									  v0.uv, v1.uv, v2.uv,
-									  tangent, bitangent);
-
-			v0.tangent += tangent;
-			v1.tangent += tangent;
-			v2.tangent += tangent;
-
-			v0.bitangent += bitangent;
-			v1.bitangent += bitangent;
-			v2.bitangent += bitangent;
-		}
-
-		// Orthonormalize per vertex
-		for (auto &v : mesh.vertices)
-		{
-			v.tangent = glm::normalize(v.tangent - v.normal * glm::dot(v.normal, v.tangent));
-			float handedness = (glm::dot(glm::cross(v.normal, v.tangent), v.bitangent) < 0.0f) ? -1.0f : 1.0f;
-			v.bitangent = handedness * glm::cross(v.normal, v.tangent);
-		}
-	}
-
 
 	bool ResourceManager::loadGeometryFromObj(const path &path, engine::rendering::Mesh &mesh, bool populateTextureFrame)
 	{
+		// ToDo: Mesh Factory in some way
 		bool indexed = false;
-		auto meshResult = m_objLoader->load(path, indexed);
+		std::optional<engine::rendering::Mesh> meshResult = std::nullopt;
+		if (path.extension() == ".obj")
+		{
+			meshResult = m_objLoader->load(path, indexed);
+		}
+		else if (path.extension() == ".gltf" || path.extension() == ".glb")
+		{
+			meshResult = m_gltfLoader->load(path, indexed);
+		}
+		else
+		{
+			// ToDo: Log
+			return false;
+		}
 		if (!meshResult)
 			return false;
 
@@ -154,103 +117,67 @@ namespace engine::resources
 
 	// Auxiliary function for loadTexture
 	static void writeMipMaps(
-		Device device,
-		Texture texture,
-		Extent3D textureSize,
-		uint32_t mipLevelCount,
-		const unsigned char *pixelData)
+		wgpu::Device device,
+		wgpu::Texture texture,
+		const engine::rendering::Texture::Ptr &tex)
 	{
-		Queue queue = device.getQueue();
+		wgpu::Queue queue = device.getQueue();
 
-		// Arguments telling which part of the texture we upload to
 		ImageCopyTexture destination;
 		destination.texture = texture;
 		destination.origin = {0, 0, 0};
-		destination.aspect = TextureAspect::All;
+		destination.aspect = wgpu::TextureAspect::All;
 
-		// Arguments telling how the C++ side pixel memory is laid out
-		TextureDataLayout source;
-		source.offset = 0;
+		auto &mipmaps = tex->getMipmaps();
+		auto width = tex->getWidth();
+		auto height = tex->getHeight();
 
-		// Create image data
-		Extent3D mipLevelSize = textureSize;
-		std::vector<unsigned char> previousLevelPixels;
-		Extent3D previousMipLevelSize;
-		for (uint32_t level = 0; level < mipLevelCount; ++level)
+		TextureDataLayout textureDataLayout{};
+		textureDataLayout.offset = 0;
+
+		for (uint32_t level = 0; level < mipmaps.size(); ++level)
 		{
-			// Pixel data for the current level
-			std::vector<unsigned char> pixels(4 * mipLevelSize.width * mipLevelSize.height);
-			if (level == 0)
-			{
-				// We cannot really avoid this copy since we need this
-				// in previousLevelPixels at the next iteration
-				memcpy(pixels.data(), pixelData, pixels.size());
-			}
-			else
-			{
-				// Create mip level data
-				for (uint32_t i = 0; i < mipLevelSize.width; ++i)
-				{
-					for (uint32_t j = 0; j < mipLevelSize.height; ++j)
-					{
-						unsigned char *p = &pixels[4 * (j * mipLevelSize.width + i)];
-						// Get the corresponding 4 pixels from the previous level
-						unsigned char *p00 = &previousLevelPixels[4 * ((2 * j + 0) * previousMipLevelSize.width + (2 * i + 0))];
-						unsigned char *p01 = &previousLevelPixels[4 * ((2 * j + 0) * previousMipLevelSize.width + (2 * i + 1))];
-						unsigned char *p10 = &previousLevelPixels[4 * ((2 * j + 1) * previousMipLevelSize.width + (2 * i + 0))];
-						unsigned char *p11 = &previousLevelPixels[4 * ((2 * j + 1) * previousMipLevelSize.width + (2 * i + 1))];
-						// Average
-						p[0] = (p00[0] + p01[0] + p10[0] + p11[0]) / 4;
-						p[1] = (p00[1] + p01[1] + p10[1] + p11[1]) / 4;
-						p[2] = (p00[2] + p01[2] + p10[2] + p11[2]) / 4;
-						p[3] = (p00[3] + p01[3] + p10[3] + p11[3]) / 4;
-					}
-				}
-			}
+			// Calculate mip size for this level
+			uint32_t mipWidth = std::max(1u, width >> level);
+			uint32_t mipHeight = std::max(1u, height >> level);
 
-			// Upload data to the GPU texture
+			textureDataLayout.bytesPerRow = tex->getChannels() * mipWidth;
+			textureDataLayout.rowsPerImage = mipHeight;
+
 			destination.mipLevel = level;
-			source.bytesPerRow = 4 * mipLevelSize.width;
-			source.rowsPerImage = mipLevelSize.height;
-			queue.writeTexture(destination, pixels.data(), pixels.size(), source, mipLevelSize);
 
-			previousLevelPixels = std::move(pixels);
-			previousMipLevelSize = mipLevelSize;
-			mipLevelSize.width /= 2;
-			mipLevelSize.height /= 2;
+			// Upload mip level data directly
+			queue.writeTexture(
+				destination,
+				mipmaps[level].data(),
+				mipmaps[level].size(),
+				textureDataLayout,
+				{mipWidth, mipHeight, 1});
 		}
 
 		queue.release();
 	}
 
-	// Equivalent of std::bit_width that is available from C++20 onward
-	static uint32_t bit_width(uint32_t m)
+	wgpu::Texture ResourceManager::loadTexture(const path &file, Device device, TextureView *pTextureView)
 	{
-		if (m == 0)
-			return 0;
-		else
+		// ToDo: Texture Factory in some way
+		auto texDataOpt = m_textureManager->createTextureFromFile(file);
+		if (!texDataOpt.has_value())
 		{
-			uint32_t w = 0;
-			while (m >>= 1)
-				++w;
-			return w;
-		}
-	}
-
-	Texture ResourceManager::loadTexture(const path &path, Device device, TextureView *pTextureView)
-	{
-		int width, height, channels;
-		unsigned char *pixelData = stbi_load(path.string().c_str(), &width, &height, &channels, 4 /* force 4 channels */);
-		// If data is null, loading failed.
-		if (nullptr == pixelData)
 			return nullptr;
+		}
+
+		auto &texData = texDataOpt.value().second; 
+		if(!texData->isMipped())
+			texData->generateMipmaps();
 
 		// Use the width, height, channels and data variables here
 		TextureDescriptor textureDesc;
 		textureDesc.dimension = TextureDimension::_2D;
+		// ToDo: Texture Format based on jpeg/png/...
 		textureDesc.format = TextureFormat::RGBA8Unorm; // by convention for bmp, png and jpg file. Be careful with other formats.
-		textureDesc.size = {(unsigned int)width, (unsigned int)height, 1};
-		textureDesc.mipLevelCount = bit_width(std::max(textureDesc.size.width, textureDesc.size.height));
+		textureDesc.size = {texData->getWidth(), texData->getHeight(), 1};
+		textureDesc.mipLevelCount = texData->getMipLevelCount();
 		textureDesc.sampleCount = 1;
 		textureDesc.usage = TextureUsage::TextureBinding | TextureUsage::CopyDst;
 		textureDesc.viewFormatCount = 0;
@@ -258,10 +185,7 @@ namespace engine::resources
 		Texture texture = device.createTexture(textureDesc);
 
 		// Upload data to the GPU texture
-		writeMipMaps(device, texture, textureDesc.size, textureDesc.mipLevelCount, pixelData);
-
-		stbi_image_free(pixelData);
-		// (Do not use data after this)
+		writeMipMaps(device, texture, texData);
 
 		if (pTextureView)
 		{
@@ -278,4 +202,55 @@ namespace engine::resources
 
 		return texture;
 	}
+
+	wgpu::Texture ResourceManager::createNeutralNormalTexture(wgpu::Device device, wgpu::TextureView *pTextureView)
+	{
+		// 1x1 RGBA texture (neutral normal: (0.5, 0.5, 1.0))
+		const uint8_t pixel[4] = {128, 128, 255, 255};
+
+		// Create the texture
+		wgpu::TextureDescriptor textureDesc = {};
+		textureDesc.dimension = wgpu::TextureDimension::_2D;
+		textureDesc.format = wgpu::TextureFormat::RGBA8Unorm;
+		textureDesc.size = {1, 1, 1};
+		textureDesc.mipLevelCount = 1;
+		textureDesc.sampleCount = 1;
+		textureDesc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+
+		wgpu::Texture texture = device.createTexture(textureDesc);
+
+		// Upload the pixel data
+		wgpu::ImageCopyTexture dst = {};
+		dst.texture = texture;
+		dst.mipLevel = 0;
+		dst.origin = {0, 0, 0};
+		dst.aspect = wgpu::TextureAspect::All;
+
+		wgpu::TextureDataLayout layout = {};
+		layout.offset = 0;
+		layout.bytesPerRow = 4;
+		layout.rowsPerImage = 1;
+
+		wgpu::Extent3D extent = {1, 1, 1};
+
+		device.getQueue().writeTexture(dst, pixel, sizeof(pixel), layout, extent);
+
+		// Create texture view if requested
+		if (pTextureView)
+		{
+			wgpu::TextureViewDescriptor viewDesc = {};
+			viewDesc.dimension = wgpu::TextureViewDimension::_2D;
+			viewDesc.format = textureDesc.format;
+			viewDesc.baseMipLevel = 0;
+			viewDesc.mipLevelCount = 1;
+			viewDesc.baseArrayLayer = 0;
+			viewDesc.arrayLayerCount = 1;
+			viewDesc.aspect = wgpu::TextureAspect::All;
+
+			*pTextureView = texture.createView(viewDesc);
+		}
+
+		return texture;
+	}
+
 }
