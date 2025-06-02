@@ -12,7 +12,7 @@
 #include "engine/debug/Loggable.h"
 #include "engine/rendering/Texture.h"
 
-namespace engine::resources
+namespace engine::resources::loaders
 {
 
 	class TextureLoader : public engine::debug::Loggable
@@ -41,4 +41,4 @@ namespace engine::resources
 		std::filesystem::path m_basePath;
 	};
 
-} // namespace engine::resources
+} // namespace engine::resources::loaders

@@ -1,6 +1,6 @@
-#include "engine/resources/GeometryLoader.h"
+#include "engine/resources/loaders/GeometryLoader.h"
 
-namespace engine::resources
+namespace engine::resources::loaders
 {
 
 	GeometryLoader::GeometryLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger)
@@ -43,4 +43,4 @@ namespace engine::resources
 		return glm::mat3x3(T, B, N);
 	}
 
-} // namespace engine::resources
+} // namespace engine::resources::loaders

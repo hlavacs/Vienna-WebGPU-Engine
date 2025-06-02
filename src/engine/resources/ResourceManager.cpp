@@ -49,11 +49,11 @@ namespace engine::resources
 
 	ResourceManager::ResourceManager(path baseDir)
 	{
-		m_objLoader = std::make_unique<engine::resources::ObjLoader>(baseDir, getOrCreateLogger("ResourceManager_ObjLoader"));
+		m_objLoader = std::make_unique<engine::resources::loaders::ObjLoader>(baseDir, getOrCreateLogger("ResourceManager_ObjLoader"));
 
-		m_gltfLoader = std::make_unique<engine::resources::GltfLoader>(baseDir, getOrCreateLogger("ResourceManager_GltfLoader"));
+		m_gltfLoader = std::make_unique<engine::resources::loaders::GltfLoader>(baseDir, getOrCreateLogger("ResourceManager_GltfLoader"));
 
-		m_textureLoader = std::make_unique<engine::resources::TextureLoader>(baseDir, getOrCreateLogger("ResourceManager_TextureLoader"));
+		m_textureLoader = std::make_unique<engine::resources::loaders::TextureLoader>(baseDir, getOrCreateLogger("ResourceManager_TextureLoader"));
 		m_textureManager = std::make_unique<engine::resources::TextureManager>(std::move(m_textureLoader));
 	}
 
@@ -167,7 +167,7 @@ namespace engine::resources
 			return nullptr;
 		}
 
-		auto &texData = texDataOpt.value().second; 
+		auto &texData = texDataOpt.value(); 
 		if(!texData->isMipped())
 			texData->generateMipmaps();
 

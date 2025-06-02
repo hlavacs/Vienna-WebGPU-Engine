@@ -1,9 +1,9 @@
 #pragma once
 
-#include "engine/resources/GeometryLoader.h"
+#include "engine/resources/loaders/GeometryLoader.h"
 #include "engine/io/tiny_obj_loader.h"
 
-namespace engine::resources
+namespace engine::resources::loaders
 {
 	/**
 	 * @class ObjLoader
@@ -37,9 +37,9 @@ namespace engine::resources
 
 	protected:
 		[[nodiscard]]
-		std::pair<std::vector<engine::rendering::Vertex>, std::vector<uint32_t>> buildVerticesIndexed(const std::vector<tinyobj::shape_t>& shapes, const tinyobj::attrib_t &attrib);
+		std::pair<std::vector<engine::rendering::Vertex>, std::vector<uint32_t>> buildVerticesIndexed(const std::vector<tinyobj::shape_t> &shapes, const tinyobj::attrib_t &attrib);
 		[[nodiscard]]
-		std::vector<engine::rendering::Vertex> buildVerticesNonIndexed(const std::vector<tinyobj::shape_t>& shapes, const tinyobj::attrib_t &attrib);
+		std::vector<engine::rendering::Vertex> buildVerticesNonIndexed(const std::vector<tinyobj::shape_t> &shapes, const tinyobj::attrib_t &attrib);
 	};
 
-} // namespace engine::resources
+} // namespace engine::resources::loaders

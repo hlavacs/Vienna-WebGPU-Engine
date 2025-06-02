@@ -34,11 +34,10 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/rendering/Vertex.h"
-#include "engine/resources/ObjLoader.h"
-#include "engine/resources/GltfLoader.h"
-#include "engine/resources/TextureLoader.h"
+#include "engine/resources/loaders/ObjLoader.h"
+#include "engine/resources/loaders/GltfLoader.h"
+#include "engine/resources/loaders/TextureLoader.h"
 #include "engine/resources/TextureManager.h"
-
 
 namespace engine::resources
 {
@@ -64,12 +63,12 @@ namespace engine::resources
 		wgpu::Texture loadTexture(const path &path, wgpu::Device device, wgpu::TextureView *pTextureView = nullptr);
 
 		// Normal Texture thats a neutral and doesnt change anything
-		wgpu::Texture createNeutralNormalTexture(wgpu::Device device, wgpu::TextureView* pTextureView = nullptr);
+		wgpu::Texture createNeutralNormalTexture(wgpu::Device device, wgpu::TextureView *pTextureView = nullptr);
 
 	private:
-		std::unique_ptr<engine::resources::ObjLoader> m_objLoader;
-		std::unique_ptr<engine::resources::GltfLoader> m_gltfLoader;
-		std::unique_ptr<engine::resources::TextureLoader> m_textureLoader;
+		std::unique_ptr<engine::resources::loaders::ObjLoader> m_objLoader;
+		std::unique_ptr<engine::resources::loaders::GltfLoader> m_gltfLoader;
+		std::unique_ptr<engine::resources::loaders::TextureLoader> m_textureLoader;
 		std::unique_ptr<engine::resources::TextureManager> m_textureManager;
 	};
 }
