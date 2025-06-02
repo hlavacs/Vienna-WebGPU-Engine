@@ -3,13 +3,14 @@
 #include <vector>
 #include <filesystem>
 #include <glm/glm.hpp>
-#include "Vertex.h"
+#include "engine/rendering/Vertex.h"
 
 namespace engine::rendering
 {
 
 	struct Mesh
 	{
+	public:
 		std::vector<Vertex> vertices;
 		std::vector<uint32_t> indices;
 
@@ -47,7 +48,6 @@ namespace engine::rendering
 		}
 
 	private:
-		int m_counter = 0;
 		bool m_isIndexed = false;
 		bool m_isTriangulated = true;
 

@@ -1,7 +1,7 @@
-#include "engine/resources/TextureLoader.h"
+#include "engine/resources/loaders/TextureLoader.h"
 #include "engine/stb_image.h"
 
-namespace engine::resources
+namespace engine::resources::loaders
 {
 
 	TextureLoader::TextureLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger)
@@ -28,11 +28,10 @@ namespace engine::resources
 		stbi_image_free(data);
 
 		engine::rendering::Texture::Ptr texture = std::make_shared<engine::rendering::Texture>(
-			static_cast<uint32_t>(width), 
-			static_cast<uint32_t>(height), 
-			static_cast<uint32_t>(channels), 
-			std::move(pixels)
-		);
+			static_cast<uint32_t>(width),
+			static_cast<uint32_t>(height),
+			static_cast<uint32_t>(channels),
+			std::move(pixels));
 
 		texture->generateMipmaps();
 
@@ -41,4 +40,4 @@ namespace engine::resources
 		return texture;
 	}
 
-} // namespace engine::resources
+} // namespace engine::resources::loaders

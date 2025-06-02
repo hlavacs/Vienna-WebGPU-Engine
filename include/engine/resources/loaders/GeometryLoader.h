@@ -10,7 +10,7 @@
 #include "engine/rendering/Mesh.h"
 #include "engine/debug/Loggable.h"
 
-namespace engine::resources
+namespace engine::resources::loaders
 {
 	/**
 	 * @class GeometryLoader
@@ -58,8 +58,7 @@ namespace engine::resources
 
 		std::filesystem::path m_basePath;
 
-		
-		static glm::mat3x3 computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN);
+				static glm::mat3x3 computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN);
 	};
 
-} // namespace engine::resources
+} // namespace engine::resources::loaders

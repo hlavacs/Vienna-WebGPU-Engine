@@ -1,6 +1,6 @@
-#include "engine/resources/GeometryLoader.h"
+#include "engine/resources/loaders/GeometryLoader.h"
 
-namespace engine::resources
+namespace engine::resources::loaders
 {
 	class GltfLoader : public GeometryLoader
 	{
@@ -27,4 +27,4 @@ namespace engine::resources
 	protected:
 	};
 
-}
+} // namespace engine::resources::loaders
