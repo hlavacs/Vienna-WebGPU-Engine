@@ -34,34 +34,6 @@ namespace engine::resources
         explicit MaterialManager(std::shared_ptr<TextureManager> textureManager);
 
         /**
-         * @brief Adds a material to the manager, optionally resolving texture file paths.
-         * @param material Shared pointer to the material.
-         * @param textureFilePaths Optional map from material texture slot name to file path. If provided, will load textures via TextureManager.
-         * @return Optional handle to the material, or std::nullopt if material is null.
-         */
-        [[nodiscard]]
-        std::optional<MaterialHandle> add(
-            const MaterialPtr& material,
-            const std::unordered_map<std::string, std::string>& textureFilePaths = {}
-        );
-
-        /**
-         * @brief Retrieves a material by its human-readable name.
-         * @param name The name of the material.
-         * @return Optional shared pointer to the material if found, std::nullopt otherwise.
-         */
-        [[nodiscard]]
-        std::optional<MaterialPtr> getMaterialByName(const std::string& name) const;
-
-        /**
-         * @brief Retrieves a material by its handle.
-         * @param handle The handle of the material.
-         * @return Optional shared pointer to the material if found, std::nullopt otherwise.
-         */
-        [[nodiscard]]
-        std::optional<MaterialPtr> getMaterial(const MaterialHandle& handle) const;
-
-        /**
          * @brief Creates a Material from a tinyobj::material_t and adds it to the manager.
          * @param objMat The tinyobj material.
          * @param textureBasePath The base path for texture files.

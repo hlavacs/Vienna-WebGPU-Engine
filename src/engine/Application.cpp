@@ -697,7 +697,7 @@ namespace engine
 
 		// Create textures
 		// m_baseColorTexture =  m_resourceManager->loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg", m_device, &m_baseColorTextureView);
-		m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_albedo.jpg"), m_device, &m_baseColorTextureView);
+		m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_albedo.jpg"), m_webgpuContext, &m_baseColorTextureView);
 		// m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fox/Texture.png"), m_device, &m_baseColorTextureView);
 		if (!m_baseColorTexture)
 		{
@@ -706,8 +706,8 @@ namespace engine
 		}
 
 		// m_normalTexture =  m_resourceManager->loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png"), m_device, &m_normalTextureView);
-		m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_normals.png"), m_device, &m_normalTextureView);
-		// m_normalTexture = m_resourceManager->createNeutralNormalTexture(m_device, &m_normalTextureView);
+		m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_normals.png"), m_webgpuContext, &m_normalTextureView);
+		// m_normalTexture = m_resourceManager->createNeutralNormalTexture(m_webgpuContext, &m_normalTextureView);
 		// m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fox/neutral_normal.png"), m_device, &m_normalTextureView);
 		if (!m_normalTexture)
 		{

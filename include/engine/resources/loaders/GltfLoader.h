@@ -22,7 +22,7 @@ namespace engine::resources::loaders
 		 *         Returns std::nullopt on failure.
 		 */
 		[[nodiscard]]
-		std::optional<engine::rendering::Mesh> load(const std::filesystem::path &file, bool indexed = true) override;
+		std::optional<engine::rendering::Mesh> load(const std::filesystem::path &file, bool indexed = true);
 
 	protected:
 	};

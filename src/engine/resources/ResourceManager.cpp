@@ -49,12 +49,17 @@ namespace engine::resources
 
 	ResourceManager::ResourceManager(path baseDir)
 	{
-		m_objLoader = std::make_unique<engine::resources::loaders::ObjLoader>(baseDir, getOrCreateLogger("ResourceManager_ObjLoader"));
+		m_objLoader = std::make_shared<engine::resources::loaders::ObjLoader>(baseDir, getOrCreateLogger("ResourceManager_ObjLoader"));
 
-		m_gltfLoader = std::make_unique<engine::resources::loaders::GltfLoader>(baseDir, getOrCreateLogger("ResourceManager_GltfLoader"));
+		m_gltfLoader = std::make_shared<engine::resources::loaders::GltfLoader>(baseDir, getOrCreateLogger("ResourceManager_GltfLoader"));
 
-		m_textureLoader = std::make_unique<engine::resources::loaders::TextureLoader>(baseDir, getOrCreateLogger("ResourceManager_TextureLoader"));
-		m_textureManager = std::make_unique<engine::resources::TextureManager>(std::move(m_textureLoader));
+		m_textureLoader = std::make_shared<engine::resources::loaders::TextureLoader>(baseDir, getOrCreateLogger("ResourceManager_TextureLoader"));
+
+		m_textureManager = std::make_shared<engine::resources::TextureManager>(std::move(m_textureLoader));
+		m_materialManager = std::make_shared<engine::resources::MaterialManager>(std::move(m_textureLoader));
+		m_modelManager = std::make_shared<engine::resources::ModelManager>(
+			std::move(m_materialManager),
+			std::move(m_objLoader));
 	}
 
 	ShaderModule ResourceManager::loadShaderModule(const path &path, Device device)
@@ -158,99 +163,84 @@ namespace engine::resources
 		queue.release();
 	}
 
-	wgpu::Texture ResourceManager::loadTexture(const path &file, Device device, TextureView *pTextureView)
+	wgpu::Texture ResourceManager::loadTexture(const path &file, engine::rendering::webgpu::WebGPUContext& context, wgpu::TextureView *pTextureView)
 	{
-		// ToDo: Texture Factory in some way
+		// Use TextureFactory to create a WebGPUTexture
 		auto texDataOpt = m_textureManager->createTextureFromFile(file);
 		if (!texDataOpt.has_value())
-		{
 			return nullptr;
-		}
-
-		auto &texData = texDataOpt.value(); 
-		if(!texData->isMipped())
+		auto &texData = texDataOpt.value();
+		if (!texData->isMipped())
 			texData->generateMipmaps();
-
-		// Use the width, height, channels and data variables here
-		TextureDescriptor textureDesc;
-		textureDesc.dimension = TextureDimension::_2D;
-		// ToDo: Texture Format based on jpeg/png/...
-		textureDesc.format = TextureFormat::RGBA8Unorm; // by convention for bmp, png and jpg file. Be careful with other formats.
-		textureDesc.size = {texData->getWidth(), texData->getHeight(), 1};
-		textureDesc.mipLevelCount = texData->getMipLevelCount();
-		textureDesc.sampleCount = 1;
-		textureDesc.usage = TextureUsage::TextureBinding | TextureUsage::CopyDst;
-		textureDesc.viewFormatCount = 0;
-		textureDesc.viewFormats = nullptr;
-		Texture texture = device.createTexture(textureDesc);
-
-		// Upload data to the GPU texture
-		writeMipMaps(device, texture, texData);
-
-		if (pTextureView)
-		{
-			TextureViewDescriptor textureViewDesc;
-			textureViewDesc.aspect = TextureAspect::All;
-			textureViewDesc.baseArrayLayer = 0;
-			textureViewDesc.arrayLayerCount = 1;
-			textureViewDesc.baseMipLevel = 0;
-			textureViewDesc.mipLevelCount = textureDesc.mipLevelCount;
-			textureViewDesc.dimension = TextureViewDimension::_2D;
-			textureViewDesc.format = textureDesc.format;
-			*pTextureView = texture.createView(textureViewDesc);
+		// Create GPU texture via factory
+		auto gpuTexture = context.textureFactory().createFrom(*texData);
+		if (pTextureView) {
+			*pTextureView = gpuTexture->getTextureView();
 		}
-
-		return texture;
+		return gpuTexture->getTexture();
 	}
 
-	wgpu::Texture ResourceManager::createNeutralNormalTexture(wgpu::Device device, wgpu::TextureView *pTextureView)
+	wgpu::Texture ResourceManager::createNeutralNormalTexture(engine::rendering::webgpu::WebGPUContext& context, wgpu::TextureView *pTextureView)
 	{
 		// 1x1 RGBA texture (neutral normal: (0.5, 0.5, 1.0))
-		const uint8_t pixel[4] = {128, 128, 255, 255};
+		engine::rendering::Texture neutralTex(1, 1, 4);
+		neutralTex.setPixel(0, 0, {128, 128, 255, 255});
+		auto gpuTexture = context.textureFactory().createFrom(neutralTex);
+		if (pTextureView) {
+			*pTextureView = gpuTexture->getTextureView();
+		}
+		return gpuTexture->getTexture();
+	}
 
-		// Create the texture
-		wgpu::TextureDescriptor textureDesc = {};
-		textureDesc.dimension = wgpu::TextureDimension::_2D;
-		textureDesc.format = wgpu::TextureFormat::RGBA8Unorm;
-		textureDesc.size = {1, 1, 1};
-		textureDesc.mipLevelCount = 1;
-		textureDesc.sampleCount = 1;
-		textureDesc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+	// Loads a model using the ModelManager and applies its properties for WebGPU usage
+	bool ResourceManager::loadModel(const path &modelPath, engine::rendering::webgpu::WebGPUContext& context)
+	{
+		// For now, only OBJ is supported
+		if (!m_modelManager)
+			return false;
 
-		wgpu::Texture texture = device.createTexture(textureDesc);
-
-		// Upload the pixel data
-		wgpu::ImageCopyTexture dst = {};
-		dst.texture = texture;
-		dst.mipLevel = 0;
-		dst.origin = {0, 0, 0};
-		dst.aspect = wgpu::TextureAspect::All;
-
-		wgpu::TextureDataLayout layout = {};
-		layout.offset = 0;
-		layout.bytesPerRow = 4;
-		layout.rowsPerImage = 1;
-
-		wgpu::Extent3D extent = {1, 1, 1};
-
-		device.getQueue().writeTexture(dst, pixel, sizeof(pixel), layout, extent);
-
-		// Create texture view if requested
-		if (pTextureView)
-		{
-			wgpu::TextureViewDescriptor viewDesc = {};
-			viewDesc.dimension = wgpu::TextureViewDimension::_2D;
-			viewDesc.format = textureDesc.format;
-			viewDesc.baseMipLevel = 0;
-			viewDesc.mipLevelCount = 1;
-			viewDesc.baseArrayLayer = 0;
-			viewDesc.arrayLayerCount = 1;
-			viewDesc.aspect = wgpu::TextureAspect::All;
-
-			*pTextureView = texture.createView(viewDesc);
+		// Try to find a material for the model (for demo, just use the first material if any)
+		auto materialManager = m_modelManager->getMaterialManager();
+		engine::core::Handle<engine::rendering::Material> materialHandle;
+		if (materialManager) {
+			// Use the first material if available, else an invalid handle
+			auto allMaterials = materialManager->getAll();
+			if (!allMaterials.empty())
+				materialHandle = allMaterials.front()->getHandle();
 		}
 
-		return texture;
+		// Use the filename as the model name
+		std::string modelName = modelPath.filename().string();
+		auto modelOpt = m_modelManager->createModel(modelPath.string(), modelName);
+		if (!modelOpt)
+			return false;
+		auto &model = *modelOpt;
+
+		// --- WebGPU application logic ---
+		// 1. Upload mesh data to GPU buffers
+		const auto &mesh = model->getMesh();
+		auto gpuMesh = context.meshFactory().createFrom(mesh);
+		// 2. Get material and associated textures
+		const auto &matHandle = model->getMaterial();
+		std::shared_ptr<engine::rendering::Material> materialPtr;
+		if (materialManager && matHandle.valid())
+			materialPtr = materialManager->get(matHandle).value_or(nullptr);
+
+		// 3. For each texture in the material, create a WebGPU texture if needed
+		std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> albedoTexture;
+		if (materialPtr && materialPtr->albedoTexture.valid()) {
+			auto texPtr = m_textureManager->get(materialPtr->albedoTexture).value_or(nullptr);
+			if (texPtr) {
+				albedoTexture = context.textureFactory().createFrom(*texPtr);
+			}
+		}
+		// Repeat for other textures as needed (normal, metallic, etc.)
+		// ...
+
+		// 4. Set up bind groups, pipeline, etc. as needed for rendering
+		// (This is application-specific and depends on your rendering setup)
+
+		return true;
 	}
 
 }

@@ -1,48 +1,46 @@
-#include "engine/resources/MaterialManager.h"
+#include "engine/resources/ModelManager.h"
 
 namespace engine::resources
 {
-    MaterialManager::MaterialManager(std::shared_ptr<TextureManager> textureManager)
-        : m_textureManager(std::move(textureManager)) {}
+	ModelManager::ModelManager(
+		std::shared_ptr<MaterialManager> materialManager,
+		std::shared_ptr<loaders::ObjLoader> objLoader)
+		: m_materialManager(std::move(materialManager)), m_objLoader(std::move(objLoader)) {}
 
-    std::optional<MaterialManager::MaterialHandle> MaterialManager::add(
-        const MaterialPtr& material,
-        const std::unordered_map<std::string, std::string>& textureFilePaths
-    ) {
-        if (!material)
-            return std::nullopt;
+	std::optional<ModelManager::ModelPtr> ModelManager::createModel(const std::string &filePath, const std::string &name)
+	{
+		if (!m_objLoader)
+			return std::nullopt;
+		auto objDataOpt = m_objLoader->load(filePath);
+		if (!objDataOpt)
+			return std::nullopt;
+		const auto &objData = *objDataOpt;
 
-        for (const auto& [slot, file] : textureFilePaths)
-        {
-            if (!file.empty() && m_textureManager)
-            {
-                auto texPtrOpt = m_textureManager->createTextureFromFile(file);
-                if (texPtrOpt && *texPtrOpt)
-                {
-                    const auto& texHandle = (*texPtrOpt)->getHandle();
-                    if (slot == "albedo") material->albedoTexture = texHandle;
-                    else if (slot == "normal") material->normalTexture = texHandle;
-                    else if (slot == "metallic") material->metallicTexture = texHandle;
-                    else if (slot == "roughness") material->roughnessTexture = texHandle;
-                    else if (slot == "ao") material->aoTexture = texHandle;
-                    else if (slot == "emissive") material->emissiveTexture = texHandle;
-                    else if (slot == "opacity") material->opacityTexture = texHandle;
-                    else if (slot == "specular") material->specularTexture = texHandle;
-                }
-            }
-        }
+		// Build Mesh from parsed geometry
+		engine::rendering::Mesh mesh(std::move(objData.vertices), std::move(objData.indices));
+		mesh.computeTangents();
 
-        return ResourceManagerBase<Material>::add(material);
-    }
+		// Try to create a material from the first parsed material, if any
+		MaterialHandle matHandle;
+		if (m_materialManager && !objData.materials.empty()) {
+			auto matOpt = m_materialManager->createMaterial(objData.materials[0]);
+			if (matOpt && *matOpt)
+				matHandle = (*matOpt)->getHandle();
+		}
+		// TODO: Multiple materials support
 
-    std::optional<MaterialManager::MaterialPtr> MaterialManager::getMaterial(const MaterialHandle& handle) const
-    {
-        return this->get(handle);
-    }
+		// Use parsed name if no name provided
+		std::string modelName = name.empty() ? objData.name : name;
+		auto model = std::make_shared<Model>(std::move(mesh), matHandle, filePath, modelName);
+		auto handleOpt = add(model);
+		if (!handleOpt)
+			return std::nullopt;
+		return model;
+	}
 
-    std::shared_ptr<TextureManager> MaterialManager::getTextureManager() const
-    {
-        return m_textureManager;
-    }
+	std::shared_ptr<MaterialManager> ModelManager::getMaterialManager() const
+	{
+		return m_materialManager;
+	}
 
 } // namespace engine::resources

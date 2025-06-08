@@ -7,7 +7,7 @@ namespace engine::resources::loaders
 	ObjLoader::ObjLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger)
 		: GeometryLoader(std::move(basePath), std::move(logger)) {}
 
-	std::optional<engine::rendering::Mesh> ObjLoader::load(const std::filesystem::path &file, bool indexed)
+	std::optional<ObjGeometryData> ObjLoader::load(const std::filesystem::path &file, bool indexed)
 	{
 		std::string filePath = (m_basePath / file).string();
 		logInfo("Loading OBJ file: " + filePath);
@@ -30,20 +30,33 @@ namespace engine::resources::loaders
 			logError("Failed to load OBJ: " + filePath);
 			return std::nullopt;
 		}
+
+		ObjGeometryData data;
+		data.filePath = filePath;
 		if (indexed)
 		{
 			auto [vertices, indices] = buildVerticesIndexed(shapes, attrib);
-			logInfo("Loaded indexed OBJ with " + std::to_string(vertices.size()) + " unique vertices and " + std::to_string(indices.size()) + " indices");
+			data.vertices = std::move(vertices);
+			data.indices = std::move(indices);
+			
+			logInfo("Loaded indexed OBJ at " +  filePath + " with " + std::to_string(vertices.size()) + " unique vertices and " + std::to_string(indices.size()) + " indices");
 
-			return engine::rendering::Mesh(std::move(vertices), std::move(indices), triangulate);
 		}
 		else
 		{
-			auto vertices = buildVerticesNonIndexed(shapes, attrib);
-			logInfo("Loaded non-indexed OBJ with " + std::to_string(vertices.size()) + " vertices");
-
-			return engine::rendering::Mesh(std::move(vertices), triangulate);
+			data.vertices = buildVerticesNonIndexed(shapes, attrib);
+			data.indices.clear();
+			
+			logInfo("Loaded non-indexed OBJ at " +  filePath + " with " + std::to_string(data.vertices.size()) + " vertices");
 		}
+
+		data.materials = std::move(materials);
+		if (!shapes.empty())
+			data.name = shapes[0].name;
+		else
+			data.name = file.filename().string();
+
+		return data;
 	}
 
 	std::vector<engine::rendering::Vertex> ObjLoader::buildVerticesNonIndexed(const std::vector<tinyobj::shape_t> &shapes, const tinyobj::attrib_t &attrib)

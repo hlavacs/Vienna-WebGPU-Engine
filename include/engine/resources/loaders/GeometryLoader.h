@@ -28,18 +28,6 @@ namespace engine::resources::loaders
 	public:
 		virtual ~GeometryLoader() = default;
 
-		/**
-		 * @brief Loads a mesh from the given file path.
-		 * @param file The relative or absolute file path to load the geometry from.
-		 * @param indexed If true, loads the mesh with indexing (unique vertices + indices).
-		 *                If false, loads the mesh as non-indexed (expanded vertices, no indices).
-		 *                Default is true.
-		 * @return An optional Mesh object containing the loaded geometry data.
-		 *         Returns std::nullopt on failure.
-		 */
-		[[nodiscard]]
-		virtual std::optional<engine::rendering::Mesh> load(const std::filesystem::path &file, bool indexed = true) = 0;
-
 		// Getters
 		const std::filesystem::path &getBasePath() const { return m_basePath; }
 		const std::shared_ptr<spdlog::logger> &getLogger() const { return m_logger; }
