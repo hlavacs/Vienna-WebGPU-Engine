@@ -38,6 +38,8 @@
 #include "engine/resources/loaders/GltfLoader.h"
 #include "engine/resources/loaders/TextureLoader.h"
 #include "engine/resources/TextureManager.h"
+#include "engine/resources/MaterialManager.h"
+#include "engine/resources/ModelManager.h"
 
 namespace engine::resources
 {
@@ -60,15 +62,20 @@ namespace engine::resources
 
 		// Load an image from a standard image file into a new texture object
 		// NB: The texture must be destroyed after use
-		wgpu::Texture loadTexture(const path &path, wgpu::Device device, wgpu::TextureView *pTextureView = nullptr);
+		wgpu::Texture loadTexture(const path &path, engine::rendering::webgpu::WebGPUContext& context, wgpu::TextureView *pTextureView = nullptr);
 
 		// Normal Texture thats a neutral and doesnt change anything
-		wgpu::Texture createNeutralNormalTexture(wgpu::Device device, wgpu::TextureView *pTextureView = nullptr);
+		wgpu::Texture createNeutralNormalTexture(engine::rendering::webgpu::WebGPUContext& context, wgpu::TextureView *pTextureView = nullptr);
+
+		// Load a model using the ModelManager and apply its properties for WebGPU usage
+		bool loadModel(const path &modelPath, engine::rendering::webgpu::WebGPUContext& context);
 
 	private:
-		std::unique_ptr<engine::resources::loaders::ObjLoader> m_objLoader;
-		std::unique_ptr<engine::resources::loaders::GltfLoader> m_gltfLoader;
-		std::unique_ptr<engine::resources::loaders::TextureLoader> m_textureLoader;
-		std::unique_ptr<engine::resources::TextureManager> m_textureManager;
+		std::shared_ptr<engine::resources::loaders::ObjLoader> m_objLoader;
+		std::shared_ptr<engine::resources::loaders::GltfLoader> m_gltfLoader;
+		std::shared_ptr<engine::resources::loaders::TextureLoader> m_textureLoader;
+		std::shared_ptr<engine::resources::TextureManager> m_textureManager;
+		std::shared_ptr<engine::resources::MaterialManager> m_materialManager;
+		std::shared_ptr<engine::resources::ModelManager> m_modelManager;
 	};
 }

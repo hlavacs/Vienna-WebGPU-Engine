@@ -2,16 +2,31 @@
 
 #include "engine/resources/loaders/GeometryLoader.h"
 #include "engine/io/tiny_obj_loader.h"
+#include <vector>
+#include <optional>
+#include <string>
+#include "engine/rendering/Vertex.h"
 
 namespace engine::resources::loaders
 {
 	/**
+	 * @struct ObjGeometryData
+	 * @brief Holds parsed geometry and material data from an OBJ file.
+	 */
+	struct ObjGeometryData {
+		std::vector<engine::rendering::Vertex> vertices;
+		std::vector<uint32_t> indices;
+		std::vector<tinyobj::material_t> materials;
+		std::string filePath;
+		std::string name;
+	};
+
+	/**
 	 * @class ObjLoader
-	 * @brief Loads geometry data from OBJ files.
+	 * @brief Loads geometry data from OBJ files (parsing only).
 	 *
-	 * Inherits from GeometryLoader and implements loading of 3D mesh data
-	 * specifically from the Wavefront OBJ file format. Supports both indexed
-	 * and non-indexed mesh loading.
+	 * Inherits from GeometryLoader and implements parsing of 3D mesh data
+	 * specifically from the Wavefront OBJ file format. Does not create engine::Mesh or Material.
 	 */
 	class ObjLoader : public GeometryLoader
 	{
@@ -24,16 +39,16 @@ namespace engine::resources::loaders
 		explicit ObjLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger = nullptr);
 
 		/**
-		 * @brief Loads a mesh from the given file path.
+		 * @brief Parses an OBJ file and returns geometry and material data.
 		 * @param file The relative or absolute file path to load the geometry from.
-		 * @param indexed If true, loads the mesh with indexing (unique vertices + indices).
-		 *                If false, loads the mesh as non-indexed (expanded vertices, no indices).
+		 * @param indexed If true, parses the mesh with indexing (unique vertices + indices).
+		 *                If false, parses the mesh as non-indexed (expanded vertices, no indices).
 		 *                Default is true.
-		 * @return An optional Mesh object containing the loaded geometry data.
+		 * @return An optional ObjGeometryData object containing the parsed geometry and materials.
 		 *         Returns std::nullopt on failure.
 		 */
 		[[nodiscard]]
-		std::optional<engine::rendering::Mesh> load(const std::filesystem::path &file, bool indexed = true) override;
+		std::optional<ObjGeometryData> load(const std::filesystem::path &file, bool indexed = true);
 
 	protected:
 		[[nodiscard]]

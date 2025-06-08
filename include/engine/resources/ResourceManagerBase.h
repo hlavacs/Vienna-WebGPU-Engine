@@ -150,10 +150,11 @@ namespace engine::resources
 		 * @param name The name of the resource(s).
 		 * @return Vector of shared pointers to all resources with the given name.
 		 */
-		std::vector<Ptr> getAllByName(const std::string& name) const
+		std::vector<Ptr> getAllWithName(const std::string& name) const
 		{
 			std::scoped_lock lock(m_mutex);
 			std::vector<Ptr> matches;
+			matches.reserve(2);
 			for (const auto &[handle, ptr] : m_resources)
 			{
 				if (ptr && ptr->getName().has_value() && ptr->getName().value() == name)
