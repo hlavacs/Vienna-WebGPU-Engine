@@ -142,15 +142,6 @@ namespace engine
 #ifdef WEBGPU_BACKEND_WGPU
 		SurfaceTexture surfaceTexture;
 		m_surface.getCurrentTexture(&surfaceTexture);
-		if (!surfaceTexture.texture) {
-			std::cerr << "Surface texture is null (swapchain out of date or lost). Reinitializing surface and dependent resources..." << std::endl;
-			terminateDepthBuffer();
-			terminateSurface();
-			initSurface();
-			initDepthBuffer();
-			// Optionally: re-create pipeline, bind groups, etc. if needed
-			return; // Skip this frame, try again next frame
-		}
 		TextureView nextTexture = Texture(surfaceTexture.texture).createView();
 #else  // WEBGPU_BACKEND_WGPU
 		TextureView nextTexture = m_swapChain.getCurrentTextureView();
@@ -610,6 +601,8 @@ namespace engine
 		// Check that depth stencil format matches depth texture format
 		assert(depthStencilState.format == m_depthTextureFormat && "Pipeline depth stencil format must match depth texture format");
 
+		std::cout << "Pipeline color target format: " << int(colorTarget.format) << std::endl;
+
 		return m_pipeline != nullptr;
 	}
 
@@ -969,7 +962,7 @@ namespace engine
 		init_info.RenderTargetFormat = m_swapChainFormat;
 		ImGui_ImplWGPU_Init(&init_info);
 		*/
-		ImGui_ImplWGPU_Init(m_context->getDevice(), 3, m_swapChainFormat, m_depthTextureFormat);
+		ImGui_ImplWGPU_Init(m_context->getDevice(), 3, m_context->getSwapChainFormat(), m_depthTextureFormat);
 		return true;
 	}
 
