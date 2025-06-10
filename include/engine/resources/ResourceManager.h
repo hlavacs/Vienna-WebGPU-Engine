@@ -40,6 +40,8 @@
 #include "engine/resources/TextureManager.h"
 #include "engine/resources/MaterialManager.h"
 #include "engine/resources/ModelManager.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 
 namespace engine::resources
 {
@@ -63,9 +65,6 @@ namespace engine::resources
 		// Load an image from a standard image file into a new texture object
 		// NB: The texture must be destroyed after use
 		wgpu::Texture loadTexture(const path &path, engine::rendering::webgpu::WebGPUContext& context, wgpu::TextureView *pTextureView = nullptr);
-
-		// Normal Texture thats a neutral and doesnt change anything
-		wgpu::Texture createNeutralNormalTexture(engine::rendering::webgpu::WebGPUContext& context, wgpu::TextureView *pTextureView = nullptr);
 
 		// Load a model using the ModelManager and apply its properties for WebGPU usage
 		bool loadModel(const path &modelPath, engine::rendering::webgpu::WebGPUContext& context);

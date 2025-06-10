@@ -1,4 +1,5 @@
 #include "engine/resources/MaterialManager.h"
+#include "engine/core/Handle.h"
 
 namespace engine::resources
 {
@@ -16,16 +17,17 @@ namespace engine::resources
         mat->shininess = objMat.shininess;
         mat->opacity = objMat.dissolve;
         mat->setName(objMat.name);
-		
+        
         // TODO: support for additional tinyobj::material_t texture slots if needed (e.g. bump_texname, displacement_texname, reflection_texname, etc.)
-        mat->albedoTexture = m_textureManager->createTextureFromFile(textureBasePath + objMat.diffuse_texname).value_or(TextureHandle{});
-        mat->normalTexture = m_textureManager->createTextureFromFile(textureBasePath + objMat.normal_texname).value_or(TextureHandle{});
-        mat->metallicTexture = m_textureManager->createTextureFromFile(textureBasePath + objMat.metallic_texname).value_or(TextureHandle{});
-        mat->roughnessTexture = m_textureManager->createTextureFromFile(textureBasePath + objMat.roughness_texname).value_or(TextureHandle{});
-        mat->aoTexture = m_textureManager->createTextureFromFile(textureBasePath + objMat.ambient_texname).value_or(TextureHandle{});
-        mat->emissiveTexture = m_textureManager->createTextureFromFile(textureBasePath + objMat.emissive_texname).value_or(TextureHandle{});
-        mat->opacityTexture = m_textureManager->createTextureFromFile(textureBasePath + objMat.alpha_texname).value_or(TextureHandle{});
-        mat->specularTexture = m_textureManager->createTextureFromFile(textureBasePath + objMat.specular_texname).value_or(TextureHandle{});
+        using engine::core::unwrapOrHandle;
+        mat->albedoTexture = unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.diffuse_texname));
+        mat->normalTexture = unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.normal_texname));
+        mat->metallicTexture = unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.metallic_texname));
+        mat->roughnessTexture = unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.roughness_texname));
+        mat->aoTexture = unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.ambient_texname));
+        mat->emissiveTexture = unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.emissive_texname));
+        mat->opacityTexture = unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.alpha_texname));
+        mat->specularTexture = unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.specular_texname));
 
 		// TODO: respect other texture slots like displacement_texname, reflection_texname, etc. if needed
         auto handleOpt = add(mat);

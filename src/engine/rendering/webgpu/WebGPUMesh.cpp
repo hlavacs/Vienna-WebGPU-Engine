@@ -1,16 +1,16 @@
 #include "engine/rendering/webgpu/WebGPUMesh.h"
 
-namespace engine::rendering::webgpu {
-
-WebGPUMesh::WebGPUMesh(WebGPUContext& context, const engine::rendering::Mesh& mesh)
-    : m_context(context)
+namespace engine::rendering::webgpu
 {
-    // TODO: Upload mesh data to GPU buffers using m_context
-}
 
-wgpu::Buffer WebGPUMesh::getVertexBuffer() const { /* ... */ return {}; }
-wgpu::Buffer WebGPUMesh::getIndexBuffer() const { /* ... */ return {}; }
-uint32_t WebGPUMesh::getIndexCount() const { /* ... */ return 0; }
-uint32_t WebGPUMesh::getVertexCount() const { /* ... */ return 0; }
+	WebGPUMesh::WebGPUMesh(wgpu::Buffer vertexBuffer, uint32_t vertexCount, wgpu::Buffer indexBuffer, uint32_t indexCount)
+		: m_vertexBuffer(vertexBuffer), m_vertexCount(vertexCount), m_indexBuffer(indexBuffer), m_indexCount(indexCount)
+	{
+	}
+
+	wgpu::Buffer WebGPUMesh::getVertexBuffer() const { return m_vertexBuffer; }
+	wgpu::Buffer WebGPUMesh::getIndexBuffer() const { return m_indexBuffer; }
+	uint32_t WebGPUMesh::getIndexCount() const { return m_indexCount; }
+	uint32_t WebGPUMesh::getVertexCount() const { return m_vertexCount; }
 
 } // namespace engine::rendering::webgpu

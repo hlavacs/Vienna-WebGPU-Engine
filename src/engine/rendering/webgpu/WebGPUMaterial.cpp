@@ -1,13 +1,13 @@
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
 
-namespace engine::rendering::webgpu {
-
-WebGPUMaterial::WebGPUMaterial(WebGPUContext& context, const engine::rendering::Material& material, const WebGPUTexture& baseColor, const WebGPUTexture& normalMap)
-    : m_context(context)
+namespace engine::rendering::webgpu
 {
-    // TODO: Create bind group for material using m_context
-}
 
-wgpu::BindGroup WebGPUMaterial::getBindGroup() const { /* ... */ return {}; }
+	WebGPUMaterial::WebGPUMaterial(wgpu::BindGroup bindGroup, WebGPUMaterialOptions options)
+		: m_bindGroup(bindGroup), m_options(std::move(options)) {}
+
+	wgpu::BindGroup WebGPUMaterial::getBindGroup() const { return m_bindGroup; }
+	const WebGPUMaterialOptions& WebGPUMaterial::getOptions() const { return m_options; }
+	void WebGPUMaterial::setOptions(const WebGPUMaterialOptions& opts) { m_options = opts; }
 
 } // namespace engine::rendering::webgpu

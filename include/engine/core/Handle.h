@@ -64,7 +64,23 @@ namespace engine::core
 		static inline std::function<std::optional<std::shared_ptr<T>>(Handle<T>)> s_resolver;
 	};
 
+	/**
+	 * @brief Converts an optional shared_ptr<T> to its Handle<T> or a default/null handle.
+	 *
+	 * Intended to be used with Identifiable-derived types, where getHandle() returns Handle<T>.
+	 */
+	template <typename T>
+	Handle<T> unwrapOrHandle(const std::optional<std::shared_ptr<T>>& opt);
+
 } // namespace engine::core
+
+template <typename T>
+engine::core::Handle<T> engine::core::unwrapOrHandle(const std::optional<std::shared_ptr<T>>& opt)
+{
+	if (opt)
+		return opt.value()->getHandle();
+	return Handle<T>{};
+}
 
 // Hash support for unordered_map
 namespace std

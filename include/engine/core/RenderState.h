@@ -20,3 +20,5 @@ struct RenderState {
 };
 
 } // namespace engine::core
+
+// Deprecated: see engine/rendering/RenderState.h

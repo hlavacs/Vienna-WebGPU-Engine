@@ -19,10 +19,10 @@ namespace engine::rendering
 		Texture(uint32_t width, uint32_t height, uint32_t channels, std::vector<uint8_t> &&pixelsData);
 
 		// Construct with pixel data and file path (default empty)
-		Texture(uint32_t width, uint32_t height, uint32_t channels, std::vector<uint8_t> &&pixelsData, const std::string& filePath);
+		Texture(uint32_t width, uint32_t height, uint32_t channels, std::vector<uint8_t> &&pixelsData, const std::string &filePath);
 
 		// Construct with pixel data, file path and name (both default empty)
-		Texture(uint32_t width, uint32_t height, uint32_t channels, std::vector<uint8_t> &&pixelsData, const std::string& filePath, const std::string& name);
+		Texture(uint32_t width, uint32_t height, uint32_t channels, std::vector<uint8_t> &&pixelsData, const std::string &filePath, const std::string &name);
 
 		// Allow move
 		Texture(Texture &&) noexcept = default;
@@ -45,7 +45,7 @@ namespace engine::rendering
 		const std::vector<std::vector<uint8_t>> &getMipmaps() const;
 
 		// Get file path (empty string if none)
-		const std::string& getFilePath() const;
+		const std::string &getFilePath() const;
 
 		// Set file path
 		void setFilePath(const std::string &filepath);
@@ -66,6 +66,6 @@ namespace engine::rendering
 		std::vector<uint8_t> pixels;			// base level pixel data (RGBA or RGB)
 		std::vector<std::vector<uint8_t>> mips; // mipmap levels
 
-		std::string m_filePath;  // empty if not set
+		std::string m_filePath; // empty if not set
 	};
 }
