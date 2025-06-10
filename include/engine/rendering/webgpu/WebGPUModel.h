@@ -4,28 +4,31 @@
  * @brief GPU-side model: holds references to WebGPUMesh and WebGPUMaterial.
  */
 #include <memory>
-#include "engine/rendering/Model.h"
 #include "engine/rendering/webgpu/WebGPUMesh.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
 
-namespace engine::rendering::webgpu {
+namespace engine::rendering::webgpu
+{
 
-/**
- * @class WebGPUModel
- * @brief Combines WebGPUMesh and WebGPUMaterial for rendering.
- */
-class WebGPUModel {
-public:
-    /**
-     * @brief Construct from a CPU-side Model and GPU resources.
-     */
-    WebGPUModel(const engine::rendering::Model& model, std::shared_ptr<WebGPUMesh> mesh, std::shared_ptr<WebGPUMaterial> material);
-    /** @brief Get mesh. */
-    std::shared_ptr<WebGPUMesh> getMesh() const;
-    /** @brief Get material. */
-    std::shared_ptr<WebGPUMaterial> getMaterial() const;
-private:
-    // ...internal references...
-};
+	/**
+	 * @class WebGPUModel
+	 * @brief Combines WebGPUMesh and WebGPUMaterial for rendering.
+	 */
+	class WebGPUModel
+	{
+	public:
+		/**
+		 * @brief Construct from GPU resources.
+		 */
+		WebGPUModel(std::shared_ptr<WebGPUMesh> mesh, std::shared_ptr<WebGPUMaterial> material);
+		/** @brief Get mesh. */
+		std::shared_ptr<WebGPUMesh> getMesh() const;
+		/** @brief Get material. */
+		std::shared_ptr<WebGPUMaterial> getMaterial() const;
+
+	private:
+		std::shared_ptr<WebGPUMesh> m_mesh;			///< Mesh resource.
+		std::shared_ptr<WebGPUMaterial> m_material; ///< Material resource.
+	};
 
 } // namespace engine::rendering::webgpu

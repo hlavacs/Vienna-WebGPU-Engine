@@ -111,6 +111,7 @@ namespace engine
 
 	private:
 		std::shared_ptr<engine::resources::ResourceManager> m_resourceManager;
+        std::shared_ptr<engine::rendering::webgpu::WebGPUContext> m_context;
 
 		bool m_shouldClose = false;
 

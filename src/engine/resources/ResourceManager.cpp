@@ -55,11 +55,11 @@ namespace engine::resources
 
 		m_textureLoader = std::make_shared<engine::resources::loaders::TextureLoader>(baseDir, getOrCreateLogger("ResourceManager_TextureLoader"));
 
-		m_textureManager = std::make_shared<engine::resources::TextureManager>(std::move(m_textureLoader));
-		m_materialManager = std::make_shared<engine::resources::MaterialManager>(std::move(m_textureLoader));
+		m_textureManager = std::make_shared<engine::resources::TextureManager>(m_textureLoader);
+		m_materialManager = std::make_shared<engine::resources::MaterialManager>(m_textureManager);
 		m_modelManager = std::make_shared<engine::resources::ModelManager>(
-			std::move(m_materialManager),
-			std::move(m_objLoader));
+			m_materialManager,
+			m_objLoader);
 	}
 
 	ShaderModule ResourceManager::loadShaderModule(const path &path, Device device)
@@ -92,31 +92,22 @@ namespace engine::resources
 
 	bool ResourceManager::loadGeometryFromObj(const path &path, engine::rendering::Mesh &mesh, bool populateTextureFrame)
 	{
-		// ToDo: Mesh Factory in some way
-		bool indexed = false;
-		std::optional<engine::rendering::Mesh> meshResult = std::nullopt;
-		if (path.extension() == ".obj")
-		{
-			meshResult = m_objLoader->load(path, indexed);
-		}
-		else if (path.extension() == ".gltf" || path.extension() == ".glb")
-		{
-			meshResult = m_gltfLoader->load(path, indexed);
-		}
-		else
-		{
-			// ToDo: Log
-			return false;
-		}
-		if (!meshResult)
+		// Load the model using the ModelManager
+		if (!m_modelManager)
 			return false;
 
-		mesh = std::move(*meshResult);
+		std::string modelName = path.filename().string();
+		auto modelOpt = m_modelManager->createModel(path.string(), modelName);
+		if (!modelOpt)
+			return false;
+		auto &model = *modelOpt;
+
+		// Extract the mesh from the model
+		mesh = model->getMesh();
 		if (populateTextureFrame)
 		{
 			mesh.computeTangents();
 		}
-
 		return true;
 	}
 
@@ -163,7 +154,7 @@ namespace engine::resources
 		queue.release();
 	}
 
-	wgpu::Texture ResourceManager::loadTexture(const path &file, engine::rendering::webgpu::WebGPUContext& context, wgpu::TextureView *pTextureView)
+	wgpu::Texture ResourceManager::loadTexture(const path &file, engine::rendering::webgpu::WebGPUContext &context, wgpu::TextureView *pTextureView)
 	{
 		// Use TextureFactory to create a WebGPUTexture
 		auto texDataOpt = m_textureManager->createTextureFromFile(file);
@@ -174,26 +165,15 @@ namespace engine::resources
 			texData->generateMipmaps();
 		// Create GPU texture via factory
 		auto gpuTexture = context.textureFactory().createFrom(*texData);
-		if (pTextureView) {
-			*pTextureView = gpuTexture->getTextureView();
-		}
-		return gpuTexture->getTexture();
-	}
-
-	wgpu::Texture ResourceManager::createNeutralNormalTexture(engine::rendering::webgpu::WebGPUContext& context, wgpu::TextureView *pTextureView)
-	{
-		// 1x1 RGBA texture (neutral normal: (0.5, 0.5, 1.0))
-		engine::rendering::Texture neutralTex(1, 1, 4);
-		neutralTex.setPixel(0, 0, {128, 128, 255, 255});
-		auto gpuTexture = context.textureFactory().createFrom(neutralTex);
-		if (pTextureView) {
+		if (pTextureView)
+		{
 			*pTextureView = gpuTexture->getTextureView();
 		}
 		return gpuTexture->getTexture();
 	}
 
 	// Loads a model using the ModelManager and applies its properties for WebGPU usage
-	bool ResourceManager::loadModel(const path &modelPath, engine::rendering::webgpu::WebGPUContext& context)
+	bool ResourceManager::loadModel(const path &modelPath, engine::rendering::webgpu::WebGPUContext &context)
 	{
 		// For now, only OBJ is supported
 		if (!m_modelManager)
@@ -202,7 +182,8 @@ namespace engine::resources
 		// Try to find a material for the model (for demo, just use the first material if any)
 		auto materialManager = m_modelManager->getMaterialManager();
 		engine::core::Handle<engine::rendering::Material> materialHandle;
-		if (materialManager) {
+		if (materialManager)
+		{
 			// Use the first material if available, else an invalid handle
 			auto allMaterials = materialManager->getAll();
 			if (!allMaterials.empty())
@@ -228,9 +209,11 @@ namespace engine::resources
 
 		// 3. For each texture in the material, create a WebGPU texture if needed
 		std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> albedoTexture;
-		if (materialPtr && materialPtr->albedoTexture.valid()) {
+		if (materialPtr && materialPtr->albedoTexture.valid())
+		{
 			auto texPtr = m_textureManager->get(materialPtr->albedoTexture).value_or(nullptr);
-			if (texPtr) {
+			if (texPtr)
+			{
 				albedoTexture = context.textureFactory().createFrom(*texPtr);
 			}
 		}

@@ -39,7 +39,7 @@ namespace engine::resources::loaders
 			data.vertices = std::move(vertices);
 			data.indices = std::move(indices);
 			
-			logInfo("Loaded indexed OBJ at " +  filePath + " with " + std::to_string(vertices.size()) + " unique vertices and " + std::to_string(indices.size()) + " indices");
+			logInfo("Loaded indexed OBJ at " +  filePath + " with " + std::to_string(data.vertices.size()) + " unique vertices and " + std::to_string(data.indices.size()) + " indices");
 
 		}
 		else

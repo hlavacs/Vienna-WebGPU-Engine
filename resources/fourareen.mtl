@@ -1,6 +1,3 @@
-# Blender MTL File: 'None'
-# Material Count: 1
-
 newmtl Material_#25
 Ns 20.000006
 Ka 1.000000 1.000000 1.000000
@@ -10,5 +7,12 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 1
+
+# Diffuse (albedo) map
+map_Kd fourareen2K_albedo.jpg
+
+# Normal map (modern spec, preferred if supported)
+norm fourareen2K_normals.png
+
+# OR if using map_Bump, clarify it's a normal map and keep scale
 map_Bump -bm 0.300000 fourareen2K_normals.png
-map_Kd fourareen4K_albedo.png

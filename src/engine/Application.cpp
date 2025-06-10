@@ -79,6 +79,7 @@ namespace engine
 		spdlog::info("EXE Root: {}", engine::core::PathProvider::getExecutableRoot().string());
 		spdlog::info("LIB Root: {}", engine::core::PathProvider::getLibraryRoot().string());
 		m_resourceManager = std::make_shared<engine::resources::ResourceManager>(engine::core::PathProvider::getResourceRoot());
+		m_context = std::make_shared<engine::rendering::webgpu::WebGPUContext>();
 	}
 
 	///////////////////////////////////////////////////////////////////////////////
@@ -86,8 +87,25 @@ namespace engine
 
 	bool Application::onInit()
 	{
-		if (!initWindowAndDevice())
+		// Create SDL window first
+		if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0) {
+			std::cerr << "Could not initialize SDL2: " << SDL_GetError() << std::endl;
 			return false;
+		}
+		Uint32 windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+		int width = 640, height = 480;
+		m_window = SDL_CreateWindow("Learn WebGPU",
+			SDL_WINDOWPOS_CENTERED,
+			SDL_WINDOWPOS_CENTERED,
+			width,
+			height,
+			windowFlags);
+		if (!m_window) {
+			std::cerr << "Could not open window!" << std::endl;
+			return false;
+		}
+		// Now initialize context with window
+		m_context->initialize(m_window);
 		if (!initSurface())
 			return false;
 		if (!initDepthBuffer())
@@ -119,11 +137,20 @@ namespace engine
 
 		// Update uniform buffer
 		m_uniforms.time = static_cast<float>(static_cast<double>(SDL_GetTicks64() / 1000.0));
-		m_queue.writeBuffer(m_uniformBuffer, offsetof(MyUniforms, time), &m_uniforms.time, sizeof(MyUniforms::time));
+		m_context->getQueue().writeBuffer(m_uniformBuffer, offsetof(MyUniforms, time), &m_uniforms.time, sizeof(MyUniforms::time));
 
 #ifdef WEBGPU_BACKEND_WGPU
 		SurfaceTexture surfaceTexture;
 		m_surface.getCurrentTexture(&surfaceTexture);
+		if (!surfaceTexture.texture) {
+			std::cerr << "Surface texture is null (swapchain out of date or lost). Reinitializing surface and dependent resources..." << std::endl;
+			terminateDepthBuffer();
+			terminateSurface();
+			initSurface();
+			initDepthBuffer();
+			// Optionally: re-create pipeline, bind groups, etc. if needed
+			return; // Skip this frame, try again next frame
+		}
 		TextureView nextTexture = Texture(surfaceTexture.texture).createView();
 #else  // WEBGPU_BACKEND_WGPU
 		TextureView nextTexture = m_swapChain.getCurrentTextureView();
@@ -135,7 +162,7 @@ namespace engine
 
 		CommandEncoderDescriptor commandEncoderDesc;
 		commandEncoderDesc.label = "Command Encoder";
-		CommandEncoder encoder = m_device.createCommandEncoder(commandEncoderDesc);
+		CommandEncoder encoder = m_context->getDevice().createCommandEncoder(commandEncoderDesc);
 
 		RenderPassDescriptor renderPassDesc{};
 
@@ -189,6 +216,17 @@ namespace engine
 		// We add the GUI drawing commands to the render pass
 		updateGui(renderPass);
 
+		// Defensive check before ending render pass
+		assert(renderPass && "RenderPassEncoder is invalid before end()");
+		// Defensive: check that all required resources are valid before ending the pass
+		assert(m_pipeline && "Pipeline is invalid before end()");
+		assert(m_vertexBuffer && "Vertex buffer is invalid before end()");
+		if (m_indexCount > 0) assert(m_indexBuffer && "Index buffer is invalid before end()");
+		assert(m_bindGroup && "Bind group is invalid before end()");
+		assert(m_baseColorTextureView && "Base color texture view is invalid before end()");
+		assert(m_normalTextureView && "Normal texture view is invalid before end()");
+		assert(m_depthTextureView && "Depth texture view is invalid before end()");
+		// End the render pass
 		renderPass.end();
 		renderPass.release();
 
@@ -198,7 +236,7 @@ namespace engine
 		cmdBufferDescriptor.label = "Command buffer";
 		CommandBuffer command = encoder.finish(cmdBufferDescriptor);
 		encoder.release();
-		m_queue.submit(command);
+		m_context->getQueue().submit(command);
 		command.release();
 
 #ifdef WEBGPU_BACKEND_WGPU
@@ -279,7 +317,6 @@ namespace engine
 		terminateBindGroupLayout();
 		terminateDepthBuffer();
 		terminateSurface();
-		terminateWindowAndDevice();
 	}
 
 	bool Application::isRunning()
@@ -298,6 +335,10 @@ namespace engine
 		initDepthBuffer();
 
 		updateProjectionMatrix();
+
+		// Defensive asserts after resize
+		assert(m_context);
+		assert(m_window);
 	}
 
 	void Application::onMouseMove(double xpos, double ypos)
@@ -348,129 +389,10 @@ namespace engine
 	});
 #endif
 
-	bool Application::initWindowAndDevice()
-	{
-#ifdef __EMSCRIPTEN__
-		m_instance = wgpuCreateInstance(nullptr);
-#else
-		m_instance = createInstance(InstanceDescriptor{});
-#endif
-
-		if (!m_instance)
-		{
-			std::cerr << "Could not initialize WebGPU!" << std::endl;
-			return false;
-		}
-
-		if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
-		{
-			std::cerr << "Could not initialize SDL2: " << SDL_GetError() << std::endl;
-			return false;
-		}
-		Uint32 windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
-
-		int width = 640, height = 480;
-		m_window = SDL_CreateWindow("Learn WebGPU",
-									SDL_WINDOWPOS_CENTERED,
-									SDL_WINDOWPOS_CENTERED,
-									width,
-									height,
-									windowFlags);
-#ifdef __EMSCRIPTEN__
-		setCanvasNativeSize(width, height);
-#endif
-
-		if (!m_window)
-		{
-			std::cerr << "Could not open window!" << std::endl;
-			return false;
-		}
-
-		std::cout << "Requesting adapter..." << std::endl;
-		m_surface = SDL_GetWGPUSurface(m_instance, m_window);
-		RequestAdapterOptions adapterOpts{};
-		adapterOpts.compatibleSurface = m_surface;
-		Adapter adapter = m_instance.requestAdapter(adapterOpts);
-		std::cout << "Got adapter: " << adapter << std::endl;
-
-		SupportedLimits supportedLimits;
-#ifdef WEBGPU_BACKEND_WGPU
-		adapter.getLimits(&supportedLimits);
-#else
-		supportedLimits.limits.minStorageBufferOffsetAlignment = 256;
-		supportedLimits.limits.minUniformBufferOffsetAlignment = 256;
-#endif
-
-		std::cout << "Requesting device..." << std::endl;
-		RequiredLimits requiredLimits = Default;
-		requiredLimits.limits.maxVertexAttributes = 6;
-		//                                          ^ This was a 4
-		requiredLimits.limits.maxVertexBuffers = 1;
-		requiredLimits.limits.maxBufferSize = 150000 * sizeof(Vertex);
-		requiredLimits.limits.maxVertexBufferArrayStride = sizeof(Vertex);
-		requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
-		requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
-#ifdef WEBGPU_BACKEND_WGPU
-		requiredLimits.limits.maxInterStageShaderComponents = 17;
-		//                                                    ^^ This was a 11
-#else
-		requiredLimits.limits.maxInterStageShaderComponents = 0xffffffffu; // undefined
-#endif
-		requiredLimits.limits.maxBindGroups = 2;
-		requiredLimits.limits.maxUniformBuffersPerShaderStage = 2;
-		requiredLimits.limits.maxUniformBufferBindingSize = 16 * 4 * sizeof(float);
-		// Allow textures up to 2K
-		requiredLimits.limits.maxTextureDimension1D = 2048;
-		requiredLimits.limits.maxTextureDimension2D = 2048;
-		requiredLimits.limits.maxTextureArrayLayers = 1;
-		requiredLimits.limits.maxSampledTexturesPerShaderStage = 2;
-		//                                                       ^ This was 1
-		requiredLimits.limits.maxSamplersPerShaderStage = 1;
-		requiredLimits.limits.maxBindGroupsPlusVertexBuffers = 2;
-		requiredLimits.limits.maxBindingsPerBindGroup = 5;
-
-		DeviceDescriptor deviceDesc;
-		deviceDesc.label = "My Device";
-		deviceDesc.requiredFeatureCount = 0;
-		deviceDesc.requiredLimits = &requiredLimits;
-		deviceDesc.defaultQueue.label = "The default queue";
-		m_device = adapter.requestDevice(deviceDesc);
-		std::cout << "Got device: " << m_device << std::endl;
-
-		// Add an error callback for more debug info
-		m_errorCallbackHandle = m_device.setUncapturedErrorCallback([](ErrorType type, char const *message)
-																	{
-		 std::cout << "Device error: type " << type;
-		 if (message) std::cout << " (message: " << message << ")";
-		 std::cout << std::endl; });
-
-		m_queue = m_device.getQueue();
-
-#ifdef WEBGPU_BACKEND_WGPU
-		m_swapChainFormat = m_surface.getPreferredFormat(adapter);
-#else
-		m_swapChainFormat = TextureFormat::BGRA8Unorm;
-
-#endif
-
-		adapter.release();
-		return nullptr != m_device;
-	}
-
-	void Application::terminateWindowAndDevice()
-	{
-		m_queue.release();
-		m_device.release();
-		m_surface.release();
-		m_instance.release();
-
-		SDL_DestroyWindow(m_window);
-		SDL_Quit();
-	}
-
 	bool Application::initSurface()
 	{
-		m_surface = SDL_GetWGPUSurface(m_instance, m_window);
+		m_context->terminateSurface();
+		m_surface = m_context->getSurface();
 		// Get the current size of the window's framebuffer:
 		int width, height;
 		SDL_GL_GetDrawableSize(m_window, &width, &height);
@@ -480,33 +402,36 @@ namespace engine
 		config.width = static_cast<uint32_t>(width);
 		config.height = static_cast<uint32_t>(height);
 		config.usage = TextureUsage::RenderAttachment;
-		config.format = m_swapChainFormat;
+		config.format = m_context->getSwapChainFormat();
 		config.presentMode = PresentMode::Fifo;
 		config.alphaMode = CompositeAlphaMode::Auto;
-		config.device = m_device;
+		config.device = m_context->getDevice();
 		m_surface.configure(config);
 #else  // WEBGPU_BACKEND_WGPU
 		SwapChainDescriptor desc;
 		desc.width = static_cast<uint32_t>(width);
 		desc.height = static_cast<uint32_t>(height);
 		desc.usage = TextureUsage::RenderAttachment;
-		desc.format = m_swapChainFormat;
+		desc.format = m_context->getSwapChainFormat();
 		desc.presentMode = PresentMode::Fifo;
-		m_swapChain = wgpuDeviceCreateSwapChain(m_device, m_surface, &desc);
+		m_swapChain = wgpuDeviceCreateSwapChain(m_context->getDevice(), m_surface, &desc);
 #endif // WEBGPU_BACKEND_WGPU
+
+		// Check that surface and swapchain/surface config are valid
+		assert(m_surface);
+		assert(m_context->getSwapChainFormat() != wgpu::TextureFormat::Undefined && "SwapChain format must be defined");
 
 		return true;
 	}
 
 	void Application::terminateSurface()
 	{
-
+		
 #ifndef WEBGPU_BACKEND_WGPU
 		m_swapChain.release();
 		m_surface.release();
 #else
-		m_surface.unconfigure();
-		m_surface.release();
+		m_context->terminateSurface();
 #endif
 	}
 
@@ -526,7 +451,7 @@ namespace engine
 		depthTextureDesc.usage = TextureUsage::RenderAttachment;
 		depthTextureDesc.viewFormatCount = 1;
 		depthTextureDesc.viewFormats = (WGPUTextureFormat *)&m_depthTextureFormat;
-		m_depthTexture = m_device.createTexture(depthTextureDesc);
+		m_depthTexture = m_context->getDevice().createTexture(depthTextureDesc);
 		std::cout << "Depth texture: " << m_depthTexture << std::endl;
 
 		// Create the view of the depth texture manipulated by the rasterizer
@@ -541,6 +466,10 @@ namespace engine
 		m_depthTextureView = m_depthTexture.createView(depthTextureViewDesc);
 		std::cout << "Depth texture view: " << m_depthTextureView << std::endl;
 
+		// Check that created texture and view are valid
+		assert(m_depthTexture);
+		assert(m_depthTextureView);
+
 		return m_depthTextureView != nullptr;
 	}
 
@@ -553,7 +482,13 @@ namespace engine
 
 	bool Application::initRenderPipeline()
 	{
-		m_shaderModule = engine::resources::ResourceManager::loadShaderModule(engine::core::PathProvider::getResource("shader.wgsl"), m_device);
+		// Defensive asserts for resource validity and format consistency
+		assert(m_context);
+		assert(m_context->getDevice());
+		assert(m_context->getSwapChainFormat() != wgpu::TextureFormat::Undefined && "SwapChain format must be defined");
+		assert(m_depthTextureFormat != wgpu::TextureFormat::Undefined && "Depth texture format must be defined");
+
+		m_shaderModule = engine::resources::ResourceManager::loadShaderModule(engine::core::PathProvider::getResource("shader.wgsl"), m_context->getDevice());
 		std::cout << "Shader module: " << m_shaderModule << std::endl;
 
 		std::cout << "Creating render pipeline..." << std::endl;
@@ -632,7 +567,7 @@ namespace engine
 		blendState.alpha.dstFactor = BlendFactor::One;
 
 		ColorTargetState colorTarget;
-		colorTarget.format = m_swapChainFormat;
+		colorTarget.format = m_context->getSwapChainFormat();
 		colorTarget.blend = &blendState;
 		colorTarget.writeMask = ColorWriteMask::All;
 
@@ -664,11 +599,16 @@ namespace engine
 		PipelineLayoutDescriptor layoutDesc{};
 		layoutDesc.bindGroupLayoutCount = 1;
 		layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout *)&m_bindGroupLayout;
-		PipelineLayout layout = m_device.createPipelineLayout(layoutDesc);
+		PipelineLayout layout = m_context->getDevice().createPipelineLayout(layoutDesc);
 		pipelineDesc.layout = layout;
 
-		m_pipeline = m_device.createRenderPipeline(pipelineDesc);
+		m_pipeline = m_context->getDevice().createRenderPipeline(pipelineDesc);
 		std::cout << "Render pipeline: " << m_pipeline << std::endl;
+
+		// Check that color target format matches swapchain format
+		assert(colorTarget.format == m_context->getSwapChainFormat() && "Pipeline color target format must match swapchain format");
+		// Check that depth stencil format matches depth texture format
+		assert(depthStencilState.format == m_depthTextureFormat && "Pipeline depth stencil format must match depth texture format");
 
 		return m_pipeline != nullptr;
 	}
@@ -693,28 +633,36 @@ namespace engine
 		samplerDesc.lodMaxClamp = 8.0f;
 		samplerDesc.compare = CompareFunction::Undefined;
 		samplerDesc.maxAnisotropy = 1;
-		m_sampler = m_device.createSampler(samplerDesc);
+		m_sampler = m_context->getDevice().createSampler(samplerDesc);
 
 		// Create textures
 		// m_baseColorTexture =  m_resourceManager->loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg", m_device, &m_baseColorTextureView);
-		m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_albedo.jpg"), m_webgpuContext, &m_baseColorTextureView);
+		m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_albedo.jpg"), *m_context, &m_baseColorTextureView);
 		// m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fox/Texture.png"), m_device, &m_baseColorTextureView);
 		if (!m_baseColorTexture)
 		{
 			std::cerr << "Could not load base color texture!" << std::endl;
 			return false;
 		}
+		assert(m_baseColorTextureView && "Base color texture view must be valid");
 
 		// m_normalTexture =  m_resourceManager->loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png"), m_device, &m_normalTextureView);
-		m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_normals.png"), m_webgpuContext, &m_normalTextureView);
-		// m_normalTexture = m_resourceManager->createNeutralNormalTexture(m_webgpuContext, &m_normalTextureView);
+		m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_normals.png"), *m_context, &m_normalTextureView);
+		// m_normalTexture = m_resourceManager->createNeutralNormalTexture(m_device, &m_normalTextureView);
 		// m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fox/neutral_normal.png"), m_device, &m_normalTextureView);
 		if (!m_normalTexture)
 		{
 			std::cerr << "Could not load normal texture!" << std::endl;
 			return false;
 		}
+		assert(m_normalTextureView && "Normal texture view must be valid");
 
+		// Defensive asserts for resource/format mismatches
+		assert(m_baseColorTextureView != nullptr && "Base color texture view is null!");
+		assert(m_normalTextureView != nullptr && "Normal texture view is null!");
+		assert(m_baseColorTexture && "Base color texture is invalid!");
+		assert(m_normalTexture && "Normal texture is invalid!");
+		
 		return m_baseColorTextureView != nullptr && m_normalTextureView != nullptr;
 	}
 
@@ -748,8 +696,8 @@ namespace engine
 		bufferDesc.size = mesh.vertices.size() * sizeof(Vertex);
 		bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Vertex;
 		bufferDesc.mappedAtCreation = false;
-		m_vertexBuffer = m_device.createBuffer(bufferDesc);
-		m_queue.writeBuffer(m_vertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
+		m_vertexBuffer = m_context->getDevice().createBuffer(bufferDesc);
+		m_context->getQueue().writeBuffer(m_vertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
 
 		m_vertexCount = static_cast<int32_t>(mesh.vertices.size());
 
@@ -759,8 +707,8 @@ namespace engine
 			indexBufferDesc.size = mesh.indices.size() * sizeof(uint32_t); // Assuming indices are uint32_t
 			indexBufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Index;
 			indexBufferDesc.mappedAtCreation = false;
-			m_indexBuffer = m_device.createBuffer(indexBufferDesc);
-			m_queue.writeBuffer(m_indexBuffer, 0, mesh.indices.data(), indexBufferDesc.size);
+			m_indexBuffer = m_context->getDevice().createBuffer(indexBufferDesc);
+			m_context->getQueue().writeBuffer(m_indexBuffer, 0, mesh.indices.data(), indexBufferDesc.size);
 
 			m_indexCount = static_cast<int32_t>(mesh.indices.size());
 			return m_vertexBuffer != nullptr && m_indexBuffer != nullptr;
@@ -793,7 +741,7 @@ namespace engine
 		bufferDesc.size = sizeof(MyUniforms);
 		bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Uniform;
 		bufferDesc.mappedAtCreation = false;
-		m_uniformBuffer = m_device.createBuffer(bufferDesc);
+		m_uniformBuffer = m_context->getDevice().createBuffer(bufferDesc);
 
 		// Upload the initial value of the uniforms
 		m_uniforms.modelMatrix = mat4x4(1.0);
@@ -801,7 +749,7 @@ namespace engine
 		m_uniforms.projectionMatrix = glm::perspective(45 * PI / 180, 640.0f / 480.0f, 0.01f, 100.0f);
 		m_uniforms.time = 1.0f;
 		m_uniforms.color = {0.0f, 1.0f, 0.4f, 1.0f};
-		m_queue.writeBuffer(m_uniformBuffer, 0, &m_uniforms, sizeof(MyUniforms));
+		m_context->getQueue().writeBuffer(m_uniformBuffer, 0, &m_uniforms, sizeof(MyUniforms));
 
 		updateProjectionMatrix();
 		updateViewMatrix();
@@ -822,7 +770,7 @@ namespace engine
 		bufferDesc.size = sizeof(LightingUniforms);
 		bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Uniform;
 		bufferDesc.mappedAtCreation = false;
-		m_lightingUniformBuffer = m_device.createBuffer(bufferDesc);
+		m_lightingUniformBuffer = m_context->getDevice().createBuffer(bufferDesc);
 
 		// Initial values
 		m_lightingUniforms.directions[0] = {0.5f, -0.9f, 0.1f, 0.0f};
@@ -845,7 +793,7 @@ namespace engine
 	{
 		if (m_lightingUniformsChanged)
 		{
-			m_queue.writeBuffer(m_lightingUniformBuffer, 0, &m_lightingUniforms, sizeof(LightingUniforms));
+			m_context->getQueue().writeBuffer(m_lightingUniformBuffer, 0, &m_lightingUniforms, sizeof(LightingUniforms));
 			m_lightingUniformsChanged = false;
 		}
 	}
@@ -895,7 +843,7 @@ namespace engine
 		BindGroupLayoutDescriptor bindGroupLayoutDesc{};
 		bindGroupLayoutDesc.entryCount = (uint32_t)bindingLayoutEntries.size();
 		bindGroupLayoutDesc.entries = bindingLayoutEntries.data();
-		m_bindGroupLayout = m_device.createBindGroupLayout(bindGroupLayoutDesc);
+		m_bindGroupLayout = m_context->getDevice().createBindGroupLayout(bindGroupLayoutDesc);
 
 		return m_bindGroupLayout != nullptr;
 	}
@@ -939,7 +887,14 @@ namespace engine
 		bindGroupDesc.layout = m_bindGroupLayout;
 		bindGroupDesc.entryCount = (uint32_t)bindings.size();
 		bindGroupDesc.entries = bindings.data();
-		m_bindGroup = m_device.createBindGroup(bindGroupDesc);
+		m_bindGroup = m_context->getDevice().createBindGroup(bindGroupDesc);
+
+		// Defensive asserts for bind group resource validity
+		assert(m_uniformBuffer);
+		assert(m_baseColorTextureView);
+		assert(m_normalTextureView);
+		assert(m_sampler);
+		assert(m_lightingUniformBuffer);
 
 		return m_bindGroup != nullptr;
 	}
@@ -956,7 +911,7 @@ namespace engine
 		SDL_GL_GetDrawableSize(m_window, &width, &height);
 		float ratio = width / (float)height;
 		m_uniforms.projectionMatrix = glm::perspective(45 * PI / 180, ratio, 0.01f, 100.0f);
-		m_queue.writeBuffer(
+		m_context->getQueue().writeBuffer(
 			m_uniformBuffer,
 			offsetof(MyUniforms, projectionMatrix),
 			&m_uniforms.projectionMatrix,
@@ -971,7 +926,7 @@ namespace engine
 		float sy = sin(m_cameraState.angles.y);
 		vec3 position = vec3(cx * cy, sx * cy, sy) * std::exp(-m_cameraState.zoom);
 		m_uniforms.viewMatrix = glm::lookAt(position, vec3(0.0f), vec3(0, 0, 1));
-		m_queue.writeBuffer(
+		m_context->getQueue().writeBuffer(
 			m_uniformBuffer,
 			offsetof(MyUniforms, viewMatrix),
 			&m_uniforms.viewMatrix,
@@ -1014,7 +969,7 @@ namespace engine
 		init_info.RenderTargetFormat = m_swapChainFormat;
 		ImGui_ImplWGPU_Init(&init_info);
 		*/
-		ImGui_ImplWGPU_Init(m_device, 3, m_swapChainFormat, m_depthTextureFormat);
+		ImGui_ImplWGPU_Init(m_context->getDevice(), 3, m_swapChainFormat, m_depthTextureFormat);
 		return true;
 	}
 
