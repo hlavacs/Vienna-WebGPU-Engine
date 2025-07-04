@@ -1,30 +1,23 @@
 #pragma once
-/**
- * @file WebGPUContext.h
- * @brief Singleton for WebGPU device, queue, swapchain format, and GPU utilities.
- */
 
 #include <webgpu/webgpu.hpp>
+#include <memory>
+#include <vector>
+
+// Include all factory headers
+#include "engine/rendering/webgpu/WebGPUBufferFactory.h"
+#include "engine/rendering/webgpu/WebGPUMeshFactory.h"
+#include "engine/rendering/webgpu/WebGPUTextureFactory.h"
+#include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
+#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
+#include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
+// #include "engine/rendering/webgpu/WebGPUSwapChainFactory.h"
+#include "engine/rendering/webgpu/WebGPUModelFactory.h"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <sdl2webgpu.h>
-
-#include <memory>
-#include <vector>
-
-#include "engine/rendering/webgpu/WebGPUTextureFactory.h"
-#include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
-#include "engine/rendering/webgpu/WebGPUMeshFactory.h"
-#include "engine/rendering/webgpu/WebGPUModelFactory.h"
-
-namespace engine::rendering::webgpu
-{
-	// Forward declarations for factories
-	class WebGPUMeshFactory;
-	class WebGPUTextureFactory;
-	class WebGPUMaterialFactory;
-}
 
 namespace engine::rendering::webgpu
 {
@@ -36,10 +29,10 @@ namespace engine::rendering::webgpu
 	{
 	public:
 		explicit WebGPUContext();
-		WebGPUContext(const WebGPUContext&) = delete; // Remove copy constructor
-		WebGPUContext& operator=(const WebGPUContext&) = delete; // Remove copy assignment
-		WebGPUContext(WebGPUContext&&) noexcept = default; // Add move constructor
-		WebGPUContext& operator=(WebGPUContext&&) noexcept = default; // Add move assignment
+		WebGPUContext(const WebGPUContext &) = delete;				   // Remove copy constructor
+		WebGPUContext &operator=(const WebGPUContext &) = delete;	   // Remove copy assignment
+		WebGPUContext(WebGPUContext &&) noexcept = default;			   // Add move constructor
+		WebGPUContext &operator=(WebGPUContext &&) noexcept = default; // Add move assignment
 		/**
 		 * @brief Initialize the WebGPU context. Must be called once at startup.
 		 * @param windowHandle Platform-specific window handle (e.g., SDL_Window*)
@@ -94,12 +87,18 @@ namespace engine::rendering::webgpu
 		WebGPUMeshFactory &meshFactory();
 		WebGPUTextureFactory &textureFactory();
 		WebGPUMaterialFactory &materialFactory();
+		WebGPUPipelineFactory &pipelineFactory();
+		WebGPUSamplerFactory &samplerFactory();
+		WebGPUBufferFactory &bufferFactory();
+		WebGPUBindGroupFactory &bindGroupFactory();
+		// WebGPUSwapChainFactory &swapChainFactory();
+		WebGPUModelFactory &modelFactory();
 
 	private:
 		void initDevice();
-		void initSurface(void* windowHandle);
+		void initSurface(void *windowHandle);
 
-		void* m_lastWindowHandle = nullptr;
+		void *m_lastWindowHandle = nullptr;
 		wgpu::Instance m_instance = nullptr;
 		wgpu::Surface m_surface = nullptr;
 		wgpu::Adapter m_adapter = nullptr;
@@ -108,9 +107,16 @@ namespace engine::rendering::webgpu
 		wgpu::TextureFormat m_swapChainFormat = wgpu::TextureFormat::Undefined;
 		wgpu::Sampler m_defaultSampler = nullptr;
 
+		// Factory members
 		std::unique_ptr<WebGPUMeshFactory> m_meshFactory;
 		std::unique_ptr<WebGPUTextureFactory> m_textureFactory;
 		std::unique_ptr<WebGPUMaterialFactory> m_materialFactory;
+		std::unique_ptr<WebGPUPipelineFactory> m_pipelineFactory;
+		std::unique_ptr<WebGPUSamplerFactory> m_samplerFactory;
+		std::unique_ptr<WebGPUBufferFactory> m_bufferFactory;
+		std::unique_ptr<WebGPUBindGroupFactory> m_bindGroupFactory;
+		// std::unique_ptr<WebGPUSwapChainFactory> m_swapChainFactory;
+		std::unique_ptr<WebGPUModelFactory> m_modelFactory;
 	};
 
 } // namespace engine::rendering::webgpu

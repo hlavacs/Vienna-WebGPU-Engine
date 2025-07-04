@@ -41,10 +41,10 @@ struct LightingUniforms {
 }
 
 @group(0) @binding(0) var<uniform> uMyUniforms: MyUniforms;
-@group(0) @binding(1) var baseColorTexture: texture_2d<f32>;
-@group(0) @binding(2) var normalTexture: texture_2d<f32>;
-@group(0) @binding(3) var textureSampler: sampler;
-@group(0) @binding(4) var<uniform> uLighting: LightingUniforms;
+@group(1) @binding(0) var baseColorTexture: texture_2d<f32>;
+@group(1) @binding(1) var normalTexture: texture_2d<f32>;
+@group(1) @binding(2) var textureSampler: sampler;
+@group(2) @binding(0) var<uniform> uLighting: LightingUniforms;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {

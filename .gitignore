@@ -28,3 +28,6 @@ conanfile.pyc
 *.conan
 CMakeUserPresets.json
 /local
+
+# private folders
+private

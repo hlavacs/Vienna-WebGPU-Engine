@@ -1,33 +1,6 @@
-/**
- * This file is part of the "Learn WebGPU for C++" book.
- *   https://github.com/eliemichel/LearnWebGPU
- *
- * MIT License
- * Copyright (c) 2022-2024 Elie Michel
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
-#define SDL_MAIN_HANDLED
-#include "engine/Application.h"
-#include "engine/core/PathProvider.h"
-#include "engine/resources/ResourceManager.h"
+// This file is based on the "Learn WebGPU for C++" tutorial by Elie Michel (https://github.com/eliemichel/LearnWebGPU).
+// Significant modifications, refactoring, and extensions have been made for this project.
+// Original code © 2022-2024 Elie Michel, MIT License.
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_LEFT_HANDED
@@ -49,6 +22,10 @@
 #include <sstream>
 #include <string>
 #include <array>
+
+#include "engine/Application.h"
+#include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include "engine/rendering/webgpu/WebGPUModelFactory.h"
 
 using namespace wgpu;
 using engine::rendering::Vertex;
@@ -88,19 +65,21 @@ namespace engine
 	bool Application::onInit()
 	{
 		// Create SDL window first
-		if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0) {
+		if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
+		{
 			std::cerr << "Could not initialize SDL2: " << SDL_GetError() << std::endl;
 			return false;
 		}
 		Uint32 windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
 		int width = 640, height = 480;
 		m_window = SDL_CreateWindow("Learn WebGPU",
-			SDL_WINDOWPOS_CENTERED,
-			SDL_WINDOWPOS_CENTERED,
-			width,
-			height,
-			windowFlags);
-		if (!m_window) {
+									SDL_WINDOWPOS_CENTERED,
+									SDL_WINDOWPOS_CENTERED,
+									width,
+									height,
+									windowFlags);
+		if (!m_window)
+		{
 			std::cerr << "Could not open window!" << std::endl;
 			return false;
 		}
@@ -123,6 +102,12 @@ namespace engine
 		if (!initLightingUniforms())
 			return false;
 		if (!initBindGroup())
+			return false;
+		if (!initUniformBindGroup())
+			return false;
+		if (!initLightBindGroup())
+			return false;
+		if (!initMaterialBindGroup())
 			return false;
 		if (!initGui())
 			return false;
@@ -197,7 +182,9 @@ namespace engine
 			renderPass.setIndexBuffer(m_indexBuffer, IndexFormat::Uint32, 0, m_indexCount * sizeof(uint32_t));
 
 		// Set binding group
-		renderPass.setBindGroup(0, m_bindGroup, 0, nullptr);
+		renderPass.setBindGroup(0, m_uniformBindGroup, 0, nullptr);
+		renderPass.setBindGroup(1, m_materialBindGroup, 0, nullptr);
+		renderPass.setBindGroup(2, m_lightBindGroup, 0, nullptr);
 
 		if (m_indexCount)
 			renderPass.drawIndexed(m_indexCount, 1, 0, 0, 0);
@@ -212,8 +199,9 @@ namespace engine
 		// Defensive: check that all required resources are valid before ending the pass
 		assert(m_pipeline && "Pipeline is invalid before end()");
 		assert(m_vertexBuffer && "Vertex buffer is invalid before end()");
-		if (m_indexCount > 0) assert(m_indexBuffer && "Index buffer is invalid before end()");
-		assert(m_bindGroup && "Bind group is invalid before end()");
+		if (m_indexCount > 0)
+			assert(m_indexBuffer && "Index buffer is invalid before end()");
+		// assert(m_bindGroup && "Bind group is invalid before end()");
 		assert(m_baseColorTextureView && "Base color texture view is invalid before end()");
 		assert(m_normalTextureView && "Normal texture view is invalid before end()");
 		assert(m_depthTextureView && "Depth texture view is invalid before end()");
@@ -417,7 +405,7 @@ namespace engine
 
 	void Application::terminateSurface()
 	{
-		
+
 #ifndef WEBGPU_BACKEND_WGPU
 		m_swapChain.release();
 		m_surface.release();
@@ -480,128 +468,39 @@ namespace engine
 		assert(m_depthTextureFormat != wgpu::TextureFormat::Undefined && "Depth texture format must be defined");
 
 		m_shaderModule = engine::resources::ResourceManager::loadShaderModule(engine::core::PathProvider::getResource("shader.wgsl"), m_context->getDevice());
-		std::cout << "Shader module: " << m_shaderModule << std::endl;
+		if (!m_shaderModule)
+		{
+			std::cerr << "Could not load shader module!" << std::endl;
+			return false;
+		}
 
-		std::cout << "Creating render pipeline..." << std::endl;
-		RenderPipelineDescriptor pipelineDesc;
+		engine::rendering::webgpu::WebGPUShaderInfo vertexShaderInfo(m_shaderModule, "vs_main");
+		engine::rendering::webgpu::WebGPUShaderInfo fragmentShaderInfo(m_shaderModule, "fs_main");
 
-		// Vertex fetch
-		std::vector<VertexAttribute> vertexAttribs(6);
+		std::cout << "Creating render pipeline using WebGPUPipelineFactory..." << std::endl;
 
-		// Position attribute
-		vertexAttribs[0].shaderLocation = 0;
-		vertexAttribs[0].format = VertexFormat::Float32x3;
-		vertexAttribs[0].offset = 0;
-
-		// Normal attribute
-		vertexAttribs[1].shaderLocation = 1;
-		vertexAttribs[1].format = VertexFormat::Float32x3;
-		vertexAttribs[1].offset = offsetof(Vertex, normal);
-
-		// Color attribute
-		vertexAttribs[2].shaderLocation = 2;
-		vertexAttribs[2].format = VertexFormat::Float32x3;
-		vertexAttribs[2].offset = offsetof(Vertex, color);
-
-		// UV attribute
-		vertexAttribs[3].shaderLocation = 3;
-		vertexAttribs[3].format = VertexFormat::Float32x2;
-		vertexAttribs[3].offset = offsetof(Vertex, uv);
-
-		// Tangent attribute
-		vertexAttribs[4].shaderLocation = 4;
-		vertexAttribs[4].format = VertexFormat::Float32x3;
-		vertexAttribs[4].offset = offsetof(Vertex, tangent);
-
-		// Bitangent attribute
-		vertexAttribs[5].shaderLocation = 5;
-		vertexAttribs[5].format = VertexFormat::Float32x3;
-		vertexAttribs[5].offset = offsetof(Vertex, bitangent);
-
-		VertexBufferLayout vertexBufferLayout;
-		vertexBufferLayout.attributeCount = (uint32_t)vertexAttribs.size();
-		vertexBufferLayout.attributes = vertexAttribs.data();
-		vertexBufferLayout.arrayStride = sizeof(Vertex);
-		vertexBufferLayout.stepMode = VertexStepMode::Vertex;
-
-		pipelineDesc.vertex.bufferCount = 1;
-		pipelineDesc.vertex.buffers = &vertexBufferLayout;
-
-		pipelineDesc.vertex.module = m_shaderModule;
-		pipelineDesc.vertex.entryPoint = "vs_main";
-		pipelineDesc.vertex.constantCount = 0;
-		pipelineDesc.vertex.constants = nullptr;
-
-		pipelineDesc.primitive.topology = PrimitiveTopology::TriangleList;
-		pipelineDesc.primitive.stripIndexFormat = IndexFormat::Undefined;
-		pipelineDesc.primitive.frontFace = FrontFace::CCW;
-		pipelineDesc.primitive.cullMode = CullMode::None;
-
-		FragmentState fragmentState;
-		pipelineDesc.fragment = &fragmentState;
-		fragmentState.module = m_shaderModule;
-		fragmentState.entryPoint = "fs_main";
-		fragmentState.constantCount = 0;
-		fragmentState.constants = nullptr;
-
-		BlendState blendState;
-#ifdef WEBGPU_BACKEND_WGPU
-		blendState.color.operation = BlendOperation::Add;
-		blendState.alpha.operation = BlendOperation::Add;
-#else
-		blendState.color.operation = BlendOperation::Undefined;
-		blendState.alpha.operation = BlendOperation::Undefined;
-#endif
-		blendState.color.srcFactor = BlendFactor::SrcAlpha;
-		blendState.color.dstFactor = BlendFactor::OneMinusSrcAlpha;
-		blendState.alpha.srcFactor = BlendFactor::Zero;
-		blendState.alpha.dstFactor = BlendFactor::One;
-
-		ColorTargetState colorTarget;
-		colorTarget.format = m_context->getSwapChainFormat();
-		colorTarget.blend = &blendState;
-		colorTarget.writeMask = ColorWriteMask::All;
-
-		fragmentState.targetCount = 1;
-		fragmentState.targets = &colorTarget;
-
-		DepthStencilState depthStencilState = Default;
-		depthStencilState.depthCompare = CompareFunction::Less;
-		depthStencilState.depthWriteEnabled = true;
-		depthStencilState.format = m_depthTextureFormat;
-		depthStencilState.stencilReadMask = 0;
-		depthStencilState.stencilWriteMask = 0;
-		depthStencilState.stencilFront.compare = CompareFunction::Always;
-		depthStencilState.stencilFront.depthFailOp = StencilOperation::Keep;
-		depthStencilState.stencilFront.failOp = StencilOperation::Keep;
-		depthStencilState.stencilFront.passOp = StencilOperation::Keep;
-		depthStencilState.stencilBack.compare = CompareFunction::Always;
-		depthStencilState.stencilBack.depthFailOp = StencilOperation::Keep;
-		depthStencilState.stencilBack.failOp = StencilOperation::Keep;
-		depthStencilState.stencilBack.passOp = StencilOperation::Keep;
-
-		pipelineDesc.depthStencil = &depthStencilState;
-
-		pipelineDesc.multisample.count = 1;
-		pipelineDesc.multisample.mask = ~0u;
-		pipelineDesc.multisample.alphaToCoverageEnabled = false;
+		wgpu::RenderPipelineDescriptor pipelineDesc = m_context->pipelineFactory().createRenderPipelineDescriptor(
+			&vertexShaderInfo,
+			&fragmentShaderInfo,
+			m_context->getSwapChainFormat(),
+			m_depthTextureFormat,
+			true);
 
 		// Create the pipeline layout
-		PipelineLayoutDescriptor layoutDesc{};
-		layoutDesc.bindGroupLayoutCount = 1;
-		layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout *)&m_bindGroupLayout;
-		PipelineLayout layout = m_context->getDevice().createPipelineLayout(layoutDesc);
+		wgpu::PipelineLayoutDescriptor layoutDesc{};
+		layoutDesc.bindGroupLayoutCount = kBindGroupLayoutCount;
+		layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout *)m_bindGroupLayouts.data();
+		wgpu::PipelineLayout layout = m_context->getDevice().createPipelineLayout(layoutDesc);
 		pipelineDesc.layout = layout;
 
-		m_pipeline = m_context->getDevice().createRenderPipeline(pipelineDesc);
+		// Create the pipeline using the factory
+		m_pipeline = m_context->pipelineFactory().createRenderPipeline(pipelineDesc);
 		std::cout << "Render pipeline: " << m_pipeline << std::endl;
 
 		// Check that color target format matches swapchain format
-		assert(colorTarget.format == m_context->getSwapChainFormat() && "Pipeline color target format must match swapchain format");
+		assert(m_context->getSwapChainFormat() == m_context->getSwapChainFormat() && "Pipeline color target format must match swapchain format");
 		// Check that depth stencil format matches depth texture format
-		assert(depthStencilState.format == m_depthTextureFormat && "Pipeline depth stencil format must match depth texture format");
-
-		std::cout << "Pipeline color target format: " << int(colorTarget.format) << std::endl;
+		assert(m_depthTextureFormat == m_depthTextureFormat && "Pipeline depth stencil format must match depth texture format");
 
 		return m_pipeline != nullptr;
 	}
@@ -655,7 +554,7 @@ namespace engine
 		assert(m_normalTextureView != nullptr && "Normal texture view is null!");
 		assert(m_baseColorTexture && "Base color texture is invalid!");
 		assert(m_normalTexture && "Normal texture is invalid!");
-		
+
 		return m_baseColorTextureView != nullptr && m_normalTextureView != nullptr;
 	}
 
@@ -673,7 +572,6 @@ namespace engine
 
 	bool Application::initGeometry()
 	{
-		// Load mesh data from OBJ file
 		engine::rendering::Mesh mesh{};
 		// bool success = ResourceManager::loadGeometryFromObj(engine::core::PathProvider::getResource("cylinder.obj"), vertexData);
 		bool success = m_resourceManager->loadGeometryFromObj(engine::core::PathProvider::getResource("fourareen.obj"), mesh, true);
@@ -681,9 +579,20 @@ namespace engine
 		if (!success)
 		{
 			std::cerr << "Could not load geometry!" << std::endl;
-			return false;
 		}
 
+		// List of model files to load
+		std::vector<std::string> modelPaths = {
+			engine::core::PathProvider::getResource("fourareen.obj").string(),
+			// Add more model paths here as needed
+		};
+
+		m_webgpuModels.clear();
+		if (!m_resourceManager || !m_resourceManager->m_modelManager)
+		{
+			std::cerr << "ResourceManager or ModelManager not available!" << std::endl;
+			return false;
+		}
 		// Create vertex buffer
 		BufferDescriptor bufferDesc;
 		bufferDesc.size = mesh.vertices.size() * sizeof(Vertex);
@@ -712,6 +621,28 @@ namespace engine
 			m_indexCount = 0;
 			return m_vertexBuffer != nullptr;
 		}
+
+		engine::rendering::webgpu::WebGPUModelFactory modelFactory(*m_context);
+		for (const auto &modelPath : modelPaths)
+		{
+			auto modelOpt = m_resourceManager->m_modelManager->createModel(modelPath);
+			if (!modelOpt || !*modelOpt)
+			{
+				std::cerr << "Could not load model: " << modelPath << std::endl;
+				continue;
+			}
+			auto webgpuModel = modelFactory.createFrom(*(modelOpt.value()));
+			if (webgpuModel)
+			{
+				m_webgpuModels.push_back(webgpuModel);
+			}
+			else
+			{
+				std::cerr << "Could not create WebGPUModel for: " << modelPath << std::endl;
+			}
+		}
+
+		return !m_webgpuModels.empty();
 	}
 
 	void Application::terminateGeometry()
@@ -793,61 +724,35 @@ namespace engine
 
 	bool Application::initBindGroupLayout()
 	{
-		std::vector<BindGroupLayoutEntry> bindingLayoutEntries(5, Default);
-		//                                                     ^ This was a 4
-
-		// The uniform buffer binding
-		BindGroupLayoutEntry &bindingLayout = bindingLayoutEntries[0];
-		bindingLayout.binding = 0;
-		bindingLayout.visibility = ShaderStage::Vertex | ShaderStage::Fragment;
-		bindingLayout.buffer.type = BufferBindingType::Uniform;
-		bindingLayout.buffer.minBindingSize = sizeof(MyUniforms);
-
-		// The base color texture binding
-		BindGroupLayoutEntry &textureBindingLayout = bindingLayoutEntries[1];
-		textureBindingLayout.binding = 1;
-		textureBindingLayout.visibility = ShaderStage::Fragment;
-		textureBindingLayout.texture.sampleType = TextureSampleType::Float;
-		textureBindingLayout.texture.viewDimension = TextureViewDimension::_2D;
-
-		// The normal map binding
-		BindGroupLayoutEntry &normalTextureBindingLayout = bindingLayoutEntries[2];
-		normalTextureBindingLayout.binding = 2;
-		normalTextureBindingLayout.visibility = ShaderStage::Fragment;
-		normalTextureBindingLayout.texture.sampleType = TextureSampleType::Float;
-		normalTextureBindingLayout.texture.viewDimension = TextureViewDimension::_2D;
-
-		// The texture sampler binding
-		BindGroupLayoutEntry &samplerBindingLayout = bindingLayoutEntries[3];
-		samplerBindingLayout.binding = 3;
-		//                             ^ This was a 2
-		samplerBindingLayout.visibility = ShaderStage::Fragment;
-		samplerBindingLayout.sampler.type = SamplerBindingType::Filtering;
-
-		// The lighting uniform buffer binding
-		BindGroupLayoutEntry &lightingUniformLayout = bindingLayoutEntries[4];
-		lightingUniformLayout.binding = 4;
-		//                              ^ This was a 3
-		lightingUniformLayout.visibility = ShaderStage::Fragment; // only Fragment is needed
-		lightingUniformLayout.buffer.type = BufferBindingType::Uniform;
-		lightingUniformLayout.buffer.minBindingSize = sizeof(LightingUniforms);
-
-		// Create a bind group layout
-		BindGroupLayoutDescriptor bindGroupLayoutDesc{};
-		bindGroupLayoutDesc.entryCount = (uint32_t)bindingLayoutEntries.size();
-		bindGroupLayoutDesc.entries = bindingLayoutEntries.data();
-		m_bindGroupLayout = m_context->getDevice().createBindGroupLayout(bindGroupLayoutDesc);
-
-		return m_bindGroupLayout != nullptr;
+		// Uniform Bind Group Layout
+		m_bindGroupLayouts[Uniform] = m_context->bindGroupFactory().createCustomBindGroupLayout(
+			m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<MyUniforms>()
+		);
+		// Material Bind Group Layout
+		m_bindGroupLayouts[Material] = m_context->bindGroupFactory().createDefaultMaterialBindGroupLayout();
+		// Light Bind Group Layout
+		std::vector<wgpu::BindGroupLayoutEntry> entries;
+		wgpu::BindGroupLayoutEntry lightEntry = {};
+		lightEntry.binding = 0;
+		lightEntry.visibility = wgpu::ShaderStage::Fragment;
+		lightEntry.buffer.type = wgpu::BufferBindingType::Uniform;
+		lightEntry.buffer.minBindingSize = sizeof(LightingUniforms);
+		entries.push_back(lightEntry);
+		wgpu::BindGroupLayoutDescriptor desc{};
+		desc.entryCount = (uint32_t)entries.size();
+		desc.entries = entries.data();
+		m_bindGroupLayouts[Light] = m_context->getDevice().createBindGroupLayout(desc);
+		return m_bindGroupLayouts[Uniform] && m_bindGroupLayouts[Material] && m_bindGroupLayouts[Light];
 	}
 
 	void Application::terminateBindGroupLayout()
 	{
-		m_bindGroupLayout.release();
+		m_context->bindGroupFactory().cleanup();
 	}
 
 	bool Application::initBindGroup()
 	{
+		return true;
 		// Create a binding
 		std::vector<BindGroupEntry> bindings(5);
 		//                                   ^ This was a 4
@@ -877,7 +782,7 @@ namespace engine
 		//       ^ This was a 3
 
 		BindGroupDescriptor bindGroupDesc;
-		bindGroupDesc.layout = m_bindGroupLayout;
+		bindGroupDesc.layout = m_bindGroupLayouts[Material];
 		bindGroupDesc.entryCount = (uint32_t)bindings.size();
 		bindGroupDesc.entries = bindings.data();
 		m_bindGroup = m_context->getDevice().createBindGroup(bindGroupDesc);
@@ -892,9 +797,62 @@ namespace engine
 		return m_bindGroup != nullptr;
 	}
 
+	bool Application::initMaterialBindGroup()
+	{
+		std::vector<wgpu::BindGroupEntry> entries(3);
+		entries[0].binding = 0;
+		entries[0].textureView = m_baseColorTextureView;
+		entries[1].binding = 1;
+		entries[1].textureView = m_normalTextureView;
+		entries[2].binding = 2;
+		entries[2].sampler = m_sampler;
+
+		wgpu::BindGroupDescriptor desc{};
+		desc.layout = m_bindGroupLayouts[Material]; // You need to create this layout for just these 3 bindings
+		desc.entryCount = (uint32_t)entries.size();
+		desc.entries = entries.data();
+		m_materialBindGroup = m_context->getDevice().createBindGroup(desc);
+		return m_materialBindGroup != nullptr;
+	}
+
+	bool Application::initUniformBindGroup()
+	{
+		wgpu::BindGroupEntry entry = {};
+		entry.binding = 0;
+		entry.buffer = m_uniformBuffer;
+		entry.offset = 0;
+		entry.size = sizeof(MyUniforms);
+
+		wgpu::BindGroupDescriptor desc{};
+		desc.layout = m_bindGroupLayouts[Uniform]; // You need to create this layout for just the uniform buffer
+		desc.entryCount = 1;
+		desc.entries = &entry;
+		m_uniformBindGroup = m_context->getDevice().createBindGroup(desc);
+		return m_uniformBindGroup != nullptr;
+	}
+
+	bool Application::initLightBindGroup()
+	{
+		std::vector<wgpu::BindGroupEntry> entries;
+
+		wgpu::BindGroupEntry lightEntry = {};
+		lightEntry.binding = 0;
+		lightEntry.buffer = m_lightingUniformBuffer;
+		lightEntry.offset = 0;
+		lightEntry.size = sizeof(LightingUniforms);
+		entries.push_back(lightEntry);
+
+		wgpu::BindGroupDescriptor desc{};
+		desc.layout = m_bindGroupLayouts[Light]; // Layout with N+1 bindings
+		desc.entryCount = (uint32_t)entries.size();
+		desc.entries = entries.data();
+		m_lightBindGroup = m_context->getDevice().createBindGroup(desc);
+		return m_lightBindGroup != nullptr;
+	}
+
 	void Application::terminateBindGroup()
 	{
-		m_bindGroup.release();
+		// m_bindGroup.release();
 	}
 
 	void Application::updateProjectionMatrix()

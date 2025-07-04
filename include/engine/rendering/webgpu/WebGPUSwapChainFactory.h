@@ -1,17 +1,20 @@
 #pragma once
 
-#include "engine/rendering/webgpu/WebGPUContext.h"
 #include <webgpu/webgpu.hpp>
 
-namespace engine::rendering::webgpu {
-class WebGPUSwapChainFactory {
-public:
-    explicit WebGPUSwapChainFactory(WebGPUContext& context);
-	#ifdef __EMSCRIPTEN__
-    wgpu::SwapChain createSwapChain(wgpu::Surface surface, const wgpu::SwapChainDescriptor& desc);
-	#endif
+namespace engine::rendering::webgpu
+{
+	class WebGPUContext;
 
-private:
-    WebGPUContext& m_context;
-};
+	class WebGPUSwapChainFactory
+	{
+	public:
+		explicit WebGPUSwapChainFactory(WebGPUContext &context);
+#ifdef __EMSCRIPTEN__
+		wgpu::SwapChain createSwapChain(wgpu::Surface surface, const wgpu::SwapChainDescriptor &desc);
+#endif
+
+	private:
+		WebGPUContext &m_context;
+	};
 } // namespace engine::rendering::webgpu

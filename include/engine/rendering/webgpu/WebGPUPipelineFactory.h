@@ -1,10 +1,10 @@
 #pragma once
-#include "engine/rendering/webgpu/WebGPUContext.h"
+
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
-#include <webgpu/webgpu.hpp>
 
 namespace engine::rendering::webgpu
 {
+	class WebGPUContext;
 
 	class WebGPUPipelineFactory
 	{
@@ -13,7 +13,7 @@ namespace engine::rendering::webgpu
 
 		wgpu::RenderPipeline createRenderPipeline(const wgpu::RenderPipelineDescriptor &descriptor);
 
-		// Create pipeline descriptor 
+		// Create pipeline descriptor
 		wgpu::RenderPipelineDescriptor createRenderPipelineDescriptor(
 			const wgpu::VertexBufferLayout *vertexBuffers = nullptr,
 			uint32_t vertexBufferCount = 1,

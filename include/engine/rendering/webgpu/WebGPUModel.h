@@ -1,8 +1,5 @@
 #pragma once
-/**
- * @file WebGPUModel.h
- * @brief GPU-side model: holds references to WebGPUMesh and WebGPUMaterial.
- */
+
 #include <memory>
 #include "engine/rendering/webgpu/WebGPUMesh.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"

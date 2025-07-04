@@ -1,5 +1,9 @@
 #include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
+
 #include <webgpu/webgpu.hpp>
+
+#include "engine/rendering/webgpu/WebGPUContext.h"
+
 
 namespace engine::rendering::webgpu
 {

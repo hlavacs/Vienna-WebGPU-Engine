@@ -8,6 +8,7 @@
 
 namespace engine::rendering::webgpu
 {
+	
 
 	/**
 	 * @class WebGPUTexture

@@ -1,7 +1,9 @@
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
+
+#include "engine/rendering/Model.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUMeshFactory.h"
 #include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
-#include "engine/rendering/Model.h"
 
 namespace engine::rendering::webgpu {
 

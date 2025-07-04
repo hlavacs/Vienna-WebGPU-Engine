@@ -1,7 +1,9 @@
 #include "engine/rendering/webgpu/WebGPUContext.h"
-#include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
+
 #include <iostream>
 #include <cassert>
+
+#include "engine/rendering/Vertex.h"
 
 namespace engine::rendering::webgpu
 {
@@ -10,6 +12,16 @@ namespace engine::rendering::webgpu
 
 	void WebGPUContext::initialize(void *windowHandle)
 	{
+		m_bufferFactory = std::make_unique<WebGPUBufferFactory>(*this);
+		m_meshFactory = std::make_unique<WebGPUMeshFactory>(*this);
+		m_textureFactory = std::make_unique<WebGPUTextureFactory>(*this);
+		m_materialFactory = std::make_unique<WebGPUMaterialFactory>(*this);
+		m_pipelineFactory = std::make_unique<WebGPUPipelineFactory>(*this);
+		m_samplerFactory = std::make_unique<WebGPUSamplerFactory>(*this);
+		m_bindGroupFactory = std::make_unique<WebGPUBindGroupFactory>(*this);
+		// m_swapChainFactory = std::make_unique<WebGPUSwapChainFactory>(*this);
+		m_modelFactory = std::make_unique<WebGPUModelFactory>(*this);
+		
 		m_lastWindowHandle = windowHandle;
 #ifdef __EMSCRIPTEN__
 		m_instance = wgpu::wgpuCreateInstance(nullptr);
@@ -19,9 +31,6 @@ namespace engine::rendering::webgpu
 		assert(m_instance);
 		initSurface(windowHandle);
 		initDevice();
-		m_meshFactory = std::make_unique<WebGPUMeshFactory>(*this);
-		m_textureFactory = std::make_unique<WebGPUTextureFactory>(*this);
-		m_materialFactory = std::make_unique<WebGPUMaterialFactory>(*this);
 	}
 
 	void WebGPUContext::initSurface(void *windowHandle)
@@ -85,7 +94,7 @@ namespace engine::rendering::webgpu
 #else
 		requiredLimits.limits.maxInterStageShaderComponents = 0xffffffffu; // undefined
 #endif
-		requiredLimits.limits.maxBindGroups = 2;
+		requiredLimits.limits.maxBindGroups = 4;
 		requiredLimits.limits.maxUniformBuffersPerShaderStage = 2;
 		requiredLimits.limits.maxUniformBufferBindingSize = 16 * 4 * sizeof(float);
 		requiredLimits.limits.maxTextureDimension1D = 2048;
@@ -131,10 +140,7 @@ namespace engine::rendering::webgpu
 		m_adapter.release(); // Release adapter after device creation
 
 		// --------------- Create default sampler ---------------
-		WebGPUSamplerFactory samplerFactory(*this);
-		wgpu::SamplerDescriptor samplerDesc{};
-		samplerDesc.label = "Default Sampler";
-		m_defaultSampler = samplerFactory.createDefaultSampler();
+		m_defaultSampler = samplerFactory().createDefaultSampler();
 		assert(m_defaultSampler);
 	}
 
@@ -146,6 +152,7 @@ namespace engine::rendering::webgpu
 		}
 		return *m_meshFactory;
 	}
+
 	WebGPUTextureFactory &WebGPUContext::textureFactory()
 	{
 		if (!m_textureFactory)
@@ -154,6 +161,7 @@ namespace engine::rendering::webgpu
 		}
 		return *m_textureFactory;
 	}
+
 	WebGPUMaterialFactory &WebGPUContext::materialFactory()
 	{
 		if (!m_materialFactory)
@@ -161,6 +169,61 @@ namespace engine::rendering::webgpu
 			throw std::runtime_error("WebGPUMaterialFactory not initialized!");
 		}
 		return *m_materialFactory;
+	}
+
+	WebGPUPipelineFactory &WebGPUContext::pipelineFactory()
+	{
+		if (!m_pipelineFactory)
+		{
+			throw std::runtime_error("WebGPUPipelineFactory not initialized!");
+		}
+		return *m_pipelineFactory;
+	}
+
+	WebGPUSamplerFactory &WebGPUContext::samplerFactory()
+	{
+		if (!m_samplerFactory)
+		{
+			throw std::runtime_error("WebGPUSamplerFactory not initialized!");
+		}
+		return *m_samplerFactory;
+	}
+
+	WebGPUBufferFactory &WebGPUContext::bufferFactory()
+	{
+		if (!m_bufferFactory)
+		{
+			throw std::runtime_error("WebGPUBufferFactory not initialized!");
+		}
+		return *m_bufferFactory;
+	}
+
+	WebGPUBindGroupFactory &WebGPUContext::bindGroupFactory()
+	{
+		if (!m_bindGroupFactory)
+		{
+			throw std::runtime_error("WebGPUBindGroupFactory not initialized!");
+		}
+		return *m_bindGroupFactory;
+	}
+	
+	/* Todo: Implement WebGPUSwapChainFactory
+	WebGPUSwapChainFactory &WebGPUContext::swapChainFactory()
+	{
+		if (!m_swapChainFactory)
+		{
+			throw std::runtime_error("WebGPUSwapChainFactory not initialized!");
+		}
+		return *m_swapChainFactory;
+	}*/
+
+	WebGPUModelFactory &WebGPUContext::modelFactory()
+	{
+		if (!m_modelFactory)
+		{
+			throw std::runtime_error("WebGPUModelFactory not initialized!");
+		}
+		return *m_modelFactory;
 	}
 
 	wgpu::Buffer WebGPUContext::createBuffer(const wgpu::BufferDescriptor &desc)

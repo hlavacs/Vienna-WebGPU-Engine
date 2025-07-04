@@ -1,37 +1,15 @@
-/**
- * This file is part of the "Learn WebGPU for C++" book.
- *   https://github.com/eliemichel/LearnWebGPU
- *
- * MIT License
- * Copyright (c) 2022-2024 Elie Michel
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #pragma once
 
 #include <array>
 #include <memory>
+#include <vector>
 
 #include <webgpu/webgpu.hpp>
 #include <glm/glm.hpp>
 
+#include "engine/core/PathProvider.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUModel.h"
 #include "engine/resources/ResourceManager.h"
 
 // Forward declare
@@ -95,6 +73,9 @@ namespace engine
 		void terminateBindGroupLayout();
 
 		bool initBindGroup();
+		bool initMaterialBindGroup();
+		bool initUniformBindGroup();
+		bool initLightBindGroup();
 		void terminateBindGroup();
 
 		void updateProjectionMatrix();
@@ -110,8 +91,8 @@ namespace engine
 		SDL_Window *m_window = nullptr;
 
 	private:
-		std::shared_ptr<engine::resources::ResourceManager> m_resourceManager;
-        std::shared_ptr<engine::rendering::webgpu::WebGPUContext> m_context;
+		std::shared_ptr<engine::resources::ResourceManager> m_resourceManager = nullptr;
+		std::shared_ptr<engine::rendering::webgpu::WebGPUContext> m_context = nullptr;
 
 		bool m_shouldClose = false;
 
@@ -223,12 +204,20 @@ namespace engine
 		bool m_lightingUniformsChanged = true;
 
 		// Bind Group Layout
-		wgpu::BindGroupLayout m_bindGroupLayout = nullptr;
+		static constexpr size_t kBindGroupLayoutCount = 3;
+		// Enum for bind group layout indices
+		enum BindGroupLayoutIndex { Uniform = 0, Material = 1, Light = 2 };
+		std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> m_bindGroupLayouts = { nullptr, nullptr, nullptr };
 
 		// Bind Group
 		wgpu::BindGroup m_bindGroup = nullptr;
+		wgpu::BindGroup m_materialBindGroup = nullptr;
+		wgpu::BindGroup m_uniformBindGroup = nullptr;
+		wgpu::BindGroup m_lightBindGroup = nullptr;
 
 		CameraState m_cameraState;
 		DragState m_drag;
+
+		std::vector<std::shared_ptr<engine::rendering::webgpu::WebGPUModel>> m_webgpuModels;
 	};
 }
