@@ -2,11 +2,12 @@
 #include <memory>
 #include "engine/rendering/webgpu/BaseWebGPUFactory.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/Material.h"
 
 namespace engine::rendering::webgpu
 {
+	class WebGPUContext;
+
 	class WebGPUMaterialFactory : public BaseWebGPUFactory<engine::rendering::Material, WebGPUMaterial>
 	{
 	public:

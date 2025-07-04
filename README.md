@@ -100,4 +100,10 @@ Feel free to contribute to the project by forking the repository and submitting 
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## Acknowledgments
+
+This project is based in part on the excellent [Learn WebGPU for C++](https://github.com/eliemichel/LearnWebGPU) tutorial by Elie Michel.
+Significant modifications, refactoring, and extensions have been made for this project.
+Original code © 2022-2024 Elie Michel, MIT License.
+
 

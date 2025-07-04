@@ -1,8 +1,12 @@
 #include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
+
 #include <webgpu/webgpu.hpp>
 #include <vector>
 #include <array>
 #include <iostream>
+
+#include "engine/rendering/Vertex.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
 
 namespace engine::rendering::webgpu
 {
@@ -86,7 +90,8 @@ namespace engine::rendering::webgpu
 		wgpu::TextureFormat depthFormat,
 		bool enableDepth)
 	{
-		std::vector<wgpu::VertexAttribute> defaultAttribs(6);
+		static wgpu::VertexBufferLayout defaultVertexBufferLayout = {};
+		static std::vector<wgpu::VertexAttribute> defaultAttribs(6);
 		defaultAttribs[0].shaderLocation = 0;
 		defaultAttribs[0].format = wgpu::VertexFormat::Float32x3;
 		defaultAttribs[0].offset = offsetof(Vertex, position);
@@ -106,18 +111,17 @@ namespace engine::rendering::webgpu
 		defaultAttribs[5].format = wgpu::VertexFormat::Float32x3;
 		defaultAttribs[5].offset = offsetof(Vertex, bitangent);
 
-		wgpu::VertexBufferLayout defaultVertexBufferLayout = {};
 		defaultVertexBufferLayout.arrayStride = sizeof(Vertex);
 		defaultVertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
 		defaultVertexBufferLayout.attributeCount = static_cast<uint32_t>(defaultAttribs.size());
 		defaultVertexBufferLayout.attributes = defaultAttribs.data();
 
-		wgpu::ColorTargetState defaultColorTarget = {};
+		static wgpu::ColorTargetState defaultColorTarget = {};
 		defaultColorTarget.format = colorFormat;
 		defaultColorTarget.blend = nullptr;
 		defaultColorTarget.writeMask = wgpu::ColorWriteMask::All;
 
-		wgpu::DepthStencilState defaultDepthStencil = {};
+		static wgpu::DepthStencilState defaultDepthStencil = {};
 		defaultDepthStencil.format = depthFormat;
 		defaultDepthStencil.depthWriteEnabled = enableDepth;
 		defaultDepthStencil.depthCompare = wgpu::CompareFunction::Less;

@@ -1,9 +1,9 @@
 #include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
-#include "engine/rendering/webgpu/WebGPUMaterial.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
-#include "engine/rendering/Material.h"
+
 #include <memory>
+
+#include "engine/rendering/webgpu/WebGPUContext.h"
 
 namespace engine::rendering::webgpu
 {
@@ -13,21 +13,45 @@ namespace engine::rendering::webgpu
 
 	std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFrom(
 		const engine::rendering::Material &material,
-		// const WebGPUTexture& baseColor,
-		// const WebGPUTexture& normalMap,
 		const WebGPUMaterialOptions &options)
 	{
-		// Build bind group
-		wgpu::BindGroupDescriptor desc{};
-		desc.layout = options.bindGroupLayout;
-		// wgpu::BindGroupEntry entries[2] = {};
-		// entries[0].binding = 0;
-		// entries[0].textureView = baseColor.getTextureView();
-		// entries[1].binding = 1;
-		// entries[1].textureView = normalMap.getTextureView();
-		desc.entryCount = 2;
-		desc.entries = nullptr; // TODO
-		wgpu::BindGroup bindGroup = m_context.getDevice().createBindGroup(desc);
+		auto& texFactory = m_context.textureFactory();
+		wgpu::TextureView albedoView = nullptr;
+
+		if (material.hasAlbedoTexture()) {
+			auto texOpt = material.getAlbedoTexture().get();
+			albedoView = (texOpt && texOpt.value())
+				? texFactory.createFrom(*texOpt.value())->getTextureView()
+				: texFactory.getWhiteTextureView();
+		} else {
+			glm::vec3 color = material.getAlbedoColor();
+			albedoView = (color != glm::vec3(1.0f))
+				? texFactory.createFromColor(color, 1, 1)->getTextureView()
+				: texFactory.getWhiteTextureView();
+		}
+
+		wgpu::TextureView normalView = nullptr;
+		if (material.hasNormalTexture()) {
+			auto texHandle = material.getNormalTexture();
+			auto texOpt = texHandle.get();
+			if (texOpt && texOpt.value()) {
+				normalView = texFactory.createFrom(*texOpt.value())->getTextureView();
+			} else {
+				normalView = texFactory.getDefaultNormalTextureView();
+			}
+		} else {
+			normalView = texFactory.getDefaultNormalTextureView();
+		}
+		// TODO: Add support for other material textures (metallic, roughness, ao, etc.)
+
+		wgpu::BindGroupLayout bindGroupLayout = m_context.bindGroupFactory().createDefaultMaterialBindGroupLayout();
+		auto bindGroup = m_context.bindGroupFactory().createMaterialBindGroup(
+			bindGroupLayout,
+			albedoView,
+			normalView,
+			m_context.getDefaultSampler()
+		);
+
 		return std::make_shared<WebGPUMaterial>(bindGroup, options);
 	}
 

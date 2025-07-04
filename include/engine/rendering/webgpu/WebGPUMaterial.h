@@ -13,10 +13,6 @@ namespace engine::rendering::webgpu
 
 	struct WebGPUMaterialOptions
 	{
-		wgpu::BindGroupLayout bindGroupLayout = nullptr;
-		wgpu::RenderPipeline pipeline = nullptr;
-		wgpu::ShaderModule vertexShader = nullptr;
-		wgpu::ShaderModule fragmentShader = nullptr;
 	};
 
 	/**
