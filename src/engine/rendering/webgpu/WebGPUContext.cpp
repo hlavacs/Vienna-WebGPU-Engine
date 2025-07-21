@@ -104,6 +104,9 @@ namespace engine::rendering::webgpu
 		requiredLimits.limits.maxSamplersPerShaderStage = 1;
 		requiredLimits.limits.maxBindGroupsPlusVertexBuffers = 2;
 		requiredLimits.limits.maxBindingsPerBindGroup = 5;
+		// Add required limits for storage buffers
+		requiredLimits.limits.maxStorageBuffersPerShaderStage = 1;
+		requiredLimits.limits.maxStorageBufferBindingSize = 4096; // Set to accommodate our lights buffer (at least 16 + num_lights*76 bytes)
 
 		// --------------- Request device ---------------
 		wgpu::DeviceDescriptor deviceDesc{};

@@ -55,6 +55,7 @@ namespace engine
 
 		bool initRenderPipeline();
 		void terminateRenderPipeline();
+		bool reloadShader();
 
 		bool initTextures();
 		void terminateTextures();
@@ -118,19 +119,29 @@ namespace engine
 		// Have the compiler check byte alignment
 		static_assert(sizeof(MyUniforms) % 16 == 0);
 
-		struct LightingUniforms
+		// Match WGSL Light struct
+		struct LightStruct
 		{
-			std::array<vec4, 2> directions;
-			std::array<vec4, 2> colors;
-
-			// Material properties
-			float hardness = 32.0f;
-			float kd = 1.0f;
-			float ks = 0.5f;
-
-			float _pad[1];
+			glm::vec3 color = {1.0f, 1.0f, 1.0f};
+			uint32_t light_type = 0;				   // 0 = directional, 1 = point, 2 = spot
+			
+			glm::vec3 position = {0.0f, 1.0f, 0.0f}; // for point/spot
+			float spot_angle = 0.5f;				 // for spot (in radians)
+			
+			glm::vec3 rotation = {50.0f, -30.0f, 0.0f}; // Euler angles in degrees (for directional/spot)
+			float intensity = 1.0f;
 		};
-		static_assert(sizeof(LightingUniforms) % 16 == 0);
+		static_assert(sizeof(LightStruct) % 16 == 0, "LightStruct must match WGSL layout");
+
+		struct LightsBuffer
+		{
+			uint32_t count = 0;
+			float kd = 1.0f;		// material diffuse coefficient
+			float ks = 0.5f;		// material specular coefficient
+			float hardness = 32.0f; // material shininess/hardness
+									// lights array is managed separately
+		};
+		static_assert(sizeof(LightsBuffer) % 16 == 0, "LightsBuffer must match WGSL layout");
 
 		struct CameraState
 		{
@@ -199,15 +210,23 @@ namespace engine
 		// Uniforms
 		wgpu::Buffer m_uniformBuffer = nullptr;
 		MyUniforms m_uniforms;
-		wgpu::Buffer m_lightingUniformBuffer = nullptr;
-		LightingUniforms m_lightingUniforms;
-		bool m_lightingUniformsChanged = true;
+
+		// Lights
+		std::vector<LightStruct> m_lights;
+		wgpu::Buffer m_lightsBuffer = nullptr;
+		LightsBuffer m_lightsBufferHeader;
+		bool m_lightsChanged = true;
 
 		// Bind Group Layout
 		static constexpr size_t kBindGroupLayoutCount = 3;
 		// Enum for bind group layout indices
-		enum BindGroupLayoutIndex { Uniform = 0, Material = 1, Light = 2 };
-		std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> m_bindGroupLayouts = { nullptr, nullptr, nullptr };
+		enum BindGroupLayoutIndex
+		{
+			Uniform = 0,
+			Material = 1,
+			Light = 2
+		};
+		std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> m_bindGroupLayouts = {nullptr, nullptr, nullptr};
 
 		// Bind Group
 		wgpu::BindGroup m_bindGroup = nullptr;
@@ -219,5 +238,17 @@ namespace engine
 		DragState m_drag;
 
 		std::vector<std::shared_ptr<engine::rendering::webgpu::WebGPUModel>> m_webgpuModels;
+
+		bool m_pendingShaderReload = false;
+
+		// Debug
+		bool m_showDebugAxes = false;
+		// Debug rendering resources
+		wgpu::ShaderModule m_debugShaderModule = nullptr;
+		wgpu::RenderPipeline m_debugPipeline = nullptr;
+
+		// Helper methods for light management
+		void addLight();
+		void removeLight(size_t index);
 	};
 }

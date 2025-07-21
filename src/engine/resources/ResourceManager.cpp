@@ -87,49 +87,6 @@ namespace engine::resources
 		return true;
 	}
 
-	// Auxiliary function for loadTexture
-	static void writeMipMaps(
-		wgpu::Device device,
-		wgpu::Texture texture,
-		const engine::rendering::Texture::Ptr &tex)
-	{
-		wgpu::Queue queue = device.getQueue();
-
-		ImageCopyTexture destination;
-		destination.texture = texture;
-		destination.origin = {0, 0, 0};
-		destination.aspect = wgpu::TextureAspect::All;
-
-		auto &mipmaps = tex->getMipmaps();
-		auto width = tex->getWidth();
-		auto height = tex->getHeight();
-
-		TextureDataLayout textureDataLayout{};
-		textureDataLayout.offset = 0;
-
-		for (uint32_t level = 0; level < mipmaps.size(); ++level)
-		{
-			// Calculate mip size for this level
-			uint32_t mipWidth = std::max(1u, width >> level);
-			uint32_t mipHeight = std::max(1u, height >> level);
-
-			textureDataLayout.bytesPerRow = tex->getChannels() * mipWidth;
-			textureDataLayout.rowsPerImage = mipHeight;
-
-			destination.mipLevel = level;
-
-			// Upload mip level data directly
-			queue.writeTexture(
-				destination,
-				mipmaps[level].data(),
-				mipmaps[level].size(),
-				textureDataLayout,
-				{mipWidth, mipHeight, 1});
-		}
-
-		queue.release();
-	}
-
 	wgpu::Texture ResourceManager::loadTexture(const path &file, engine::rendering::webgpu::WebGPUContext &context, wgpu::TextureView *pTextureView)
 	{
 		// Use TextureFactory to create a WebGPUTexture

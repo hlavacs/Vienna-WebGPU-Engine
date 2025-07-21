@@ -53,6 +53,28 @@ namespace engine::rendering::webgpu
 		}
 
 		/**
+		 * @brief Helper to create a storage buffer BindGroupLayoutEntry.
+		 * @param binding Binding index (default: -1 for auto-assignment).
+		 * @param visibility wgpu::ShaderStage stage visibility (default: Vertex | Fragment).
+		 * @param readOnly Whether the storage buffer is read-only (default: true).
+		 * @return wgpu::BindGroupLayoutEntry
+		 */
+		wgpu::BindGroupLayoutEntry createStorageBindGroupLayoutEntry(
+			int binding = -1,
+			uint32_t visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+			bool readOnly = true)
+		{
+			wgpu::BindGroupLayoutEntry entry = {};
+			entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
+			entry.visibility = visibility;
+			entry.buffer.type = readOnly ? wgpu::BufferBindingType::ReadOnlyStorage
+										 : wgpu::BufferBindingType::Storage;
+			entry.buffer.hasDynamicOffset = false;
+			entry.buffer.minBindingSize = 0; // No minimum size for storage buffer
+			return entry;
+		}
+
+		/**
 		 * @brief Helper to create a vector of BindGroupLayoutEntries with auto binding assignment.
 		 * @tparam Entries Variadic BindGroupLayoutEntry arguments.
 		 * @param rawEntries BindGroupLayoutEntry objects (with binding=-1 for auto).
