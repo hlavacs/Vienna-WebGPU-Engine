@@ -11,7 +11,7 @@ namespace engine::resources
 	{
 		if (!m_objLoader)
 			return std::nullopt;
-		auto objDataOpt = m_objLoader->load(filePath);
+		auto objDataOpt = m_objLoader->load(filePath, true, engine::math::CoordinateSystem::Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD, engine::math::CoordinateSystem::DEFAULT);
 		if (!objDataOpt)
 			return std::nullopt;
 		const auto &objData = *objDataOpt;

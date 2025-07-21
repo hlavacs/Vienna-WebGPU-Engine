@@ -5,10 +5,20 @@
 namespace engine::resources::loaders
 {
 	ObjLoader::ObjLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger)
-		: GeometryLoader(std::move(basePath), std::move(logger)) {}
-
-	std::optional<ObjGeometryData> ObjLoader::load(const std::filesystem::path &file, bool indexed)
+		: GeometryLoader(std::move(basePath), std::move(logger))
 	{
+		// Set the default source coordinate system for OBJ files (Blender/most OBJ: LH_Z_UP_X_FORWARD)
+		m_srcCoordSys = engine::math::CoordinateSystem::BLENDER;
+	}
+
+	std::optional<ObjGeometryData> ObjLoader::load(
+		const std::filesystem::path &file,
+		bool indexed,
+		std::optional<engine::math::CoordinateSystem::Cartesian> srcCoordSysOpt,
+		std::optional<engine::math::CoordinateSystem::Cartesian> dstCoordSysOpt)
+	{
+		auto srcCoordSys = srcCoordSysOpt.value_or(m_srcCoordSys);
+		auto dstCoordSys = dstCoordSysOpt.value_or(engine::math::CoordinateSystem::DEFAULT);
 		std::string filePath = (m_basePath / file).string();
 		logInfo("Loading OBJ file: " + filePath);
 
@@ -35,19 +45,18 @@ namespace engine::resources::loaders
 		data.filePath = filePath;
 		if (indexed)
 		{
-			auto [vertices, indices] = buildVerticesIndexed(shapes, attrib);
+			auto [vertices, indices] = buildVerticesIndexed(shapes, attrib, srcCoordSys, dstCoordSys);
 			data.vertices = std::move(vertices);
 			data.indices = std::move(indices);
-			
-			logInfo("Loaded indexed OBJ at " +  filePath + " with " + std::to_string(data.vertices.size()) + " unique vertices and " + std::to_string(data.indices.size()) + " indices");
 
+			logInfo("Loaded indexed OBJ at " + filePath + " with " + std::to_string(data.vertices.size()) + " unique vertices and " + std::to_string(data.indices.size()) + " indices");
 		}
 		else
 		{
-			data.vertices = buildVerticesNonIndexed(shapes, attrib);
+			data.vertices = buildVerticesNonIndexed(shapes, attrib, srcCoordSys, dstCoordSys);
 			data.indices.clear();
-			
-			logInfo("Loaded non-indexed OBJ at " +  filePath + " with " + std::to_string(data.vertices.size()) + " vertices");
+
+			logInfo("Loaded non-indexed OBJ at " + filePath + " with " + std::to_string(data.vertices.size()) + " vertices");
 		}
 
 		data.materials = std::move(materials);
@@ -59,7 +68,11 @@ namespace engine::resources::loaders
 		return data;
 	}
 
-	std::vector<engine::rendering::Vertex> ObjLoader::buildVerticesNonIndexed(const std::vector<tinyobj::shape_t> &shapes, const tinyobj::attrib_t &attrib)
+	std::vector<engine::rendering::Vertex> ObjLoader::buildVerticesNonIndexed(
+		const std::vector<tinyobj::shape_t> &shapes,
+		const tinyobj::attrib_t &attrib,
+		math::CoordinateSystem::Cartesian srcCoordSys,
+		math::CoordinateSystem::Cartesian dstCoordSys)
 	{
 		std::vector<engine::rendering::Vertex> vertices;
 
@@ -74,10 +87,12 @@ namespace engine::resources::loaders
 				const auto &index = shape.mesh.indices[i];
 				auto &vertex = vertices[offset + i];
 
-				vertex.position = {
+				glm::vec3 pos = {
 					attrib.vertices[3 * index.vertex_index + 0],
-					-attrib.vertices[3 * index.vertex_index + 2],
-					attrib.vertices[3 * index.vertex_index + 1]};
+					attrib.vertices[3 * index.vertex_index + 1],
+					attrib.vertices[3 * index.vertex_index + 2]};
+				vertex.position = math::CoordinateSystem::transform(pos, srcCoordSys, dstCoordSys);
+
 				if (!attrib.colors.empty() && attrib.colors.size() > 3 * index.vertex_index + 2)
 				{
 					vertex.color = {
@@ -92,10 +107,11 @@ namespace engine::resources::loaders
 				}
 				if (index.normal_index >= 0)
 				{
-					vertex.normal = {
+					glm::vec3 nrm = {
 						attrib.normals[3 * index.normal_index + 0],
-						-attrib.normals[3 * index.normal_index + 2],
-						attrib.normals[3 * index.normal_index + 1]};
+						attrib.normals[3 * index.normal_index + 1],
+						attrib.normals[3 * index.normal_index + 2]};
+					vertex.normal = math::CoordinateSystem::transform(nrm, srcCoordSys, dstCoordSys);
 				}
 				if (index.texcoord_index >= 0)
 				{
@@ -111,7 +127,9 @@ namespace engine::resources::loaders
 
 	std::pair<std::vector<engine::rendering::Vertex>, std::vector<uint32_t>> ObjLoader::buildVerticesIndexed(
 		const std::vector<tinyobj::shape_t> &shapes,
-		const tinyobj::attrib_t &attrib)
+		const tinyobj::attrib_t &attrib,
+		math::CoordinateSystem::Cartesian srcCoordSys,
+		math::CoordinateSystem::Cartesian dstCoordSys)
 	{
 		std::vector<engine::rendering::Vertex> vertices;
 		std::vector<uint32_t> indices;
@@ -130,10 +148,12 @@ namespace engine::resources::loaders
 			{
 				engine::rendering::Vertex vertex{};
 
-				vertex.position = {
+				glm::vec3 pos = {
 					attrib.vertices[3 * index.vertex_index + 0],
-					-attrib.vertices[3 * index.vertex_index + 2],
-					attrib.vertices[3 * index.vertex_index + 1]};
+					attrib.vertices[3 * index.vertex_index + 1],
+					attrib.vertices[3 * index.vertex_index + 2]};
+				vertex.position = math::CoordinateSystem::transform(pos, srcCoordSys, dstCoordSys);
+
 				if (!attrib.colors.empty() && attrib.colors.size() > 3 * index.vertex_index + 2)
 				{
 					vertex.color = {
@@ -148,10 +168,11 @@ namespace engine::resources::loaders
 				}
 				if (index.normal_index >= 0)
 				{
-					vertex.normal = {
+					glm::vec3 nrm = {
 						attrib.normals[3 * index.normal_index + 0],
-						-attrib.normals[3 * index.normal_index + 2],
-						attrib.normals[3 * index.normal_index + 1]};
+						attrib.normals[3 * index.normal_index + 1],
+						attrib.normals[3 * index.normal_index + 2]};
+					vertex.normal = math::CoordinateSystem::transform(nrm, srcCoordSys, dstCoordSys);
 				}
 				if (index.texcoord_index >= 0)
 				{
