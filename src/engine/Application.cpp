@@ -93,21 +93,15 @@ namespace engine
 			return false;
 		if (!initRenderPipeline())
 			return false;
-		if (!initTextures())
-			return false;
 		if (!initGeometry())
 			return false;
 		if (!initUniforms())
 			return false;
 		if (!initLightingUniforms())
 			return false;
-		if (!initBindGroup())
-			return false;
 		if (!initUniformBindGroup())
 			return false;
 		if (!initLightBindGroup())
-			return false;
-		if (!initMaterialBindGroup())
 			return false;
 		if (!initGui())
 			return false;
@@ -195,19 +189,35 @@ namespace engine
 			return;
 		}
 
-		renderPass.setVertexBuffer(0, m_vertexBuffer, 0, m_vertexCount * sizeof(Vertex));
-		if (m_indexCount > 0)
-			renderPass.setIndexBuffer(m_indexBuffer, IndexFormat::Uint32, 0, m_indexCount * sizeof(uint32_t));
-
-		// Set binding group
+		// Set binding groups that apply to all models
 		renderPass.setBindGroup(0, m_uniformBindGroup, 0, nullptr);
-		renderPass.setBindGroup(1, m_materialBindGroup, 0, nullptr);
 		renderPass.setBindGroup(2, m_lightBindGroup, 0, nullptr);
 
-		if (m_indexCount)
-			renderPass.drawIndexed(m_indexCount, 1, 0, 0, 0);
-		else
-			renderPass.draw(m_vertexCount, 1, 0, 0);
+		// Render all WebGPU models
+		for (const auto &model : m_webgpuModels)
+		{
+			renderPass.setBindGroup(1, model->getMaterial()->getBindGroup(), 0, nullptr);
+
+			// Set vertex buffer from the model
+			const auto &mesh = model->getMesh();
+			renderPass.setVertexBuffer(0, mesh->getVertexBuffer(), 0, mesh->getVertexCount() * sizeof(uint32_t));
+
+			if (mesh->getIndexCount() >= 0)
+			{
+				renderPass.setIndexBuffer(mesh->getIndexBuffer(), IndexFormat::Uint32, 0, mesh->getIndexCount() * sizeof(uint32_t));
+				renderPass.drawIndexed(mesh->getIndexCount(), 1, 0, 0, 0);
+			}
+			else
+			{
+				renderPass.draw(mesh->getVertexCount(), 1, 0, 0);
+			}
+		}
+
+		// If no models were rendered, log a warning
+		if (m_webgpuModels.empty())
+		{
+			spdlog::warn("No WebGPU models to render!");
+		}
 
 		// Render debug axes if enabled (before UI so they appear in world space)
 		if (m_showDebugAxes)
@@ -379,15 +389,12 @@ namespace engine
 
 		// Defensive check before ending render pass
 		assert(renderPass && "RenderPassEncoder is invalid before end()");
-		// Defensive: check that all required resources are valid before ending the pass
-		assert(m_pipeline && "Pipeline is invalid before end()");
-		assert(m_vertexBuffer && "Vertex buffer is invalid before end()");
-		if (m_indexCount > 0)
-			assert(m_indexBuffer && "Index buffer is invalid before end()");
-		// assert(m_bindGroup && "Bind group is invalid before end()");
-		assert(m_baseColorTextureView && "Base color texture view is invalid before end()");
-		assert(m_normalTextureView && "Normal texture view is invalid before end()");
-		assert(m_depthTextureView && "Depth texture view is invalid before end()");
+
+		// Only assert these if we have models to render
+		if (!m_webgpuModels.empty())
+		{
+			assert(m_pipeline && "Pipeline is invalid before end()");
+		}
 
 		// End the render pass
 		renderPass.end();
@@ -477,13 +484,11 @@ namespace engine
 	void Application::onFinish()
 	{
 		terminateGui();
-		terminateBindGroup();
 		terminateLightingUniforms();
 		terminateUniforms();
 		terminateGeometry();
-		terminateTextures();
+		m_context->bindGroupFactory().cleanup();
 		terminateRenderPipeline();
-		terminateBindGroupLayout();
 		terminateDepthBuffer();
 		terminateSurface();
 	}
@@ -514,10 +519,18 @@ namespace engine
 	{
 		if (m_drag.active)
 		{
-			vec2 currentMouse = vec2(-(float)xpos, (float)ypos);
-			vec2 delta = (currentMouse - m_drag.startMouse) * m_drag.sensitivity;
-			m_cameraState.angles = m_drag.startCameraState.angles + delta;
-			// Clamp to avoid going too far when orbitting up/down
+			// When Y is up, we need to adjust the mouse coordinates differently
+			// X controls rotation around Y axis, Y controls rotation around X axis
+			glm::vec2 currentMouse = glm::vec2(-(float)xpos, (float)ypos);
+			glm::vec2 delta = (currentMouse - m_drag.startMouse) * m_drag.sensitivity;
+			
+			// For Y-up, we swap the meaning of x and y angles
+			// x now controls horizontal rotation (around Y)
+			// y controls vertical rotation (around X)
+			m_cameraState.angles.x = m_drag.startCameraState.angles.x + delta.x; // Horizontal rotation
+			m_cameraState.angles.y = m_drag.startCameraState.angles.y + delta.y; // Vertical rotation
+			
+			// Clamp to avoid going too far when orbiting up/down
 			m_cameraState.angles.y = glm::clamp(m_cameraState.angles.y, -PI / 2 + 1e-5f, PI / 2 - 1e-5f);
 			updateViewMatrix();
 
@@ -533,7 +546,7 @@ namespace engine
 			m_drag.active = true;
 			int xpos, ypos;
 			SDL_GetMouseState(&xpos, &ypos);
-			m_drag.startMouse = vec2(-(float)xpos, (float)ypos);
+			m_drag.startMouse = glm::vec2(-(float)xpos, (float)ypos);
 			m_drag.startCameraState = m_cameraState;
 		}
 		else if (!pressed && button == SDL_BUTTON_LEFT)
@@ -709,76 +722,8 @@ namespace engine
 		m_shaderModule.release();
 	}
 
-	bool Application::initTextures()
-	{
-		// Create a sampler
-		SamplerDescriptor samplerDesc;
-		samplerDesc.addressModeU = AddressMode::Repeat;
-		samplerDesc.addressModeV = AddressMode::Repeat;
-		samplerDesc.addressModeW = AddressMode::Repeat;
-		samplerDesc.magFilter = FilterMode::Linear;
-		samplerDesc.minFilter = FilterMode::Linear;
-		samplerDesc.mipmapFilter = MipmapFilterMode::Linear;
-		samplerDesc.lodMinClamp = 0.0f;
-		samplerDesc.lodMaxClamp = 8.0f;
-		samplerDesc.compare = CompareFunction::Undefined;
-		samplerDesc.maxAnisotropy = 1;
-		m_sampler = m_context->getDevice().createSampler(samplerDesc);
-
-		// Create textures
-		// m_baseColorTexture =  m_resourceManager->loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg", m_device, &m_baseColorTextureView);
-		m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_albedo.jpg"), *m_context, &m_baseColorTextureView);
-		// m_baseColorTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fox/Texture.png"), m_device, &m_baseColorTextureView);
-		if (!m_baseColorTexture)
-		{
-			std::cerr << "Could not load base color texture!" << std::endl;
-			return false;
-		}
-		assert(m_baseColorTextureView && "Base color texture view must be valid");
-
-		// m_normalTexture =  m_resourceManager->loadTexture(engine::core::PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png"), m_device, &m_normalTextureView);
-		m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fourareen2K_normals.png"), *m_context, &m_normalTextureView);
-		// m_normalTexture = m_resourceManager->createNeutralNormalTexture(m_device, &m_normalTextureView);
-		// m_normalTexture = m_resourceManager->loadTexture(engine::core::PathProvider::getResource("fox/neutral_normal.png"), m_device, &m_normalTextureView);
-		if (!m_normalTexture)
-		{
-			std::cerr << "Could not load normal texture!" << std::endl;
-			return false;
-		}
-		assert(m_normalTextureView && "Normal texture view must be valid");
-
-		// Defensive asserts for resource/format mismatches
-		assert(m_baseColorTextureView != nullptr && "Base color texture view is null!");
-		assert(m_normalTextureView != nullptr && "Normal texture view is null!");
-		assert(m_baseColorTexture && "Base color texture is invalid!");
-		assert(m_normalTexture && "Normal texture is invalid!");
-
-		return m_baseColorTextureView != nullptr && m_normalTextureView != nullptr;
-	}
-
-	void Application::terminateTextures()
-	{
-		m_baseColorTextureView.release();
-		m_baseColorTexture.destroy();
-		m_baseColorTexture.release();
-		if (m_normalTextureView)
-			m_normalTextureView.release();
-		m_normalTexture.destroy();
-		m_normalTexture.release();
-		m_sampler.release();
-	}
-
 	bool Application::initGeometry()
 	{
-		engine::rendering::Mesh mesh{};
-		// bool success = ResourceManager::loadGeometryFromObj(engine::core::PathProvider::getResource("cylinder.obj"), vertexData);
-		bool success = m_resourceManager->loadGeometryFromObj(engine::core::PathProvider::getResource("fourareen.obj"), mesh, true);
-		// bool success = m_resourceManager->loadGeometryFromObj(engine::core::PathProvider::getResource("fox/Fox.gltf"), mesh, true);
-		if (!success)
-		{
-			std::cerr << "Could not load geometry!" << std::endl;
-		}
-
 		// List of model files to load
 		std::vector<std::string> modelPaths = {
 			engine::core::PathProvider::getResource("fourareen.obj").string(),
@@ -791,35 +736,8 @@ namespace engine
 			std::cerr << "ResourceManager or ModelManager not available!" << std::endl;
 			return false;
 		}
-		// Create vertex buffer
-		BufferDescriptor bufferDesc;
-		bufferDesc.size = mesh.vertices.size() * sizeof(Vertex);
-		bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Vertex;
-		bufferDesc.mappedAtCreation = false;
-		m_vertexBuffer = m_context->getDevice().createBuffer(bufferDesc);
-		m_context->getQueue().writeBuffer(m_vertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
 
-		m_vertexCount = static_cast<int32_t>(mesh.vertices.size());
-
-		if (mesh.isIndexed())
-		{
-			BufferDescriptor indexBufferDesc;
-			indexBufferDesc.size = mesh.indices.size() * sizeof(uint32_t); // Assuming indices are uint32_t
-			indexBufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Index;
-			indexBufferDesc.mappedAtCreation = false;
-			m_indexBuffer = m_context->getDevice().createBuffer(indexBufferDesc);
-			m_context->getQueue().writeBuffer(m_indexBuffer, 0, mesh.indices.data(), indexBufferDesc.size);
-
-			m_indexCount = static_cast<int32_t>(mesh.indices.size());
-			return m_vertexBuffer != nullptr && m_indexBuffer != nullptr;
-		}
-		else
-		{
-			m_indexBuffer = nullptr; // No index buffer
-			m_indexCount = 0;
-			return m_vertexBuffer != nullptr;
-		}
-
+		// Create WebGPU models from model paths
 		engine::rendering::webgpu::WebGPUModelFactory modelFactory(*m_context);
 		for (const auto &modelPath : modelPaths)
 		{
@@ -829,10 +747,19 @@ namespace engine
 				std::cerr << "Could not load model: " << modelPath << std::endl;
 				continue;
 			}
+
 			auto webgpuModel = modelFactory.createFrom(*(modelOpt.value()));
 			if (webgpuModel)
 			{
 				m_webgpuModels.push_back(webgpuModel);
+
+				// For the first model, store references to buffers for compatibility with legacy code
+				if (m_webgpuModels.size() == 1)
+				{
+					const auto &mesh = (*modelOpt)->getMesh();
+					m_vertexCount = static_cast<int32_t>(mesh.vertices.size());
+					m_indexCount = mesh.isIndexed() ? static_cast<int32_t>(mesh.indices.size()) : 0;
+				}
 			}
 			else
 			{
@@ -845,9 +772,17 @@ namespace engine
 
 	void Application::terminateGeometry()
 	{
-		m_vertexBuffer.destroy();
-		m_vertexBuffer.release();
-		m_vertexCount = 0;
+		// Clear WebGPUModels collection first
+		m_webgpuModels.clear();
+
+		// Release vertex and index buffers
+		if (m_vertexBuffer)
+		{
+			m_vertexBuffer.destroy();
+			m_vertexBuffer.release();
+			m_vertexCount = 0;
+		}
+
 		if (m_indexBuffer)
 		{
 			m_indexBuffer.destroy();
@@ -975,78 +910,6 @@ namespace engine
 		return m_bindGroupLayouts[Uniform] && m_bindGroupLayouts[Material] && m_bindGroupLayouts[Light];
 	}
 
-	void Application::terminateBindGroupLayout()
-	{
-		m_context->bindGroupFactory().cleanup();
-	}
-
-	bool Application::initBindGroup()
-	{
-		return true;
-		/*
-		// Create a binding
-		std::vector<BindGroupEntry> bindings(5);
-		//                                   ^ This was a 4
-
-		bindings[0].binding = 0;
-		bindings[0].buffer = m_uniformBuffer;
-		bindings[0].offset = 0;
-		bindings[0].size = sizeof(MyUniforms);
-
-		bindings[1].binding = 1;
-		bindings[1].textureView = m_baseColorTextureView;
-
-		if (m_normalTextureView)
-		{
-			bindings[2].binding = 2;
-			bindings[2].textureView = m_normalTextureView;
-		}
-
-		bindings[3].binding = 3;
-		bindings[3].sampler = m_sampler;
-		//       ^ This was a 2
-
-		bindings[4].binding = 4;
-		bindings[4].buffer = m_lightingUniformBuffer;
-		bindings[4].offset = 0;
-		bindings[4].size = sizeof(LightingUniforms);
-		//       ^ This was a 3
-
-		BindGroupDescriptor bindGroupDesc;
-		bindGroupDesc.layout = m_bindGroupLayouts[Material];
-		bindGroupDesc.entryCount = (uint32_t)bindings.size();
-		bindGroupDesc.entries = bindings.data();
-		m_bindGroup = m_context->getDevice().createBindGroup(bindGroupDesc);
-
-		// Defensive asserts for bind group resource validity
-		assert(m_uniformBuffer);
-		assert(m_baseColorTextureView);
-		assert(m_normalTextureView);
-		assert(m_sampler);
-		assert(m_lightingUniformBuffer);
-
-		return m_bindGroup != nullptr;
-		*/
-	}
-
-	bool Application::initMaterialBindGroup()
-	{
-		std::vector<wgpu::BindGroupEntry> entries(3);
-		entries[0].binding = 0;
-		entries[0].textureView = m_baseColorTextureView;
-		entries[1].binding = 1;
-		entries[1].textureView = m_normalTextureView;
-		entries[2].binding = 2;
-		entries[2].sampler = m_sampler;
-
-		wgpu::BindGroupDescriptor desc{};
-		desc.layout = m_bindGroupLayouts[Material]; // You need to create this layout for just these 3 bindings
-		desc.entryCount = (uint32_t)entries.size();
-		desc.entries = entries.data();
-		m_materialBindGroup = m_context->getDevice().createBindGroup(desc);
-		return m_materialBindGroup != nullptr;
-	}
-
 	bool Application::initUniformBindGroup()
 	{
 		wgpu::BindGroupEntry entry = {};
@@ -1085,11 +948,6 @@ namespace engine
 		return m_lightBindGroup != nullptr;
 	}
 
-	void Application::terminateBindGroup()
-	{
-		// m_bindGroup.release();
-	}
-
 	void Application::updateProjectionMatrix()
 	{
 		// Unity-style: left-handed, Y-up, +Z forward
@@ -1112,10 +970,19 @@ namespace engine
 		float sx = sin(m_cameraState.angles.x);
 		float cy = cos(m_cameraState.angles.y);
 		float sy = sin(m_cameraState.angles.y);
-		// Camera orbits around origin, looking in +Z
-		vec3 position = vec3(cx * cy, sx * cy, sy) * std::exp(-m_cameraState.zoom);
+		
+		// For Y-up camera orbit:
+		// x controls rotation around Y axis (horizontal)
+		// y controls rotation around X axis (vertical)
+		// Position is calculated differently to maintain orbit around the origin
+		glm::vec3 position = glm::vec3(
+			cx * cos(m_cameraState.angles.y), // X position
+			sy,                              // Y position (up)
+			sx * cos(m_cameraState.angles.y)  // Z position
+		) * std::exp(-m_cameraState.zoom);
+		
 		// Target is at origin, up is +Y
-		m_uniforms.viewMatrix = glm::lookAt(position, vec3(0.0f), vec3(0, 1, 0));
+		m_uniforms.viewMatrix = glm::lookAt(position, glm::vec3(0.0f), glm::vec3(0, 1, 0));
 		m_context->getQueue().writeBuffer(
 			m_uniformBuffer,
 			offsetof(MyUniforms, viewMatrix),
@@ -1152,13 +1019,6 @@ namespace engine
 
 		// Setup Platform/Renderer backends
 		ImGui_ImplSDL2_InitForSDLRenderer(m_window, nullptr);
-		/*
-		ImGui_ImplWGPU_InitInfo init_info;
-		init_info.Device = m_device;
-		init_info.DepthStencilFormat = m_depthTextureFormat;
-		init_info.RenderTargetFormat = m_swapChainFormat;
-		ImGui_ImplWGPU_Init(&init_info);
-		*/
 		ImGui_ImplWGPU_Init(m_context->getDevice(), 3, m_context->getSwapChainFormat(), m_depthTextureFormat);
 		return true;
 	}

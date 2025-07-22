@@ -44,9 +44,6 @@ namespace engine
 		void onScroll(double xoffset, double yoffset);
 
 	private:
-		bool initWindowAndDevice();
-		void terminateWindowAndDevice();
-
 		bool initSurface();
 		void terminateSurface();
 
@@ -56,9 +53,6 @@ namespace engine
 		bool initRenderPipeline();
 		void terminateRenderPipeline();
 		bool reloadShader();
-
-		bool initTextures();
-		void terminateTextures();
 
 		bool initGeometry();
 		void terminateGeometry();
@@ -71,13 +65,9 @@ namespace engine
 		void updateLightingUniforms();
 
 		bool initBindGroupLayout();
-		void terminateBindGroupLayout();
 
-		bool initBindGroup();
-		bool initMaterialBindGroup();
 		bool initUniformBindGroup();
 		bool initLightBindGroup();
-		void terminateBindGroup();
 
 		void updateProjectionMatrix();
 		void updateViewMatrix();
