@@ -2,6 +2,7 @@
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 
 #include <memory>
+#include <stdexcept>
 
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
@@ -11,10 +12,16 @@ namespace engine::rendering::webgpu
 	WebGPUMaterialFactory::WebGPUMaterialFactory(WebGPUContext &context)
 		: BaseWebGPUFactory(context) {}
 
-	std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFrom(
-		const engine::rendering::Material &material,
+	std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
+		const engine::rendering::Material::Handle &handle,
 		const WebGPUMaterialOptions &options)
 	{
+		auto materialOpt = handle.get();
+		if (!materialOpt || !materialOpt.value()) {
+			throw std::runtime_error("Invalid material handle in WebGPUMaterialFactory::createFromHandle");
+		}
+
+		const auto& material = *materialOpt.value();
 		auto& texFactory = m_context.textureFactory();
 		wgpu::TextureView albedoView = nullptr;
 
@@ -42,7 +49,6 @@ namespace engine::rendering::webgpu
 		} else {
 			normalView = texFactory.getDefaultNormalTextureView();
 		}
-		// TODO: Add support for other material textures (metallic, roughness, ao, etc.)
 
 		wgpu::BindGroupLayout bindGroupLayout = m_context.bindGroupFactory().createDefaultMaterialBindGroupLayout();
 		auto bindGroup = m_context.bindGroupFactory().createMaterialBindGroup(
@@ -52,12 +58,13 @@ namespace engine::rendering::webgpu
 			m_context.getDefaultSampler()
 		);
 
-		return std::make_shared<WebGPUMaterial>(bindGroup, options);
+		return std::make_shared<WebGPUMaterial>(m_context, handle, bindGroup, options);
 	}
 
-	std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFrom(const engine::rendering::Material &material)
+	std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
+		const engine::rendering::Material::Handle &handle)
 	{
-		return createFrom(material, WebGPUMaterialOptions{});
+		return createFromHandle(handle, WebGPUMaterialOptions{});
 	}
 
 } // namespace engine::rendering::webgpu

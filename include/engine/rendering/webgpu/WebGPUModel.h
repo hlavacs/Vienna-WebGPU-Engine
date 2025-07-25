@@ -18,14 +18,16 @@ namespace engine::rendering::webgpu
 		 * @brief Construct from GPU resources.
 		 */
 		WebGPUModel(std::shared_ptr<WebGPUMesh> mesh, std::shared_ptr<WebGPUMaterial> material);
+
 		/** @brief Get mesh. */
 		std::shared_ptr<WebGPUMesh> getMesh() const;
+
 		/** @brief Get material. */
 		std::shared_ptr<WebGPUMaterial> getMaterial() const;
 
 	private:
-		std::shared_ptr<WebGPUMesh> m_mesh;			///< Mesh resource.
-		std::shared_ptr<WebGPUMaterial> m_material; ///< Material resource.
+		std::shared_ptr<WebGPUMesh> m_mesh;
+		std::shared_ptr<WebGPUMaterial> m_material;
 	};
 
 } // namespace engine::rendering::webgpu

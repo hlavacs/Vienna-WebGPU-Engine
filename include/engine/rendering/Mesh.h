@@ -4,13 +4,18 @@
 #include <filesystem>
 #include <glm/glm.hpp>
 #include "engine/rendering/Vertex.h"
+#include "engine/core/Identifiable.h"
+#include "engine/core/Handle.h"
 
 namespace engine::rendering
 {
 
-	struct Mesh
+	struct Mesh : public engine::core::Identifiable<Mesh>
 	{
 	public:
+		using Handle = engine::core::Handle<Mesh>;
+		using Ptr = std::shared_ptr<Mesh>;
+		
 		std::vector<Vertex> vertices;
 		std::vector<uint32_t> indices;
 
