@@ -15,13 +15,21 @@ namespace engine::rendering::webgpu
 
 		explicit WebGPUMaterialFactory(WebGPUContext &context);
 
-		std::shared_ptr<WebGPUMaterial> createFrom(
-			const engine::rendering::Material &material,
-			// const WebGPUTexture &baseColor,
-			// const WebGPUTexture &normalMap,
-			const WebGPUMaterialOptions &options);
+		/**
+		 * @brief Create a WebGPUMaterial from a Material handle.
+		 * @param handle Handle to the Material.
+		 * @param options Material options to apply.
+		 * @return Shared pointer to WebGPUMaterial.
+		 */
+		std::shared_ptr<WebGPUMaterial> createFromHandle(
+			const engine::rendering::Material::Handle &handle,
+			const WebGPUMaterialOptions &options = {});
 
-		// This is required to satisfy the abstract base class:
-		std::shared_ptr<WebGPUMaterial> createFrom(const engine::rendering::Material &material) override;
+		/**
+		 * @brief Create a WebGPUMaterial from a Material handle.
+		 * @param handle Handle to the Material.
+		 * @return Shared pointer to WebGPUMaterial.
+		 */
+		std::shared_ptr<WebGPUMaterial> createFromHandle(const engine::rendering::Material::Handle &handle) override;
 	};
 } // namespace engine::rendering::webgpu

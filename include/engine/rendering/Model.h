@@ -10,7 +10,8 @@
 
 namespace engine::rendering
 {
-	using MaterialHandle = engine::core::Handle<Material>;
+	using MaterialHandle = Material::Handle;
+	using MeshHandle = Mesh::Handle;
 
 	struct Model : public engine::core::Identifiable<Model>
 	{
@@ -21,17 +22,17 @@ namespace engine::rendering
 		// Constructors
 		Model() = default;
 
-		Model(Mesh mesh, MaterialHandle material, const std::string &filePath)
+		Model(MeshHandle mesh, MaterialHandle material, const std::string &filePath)
 			: engine::core::Identifiable<Model>(),
-			  m_mesh(std::move(mesh)),
+			  m_mesh(mesh),
 			  m_material(material),
 			  m_filePath(filePath)
 		{
 		}
 
-		Model(Mesh mesh, MaterialHandle material, const std::string &filePath, const std::string &name)
+		Model(MeshHandle mesh, MaterialHandle material, const std::string &filePath, const std::string &name)
 			: engine::core::Identifiable<Model>(std::move(name)),
-			  m_mesh(std::move(mesh)),
+			  m_mesh(mesh),
 			  m_material(material),
 			  m_filePath(filePath)
 		{
@@ -46,8 +47,8 @@ namespace engine::rendering
 		Model &operator=(const Model &) = delete;
 
 		// Accessors
-		const Mesh &getMesh() const { return m_mesh; }
-		Mesh &getMesh() { return m_mesh; }
+		MeshHandle getMesh() const { return m_mesh; }
+		void setMesh(MeshHandle handle) { m_mesh = handle; }
 
 		MaterialHandle getMaterial() const { return m_material; }
 		void setMaterial(MaterialHandle handle) { m_material = handle; }
@@ -56,9 +57,10 @@ namespace engine::rendering
 		void setFilePath(const std::string &path) { m_filePath = path; }
 
 		bool hasMaterial() const { return m_material.valid(); }
+		bool hasMesh() const { return m_mesh.valid(); }
 
 	private:
-		Mesh m_mesh;
+		MeshHandle m_mesh;
 		MaterialHandle m_material;
 		std::string m_filePath;
 	};
