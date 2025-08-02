@@ -7,6 +7,7 @@
 #include <vector>
 #include "engine/rendering/Model.h"
 #include "engine/resources/ResourceManagerBase.h"
+#include "engine/resources/MeshManager.h"
 #include "engine/resources/MaterialManager.h"
 #include "engine/resources/loaders/ObjLoader.h"
 
@@ -14,46 +15,46 @@ namespace engine::resources
 {
 	/**
 	 * @class ModelManager
-	 * @brief Manages creation, storage, and retrieval of models within the engine.
-	 *
-	 * Provides facilities to add and retrieve models, deduplicate by name, and resolve material handles
-	 * using the MaterialManager. Models are stored as shared pointers for safe usage across subsystems.
-	 * Currently only supports OBJ models.
+	 * @brief Manages creation and lifetime of Model resources
 	 */
-	class ModelManager : public ResourceManagerBase<engine::rendering::Model>
+	class ModelManager : public engine::resources::ResourceManagerBase<engine::rendering::Model>
 	{
 	public:
-		using Model = engine::rendering::Model;
-		using ModelHandle = Model::Handle;
-		using ModelPtr = std::shared_ptr<Model>;
-		using MaterialHandle = engine::core::Handle<engine::rendering::Material>;
+		using ModelPtr = std::shared_ptr<engine::rendering::Model>;
 
 		/**
-		 * @brief Constructs a ModelManager with a given MaterialManager and ObjLoader.
-		 * @param materialManager Shared pointer to a MaterialManager.
-		 * @param objLoader Shared pointer to an ObjLoader.
+		 * @brief Construct a ModelManager with dependencies
+		 * @param meshManager Mesh manager for creating/managing meshes
+		 * @param materialManager Material manager for creating/managing materials
+		 * @param objLoader OBJ file loader
 		 */
 		ModelManager(
+			std::shared_ptr<MeshManager> meshManager,
 			std::shared_ptr<MaterialManager> materialManager,
-			std::shared_ptr<engine::resources::loaders::ObjLoader> objLoader);
+			std::shared_ptr<loaders::ObjLoader> objLoader);
 
 		/**
-		 * @brief Creates a Model from an OBJ file and adds it to the manager.
-		 * @param objFilePath The path to the OBJ file.
-		 * @param name Optional name for the model.
-		 * @return Optional shared pointer to the created model, or std::nullopt on failure.
+		 * @brief Create a model from a file path
+		 * @param filePath Path to the model file
+		 * @param name Optional name for the model
+		 * @return Optional containing the created model if successful
 		 */
-		[[nodiscard]]
-		std::optional<ModelPtr> createModel(const std::string &objFilePath, const std::string &name = "");
+		std::optional<ModelPtr> createModel(const std::string &filePath, const std::string &name = "");
 
 		/**
-		 * @brief Access the underlying MaterialManager.
-		 * @return Shared pointer to the MaterialManager.
+		 * @brief Get the mesh manager
+		 * @return Shared pointer to the mesh manager
 		 */
-		[[nodiscard]]
+		std::shared_ptr<MeshManager> getMeshManager() const;
+
+		/**
+		 * @brief Get the material manager
+		 * @return Shared pointer to the material manager
+		 */
 		std::shared_ptr<MaterialManager> getMaterialManager() const;
 
 	private:
+		std::shared_ptr<MeshManager> m_meshManager;
 		std::shared_ptr<MaterialManager> m_materialManager;
 		std::shared_ptr<loaders::ObjLoader> m_objLoader;
 	};

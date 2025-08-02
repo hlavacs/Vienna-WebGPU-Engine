@@ -4,10 +4,11 @@
 #include <string>
 #include "engine/core/Handle.h"
 #include "engine/core/Identifiable.h"
+#include "engine/core/Versioned.h"
 
 namespace engine::rendering
 {
-	struct Texture : public engine::core::Identifiable<Texture>
+	struct Texture : public engine::core::Identifiable<Texture>, public engine::core::Versioned
 	{
 	public:
 		using Handle = engine::core::Handle<Texture>;

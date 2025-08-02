@@ -196,21 +196,7 @@ namespace engine
 		// Render all WebGPU models
 		for (const auto &model : m_webgpuModels)
 		{
-			renderPass.setBindGroup(1, model->getMaterial()->getBindGroup(), 0, nullptr);
-
-			// Set vertex buffer from the model
-			const auto &mesh = model->getMesh();
-			renderPass.setVertexBuffer(0, mesh->getVertexBuffer(), 0, mesh->getVertexCount() * sizeof(uint32_t));
-
-			if (mesh->getIndexCount() >= 0)
-			{
-				renderPass.setIndexBuffer(mesh->getIndexBuffer(), IndexFormat::Uint32, 0, mesh->getIndexCount() * sizeof(uint32_t));
-				renderPass.drawIndexed(mesh->getIndexCount(), 1, 0, 0, 0);
-			}
-			else
-			{
-				renderPass.draw(mesh->getVertexCount(), 1, 0, 0);
-			}
+			model->render(encoder, renderPass);
 		}
 
 		// If no models were rendered, log a warning
@@ -752,14 +738,6 @@ namespace engine
 			if (webgpuModel)
 			{
 				m_webgpuModels.push_back(webgpuModel);
-
-				// For the first model, store references to buffers for compatibility with legacy code
-				if (m_webgpuModels.size() == 1)
-				{
-					const auto &mesh = (*modelOpt)->getMesh();
-					m_vertexCount = static_cast<int32_t>(mesh.vertices.size());
-					m_indexCount = mesh.isIndexed() ? static_cast<int32_t>(mesh.indices.size()) : 0;
-				}
 			}
 			else
 			{

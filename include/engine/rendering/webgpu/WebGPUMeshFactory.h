@@ -14,7 +14,13 @@ namespace engine::rendering::webgpu
 		using BaseWebGPUFactory::BaseWebGPUFactory;
 
 		explicit WebGPUMeshFactory(WebGPUContext &context);
-		std::shared_ptr<WebGPUMesh> createFrom(const engine::rendering::Mesh &mesh) override;
-	};
 
+		/**
+		 * @brief Create a WebGPUMesh from a Mesh handle.
+		 * @param handle Handle to the Mesh.
+		 * @return Shared pointer to WebGPUMesh.
+		 */
+		std::shared_ptr<WebGPUMesh> createFromHandle(
+			const engine::rendering::Mesh::Handle &handle) override;
+	};
 } // namespace engine::rendering::webgpu

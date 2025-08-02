@@ -14,6 +14,23 @@ namespace engine::rendering::webgpu
 		using BaseWebGPUFactory::BaseWebGPUFactory;
 
 		explicit WebGPUModelFactory(WebGPUContext &context);
-		std::shared_ptr<WebGPUModel> createFrom(const engine::rendering::Model &model) override;
+
+		/**
+		 * @brief Create a WebGPUModel from a Model handle.
+		 * @param handle Handle to the Model.
+		 * @param options Optional model options.
+		 * @return Shared pointer to WebGPUModel.
+		 */
+		std::shared_ptr<WebGPUModel> createFromHandle(
+			const engine::rendering::Model::Handle &handle,
+			const WebGPUModelOptions &options = {});
+			
+		/**
+		 * @brief Create a WebGPUModel from a Model handle.
+		 * @param handle Handle to the Model.
+		 * @return Shared pointer to WebGPUModel.
+		 */
+		std::shared_ptr<WebGPUModel> createFromHandle(
+			const engine::rendering::Model::Handle &handle) override;
 	};
 } // namespace engine::rendering::webgpu

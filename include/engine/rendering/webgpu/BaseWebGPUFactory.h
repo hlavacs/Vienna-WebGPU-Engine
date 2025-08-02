@@ -3,6 +3,8 @@
 #include <type_traits>
 #include <stdexcept>
 
+#include "engine/core/Identifiable.h"
+
 namespace engine::rendering::webgpu
 {
 	class WebGPUContext;
@@ -20,7 +22,12 @@ namespace engine::rendering::webgpu
 		 * @brief Construct a factory with a WebGPU context.
 		 * @param context The WebGPU context used for resource creation.
 		 */
-		explicit BaseWebGPUFactory(WebGPUContext &context) : m_context(context) {}
+		explicit BaseWebGPUFactory(WebGPUContext &context) : m_context(context)
+		{
+			// Static assert that SourceT is derived from Identifiable<SourceT>
+			static_assert(std::is_base_of_v<engine::core::Identifiable<SourceT>, SourceT>,
+						  "SourceT must derive from engine::core::Identifiable<SourceT>");
+		}
 		virtual ~BaseWebGPUFactory() = default;
 
 		/**
@@ -32,17 +39,18 @@ namespace engine::rendering::webgpu
 		 */
 		std::shared_ptr<ProductT> createFrom(const SourceT &source)
 		{
+			typename engine::core::Identifiable<SourceT>::HandleType handle{};
 			try
 			{
-				// Attempt to create a handle from the source
-				typename SourceT::Handle handle(source);
-				return createFromHandle(handle);
+				const engine::core::Identifiable<SourceT> &identifiable = static_cast<const engine::core::Identifiable<SourceT> &>(source);
+				handle = identifiable.getHandle();
 			}
 			catch (const std::exception &e)
 			{
 				throw std::runtime_error(std::string("Could not create handle: ") + e.what() +
 										 "\nA valid handle is required. Make sure the source object is registered.");
 			}
+			return createFromHandle(handle);
 		}
 
 		/**

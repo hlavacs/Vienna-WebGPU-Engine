@@ -140,12 +140,12 @@ namespace engine::resources::loaders
 		if (indexed && !indices.empty())
 		{
 			logInfo("Loaded indexed GLTF with " + std::to_string(vertices.size()) + " unique vertices and " + std::to_string(indices.size()) + " indices");
-			return engine::rendering::Mesh(std::move(vertices), std::move(indices), triangulated);
+			return std::make_optional<engine::rendering::Mesh>(std::move(vertices), std::move(indices), triangulated);
 		}
 		else
 		{
 			logInfo("Loaded non-indexed GLTF with " + std::to_string(vertices.size()) + " vertices");
-			return engine::rendering::Mesh(std::move(vertices), triangulated);
+			return std::make_optional<engine::rendering::Mesh>(std::move(vertices), triangulated);
 		}
 	}
 
