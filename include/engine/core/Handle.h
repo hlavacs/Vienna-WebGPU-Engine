@@ -70,12 +70,12 @@ namespace engine::core
 	 * Intended to be used with Identifiable-derived types, where getHandle() returns Handle<T>.
 	 */
 	template <typename T>
-	Handle<T> unwrapOrHandle(const std::optional<std::shared_ptr<T>>& opt);
+	Handle<T> unwrapOrHandle(const std::optional<std::shared_ptr<T>> &opt);
 
 } // namespace engine::core
 
 template <typename T>
-engine::core::Handle<T> engine::core::unwrapOrHandle(const std::optional<std::shared_ptr<T>>& opt)
+engine::core::Handle<T> engine::core::unwrapOrHandle(const std::optional<std::shared_ptr<T>> &opt)
 {
 	if (opt)
 		return opt.value()->getHandle();

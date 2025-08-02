@@ -1,5 +1,3 @@
-
-
 #include "engine/resources/ResourceManager.h"
 #include "engine/stb_image.h"
 #include "engine/io/tiny_obj_loader.h"
@@ -31,9 +29,11 @@ namespace engine::resources
 
 		m_textureLoader = std::make_shared<engine::resources::loaders::TextureLoader>(baseDir, getOrCreateLogger("ResourceManager_TextureLoader"));
 
+		m_meshManager = std::make_shared<engine::resources::MeshManager>();
 		m_textureManager = std::make_shared<engine::resources::TextureManager>(m_textureLoader);
 		m_materialManager = std::make_shared<engine::resources::MaterialManager>(m_textureManager);
 		m_modelManager = std::make_shared<engine::resources::ModelManager>(
+			m_meshManager,
 			m_materialManager,
 			m_objLoader);
 	}
@@ -78,11 +78,17 @@ namespace engine::resources
 			return false;
 		auto &model = *modelOpt;
 
-		// Extract the mesh from the model
-		mesh = model->getMesh();
+		// Get the mesh handle from the model
+		auto meshHandle = model->getMesh();
+		
+		// Resolve the handle to get the actual mesh
+		auto meshOpt = meshHandle.get();
+		if (!meshOpt || !meshOpt.value())
+			return false;
+		
 		if (populateTextureFrame)
 		{
-			mesh.computeTangents();
+			meshOpt.value()->computeTangents();
 		}
 		return true;
 	}
@@ -133,7 +139,7 @@ namespace engine::resources
 		// --- WebGPU application logic ---
 		// 1. Upload mesh data to GPU buffers
 		const auto &mesh = model->getMesh();
-		auto gpuMesh = context.meshFactory().createFrom(mesh);
+		auto gpuMesh = context.meshFactory().createFromHandle(mesh);
 		// 2. Get material and associated textures
 		const auto &matHandle = model->getMaterial();
 		std::shared_ptr<engine::rendering::Material> materialPtr;

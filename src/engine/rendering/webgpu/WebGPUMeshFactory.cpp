@@ -1,6 +1,6 @@
-#include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUMeshFactory.h"
-#include "engine/rendering/Mesh.h"
+#include <memory>
+#include <stdexcept>
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
 namespace engine::rendering::webgpu
@@ -9,19 +9,33 @@ namespace engine::rendering::webgpu
 	WebGPUMeshFactory::WebGPUMeshFactory(WebGPUContext &context)
 		: BaseWebGPUFactory(context) {}
 
-	std::shared_ptr<WebGPUMesh> WebGPUMeshFactory::createFrom(const engine::rendering::Mesh &mesh)
+	std::shared_ptr<WebGPUMesh> WebGPUMeshFactory::createFromHandle(
+		const engine::rendering::Mesh::Handle &handle)
 	{
+		auto meshOpt = handle.get();
+		if (!meshOpt || !meshOpt.value())
+		{
+			throw std::runtime_error("Invalid mesh handle in WebGPUMeshFactory::createFromHandle");
+		}
+		const auto &mesh = *meshOpt.value();
+
 		// Upload vertex buffer
-		wgpu::Buffer vertexBuffer = m_context.createBufferWithData(mesh.vertices, wgpu::BufferUsage::Vertex);
-		uint32_t vertexCount = static_cast<uint32_t>(mesh.vertices.size());
+		wgpu::Buffer vertexBuffer = m_context.createBufferWithData(mesh.getVertices(), wgpu::BufferUsage::Vertex);
+		uint32_t vertexCount = static_cast<uint32_t>(mesh.getVertices().size());
+
 		// Upload index buffer if present
 		wgpu::Buffer indexBuffer = nullptr;
-		uint32_t indexCount = 0;
-		if (mesh.isIndexed() && !mesh.indices.empty()) {
-			indexBuffer = m_context.createBufferWithData(mesh.indices, wgpu::BufferUsage::Index);
-			indexCount = static_cast<uint32_t>(mesh.indices.size());
+		if (mesh.isIndexed() && !mesh.getIndices().empty())
+		{
+			indexBuffer = m_context.createBufferWithData(mesh.getIndices(), wgpu::BufferUsage::Index);
 		}
-		return std::make_shared<WebGPUMesh>(vertexBuffer, vertexCount, indexBuffer, indexCount);
-	}
 
+		return std::make_shared<WebGPUMesh>(
+			m_context,
+			handle,
+			vertexBuffer,
+			indexBuffer,
+			static_cast<uint32_t>(mesh.getVertices().size()),
+			mesh.isIndexed() ? static_cast<uint32_t>(mesh.getIndices().size()) : 0);
+	}
 } // namespace engine::rendering::webgpu

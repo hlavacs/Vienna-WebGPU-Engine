@@ -5,13 +5,15 @@
 #include <string>
 #include "engine/core/Identifiable.h"
 #include "engine/core/Handle.h"
+#include "engine/core/Versioned.h"
 #include "engine/rendering/Texture.h"
 
 namespace engine::rendering
 {
     using TextureHandle = Texture::Handle;
 
-    struct Material : public engine::core::Identifiable<Material>
+    struct Material : public engine::core::Identifiable<Material>,
+                      public engine::core::Versioned
     {
         using Handle = engine::core::Handle<Material>;
         using Ptr = std::shared_ptr<Material>;
@@ -19,21 +21,22 @@ namespace engine::rendering
         // Constructors
         Material() = default;
 
-        Material(const glm::vec3& albedo, TextureHandle albedoTex, TextureHandle normalTex = {}, TextureHandle metallicTex = {},
+        Material(const glm::vec3 &albedo, TextureHandle albedoTex, TextureHandle normalTex = {}, TextureHandle metallicTex = {},
                  TextureHandle roughnessTex = {}, TextureHandle aoTex = {}, TextureHandle emissiveTex = {}, TextureHandle opacityTex = {},
                  TextureHandle specularTex = {}, float metallicVal = 0.0f, float roughnessVal = 1.0f, float opacityVal = 1.0f)
             : albedoColor(albedo), metallic(metallicVal), roughness(roughnessVal), opacity(opacityVal),
               albedoTexture(albedoTex), normalTexture(normalTex), metallicTexture(metallicTex), roughnessTexture(roughnessTex),
               aoTexture(aoTex), emissiveTexture(emissiveTex), opacityTexture(opacityTex), specularTexture(specularTex)
-        {}
+        {
+        }
 
         // Move only
-        Material(Material&&) noexcept = default;
-        Material& operator=(Material&&) noexcept = default;
+        Material(Material &&) noexcept = default;
+        Material &operator=(Material &&) noexcept = default;
 
         // No copy
-        Material(const Material&) = delete;
-        Material& operator=(const Material&) = delete;
+        Material(const Material &) = delete;
+        Material &operator=(const Material &) = delete;
 
         // Getters
         glm::vec3 getAlbedoColor() const { return albedoColor; }
@@ -53,23 +56,83 @@ namespace engine::rendering
         TextureHandle getOpacityTexture() const { return opacityTexture; }
         TextureHandle getSpecularTexture() const { return specularTexture; }
 
-        // Setters
-        void setAlbedoColor(const glm::vec3& c) { albedoColor = c; }
-        void setEmissiveColor(const glm::vec3& c) { emissiveColor = c; }
-        void setSpecularColor(const glm::vec3& c) { specularColor = c; }
-        void setMetallic(float v) { metallic = v; }
-        void setRoughness(float v) { roughness = v; }
-        void setShininess(float v) { shininess = v; }
-        void setOpacity(float v) { opacity = v; }
+        // Setters - modify to use the base class incrementVersion()
+        void setAlbedoColor(const glm::vec3 &c)
+        {
+            albedoColor = c;
+            incrementVersion();
+        }
+        void setEmissiveColor(const glm::vec3 &c)
+        {
+            emissiveColor = c;
+            incrementVersion();
+        }
+        void setSpecularColor(const glm::vec3 &c)
+        {
+            specularColor = c;
+            incrementVersion();
+        }
+        void setMetallic(float v)
+        {
+            metallic = v;
+            incrementVersion();
+        }
+        void setRoughness(float v)
+        {
+            roughness = v;
+            incrementVersion();
+        }
+        void setShininess(float v)
+        {
+            shininess = v;
+            incrementVersion();
+        }
+        void setOpacity(float v)
+        {
+            opacity = v;
+            incrementVersion();
+        }
 
-        void setAlbedoTexture(TextureHandle t) { albedoTexture = t; }
-        void setNormalTexture(TextureHandle t) { normalTexture = t; }
-        void setMetallicTexture(TextureHandle t) { metallicTexture = t; }
-        void setRoughnessTexture(TextureHandle t) { roughnessTexture = t; }
-        void setAOTexture(TextureHandle t) { aoTexture = t; }
-        void setEmissiveTexture(TextureHandle t) { emissiveTexture = t; }
-        void setOpacityTexture(TextureHandle t) { opacityTexture = t; }
-        void setSpecularTexture(TextureHandle t) { specularTexture = t; }
+        void setAlbedoTexture(TextureHandle t)
+        {
+            albedoTexture = t;
+            incrementVersion();
+        }
+        void setNormalTexture(TextureHandle t)
+        {
+            normalTexture = t;
+            incrementVersion();
+        }
+        void setMetallicTexture(TextureHandle t)
+        {
+            metallicTexture = t;
+            incrementVersion();
+        }
+        void setRoughnessTexture(TextureHandle t)
+        {
+            roughnessTexture = t;
+            incrementVersion();
+        }
+        void setAOTexture(TextureHandle t)
+        {
+            aoTexture = t;
+            incrementVersion();
+        }
+        void setEmissiveTexture(TextureHandle t)
+        {
+            emissiveTexture = t;
+            incrementVersion();
+        }
+        void setOpacityTexture(TextureHandle t)
+        {
+            opacityTexture = t;
+            incrementVersion();
+        }
+        void setSpecularTexture(TextureHandle t)
+        {
+            specularTexture = t;
+            incrementVersion();
+        }
 
         // Texture presence checks
         bool hasAlbedoTexture() const { return albedoTexture.valid(); }

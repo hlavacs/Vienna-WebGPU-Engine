@@ -74,6 +74,7 @@ namespace engine::rendering
 	void Texture::setFilePath(const std::string &filepath)
 	{
 		m_filePath = filepath;
+		incrementVersion();
 	}
 
 	void Texture::generateMipmaps()
@@ -84,6 +85,8 @@ namespace engine::rendering
 		mips.clear();
 		mips.push_back(pixels);
 		pixels.clear();
+
+		incrementVersion();
 
 		// Calculate total mip levels (including base)
 		const uint32_t maxDim = std::max(m_width, m_height);

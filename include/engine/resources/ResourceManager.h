@@ -13,6 +13,7 @@
 #include "engine/resources/loaders/GltfLoader.h"
 #include "engine/resources/loaders/TextureLoader.h"
 #include "engine/resources/TextureManager.h"
+#include "engine/resources/MeshManager.h"
 #include "engine/resources/MaterialManager.h"
 #include "engine/resources/ModelManager.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
@@ -49,6 +50,7 @@ namespace engine::resources
 		std::shared_ptr<engine::resources::loaders::GltfLoader> m_gltfLoader;
 		std::shared_ptr<engine::resources::loaders::TextureLoader> m_textureLoader;
 		std::shared_ptr<engine::resources::TextureManager> m_textureManager;
+		std::shared_ptr<engine::resources::MeshManager> m_meshManager;
 		std::shared_ptr<engine::resources::MaterialManager> m_materialManager;
 		std::shared_ptr<engine::resources::ModelManager> m_modelManager;
 	};
