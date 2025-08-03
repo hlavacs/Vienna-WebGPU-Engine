@@ -37,16 +37,13 @@ struct MyUniforms {
 ;
 
 struct Light {
+	transform: mat4x4f,
 	color: vec3f,
-	// 0 = directional, 1 = point, 2 = spot
+	intensity: f32,
 	light_type: u32,
-
-	position: vec3f,
 	spot_angle: f32,
-
-	rotation: vec3f,
-	// Euler angles in degrees (for directional/spot)
-	intensity: f32
+	spot_softness: f32,
+	pad2: f32
 }
 
 ;
@@ -86,20 +83,12 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 	return out;
 }
 
-// Helper: Convert Euler angles (degrees) to direction vector (ZYX order)
-fn eulerToDirection(euler: vec3f) -> vec3f {
-	let rad = euler * 3.14159265 / 180.0;
-	let cx = cos(rad.x);
-	let sx = sin(rad.x);
-	let cy = cos(rad.y);
-	let sy = sin(rad.y);
-	let cz = cos(rad.z);
-	let sz = sin(rad.z);
-	// Forward vector for ZYX (yaw-pitch-roll):
-	let x = cy * cz;
-	let y = sx;
-	let z = - sy * cz;
-	return normalize(vec3f(x, y, z));
+fn getDirectionFromTransform(transform: mat4x4f) -> vec3f {
+	return normalize(- transform[2].xyz);
+}
+
+fn getPositionFromTransform(transform: mat4x4f) -> vec3f {
+	return transform[3].xyz;
 }
 
 @fragment
@@ -137,21 +126,45 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
 		if (light.light_type == 0u) {
 			// Directional
-			L = eulerToDirection(light.rotation);
+			L = getDirectionFromTransform(light.transform);
 		}
 		else if (light.light_type == 1u) {
 			// Point
-			L = normalize(light.position - worldPos);
-			let dist = length(light.position - worldPos);
+			let lightPos = getPositionFromTransform(light.transform);
+			L = normalize(lightPos - worldPos);
+			let dist = length(lightPos - worldPos);
 			attenuation = 1.0 / (dist * dist);
 		}
 		else if (light.light_type == 2u) {
-			// Spot
-			L = normalize(light.position - worldPos);
-			let dist = length(light.position - worldPos);
-			let spotDir = eulerToDirection(light.rotation);
-			let theta = dot(L, spotDir);
-			attenuation = select(0.0, 1.0 / (dist * dist), theta > cos(light.spot_angle));
+			// Spot light calculation
+			let lightPos = getPositionFromTransform(light.transform);
+			L = normalize(lightPos - worldPos);
+			let dist = length(lightPos - worldPos);
+
+			// Get spotlight direction from transform matrix
+			let spotDir = getDirectionFromTransform(light.transform);
+
+			// Calculate cosine of angle between light vector and spotlight direction
+			let cosTheta = dot(L, spotDir);
+
+			// Calculate spotlight effect with configurable soft falloff
+			let softnessFactor = max(0.01, light.spot_softness);
+			// Ensure we don't divide by zero
+
+			// Calculate the inner cone angle based on softness
+			// Higher softness = smaller inner cone = smoother transition
+			let innerRatio = 1.0 - softnessFactor;
+			let cosOuter = cos(light.spot_angle);
+			let cosInner = cos(light.spot_angle * innerRatio);
+
+			// Smooth spotlight falloff between inner and outer cones
+			let spotEffect = smoothstep(cosOuter, cosInner, cosTheta);
+
+			// Apply spotlight effect with distance attenuation
+			attenuation = spotEffect * 1.0 / (1.0 + 0.1 * dist + 0.01 * dist * dist);
+
+			// Set attenuation to zero if outside the cone
+			attenuation = select(0.0, attenuation, cosTheta > cosOuter);
 		}
 
 		let diffuse = max(0.0, dot(L, N)) * light.color.rgb * light.intensity * attenuation * kd;
