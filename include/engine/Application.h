@@ -112,14 +112,14 @@ namespace engine
 		// Match WGSL Light struct
 		struct LightStruct
 		{
+			glm::mat4 transform = glm::mat4(1.0f); // transformation matrix for the light (includes position and rotation)
 			glm::vec3 color = {1.0f, 1.0f, 1.0f};
-			uint32_t light_type = 0;				   // 0 = directional, 1 = point, 2 = spot
-			
-			glm::vec3 position = {0.0f, 1.0f, 0.0f}; // for point/spot
-			float spot_angle = 0.5f;				 // for spot (in radians)
-			
-			glm::vec3 rotation = {50.0f, -30.0f, 0.0f}; // Euler angles in degrees (for directional/spot)
-			float intensity = 1.0f;
+			float intensity = 1.0f; // light intensity
+
+			uint32_t light_type = 0;	// 0 = directional, 1 = point, 2 = spot
+			float spot_angle = 0.5f;	// for spot (in radians)
+			float spot_softness = 0.2f; // padding to ensure 16-byte alignment
+			float pad2 = 0.0f;			// padding to ensure 16-byte alignment
 		};
 		static_assert(sizeof(LightStruct) % 16 == 0, "LightStruct must match WGSL layout");
 
@@ -206,6 +206,7 @@ namespace engine
 		wgpu::Buffer m_lightsBuffer = nullptr;
 		LightsBuffer m_lightsBufferHeader;
 		bool m_lightsChanged = true;
+		std::map<size_t, glm::vec3> m_lightDirectionsUI; // Store UI direction angles in degrees
 
 		// Bind Group Layout
 		static constexpr size_t kBindGroupLayoutCount = 3;

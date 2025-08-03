@@ -22,6 +22,7 @@
 #include <sstream>
 #include <string>
 #include <array>
+#include <map>
 
 #include "engine/Application.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
@@ -57,6 +58,9 @@ namespace engine
 		spdlog::info("LIB Root: {}", engine::core::PathProvider::getLibraryRoot().string());
 		m_resourceManager = std::make_shared<engine::resources::ResourceManager>(engine::core::PathProvider::getResourceRoot());
 		m_context = std::make_shared<engine::rendering::webgpu::WebGPUContext>();
+
+		// Initialize the UI angles map
+		m_lightDirectionsUI.clear();
 	}
 
 	///////////////////////////////////////////////////////////////////////////////
@@ -292,23 +296,35 @@ namespace engine
 					// For point/spot lights, use position
 					if (light.light_type == 1 || light.light_type == 2)
 					{
-						transform[3] = glm::vec4(light.position, 1.0f);
+						transform[3] = glm::vec4(glm::vec3(light.transform[3]), 1.0f); // Extract position from transform
 					}
 
-					// For directional/spot lights, apply rotation
-					if (light.light_type == 0 || light.light_type == 2)
+					// Get the rotation from the stored UI angles to ensure consistency
+					size_t lightIndex = &light - &m_lights[0]; // Calculate light index
+					if (m_lightDirectionsUI.find(lightIndex) != m_lightDirectionsUI.end())
 					{
-						glm::mat4 rotationMatrix = glm::mat4(1.0f);
-						// Convert Euler angles (degrees) to radians
-						glm::vec3 eulerRad = glm::radians(light.rotation);
+						glm::vec3 angles = m_lightDirectionsUI[lightIndex];
 
-						// Apply rotations in XYZ order
-						rotationMatrix = glm::rotate(rotationMatrix, eulerRad.x, glm::vec3(1, 0, 0));
-						rotationMatrix = glm::rotate(rotationMatrix, eulerRad.y, glm::vec3(0, 1, 0));
-						rotationMatrix = glm::rotate(rotationMatrix, eulerRad.z, glm::vec3(0, 0, 1));
+						// Build rotation matrix from UI angles
+						glm::mat4 rotX = glm::rotate(glm::mat4(1.0f), glm::radians(angles.x), glm::vec3(1.0f, 0.0f, 0.0f));
+						glm::mat4 rotY = glm::rotate(glm::mat4(1.0f), glm::radians(angles.y), glm::vec3(0.0f, 1.0f, 0.0f));
+						glm::mat4 rotZ = glm::rotate(glm::mat4(1.0f), glm::radians(angles.z), glm::vec3(0.0f, 0.0f, 1.0f));
+						glm::mat4 rotation = rotZ * rotY * rotX;
 
-						// Combine rotation with translation
-						transform = transform * rotationMatrix;
+						// Copy rotation part to transform
+						glm::mat3 rotPart = glm::mat3(rotation);
+						transform[0] = glm::vec4(rotPart[0], 0.0f);
+						transform[1] = glm::vec4(rotPart[1], 0.0f);
+						transform[2] = glm::vec4(rotPart[2], 0.0f);
+						// Position is already set in transform[3]
+					}
+					else
+					{
+						// Fallback to using the light's transform directly if no UI angles are stored
+						glm::mat3 rotPart = glm::mat3(light.transform);
+						transform[0] = glm::vec4(rotPart[0], 0.0f);
+						transform[1] = glm::vec4(rotPart[1], 0.0f);
+						transform[2] = glm::vec4(rotPart[2], 0.0f);
 					}
 
 					// Scale axes based on light intensity
@@ -509,13 +525,13 @@ namespace engine
 			// X controls rotation around Y axis, Y controls rotation around X axis
 			glm::vec2 currentMouse = glm::vec2(-(float)xpos, (float)ypos);
 			glm::vec2 delta = (currentMouse - m_drag.startMouse) * m_drag.sensitivity;
-			
+
 			// For Y-up, we swap the meaning of x and y angles
 			// x now controls horizontal rotation (around Y)
 			// y controls vertical rotation (around X)
 			m_cameraState.angles.x = m_drag.startCameraState.angles.x + delta.x; // Horizontal rotation
 			m_cameraState.angles.y = m_drag.startCameraState.angles.y + delta.y; // Vertical rotation
-			
+
 			// Clamp to avoid going too far when orbiting up/down
 			m_cameraState.angles.y = glm::clamp(m_cameraState.angles.y, -PI / 2 + 1e-5f, PI / 2 - 1e-5f);
 			updateViewMatrix();
@@ -948,17 +964,18 @@ namespace engine
 		float sx = sin(m_cameraState.angles.x);
 		float cy = cos(m_cameraState.angles.y);
 		float sy = sin(m_cameraState.angles.y);
-		
+
 		// For Y-up camera orbit:
 		// x controls rotation around Y axis (horizontal)
 		// y controls rotation around X axis (vertical)
 		// Position is calculated differently to maintain orbit around the origin
 		glm::vec3 position = glm::vec3(
-			cx * cos(m_cameraState.angles.y), // X position
-			sy,                              // Y position (up)
-			sx * cos(m_cameraState.angles.y)  // Z position
-		) * std::exp(-m_cameraState.zoom);
-		
+								 cx * cos(m_cameraState.angles.y), // X position
+								 sy,							   // Y position (up)
+								 sx * cos(m_cameraState.angles.y)  // Z position
+								 ) *
+							 std::exp(-m_cameraState.zoom);
+
 		// Target is at origin, up is +Y
 		m_uniforms.viewMatrix = glm::lookAt(position, glm::vec3(0.0f), glm::vec3(0, 1, 0));
 		m_context->getQueue().writeBuffer(
@@ -1015,106 +1032,179 @@ namespace engine
 		ImGui::NewFrame();
 
 		// Build our UI
+		ImGui::Begin("Lighting & Camera Controls");
+
+		// Shader reload button
+		if (ImGui::Button("Reload Shader (F5)"))
 		{
-			ImGui::Begin("Lighting");
+			m_pendingShaderReload = true;
+		}
 
-			// Add a button to reload shader
-			if (ImGui::Button("Reload Shader"))
-			{
-				m_pendingShaderReload = true;
-			}
-			ImGui::SameLine();
-			ImGui::Text("(or press F5)");
+		ImGui::Separator();
 
-			ImGui::Separator();
+		// Debug visualization toggle
+		ImGui::Checkbox("Show Debug Axes", &m_showDebugAxes);
 
-			ImGui::Checkbox("Show Debug Axes", &m_showDebugAxes);
+		// Material properties in a single section
+		if (ImGui::CollapsingHeader("Material Properties"))
+		{
+			bool materialsChanged = false;
+			materialsChanged |= ImGui::SliderFloat("Diffuse (Kd)", &m_lightsBufferHeader.kd, 0.0f, 2.0f);
+			materialsChanged |= ImGui::SliderFloat("Specular (Ks)", &m_lightsBufferHeader.ks, 0.0f, 2.0f);
+			materialsChanged |= ImGui::SliderFloat("Hardness", &m_lightsBufferHeader.hardness, 1.0f, 128.0f);
 
-			// Material properties (moved from per-light to global)
-			if (ImGui::CollapsingHeader("Material Properties", ImGuiTreeNodeFlags_DefaultOpen))
-			{
-				if (ImGui::SliderFloat("Diffuse (Kd)", &m_lightsBufferHeader.kd, 0.0f, 2.0f))
-					m_lightsChanged = true;
+			if (materialsChanged)
+				m_lightsChanged = true;
+		}
 
-				if (ImGui::SliderFloat("Specular (Ks)", &m_lightsBufferHeader.ks, 0.0f, 2.0f))
-					m_lightsChanged = true;
-
-				if (ImGui::SliderFloat("Hardness/Shininess", &m_lightsBufferHeader.hardness, 1.0f, 128.0f))
-					m_lightsChanged = true;
-			}
-
-			ImGui::Separator();
-
-			// Add a button to add new lights
+		// Lights section
+		if (ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			// Add light button
 			if (ImGui::Button("Add Light"))
 			{
 				addLight();
 			}
 
-			// Display all lights with their properties
+			// Light list
 			for (size_t i = 0; i < m_lights.size(); ++i)
 			{
 				ImGui::PushID(static_cast<int>(i));
-				LightStruct &light = m_lights[i];
 
-				// Create a collapsing header for each light
-				if (ImGui::CollapsingHeader(("Light " + std::to_string(i)).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+				LightStruct &light = m_lights[i];
+				const char *lightTypeNames[] = {"Directional", "Point", "Spot"};
+
+				// Create light header with type dropdown and remove button
+				bool open = ImGui::TreeNodeEx(("Light " + std::to_string(i)).c_str(),
+											  ImGuiTreeNodeFlags_DefaultOpen);
+
+				ImGui::SameLine(ImGui::GetWindowWidth() - 70);
+				bool shouldRemove = false;
+				if (ImGui::SmallButton("Remove"))
 				{
-					// Light type selector
-					const char *lightTypes[] = {"Directional", "Point", "Spot"};
+					shouldRemove = true;
+				}
+
+				if (open)
+				{
+					// Light type
 					int currentType = static_cast<int>(light.light_type);
-					if (ImGui::Combo("Type", &currentType, lightTypes, 3))
+					if (ImGui::Combo("Type", &currentType, lightTypeNames, 3))
 					{
 						light.light_type = static_cast<uint32_t>(currentType);
 						m_lightsChanged = true;
 					}
 
-					// Common properties for all light types
 					if (ImGui::ColorEdit3("Color", glm::value_ptr(light.color)))
 						m_lightsChanged = true;
 
 					if (ImGui::SliderFloat("Intensity", &light.intensity, 0.0f, 5.0f))
 						m_lightsChanged = true;
 
-					// Type-specific properties
-					if (light.light_type == 0) // Directional
-					{
-						if (ImGui::DragFloat3("Rotation", glm::value_ptr(light.rotation), 0.1f))
-							m_lightsChanged = true;
-					}
-					else // Point or Spot
-					{
-						if (ImGui::DragFloat3("Position", glm::value_ptr(light.position), 0.1f))
-							m_lightsChanged = true;
+					glm::vec3 position = glm::vec3(light.transform[3]);
 
-						if (light.light_type == 2) // Spot light
+					if (m_lightDirectionsUI.find(i) == m_lightDirectionsUI.end())
+					{
+						glm::mat3 rotMatrix = glm::mat3(light.transform);
+						glm::vec3 xAxis = glm::normalize(glm::vec3(rotMatrix[0]));
+						float pitch = glm::degrees(asin(-xAxis.y));
+						float yaw = glm::degrees(atan2(xAxis.z, xAxis.x));
+						m_lightDirectionsUI[i] = glm::vec3(pitch, yaw, 0.0f);
+					}
+
+					glm::vec3 &angles = m_lightDirectionsUI[i];
+
+					if (light.light_type != 0)
+					{
+						if (ImGui::DragFloat3("Position", glm::value_ptr(position), 0.1f))
 						{
-							if (ImGui::DragFloat3("Rotation", glm::value_ptr(light.rotation), 0.1f))
-								m_lightsChanged = true;
-							if (ImGui::SliderFloat("Spot Angle", &light.spot_angle, 0.1f, 2.0f))
-								m_lightsChanged = true;
+							// Update position while preserving rotation
+							glm::mat3 rotation = glm::mat3(light.transform);
+							light.transform = glm::mat4(
+								glm::vec4(rotation[0], 0.0f),
+								glm::vec4(rotation[1], 0.0f),
+								glm::vec4(rotation[2], 0.0f),
+								glm::vec4(position, 1.0f));
+							m_lightsChanged = true;
 						}
 					}
 
-					// Button to remove this light
-					if (ImGui::Button("Remove Light"))
+					if (light.light_type != 1)
 					{
-						removeLight(i);
-						ImGui::PopID();
-						break; // Break since we modified the array
-					}
-				}
-				ImGui::PopID();
-			}
+						if (ImGui::DragFloat3("Direction", glm::value_ptr(angles), 0.5f))
+						{
+							// Build rotation matrix
+							glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angles.z), glm::vec3(0, 0, 1)) *
+												 glm::rotate(glm::mat4(1.0f), glm::radians(angles.y), glm::vec3(0, 1, 0)) *
+												 glm::rotate(glm::mat4(1.0f), glm::radians(angles.x), glm::vec3(1, 0, 0));
 
-			ImGui::End();
+							// Apply rotation to transform
+							if (light.light_type == 0)
+							{
+								// For directional lights, just use rotation
+								light.transform = rotation;
+							}
+							else
+							{
+								// For spot lights, preserve position
+								light.transform = glm::translate(glm::mat4(1.0f), position) * rotation;
+							}
+							m_lightsChanged = true;
+						}
+					}
+
+					// Spot angle for spot lights
+					if (light.light_type == 2)
+					{
+						if (ImGui::SliderFloat("Cone Angle", &light.spot_angle, 0.1f, 2.0f))
+							m_lightsChanged = true;
+
+						// Add a slider for controlling the softness of the spotlight edges
+						if (ImGui::SliderFloat("Edge Softness", &light.spot_softness, 0.0f, 0.95f, "%.2f"))
+							m_lightsChanged = true;
+					}
+
+					ImGui::TreePop();
+				}
+
+				ImGui::PopID();
+
+				// Handle removal after PopID to keep the ID stack balanced
+				if (shouldRemove)
+				{
+					removeLight(i);
+					break; // Break since we modified the array
+				}
+			}
 		}
 
-		// Draw the UI
-		ImGui::EndFrame();
-		// Convert the UI defined above into low-level drawing commands
+		// Camera controls section
+		if (ImGui::CollapsingHeader("Camera Controls"))
+		{
+			float zoomPercentage = (m_cameraState.zoom + 2.0f) / 4.0f * 100.0f; // Convert to 0-100%
+			if (ImGui::SliderFloat("Zoom", &zoomPercentage, 0.0f, 100.0f, "%.0f%%"))
+			{
+				m_cameraState.zoom = (zoomPercentage / 100.0f) * 4.0f - 2.0f; // Convert back
+				updateViewMatrix();
+			}
+
+			glm::vec2 cameraAngles = glm::vec2(
+				glm::degrees(m_cameraState.angles.x),
+				glm::degrees(m_cameraState.angles.y));
+
+			if (ImGui::DragFloat2("Camera Rotation", glm::value_ptr(cameraAngles), 0.5f))
+			{
+				m_cameraState.angles.x = glm::radians(cameraAngles.x);
+				m_cameraState.angles.y = glm::radians(cameraAngles.y);
+				m_cameraState.angles.y = glm::clamp(m_cameraState.angles.y, -PI / 2 + 1e-5f, PI / 2 - 1e-5f);
+				updateViewMatrix();
+			}
+		}
+
+		ImGui::End();
+
+		// Render UI
 		ImGui::Render();
-		// Execute the low-level drawing commands on the WebGPU backend
 		ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), renderPass);
 	}
 
@@ -1122,12 +1212,41 @@ namespace engine
 	{
 		LightStruct newLight;
 		newLight.light_type = m_lights.empty() ? 0 : 1; // First light is directional, others are point by default
-		newLight.rotation = {50.0f, -30.0f, 0.0f};		// Default for directional/spot
-		newLight.position = {0.0f, 2.0f, 0.0f};
+
+		// Set default direction angles (in degrees)
+		float pitchDegrees = 140.0f;
+		float yawDegrees = -30.0f;
+		float rollDegrees = 0.0f;
+
+		// Initialize rotation matrices from angles
+		glm::mat4 rotX = glm::rotate(glm::mat4(1.0f), glm::radians(pitchDegrees), glm::vec3(1.0f, 0.0f, 0.0f));
+		glm::mat4 rotY = glm::rotate(glm::mat4(1.0f), glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::mat4 rotZ = glm::rotate(glm::mat4(1.0f), glm::radians(rollDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
+		glm::mat4 rotation = rotZ * rotY * rotX; // Apply Z, then Y, then X rotation
+
+		// Set position based on light type
+		glm::vec3 position = glm::vec3(0.0f, 1.0f, 0.0f);
+
+		// Create transform with both rotation and position
+		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * rotation;
+		newLight.transform = transform;
+
+		// Set other light properties
 		newLight.color = {1.0f, 1.0f, 1.0f};
 		newLight.intensity = 1.0f;
 		newLight.spot_angle = 0.5f;
+		newLight.spot_softness = 0.2f;
+		newLight.pad2 = 0.0f;
+
+		// Store the index of the new light
+		size_t newLightIndex = m_lights.size();
+
+		// Add the light to the array
 		m_lights.push_back(newLight);
+
+		// Store the UI angles for the new light in the member variable
+		m_lightDirectionsUI[newLightIndex] = glm::vec3(pitchDegrees, yawDegrees, rollDegrees);
+
 		m_lightsChanged = true;
 	}
 
@@ -1135,7 +1254,22 @@ namespace engine
 	{
 		if (index < m_lights.size())
 		{
+			// Remove the light from the array
 			m_lights.erase(m_lights.begin() + index);
+
+			// Remove the UI angles for this light
+			m_lightDirectionsUI.erase(index);
+
+			// Re-index any UI angles for lights after the removed one
+			for (size_t i = index; i < m_lights.size(); i++)
+			{
+				if (m_lightDirectionsUI.find(i + 1) != m_lightDirectionsUI.end())
+				{
+					m_lightDirectionsUI[i] = m_lightDirectionsUI[i + 1];
+					m_lightDirectionsUI.erase(i + 1);
+				}
+			}
+
 			m_lightsChanged = true;
 		}
 	}
