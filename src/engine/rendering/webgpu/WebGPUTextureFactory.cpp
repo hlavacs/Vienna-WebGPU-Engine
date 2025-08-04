@@ -142,23 +142,23 @@ namespace engine::rendering::webgpu
 			desc.format);
 	}
 
-	wgpu::TextureView WebGPUTextureFactory::getWhiteTextureView()
+	std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::getWhiteTexture()
 	{
 		if (!m_whiteTexture)
 		{
 			m_whiteTexture = createFromColor(glm::vec3(1.0f), 1, 1);
 		}
-		return m_whiteTexture->getTextureView();
+		return m_whiteTexture;
 	}
 
-	wgpu::TextureView WebGPUTextureFactory::getDefaultNormalTextureView()
+	std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::getDefaultNormalTexture()
 	{
 		if (!m_defaultNormalTexture)
 		{
 			// Default normal is (0.5, 0.5, 1.0) in tangent space
 			m_defaultNormalTexture = createFromColor(glm::vec3(0.5f, 0.5f, 1.0f), 1, 1);
 		}
-		return m_defaultNormalTexture->getTextureView();
+		return m_defaultNormalTexture;
 	}
 
 } // namespace engine::rendering::webgpu

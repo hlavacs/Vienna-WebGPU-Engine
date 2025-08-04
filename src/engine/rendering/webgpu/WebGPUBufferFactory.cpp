@@ -1,4 +1,5 @@
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
+#include "engine/rendering/Material.h" // For Material::MaterialProperties
 
 #include <vector>
 #include <cstring>
@@ -94,6 +95,8 @@ namespace engine::rendering::webgpu
 	// (Add more as needed for your engine)
 	template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<float>(const float *, std::size_t);
 	template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<float>(const std::vector<float> &);
+	template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<engine::rendering::Material::MaterialProperties>(
+		const engine::rendering::Material::MaterialProperties*, std::size_t);
 	template wgpu::Buffer WebGPUBufferFactory::createStorageBuffer<float>(const float *, std::size_t);
 	template wgpu::Buffer WebGPUBufferFactory::createStorageBuffer<float>(const std::vector<float> &);
 	template wgpu::Buffer WebGPUBufferFactory::createVertexBuffer<float>(const float *, std::size_t);

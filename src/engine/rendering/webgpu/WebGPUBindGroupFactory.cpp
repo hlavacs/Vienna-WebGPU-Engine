@@ -15,6 +15,49 @@ namespace engine::rendering::webgpu
 		cleanup();
 	}
 
+	wgpu::BindGroupLayoutEntry WebGPUBindGroupFactory::createStorageBindGroupLayoutEntry(
+		int binding,
+		uint32_t visibility,
+		bool readOnly)
+	{
+		wgpu::BindGroupLayoutEntry entry = {};
+		entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
+		entry.visibility = visibility;
+		entry.buffer.type = readOnly ? wgpu::BufferBindingType::ReadOnlyStorage
+									 : wgpu::BufferBindingType::Storage;
+		entry.buffer.hasDynamicOffset = false;
+		entry.buffer.minBindingSize = 0; // No minimum size for storage buffer
+		return entry;
+	}
+
+	wgpu::BindGroupLayoutEntry WebGPUBindGroupFactory::createSamplerBindGroupLayoutEntry(
+		int binding,
+		uint32_t visibility,
+		wgpu::SamplerBindingType samplerType)
+	{
+		wgpu::BindGroupLayoutEntry entry = {};
+		entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
+		entry.visibility = visibility;
+		entry.sampler.type = samplerType;
+		return entry;
+	}
+
+	wgpu::BindGroupLayoutEntry WebGPUBindGroupFactory::createTextureBindGroupLayoutEntry(
+		int binding,
+		uint32_t visibility,
+		wgpu::TextureSampleType sampleType,
+		wgpu::TextureViewDimension viewDimension,
+		bool multisampled)
+	{
+		wgpu::BindGroupLayoutEntry entry = {};
+		entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
+		entry.visibility = visibility;
+		entry.texture.sampleType = sampleType;
+		entry.texture.viewDimension = viewDimension;
+		entry.texture.multisampled = multisampled;
+		return entry;
+	}
+
 	// === Descriptor creation ===
 
 	wgpu::BindGroupLayoutDescriptor WebGPUBindGroupFactory::createBindGroupLayoutDescriptor(const std::vector<wgpu::BindGroupLayoutEntry> &entries)
@@ -53,49 +96,19 @@ namespace engine::rendering::webgpu
 
 	wgpu::BindGroupLayout WebGPUBindGroupFactory::createDefaultMaterialBindGroupLayout()
 	{
-		std::vector<wgpu::BindGroupLayoutEntry> entries;
-		// Binding 0: Albedo Texture
-		wgpu::BindGroupLayoutEntry albedoTexEntry = {};
-		albedoTexEntry.binding = 0;
-		albedoTexEntry.visibility = wgpu::ShaderStage::Fragment;
-		albedoTexEntry.texture.sampleType = wgpu::TextureSampleType::Float;
-		albedoTexEntry.texture.viewDimension = wgpu::TextureViewDimension::_2D;
-		albedoTexEntry.texture.multisampled = false;
-		entries.push_back(albedoTexEntry);
 
-		// Binding 1: Normal Texture
-		wgpu::BindGroupLayoutEntry normalTexEntry = {};
-		normalTexEntry.binding = 1;
-		normalTexEntry.visibility = wgpu::ShaderStage::Fragment;
-		normalTexEntry.texture.sampleType = wgpu::TextureSampleType::Float;
-		normalTexEntry.texture.viewDimension = wgpu::TextureViewDimension::_2D;
-		normalTexEntry.texture.multisampled = false;
-		entries.push_back(normalTexEntry);
-
-		// Binding 2: Shared Sampler
-		wgpu::BindGroupLayoutEntry samplerEntry = {};
-		samplerEntry.binding = 2;
-		samplerEntry.visibility = wgpu::ShaderStage::Fragment;
-		samplerEntry.sampler.type = wgpu::SamplerBindingType::Filtering;
-		entries.push_back(samplerEntry);
-
-		wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
-		auto layout = createBindGroupLayoutFromDescriptor(desc);
+		wgpu::BindGroupLayout layout = createCustomBindGroupLayout(
+			createUniformBindGroupLayoutEntry<Material::MaterialProperties>(),
+			createSamplerBindGroupLayoutEntry(),
+			createTextureBindGroupLayoutEntry(),  // Diffuse texture
+			createTextureBindGroupLayoutEntry()); // Normal texture
 		return layout;
 	}
 
 	wgpu::BindGroupLayout WebGPUBindGroupFactory::createDefaultLightingBindGroupLayout()
 	{
-		std::vector<wgpu::BindGroupLayoutEntry> entries;
-		wgpu::BindGroupLayoutEntry entry = {};
-		entry.binding = 0;
-		entry.visibility = wgpu::ShaderStage::Fragment;
-		entry.buffer.type = wgpu::BufferBindingType::Uniform;
-		entry.buffer.minBindingSize = 0;
-		entries.push_back(entry);
-
-		wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
-		auto layout = createBindGroupLayoutFromDescriptor(desc);
+		auto layout = createCustomBindGroupLayout(
+			createStorageBindGroupLayoutEntry(0, wgpu::ShaderStage::Fragment, true));
 		return layout;
 	}
 
@@ -111,31 +124,36 @@ namespace engine::rendering::webgpu
 
 	wgpu::BindGroup WebGPUBindGroupFactory::createMaterialBindGroup(
 		const wgpu::BindGroupLayout &layout,
+		const wgpu::Buffer &materialPropertiesBuffer,
 		const wgpu::TextureView &baseColor,
 		const wgpu::TextureView &normal,
 		const wgpu::Sampler &sampler)
 	{
-		std::vector<wgpu::BindGroupEntry> entries;
+		wgpu::BindGroupEntry materialPropertiesEntry = {};
+		materialPropertiesEntry.binding = 0;
+		materialPropertiesEntry.buffer = materialPropertiesBuffer;
+		materialPropertiesEntry.offset = 0;
+		materialPropertiesEntry.size = sizeof(Material::MaterialProperties);
 
-		// Binding 0: baseColor
-		wgpu::BindGroupEntry baseColorEntry = {};
-		baseColorEntry.binding = 0;
-		baseColorEntry.textureView = baseColor;
-		entries.push_back(baseColorEntry);
-
-		// Binding 1: normal
-		wgpu::BindGroupEntry normalEntry = {};
-		normalEntry.binding = 1;
-		normalEntry.textureView = normal;
-		entries.push_back(normalEntry);
-
-		// Binding 2: sampler
 		wgpu::BindGroupEntry samplerEntry = {};
-		samplerEntry.binding = 2;
+		samplerEntry.binding = 1;
 		samplerEntry.sampler = sampler;
-		entries.push_back(samplerEntry);
 
-		wgpu::BindGroup group = createBindGroup(layout, entries); 
+		wgpu::BindGroupEntry baseColorEntry = {};
+		baseColorEntry.binding = 2;
+		baseColorEntry.textureView = baseColor;
+
+		wgpu::BindGroupEntry normalEntry = {};
+		normalEntry.binding = 3;
+		normalEntry.textureView = normal;
+
+		wgpu::BindGroup group = createBindGroup(
+			layout,
+			{{materialPropertiesEntry},
+			 {samplerEntry},
+			 {baseColorEntry},
+			 {normalEntry}});
+
 		return group;
 	}
 
@@ -151,7 +169,7 @@ namespace engine::rendering::webgpu
 		entry.size = 0; // Set to 0, or set to actual size if needed
 		entries.push_back(entry);
 
-		wgpu::BindGroup group = createBindGroup(layout, entries); 
+		wgpu::BindGroup group = createBindGroup(layout, entries);
 		return group;
 	}
 

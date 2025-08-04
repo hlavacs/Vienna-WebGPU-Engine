@@ -27,6 +27,7 @@
 #include "engine/Application.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
+#include "engine/rendering/BindGroupLayout.h"
 
 using namespace wgpu;
 using engine::rendering::Vertex;
@@ -47,6 +48,8 @@ namespace ImGui
 
 namespace engine
 {
+	using engine::rendering::BindGroupLayoutIndex;
+
 	Application::Application()
 	{
 #ifdef DEBUG_ROOT_DIR
@@ -103,9 +106,7 @@ namespace engine
 			return false;
 		if (!initLightingUniforms())
 			return false;
-		if (!initUniformBindGroup())
-			return false;
-		if (!initLightBindGroup())
+		if (!initBindGroups())
 			return false;
 		if (!initGui())
 			return false;
@@ -124,8 +125,8 @@ namespace engine
 		updateLightingUniforms();
 
 		// Update uniform buffer
-		m_uniforms.time = static_cast<float>(static_cast<double>(SDL_GetTicks64() / 1000.0));
-		m_context->getQueue().writeBuffer(m_uniformBuffer, offsetof(MyUniforms, time), &m_uniforms.time, sizeof(MyUniforms::time));
+		m_frameUniforms.time = static_cast<float>(static_cast<double>(SDL_GetTicks64() / 1000.0));
+		m_context->getQueue().writeBuffer(m_frameUniformBuffer, offsetof(FrameUniforms, time), &m_frameUniforms.time, sizeof(FrameUniforms::time));
 
 #ifdef WEBGPU_BACKEND_WGPU
 		SurfaceTexture surfaceTexture;
@@ -193,9 +194,17 @@ namespace engine
 			return;
 		}
 
+		// Render all WebGPU models
+		for (const auto &model : m_webgpuModels)
+		{
+			model->update();
+		}
+		m_material->update();
+
 		// Set binding groups that apply to all models
-		renderPass.setBindGroup(0, m_uniformBindGroup, 0, nullptr);
-		renderPass.setBindGroup(2, m_lightBindGroup, 0, nullptr);
+		renderPass.setBindGroup(0, m_frameBindGroup, 0, nullptr);	// Frame uniforms (group 0)
+		renderPass.setBindGroup(1, m_lightBindGroup, 0, nullptr);	// Light data (group 1)
+		renderPass.setBindGroup(2, m_uniformBindGroup, 0, nullptr); // Object uniforms (group 2)
 
 		// Render all WebGPU models
 		for (const auto &model : m_webgpuModels)
@@ -294,7 +303,7 @@ namespace engine
 					glm::mat4 transform = glm::mat4(1.0f);
 
 					// For point/spot lights, use position
-					if (light.light_type == 1 || light.light_type == 2)
+					if (light.light_type == 2 || light.light_type == 3)
 					{
 						transform[3] = glm::vec4(glm::vec3(light.transform[3]), 1.0f); // Extract position from transform
 					}
@@ -335,7 +344,7 @@ namespace engine
 				}
 
 				// Create combined view-projection matrix
-				glm::mat4 viewProj = m_uniforms.projectionMatrix * m_uniforms.viewMatrix;
+				glm::mat4 viewProj = m_frameUniforms.projectionMatrix * m_frameUniforms.viewMatrix;
 
 				// Create buffers
 				wgpu::BufferDescriptor viewProjBufferDesc{};
@@ -489,6 +498,15 @@ namespace engine
 		terminateLightingUniforms();
 		terminateUniforms();
 		terminateGeometry();
+
+		// Release bind groups
+		if (m_frameBindGroup)
+			m_frameBindGroup.release();
+		if (m_uniformBindGroup)
+			m_uniformBindGroup.release();
+		if (m_lightBindGroup)
+			m_lightBindGroup.release();
+
 		m_context->bindGroupFactory().cleanup();
 		terminateRenderPipeline();
 		terminateDepthBuffer();
@@ -691,9 +709,20 @@ namespace engine
 			m_depthTextureFormat,
 			true);
 
-		// Create the pipeline layout
+		// Create the pipeline layout with all four bind group layouts
 		wgpu::PipelineLayoutDescriptor layoutDesc{};
 		layoutDesc.bindGroupLayoutCount = kBindGroupLayoutCount;
+
+		// Make sure all bind groups are non-null before creating the layout
+		for (size_t i = 0; i < kBindGroupLayoutCount; i++)
+		{
+			if (!m_bindGroupLayouts[i])
+			{
+				spdlog::error("Bind group layout at index {} is null!", i);
+				return false;
+			}
+		}
+
 		layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout *)m_bindGroupLayouts.data();
 		wgpu::PipelineLayout layout = m_context->getDevice().createPipelineLayout(layoutDesc);
 		pipelineDesc.layout = layout;
@@ -754,6 +783,7 @@ namespace engine
 			if (webgpuModel)
 			{
 				m_webgpuModels.push_back(webgpuModel);
+				m_material = webgpuModel->getMaterial();
 			}
 			else
 			{
@@ -787,40 +817,55 @@ namespace engine
 
 	bool Application::initUniforms()
 	{
-		// Create uniform buffer
-		BufferDescriptor bufferDesc;
-		bufferDesc.size = sizeof(MyUniforms);
-		bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Uniform;
-		bufferDesc.mappedAtCreation = false;
-		m_uniformBuffer = m_context->getDevice().createBuffer(bufferDesc);
+		// Create frame uniform buffer
+		BufferDescriptor frameBufferDesc;
+		frameBufferDesc.size = sizeof(FrameUniforms);
+		frameBufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Uniform;
+		frameBufferDesc.mappedAtCreation = false;
+		m_frameUniformBuffer = m_context->getDevice().createBuffer(frameBufferDesc);
 
-		// Upload the initial value of the uniforms
-		m_uniforms.modelMatrix = mat4x4(1.0);
-		m_uniforms.viewMatrix = glm::lookAt(vec3(-2.0f, -3.0f, 2.0f), vec3(0.0f), vec3(0, 0, 1));
-		m_uniforms.projectionMatrix = glm::perspective(45 * PI / 180, 640.0f / 480.0f, 0.01f, 100.0f);
-		m_uniforms.time = 1.0f;
-		m_uniforms.color = {0.0f, 1.0f, 0.4f, 1.0f};
-		m_context->getQueue().writeBuffer(m_uniformBuffer, 0, &m_uniforms, sizeof(MyUniforms));
+		// Create object uniform buffer
+		BufferDescriptor objectBufferDesc;
+		objectBufferDesc.size = sizeof(ObjectUniforms);
+		objectBufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Uniform;
+		objectBufferDesc.mappedAtCreation = false;
+		m_objectUniformBuffer = m_context->getDevice().createBuffer(objectBufferDesc);
+
+		// Initialize frame uniforms
+		m_frameUniforms.viewMatrix = glm::lookAt(vec3(-2.0f, -3.0f, 2.0f), vec3(0.0f), vec3(0, 0, 1));
+		m_frameUniforms.projectionMatrix = glm::perspective(45 * PI / 180, 640.0f / 480.0f, 0.01f, 100.0f);
+		m_frameUniforms.cameraWorldPosition = vec3(-2.0f, -3.0f, 2.0f);
+		m_frameUniforms.time = 1.0f;
+		m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
+
+		// Initialize object uniforms
+		m_objectUniforms.modelMatrix = mat4x4(1.0);
+		m_objectUniforms.normalMatrix = glm::transpose(glm::inverse(m_objectUniforms.modelMatrix));
+		m_context->getQueue().writeBuffer(m_objectUniformBuffer, 0, &m_objectUniforms, sizeof(ObjectUniforms));
 
 		updateProjectionMatrix();
 		updateViewMatrix();
 
-		return m_uniformBuffer != nullptr;
+		return m_frameUniformBuffer != nullptr && m_objectUniformBuffer != nullptr;
 	}
 
 	void Application::terminateUniforms()
 	{
-		m_uniformBuffer.destroy();
-		m_uniformBuffer.release();
+		if (m_frameUniformBuffer)
+		{
+			m_frameUniformBuffer.destroy();
+			m_frameUniformBuffer.release();
+		}
+
+		if (m_objectUniformBuffer)
+		{
+			m_objectUniformBuffer.destroy();
+			m_objectUniformBuffer.release();
+		}
 	}
 
 	bool Application::initLightingUniforms()
 	{
-		// Initialize default material properties
-		m_lightsBufferHeader.kd = 1.0f;
-		m_lightsBufferHeader.ks = 0.5f;
-		m_lightsBufferHeader.hardness = 32.0f;
-
 		// Initialize the lights buffer
 		// Create a storage buffer large enough for several lights
 		const size_t maxLights = 16; // Support up to 16 lights
@@ -832,11 +877,11 @@ namespace engine
 		lightsBufDesc.mappedAtCreation = false;
 		m_lightsBuffer = m_context->getDevice().createBuffer(lightsBufDesc);
 
-		// Add a default directional light
-		if (m_lights.empty())
-		{
-			addLight();
-		}
+		// Add a default ambient and directional light
+		addLight();
+		addLight();
+		m_lights[0].intensity = 0.2f;
+		m_lights[1].light_type = 1;
 
 		return m_lightsBuffer != nullptr;
 	}
@@ -882,79 +927,71 @@ namespace engine
 	bool Application::initBindGroupLayout()
 	{
 		// Uniform Bind Group Layout
-		m_bindGroupLayouts[Uniform] = m_context->bindGroupFactory().createCustomBindGroupLayout(
-			m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<MyUniforms>());
+		m_bindGroupLayouts[BindGroupLayoutIndex::FrameIndex] = m_context->bindGroupFactory().createCustomBindGroupLayout(
+			m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<FrameUniforms>());
+		// Lighting Bind Group Layout
+		m_bindGroupLayouts[BindGroupLayoutIndex::LightIndex] = m_context->bindGroupFactory().createDefaultLightingBindGroupLayout();
+		// Uniform Bind Group Layout
+		m_bindGroupLayouts[BindGroupLayoutIndex::UniformIndex] = m_context->bindGroupFactory().createCustomBindGroupLayout(
+			m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<ObjectUniforms>());
 		// Material Bind Group Layout
-		m_bindGroupLayouts[Material] = m_context->bindGroupFactory().createDefaultMaterialBindGroupLayout();
+		m_bindGroupLayouts[BindGroupLayoutIndex::MaterialIndex] = m_context->bindGroupFactory().createDefaultMaterialBindGroupLayout();
 		// Light Bind Group Layout
-		std::vector<wgpu::BindGroupLayoutEntry> entries;
 
-		// Entry for the lights storage buffer
-		wgpu::BindGroupLayoutEntry lightsStorageEntry = {};
-		lightsStorageEntry.binding = 0;
-		lightsStorageEntry.visibility = wgpu::ShaderStage::Fragment;
-		lightsStorageEntry.buffer.type = wgpu::BufferBindingType::ReadOnlyStorage;
-		lightsStorageEntry.buffer.minBindingSize = 0; // Dynamic size
-		entries.push_back(lightsStorageEntry);
-
-		wgpu::BindGroupLayoutDescriptor desc{};
-		desc.entryCount = (uint32_t)entries.size();
-		desc.entries = entries.data();
-		m_bindGroupLayouts[Light] = m_context->getDevice().createBindGroupLayout(desc);
-		return m_bindGroupLayouts[Uniform] && m_bindGroupLayouts[Material] && m_bindGroupLayouts[Light];
+		return m_bindGroupLayouts[BindGroupLayoutIndex::FrameIndex] && m_bindGroupLayouts[BindGroupLayoutIndex::LightIndex] && m_bindGroupLayouts[BindGroupLayoutIndex::UniformIndex] && m_bindGroupLayouts[BindGroupLayoutIndex::MaterialIndex];
 	}
 
-	bool Application::initUniformBindGroup()
+	bool Application::initBindGroups()
 	{
-		wgpu::BindGroupEntry entry = {};
-		entry.binding = 0;
-		entry.buffer = m_uniformBuffer;
-		entry.offset = 0;
-		entry.size = sizeof(MyUniforms);
+		// Create frame bind group
+		wgpu::BindGroupEntry frameEntry = {};
+		frameEntry.binding = 0;
+		frameEntry.buffer = m_frameUniformBuffer;
+		frameEntry.offset = 0;
+		frameEntry.size = sizeof(FrameUniforms);
 
-		wgpu::BindGroupDescriptor desc{};
-		desc.layout = m_bindGroupLayouts[Uniform]; // You need to create this layout for just the uniform buffer
-		desc.entryCount = 1;
-		desc.entries = &entry;
-		m_uniformBindGroup = m_context->getDevice().createBindGroup(desc);
-		return m_uniformBindGroup != nullptr;
-	}
+		m_frameBindGroup = m_context->bindGroupFactory().createBindGroup(
+			m_bindGroupLayouts[BindGroupLayoutIndex::FrameIndex],
+			std::vector<wgpu::BindGroupEntry>{frameEntry});
 
-	bool Application::initLightBindGroup()
-	{
-		std::vector<wgpu::BindGroupEntry> entries;
+		// Create object bind group
+		wgpu::BindGroupEntry objectEntry = {};
+		objectEntry.binding = 0;
+		objectEntry.buffer = m_objectUniformBuffer;
+		objectEntry.offset = 0;
+		objectEntry.size = sizeof(ObjectUniforms);
+
+		m_uniformBindGroup = m_context->bindGroupFactory().createBindGroup(
+			m_bindGroupLayouts[BindGroupLayoutIndex::UniformIndex],
+			{objectEntry});
 
 		// The storage buffer entry for multiple lights
 		wgpu::BindGroupEntry lightsStorageEntry = {};
 		lightsStorageEntry.binding = 0;
 		lightsStorageEntry.buffer = m_lightsBuffer;
 		lightsStorageEntry.offset = 0;
-		// Calculate max size for the buffer - header plus space for multiple lights
-		uint64_t maxSize = sizeof(LightsBuffer) + 16 * sizeof(LightStruct); // Space for up to 16 lights
-		lightsStorageEntry.size = maxSize;
-		entries.push_back(lightsStorageEntry);
+		// Space for up to 16 lights
+		lightsStorageEntry.size = sizeof(LightsBuffer) + 16 * sizeof(LightStruct);
 
-		wgpu::BindGroupDescriptor desc{};
-		desc.layout = m_bindGroupLayouts[Light];
-		desc.entryCount = (uint32_t)entries.size();
-		desc.entries = entries.data();
-		m_lightBindGroup = m_context->getDevice().createBindGroup(desc);
-		return m_lightBindGroup != nullptr;
+		m_lightBindGroup = m_context->bindGroupFactory().createBindGroup(
+			m_bindGroupLayouts[BindGroupLayoutIndex::LightIndex],
+			{lightsStorageEntry});
+
+		return m_frameBindGroup != nullptr && m_lightBindGroup != nullptr && m_uniformBindGroup != nullptr;
 	}
 
 	void Application::updateProjectionMatrix()
 	{
-		// Unity-style: left-handed, Y-up, +Z forward
 		int width, height;
 		SDL_GL_GetDrawableSize(m_window, &width, &height);
 		float ratio = width / (float)height;
 		// glm::perspectiveLH_ZO: left-handed, zero-to-one depth, +Z forward, +Y up
-		m_uniforms.projectionMatrix = glm::perspective(45.0f * PI / 180.0f, ratio, 0.01f, 100.0f);
+		m_frameUniforms.projectionMatrix = glm::perspective(45.0f * PI / 180.0f, ratio, 0.01f, 100.0f);
 		m_context->getQueue().writeBuffer(
-			m_uniformBuffer,
-			offsetof(MyUniforms, projectionMatrix),
-			&m_uniforms.projectionMatrix,
-			sizeof(MyUniforms::projectionMatrix));
+			m_frameUniformBuffer,
+			offsetof(FrameUniforms, projectionMatrix),
+			&m_frameUniforms.projectionMatrix,
+			sizeof(FrameUniforms::projectionMatrix));
 	}
 
 	void Application::updateViewMatrix()
@@ -977,12 +1014,12 @@ namespace engine
 							 std::exp(-m_cameraState.zoom);
 
 		// Target is at origin, up is +Y
-		m_uniforms.viewMatrix = glm::lookAt(position, glm::vec3(0.0f), glm::vec3(0, 1, 0));
+		m_frameUniforms.viewMatrix = glm::lookAt(position, glm::vec3(0.0f), glm::vec3(0, 1, 0));
 		m_context->getQueue().writeBuffer(
-			m_uniformBuffer,
-			offsetof(MyUniforms, viewMatrix),
-			&m_uniforms.viewMatrix,
-			sizeof(MyUniforms::viewMatrix));
+			m_frameUniformBuffer,
+			offsetof(FrameUniforms, viewMatrix),
+			&m_frameUniforms.viewMatrix,
+			sizeof(FrameUniforms::viewMatrix));
 	}
 
 	void Application::updateDragInertia()
@@ -1048,13 +1085,16 @@ namespace engine
 		// Material properties in a single section
 		if (ImGui::CollapsingHeader("Material Properties"))
 		{
+			auto materialProperties = m_material->getCPUObject().getProperties();
 			bool materialsChanged = false;
-			materialsChanged |= ImGui::SliderFloat("Diffuse (Kd)", &m_lightsBufferHeader.kd, 0.0f, 2.0f);
-			materialsChanged |= ImGui::SliderFloat("Specular (Ks)", &m_lightsBufferHeader.ks, 0.0f, 2.0f);
-			materialsChanged |= ImGui::SliderFloat("Hardness", &m_lightsBufferHeader.hardness, 1.0f, 128.0f);
+			materialsChanged |= ImGui::DragFloat3("Diffuse (Kd)", materialProperties.diffuse, 0.05f, 0.0f, 2.0f);
+			materialsChanged |= ImGui::DragFloat3("Specular (Ks)", materialProperties.specular, 0.05f, 0.0f, 2.0f);
+			materialsChanged |= ImGui::DragFloat("Hardness", &materialProperties.roughness, 0.5f, 1.0f, 128.0f);
 
 			if (materialsChanged)
-				m_lightsChanged = true;
+			{
+				m_material->getCPUObject().setProperties(materialProperties);
+			}
 		}
 
 		// Lights section
@@ -1072,7 +1112,7 @@ namespace engine
 				ImGui::PushID(static_cast<int>(i));
 
 				LightStruct &light = m_lights[i];
-				const char *lightTypeNames[] = {"Directional", "Point", "Spot"};
+				const char *lightTypeNames[] = {"Ambient", "Directional", "Point", "Spot"};
 
 				// Create light header with type dropdown and remove button
 				bool open = ImGui::TreeNodeEx(("Light " + std::to_string(i)).c_str(),
@@ -1089,7 +1129,7 @@ namespace engine
 				{
 					// Light type
 					int currentType = static_cast<int>(light.light_type);
-					if (ImGui::Combo("Type", &currentType, lightTypeNames, 3))
+					if (ImGui::Combo("Type", &currentType, lightTypeNames, 4))
 					{
 						light.light_type = static_cast<uint32_t>(currentType);
 						m_lightsChanged = true;
@@ -1114,7 +1154,7 @@ namespace engine
 
 					glm::vec3 &angles = m_lightDirectionsUI[i];
 
-					if (light.light_type != 0)
+					if (light.light_type > 1)
 					{
 						if (ImGui::DragFloat3("Position", glm::value_ptr(position), 0.1f))
 						{
@@ -1129,7 +1169,7 @@ namespace engine
 						}
 					}
 
-					if (light.light_type != 1)
+					if (light.light_type == 1 || light.light_type == 3)
 					{
 						if (ImGui::DragFloat3("Direction", glm::value_ptr(angles), 0.5f))
 						{
@@ -1154,7 +1194,7 @@ namespace engine
 					}
 
 					// Spot angle for spot lights
-					if (light.light_type == 2)
+					if (light.light_type == 3)
 					{
 						if (ImGui::SliderFloat("Cone Angle", &light.spot_angle, 0.1f, 2.0f))
 							m_lightsChanged = true;
@@ -1211,7 +1251,7 @@ namespace engine
 	void Application::addLight()
 	{
 		LightStruct newLight;
-		newLight.light_type = m_lights.empty() ? 0 : 1; // First light is directional, others are point by default
+		newLight.light_type = m_lights.empty() ? 0 : 2; // First light is directional, others are point by default
 
 		// Set default direction angles (in degrees)
 		float pitchDegrees = 140.0f;
@@ -1236,7 +1276,6 @@ namespace engine
 		newLight.intensity = 1.0f;
 		newLight.spot_angle = 0.5f;
 		newLight.spot_softness = 0.2f;
-		newLight.pad2 = 0.0f;
 
 		// Store the index of the new light
 		size_t newLightIndex = m_lights.size();

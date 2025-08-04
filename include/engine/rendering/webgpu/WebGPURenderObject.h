@@ -86,7 +86,7 @@ namespace engine::rendering::webgpu
 		 * @return Reference to the CPU-side object.
 		 * @throws std::runtime_error if the handle is invalid.
 		 */
-		const CPUObjectT &getCPUObject() const
+		CPUObjectT &getCPUObject() const
 		{
 			auto obj = m_cpuHandle.get();
 			if (!obj || !obj.value())

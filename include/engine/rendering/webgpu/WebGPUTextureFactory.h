@@ -40,16 +40,16 @@ namespace engine::rendering::webgpu
 			const WebGPUTextureOptions &options = {});
 
 		/**
-		 * @brief Get the default white texture view.
-		 * @return The white texture view.
+		 * @brief Get the default white texture.
+		 * @return Shared pointer to the white texture.
 		 */
-		wgpu::TextureView getWhiteTextureView();
+		std::shared_ptr<WebGPUTexture> getWhiteTexture();
 
 		/**
-		 * @brief Get the default normal texture view.
-		 * @return The normal texture view.
+		 * @brief Get the default normal texture.
+		 * @return Shared pointer to the normal texture.
 		 */
-		wgpu::TextureView getDefaultNormalTextureView();
+		std::shared_ptr<WebGPUTexture> getDefaultNormalTexture();
 
 	private:
 		std::shared_ptr<WebGPUTexture> m_whiteTexture;
