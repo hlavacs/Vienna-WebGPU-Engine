@@ -1,81 +1,81 @@
 #pragma once
 
-#include <memory>
-#include <string>
-#include <optional>
-#include "engine/core/Identifiable.h"
 #include "engine/core/Handle.h"
+#include "engine/core/Identifiable.h"
 #include "engine/core/Versioned.h"
-#include "engine/rendering/Mesh.h"
 #include "engine/rendering/Material.h"
+#include "engine/rendering/Mesh.h"
+#include <memory>
+#include <optional>
+#include <string>
 
 namespace engine::rendering
 {
-	using MaterialHandle = Material::Handle;
-	using MeshHandle = Mesh::Handle;
+using MaterialHandle = Material::Handle;
+using MeshHandle = Mesh::Handle;
 
-	struct Model : public engine::core::Identifiable<Model>, public engine::core::Versioned
+struct Model : public engine::core::Identifiable<Model>, public engine::core::Versioned
+{
+  public:
+	using Handle = engine::core::Handle<Model>;
+	using Ptr = std::shared_ptr<Model>;
+
+	// Constructors
+	Model() = default;
+
+	Model(MeshHandle mesh, MaterialHandle material, const std::string &filePath) :
+		engine::core::Identifiable<Model>(),
+		m_mesh(mesh),
+		m_material(material),
+		m_filePath(filePath)
 	{
-	public:
-		using Handle = engine::core::Handle<Model>;
-		using Ptr = std::shared_ptr<Model>;
+	}
 
-		// Constructors
-		Model() = default;
+	Model(MeshHandle mesh, MaterialHandle material, const std::string &filePath, const std::string &name) :
+		engine::core::Identifiable<Model>(std::move(name)),
+		m_mesh(mesh),
+		m_material(material),
+		m_filePath(filePath)
+	{
+	}
 
-		Model(MeshHandle mesh, MaterialHandle material, const std::string &filePath)
-			: engine::core::Identifiable<Model>(),
-			  m_mesh(mesh),
-			  m_material(material),
-			  m_filePath(filePath)
-		{
-		}
+	// Move only
+	Model(Model &&) noexcept = default;
+	Model &operator=(Model &&) noexcept = default;
 
-		Model(MeshHandle mesh, MaterialHandle material, const std::string &filePath, const std::string &name)
-			: engine::core::Identifiable<Model>(std::move(name)),
-			  m_mesh(mesh),
-			  m_material(material),
-			  m_filePath(filePath)
-		{
-		}
+	// No copy
+	Model(const Model &) = delete;
+	Model &operator=(const Model &) = delete;
 
-		// Move only
-		Model(Model &&) noexcept = default;
-		Model &operator=(Model &&) noexcept = default;
+	// Accessors
+	MeshHandle getMesh() const { return m_mesh; }
+	void setMesh(MeshHandle handle)
+	{
+		m_mesh = handle;
+		incrementVersion();
+	}
 
-		// No copy
-		Model(const Model &) = delete;
-		Model &operator=(const Model &) = delete;
+	MaterialHandle getMaterial() const { return m_material; }
+	void setMaterial(MaterialHandle handle)
+	{
+		m_material = handle;
+		incrementVersion();
+	}
 
-		// Accessors
-		MeshHandle getMesh() const { return m_mesh; }
-		void setMesh(MeshHandle handle)
-		{
-			m_mesh = handle;
-			incrementVersion();
-		}
+	const std::string &getFilePath() const { return m_filePath; }
+	void setFilePath(const std::string &path)
+	{
+		m_filePath = path;
+		incrementVersion();
+	}
 
-		MaterialHandle getMaterial() const { return m_material; }
-		void setMaterial(MaterialHandle handle)
-		{
-			m_material = handle;
-			incrementVersion();
-		}
+	bool hasMaterial() const { return m_material.valid(); }
+	bool hasMesh() const { return m_mesh.valid(); }
 
-		const std::string &getFilePath() const { return m_filePath; }
-		void setFilePath(const std::string &path)
-		{
-			m_filePath = path;
-			incrementVersion();
-		}
-
-		bool hasMaterial() const { return m_material.valid(); }
-		bool hasMesh() const { return m_mesh.valid(); }
-
-	private:
-		MeshHandle m_mesh;
-		MaterialHandle m_material;
-		std::string m_filePath;
-	};
+  private:
+	MeshHandle m_mesh;
+	MaterialHandle m_material;
+	std::string m_filePath;
+};
 
 } // namespace engine::rendering

@@ -1,197 +1,208 @@
 #include "engine/resources/loaders/ObjLoader.h"
-#include <unordered_map>
 #include <filesystem>
+#include <unordered_map>
 
 namespace engine::resources::loaders
 {
-	ObjLoader::ObjLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger)
-		: GeometryLoader(std::move(basePath), std::move(logger))
+ObjLoader::ObjLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger) :
+	GeometryLoader(std::move(basePath), std::move(logger))
+{
+	// Set the default source coordinate system for OBJ files (Blender/most OBJ: LH_Z_UP_X_FORWARD)
+	m_srcCoordSys = engine::math::CoordinateSystem::BLENDER;
+}
+
+std::optional<ObjGeometryData> ObjLoader::load(
+	const std::filesystem::path &file,
+	bool indexed,
+	std::optional<engine::math::CoordinateSystem::Cartesian> srcCoordSysOpt,
+	std::optional<engine::math::CoordinateSystem::Cartesian> dstCoordSysOpt
+)
+{
+	auto srcCoordSys = srcCoordSysOpt.value_or(m_srcCoordSys);
+	auto dstCoordSys = dstCoordSysOpt.value_or(engine::math::CoordinateSystem::DEFAULT);
+	std::string filePath = (m_basePath / file).string();
+	logInfo("Loading OBJ file: " + filePath);
+
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	std::string err, warn;
+
+	bool triangulate = true;
+	bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.c_str(), m_basePath.string().c_str(), triangulate);
+
+	if (!warn.empty())
+		logWarn(warn);
+	if (!err.empty())
+		logError(err);
+
+	if (!success)
 	{
-		// Set the default source coordinate system for OBJ files (Blender/most OBJ: LH_Z_UP_X_FORWARD)
-		m_srcCoordSys = engine::math::CoordinateSystem::BLENDER;
+		logError("Failed to load OBJ: " + filePath);
+		return std::nullopt;
 	}
 
-	std::optional<ObjGeometryData> ObjLoader::load(
-		const std::filesystem::path &file,
-		bool indexed,
-		std::optional<engine::math::CoordinateSystem::Cartesian> srcCoordSysOpt,
-		std::optional<engine::math::CoordinateSystem::Cartesian> dstCoordSysOpt)
+	ObjGeometryData data;
+	data.filePath = filePath;
+	if (indexed)
 	{
-		auto srcCoordSys = srcCoordSysOpt.value_or(m_srcCoordSys);
-		auto dstCoordSys = dstCoordSysOpt.value_or(engine::math::CoordinateSystem::DEFAULT);
-		std::string filePath = (m_basePath / file).string();
-		logInfo("Loading OBJ file: " + filePath);
+		auto [vertices, indices] = buildVerticesIndexed(shapes, attrib, srcCoordSys, dstCoordSys);
+		data.vertices = std::move(vertices);
+		data.indices = std::move(indices);
 
-		tinyobj::attrib_t attrib;
-		std::vector<tinyobj::shape_t> shapes;
-		std::vector<tinyobj::material_t> materials;
-		std::string err, warn;
+		logInfo("Loaded indexed OBJ at " + filePath + " with " + std::to_string(data.vertices.size()) + " unique vertices and " + std::to_string(data.indices.size()) + " indices");
+	}
+	else
+	{
+		data.vertices = buildVerticesNonIndexed(shapes, attrib, srcCoordSys, dstCoordSys);
+		data.indices.clear();
 
-		bool triangulate = true;
-		bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.c_str(), m_basePath.string().c_str(), triangulate);
-
-		if (!warn.empty())
-			logWarn(warn);
-		if (!err.empty())
-			logError(err);
-
-		if (!success)
-		{
-			logError("Failed to load OBJ: " + filePath);
-			return std::nullopt;
-		}
-
-		ObjGeometryData data;
-		data.filePath = filePath;
-		if (indexed)
-		{
-			auto [vertices, indices] = buildVerticesIndexed(shapes, attrib, srcCoordSys, dstCoordSys);
-			data.vertices = std::move(vertices);
-			data.indices = std::move(indices);
-
-			logInfo("Loaded indexed OBJ at " + filePath + " with " + std::to_string(data.vertices.size()) + " unique vertices and " + std::to_string(data.indices.size()) + " indices");
-		}
-		else
-		{
-			data.vertices = buildVerticesNonIndexed(shapes, attrib, srcCoordSys, dstCoordSys);
-			data.indices.clear();
-
-			logInfo("Loaded non-indexed OBJ at " + filePath + " with " + std::to_string(data.vertices.size()) + " vertices");
-		}
-
-		data.materials = std::move(materials);
-		if (!shapes.empty())
-			data.name = shapes[0].name;
-		else
-			data.name = file.filename().string();
-
-		return data;
+		logInfo("Loaded non-indexed OBJ at " + filePath + " with " + std::to_string(data.vertices.size()) + " vertices");
 	}
 
-	std::vector<engine::rendering::Vertex> ObjLoader::buildVerticesNonIndexed(
-		const std::vector<tinyobj::shape_t> &shapes,
-		const tinyobj::attrib_t &attrib,
-		math::CoordinateSystem::Cartesian srcCoordSys,
-		math::CoordinateSystem::Cartesian dstCoordSys)
+	data.materials = std::move(materials);
+	if (!shapes.empty())
+		data.name = shapes[0].name;
+	else
+		data.name = file.filename().string();
+
+	return data;
+}
+
+std::vector<engine::rendering::Vertex> ObjLoader::buildVerticesNonIndexed(
+	const std::vector<tinyobj::shape_t> &shapes,
+	const tinyobj::attrib_t &attrib,
+	math::CoordinateSystem::Cartesian srcCoordSys,
+	math::CoordinateSystem::Cartesian dstCoordSys
+)
+{
+	std::vector<engine::rendering::Vertex> vertices;
+
+	for (const auto &shape : shapes)
 	{
-		std::vector<engine::rendering::Vertex> vertices;
+		size_t offset = vertices.size();
+		size_t indexCount = shape.mesh.indices.size();
+		vertices.resize(offset + indexCount);
 
-		for (const auto &shape : shapes)
+		for (size_t i = 0; i < indexCount; ++i)
 		{
-			size_t offset = vertices.size();
-			size_t indexCount = shape.mesh.indices.size();
-			vertices.resize(offset + indexCount);
+			const auto &index = shape.mesh.indices[i];
+			auto &vertex = vertices[offset + i];
 
-			for (size_t i = 0; i < indexCount; ++i)
+			glm::vec3 pos = {
+				attrib.vertices[3 * index.vertex_index + 0],
+				attrib.vertices[3 * index.vertex_index + 1],
+				attrib.vertices[3 * index.vertex_index + 2]
+			};
+			vertex.position = math::CoordinateSystem::transform(pos, srcCoordSys, dstCoordSys);
+
+			if (!attrib.colors.empty() && attrib.colors.size() > 3 * index.vertex_index + 2)
 			{
-				const auto &index = shape.mesh.indices[i];
-				auto &vertex = vertices[offset + i];
-
-				glm::vec3 pos = {
-					attrib.vertices[3 * index.vertex_index + 0],
-					attrib.vertices[3 * index.vertex_index + 1],
-					attrib.vertices[3 * index.vertex_index + 2]};
-				vertex.position = math::CoordinateSystem::transform(pos, srcCoordSys, dstCoordSys);
-
-				if (!attrib.colors.empty() && attrib.colors.size() > 3 * index.vertex_index + 2)
-				{
-					vertex.color = {
-						attrib.colors[3 * index.vertex_index + 0],
-						attrib.colors[3 * index.vertex_index + 1],
-						attrib.colors[3 * index.vertex_index + 2],
-						1.0f};
-				}
-				else
-				{
-					vertex.color = {1.0f, 1.0f, 1.0f, 1.0f};
-				}
-				if (index.normal_index >= 0)
-				{
-					glm::vec3 nrm = {
-						attrib.normals[3 * index.normal_index + 0],
-						attrib.normals[3 * index.normal_index + 1],
-						attrib.normals[3 * index.normal_index + 2]};
-					vertex.normal = math::CoordinateSystem::transform(nrm, srcCoordSys, dstCoordSys);
-				}
-				if (index.texcoord_index >= 0)
-				{
-					vertex.uv = {
-						attrib.texcoords[2 * index.texcoord_index + 0],
-						1 - attrib.texcoords[2 * index.texcoord_index + 1]};
-				}
+				vertex.color = {
+					attrib.colors[3 * index.vertex_index + 0],
+					attrib.colors[3 * index.vertex_index + 1],
+					attrib.colors[3 * index.vertex_index + 2],
+					1.0f
+				};
+			}
+			else
+			{
+				vertex.color = {1.0f, 1.0f, 1.0f, 1.0f};
+			}
+			if (index.normal_index >= 0)
+			{
+				glm::vec3 nrm = {
+					attrib.normals[3 * index.normal_index + 0],
+					attrib.normals[3 * index.normal_index + 1],
+					attrib.normals[3 * index.normal_index + 2]
+				};
+				vertex.normal = math::CoordinateSystem::transform(nrm, srcCoordSys, dstCoordSys);
+			}
+			if (index.texcoord_index >= 0)
+			{
+				vertex.uv = {
+					attrib.texcoords[2 * index.texcoord_index + 0],
+					1 - attrib.texcoords[2 * index.texcoord_index + 1]
+				};
 			}
 		}
-
-		return vertices;
 	}
 
-	std::pair<std::vector<engine::rendering::Vertex>, std::vector<uint32_t>> ObjLoader::buildVerticesIndexed(
-		const std::vector<tinyobj::shape_t> &shapes,
-		const tinyobj::attrib_t &attrib,
-		math::CoordinateSystem::Cartesian srcCoordSys,
-		math::CoordinateSystem::Cartesian dstCoordSys)
+	return vertices;
+}
+
+std::pair<std::vector<engine::rendering::Vertex>, std::vector<uint32_t>> ObjLoader::buildVerticesIndexed(
+	const std::vector<tinyobj::shape_t> &shapes,
+	const tinyobj::attrib_t &attrib,
+	math::CoordinateSystem::Cartesian srcCoordSys,
+	math::CoordinateSystem::Cartesian dstCoordSys
+)
+{
+	std::vector<engine::rendering::Vertex> vertices;
+	std::vector<uint32_t> indices;
+	std::unordered_map<engine::rendering::Vertex, uint32_t> uniqueVertices;
+
+	size_t estimatedIndexCount = 0;
+	for (const auto &shape : shapes)
+		estimatedIndexCount += shape.mesh.indices.size();
+
+	vertices.reserve(estimatedIndexCount / 2); // Rough guess
+	indices.reserve(estimatedIndexCount);
+
+	for (const auto &shape : shapes)
 	{
-		std::vector<engine::rendering::Vertex> vertices;
-		std::vector<uint32_t> indices;
-		std::unordered_map<engine::rendering::Vertex, uint32_t> uniqueVertices;
-
-		size_t estimatedIndexCount = 0;
-		for (const auto &shape : shapes)
-			estimatedIndexCount += shape.mesh.indices.size();
-
-		vertices.reserve(estimatedIndexCount / 2); // Rough guess
-		indices.reserve(estimatedIndexCount);
-
-		for (const auto &shape : shapes)
+		for (const auto &index : shape.mesh.indices)
 		{
-			for (const auto &index : shape.mesh.indices)
+			engine::rendering::Vertex vertex{};
+
+			glm::vec3 pos = {
+				attrib.vertices[3 * index.vertex_index + 0],
+				attrib.vertices[3 * index.vertex_index + 1],
+				attrib.vertices[3 * index.vertex_index + 2]
+			};
+			vertex.position = math::CoordinateSystem::transform(pos, srcCoordSys, dstCoordSys);
+
+			if (!attrib.colors.empty() && attrib.colors.size() > 3 * index.vertex_index + 2)
 			{
-				engine::rendering::Vertex vertex{};
-
-				glm::vec3 pos = {
-					attrib.vertices[3 * index.vertex_index + 0],
-					attrib.vertices[3 * index.vertex_index + 1],
-					attrib.vertices[3 * index.vertex_index + 2]};
-				vertex.position = math::CoordinateSystem::transform(pos, srcCoordSys, dstCoordSys);
-
-				if (!attrib.colors.empty() && attrib.colors.size() > 3 * index.vertex_index + 2)
-				{
-					vertex.color = {
-						attrib.colors[3 * index.vertex_index + 0],
-						attrib.colors[3 * index.vertex_index + 1],
-						attrib.colors[3 * index.vertex_index + 2],
-						1.0f};
-				}
-				else
-				{
-					vertex.color = {1.0f, 1.0f, 1.0f, 1.0f};
-				}
-				if (index.normal_index >= 0)
-				{
-					glm::vec3 nrm = {
-						attrib.normals[3 * index.normal_index + 0],
-						attrib.normals[3 * index.normal_index + 1],
-						attrib.normals[3 * index.normal_index + 2]};
-					vertex.normal = math::CoordinateSystem::transform(nrm, srcCoordSys, dstCoordSys);
-				}
-				if (index.texcoord_index >= 0)
-				{
-					vertex.uv = {
-						attrib.texcoords[2 * index.texcoord_index + 0],
-						1 - attrib.texcoords[2 * index.texcoord_index + 1]}; // Flip Y
-				}
-
-				auto [it, inserted] = uniqueVertices.try_emplace(vertex, static_cast<uint32_t>(vertices.size()));
-				if (inserted)
-				{
-					vertices.push_back(vertex);
-				}
-				indices.push_back(it->second);
+				vertex.color = {
+					attrib.colors[3 * index.vertex_index + 0],
+					attrib.colors[3 * index.vertex_index + 1],
+					attrib.colors[3 * index.vertex_index + 2],
+					1.0f
+				};
 			}
-		}
+			else
+			{
+				vertex.color = {1.0f, 1.0f, 1.0f, 1.0f};
+			}
+			if (index.normal_index >= 0)
+			{
+				glm::vec3 nrm = {
+					attrib.normals[3 * index.normal_index + 0],
+					attrib.normals[3 * index.normal_index + 1],
+					attrib.normals[3 * index.normal_index + 2]
+				};
+				vertex.normal = math::CoordinateSystem::transform(nrm, srcCoordSys, dstCoordSys);
+			}
+			if (index.texcoord_index >= 0)
+			{
+				vertex.uv = {
+					attrib.texcoords[2 * index.texcoord_index + 0],
+					1 - attrib.texcoords[2 * index.texcoord_index + 1]
+				}; // Flip Y
+			}
 
-		vertices.shrink_to_fit();
-		return {std::move(vertices), std::move(indices)};
+			auto [it, inserted] = uniqueVertices.try_emplace(vertex, static_cast<uint32_t>(vertices.size()));
+			if (inserted)
+			{
+				vertices.push_back(vertex);
+			}
+			indices.push_back(it->second);
+		}
 	}
+
+	vertices.shrink_to_fit();
+	return {std::move(vertices), std::move(indices)};
+}
 
 } // namespace engine::resources::loaders

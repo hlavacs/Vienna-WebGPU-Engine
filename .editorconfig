@@ -1,0 +1,15 @@
+# EditorConfig for Vienna-WebGPU-Engine
+# Applies tab indentation and basic formatting for C++ and shader files
+
+root = true
+
+[*.{cpp,h,hpp,cc,cxx,vert,frag,wgsl}]
+indent_style = tab
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+charset = utf-8
+
+[*.md]
+trim_trailing_whitespace = false
+

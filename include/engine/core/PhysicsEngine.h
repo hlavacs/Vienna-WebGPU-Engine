@@ -1,10 +1,12 @@
 #pragma once
 
-namespace engine::core {
+namespace engine::core
+{
 
-class PhysicsEngine {
-public:
-    void Step(float fixedDeltaTime);
+class PhysicsEngine
+{
+  public:
+	void Step(float fixedDeltaTime);
 };
 
 } // namespace engine::core
