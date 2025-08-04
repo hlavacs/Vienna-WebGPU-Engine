@@ -31,5 +31,8 @@ namespace engine::rendering::webgpu
 		std::shared_ptr<WebGPUMaterial> createFromHandle(
 			const engine::rendering::Material::Handle &handle,
 			const WebGPUMaterialOptions &options);
+
+	private:
+		wgpu::BindGroupLayout m_bindGroupLayout = nullptr;
 	};
 } // namespace engine::rendering::webgpu

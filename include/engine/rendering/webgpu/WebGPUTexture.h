@@ -43,6 +43,22 @@ namespace engine::rendering::webgpu
 			WebGPUTextureOptions options = {});
 
 		/**
+		 * @brief Destructor that cleans up WebGPU resources.
+		 */
+		~WebGPUTexture() override
+		{
+			if (m_textureView)
+			{
+				m_textureView.release();
+			}
+
+			if (m_texture)
+			{
+				m_texture.release();
+			}
+		}
+
+		/**
 		 * @brief Render the texture (used for debug visualization).
 		 * @param encoder The command encoder.
 		 * @param renderPass The render pass.

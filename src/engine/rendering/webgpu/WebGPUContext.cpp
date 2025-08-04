@@ -16,9 +16,9 @@ namespace engine::rendering::webgpu
 		m_meshFactory = std::make_unique<WebGPUMeshFactory>(*this);
 		m_textureFactory = std::make_unique<WebGPUTextureFactory>(*this);
 		m_materialFactory = std::make_unique<WebGPUMaterialFactory>(*this);
+		m_bindGroupFactory = std::make_unique<WebGPUBindGroupFactory>(*this);
 		m_pipelineFactory = std::make_unique<WebGPUPipelineFactory>(*this);
 		m_samplerFactory = std::make_unique<WebGPUSamplerFactory>(*this);
-		m_bindGroupFactory = std::make_unique<WebGPUBindGroupFactory>(*this);
 		// m_swapChainFactory = std::make_unique<WebGPUSwapChainFactory>(*this);
 		m_modelFactory = std::make_unique<WebGPUModelFactory>(*this);
 		

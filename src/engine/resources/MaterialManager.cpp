@@ -9,13 +9,28 @@ namespace engine::resources
 	std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(const tinyobj::material_t &objMat, const std::string &textureBasePath)
 	{
 		auto mat = std::make_shared<Material>();
-		mat->setAlbedoColor(glm::vec3(objMat.diffuse[0], objMat.diffuse[1], objMat.diffuse[2]));
-		mat->setEmissiveColor(glm::vec3(objMat.emission[0], objMat.emission[1], objMat.emission[2]));
-		mat->setSpecularColor(glm::vec3(objMat.specular[0], objMat.specular[1], objMat.specular[2]));
-		mat->setMetallic(objMat.metallic);
-		mat->setRoughness(objMat.roughness);
-		mat->setShininess(objMat.shininess);
-		mat->setOpacity(objMat.dissolve);
+
+		Material::MaterialProperties props{};
+		// Fill properties from tinyobj
+		props.diffuse[0] = objMat.diffuse[0];
+		props.diffuse[1] = objMat.diffuse[1];
+		props.diffuse[2] = objMat.diffuse[2];
+		props.specular[0] = objMat.specular[0];
+		props.specular[1] = objMat.specular[1];
+		props.specular[2] = objMat.specular[2];
+		props.transmittance[0] = objMat.transmittance[0];
+		props.transmittance[1] = objMat.transmittance[1];
+		props.transmittance[2] = objMat.transmittance[2];
+		props.emission[0] = objMat.emission[0];
+		props.emission[1] = objMat.emission[1];
+		props.emission[2] = objMat.emission[2];
+		props.shininess = objMat.shininess;
+		props.ior = objMat.ior;
+		props.opacity = objMat.dissolve;
+		props.roughness = objMat.roughness;
+		props.metallic = objMat.metallic;
+
+		mat->setProperties(props);
 		mat->setName(objMat.name);
 
 		// TODO: support for additional tinyobj::material_t texture slots if needed (e.g. bump_texname, displacement_texname, reflection_texname, etc.)

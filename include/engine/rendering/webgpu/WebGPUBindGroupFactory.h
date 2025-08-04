@@ -1,4 +1,5 @@
 #pragma once
+
 #include <webgpu/webgpu.hpp>
 #include <vector>
 #include <memory>
@@ -62,17 +63,35 @@ namespace engine::rendering::webgpu
 		wgpu::BindGroupLayoutEntry createStorageBindGroupLayoutEntry(
 			int binding = -1,
 			uint32_t visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
-			bool readOnly = true)
-		{
-			wgpu::BindGroupLayoutEntry entry = {};
-			entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
-			entry.visibility = visibility;
-			entry.buffer.type = readOnly ? wgpu::BufferBindingType::ReadOnlyStorage
-										 : wgpu::BufferBindingType::Storage;
-			entry.buffer.hasDynamicOffset = false;
-			entry.buffer.minBindingSize = 0; // No minimum size for storage buffer
-			return entry;
-		}
+			bool readOnly = true);
+			
+		/**
+		 * @brief Helper to create a sampler BindGroupLayoutEntry.
+		 * @param binding Binding index (default: -1 for auto-assignment).
+		 * @param visibility wgpu::ShaderStage stage visibility (default: Fragment).
+		 * @param samplerType Type of sampler binding (default: Filtering).
+		 * @return wgpu::BindGroupLayoutEntry
+		 */
+		wgpu::BindGroupLayoutEntry createSamplerBindGroupLayoutEntry(
+			int binding = -1,
+			uint32_t visibility = wgpu::ShaderStage::Fragment,
+			wgpu::SamplerBindingType samplerType = wgpu::SamplerBindingType::Filtering);
+			
+		/**
+		 * @brief Helper to create a texture BindGroupLayoutEntry.
+		 * @param binding Binding index (default: -1 for auto-assignment).
+		 * @param visibility wgpu::ShaderStage stage visibility (default: Fragment).
+		 * @param sampleType Type of texture sample (default: Float).
+		 * @param viewDimension Texture view dimension (default: 2D).
+		 * @param multisampled Whether the texture is multisampled (default: false).
+		 * @return wgpu::BindGroupLayoutEntry
+		 */
+		wgpu::BindGroupLayoutEntry createTextureBindGroupLayoutEntry(
+			int binding = -1,
+			uint32_t visibility = wgpu::ShaderStage::Fragment,
+			wgpu::TextureSampleType sampleType = wgpu::TextureSampleType::Float,
+			wgpu::TextureViewDimension viewDimension = wgpu::TextureViewDimension::_2D,
+			bool multisampled = false);
 
 		/**
 		 * @brief Helper to create a vector of BindGroupLayoutEntries with auto binding assignment.
@@ -148,6 +167,7 @@ namespace engine::rendering::webgpu
 		 */
 		wgpu::BindGroup createMaterialBindGroup(
 			const wgpu::BindGroupLayout &layout,
+			const wgpu::Buffer &materialPropertiesBuffer,
 			const wgpu::TextureView &baseColor,
 			const wgpu::TextureView &normal,
 			const wgpu::Sampler &sampler);
@@ -166,7 +186,7 @@ namespace engine::rendering::webgpu
 			const wgpu::BindGroupLayout &layout,
 			const std::vector<wgpu::BindGroupEntry> &entries);
 
-		/**
+        /**
 		 * @brief Release all created bind groups and layouts.
 		 */
 		void cleanup();

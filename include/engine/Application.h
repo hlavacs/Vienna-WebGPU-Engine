@@ -65,9 +65,7 @@ namespace engine
 		void updateLightingUniforms();
 
 		bool initBindGroupLayout();
-
-		bool initUniformBindGroup();
-		bool initLightBindGroup();
+		bool initBindGroups();
 
 		void updateProjectionMatrix();
 		void updateViewMatrix();
@@ -94,44 +92,52 @@ namespace engine
 		using vec2 = glm::vec2;
 
 		/**
-		 * The same structure as in the shader, replicated in C++
+		 * Frame uniforms (camera, time) - matches shader's FrameUniforms
 		 */
-		struct MyUniforms
+		struct FrameUniforms
 		{
-			// We add transform matrices
-			mat4x4 projectionMatrix;
 			mat4x4 viewMatrix;
-			mat4x4 modelMatrix;
-			vec4 color;
+			mat4x4 projectionMatrix;
 			vec3 cameraWorldPosition;
 			float time;
 		};
-		// Have the compiler check byte alignment
-		static_assert(sizeof(MyUniforms) % 16 == 0);
+		static_assert(sizeof(FrameUniforms) % 16 == 0, "FrameUniforms must match shader layout");
 
-		// Match WGSL Light struct
+		/**
+		 * Light struct - matches shader's Light
+		 */
 		struct LightStruct
 		{
 			glm::mat4 transform = glm::mat4(1.0f); // transformation matrix for the light (includes position and rotation)
 			glm::vec3 color = {1.0f, 1.0f, 1.0f};
 			float intensity = 1.0f; // light intensity
 
-			uint32_t light_type = 0;	// 0 = directional, 1 = point, 2 = spot
+			uint32_t light_type = 0;	// 0 = ambient, 1 = directional, 2 = point, 3 = spot
 			float spot_angle = 0.5f;	// for spot (in radians)
-			float spot_softness = 0.2f; // padding to ensure 16-byte alignment
-			float pad2 = 0.0f;			// padding to ensure 16-byte alignment
+			float spot_softness = 0.2f; // for spotlight softness
+			float _pad = 0.0f;			// padding to ensure 16-byte alignment
 		};
 		static_assert(sizeof(LightStruct) % 16 == 0, "LightStruct must match WGSL layout");
 
+		/**
+		 * Lights buffer - matches shader's LightsBuffer
+		 */
 		struct LightsBuffer
 		{
 			uint32_t count = 0;
-			float kd = 1.0f;		// material diffuse coefficient
-			float ks = 0.5f;		// material specular coefficient
-			float hardness = 32.0f; // material shininess/hardness
-									// lights array is managed separately
+			float pad3[3]; // padding to ensure 16-byte alignment
 		};
 		static_assert(sizeof(LightsBuffer) % 16 == 0, "LightsBuffer must match WGSL layout");
+
+		/**
+		 * Object uniforms (model matrix) - matches shader's ObjectUniforms
+		 */
+		struct ObjectUniforms
+		{
+			mat4x4 modelMatrix;
+			mat4x4 normalMatrix; // For normal transformations
+		};
+		static_assert(sizeof(ObjectUniforms) % 16 == 0, "ObjectUniforms must match shader layout");
 
 		struct CameraState
 		{
@@ -184,13 +190,6 @@ namespace engine
 		wgpu::ShaderModule m_shaderModule = nullptr;
 		wgpu::RenderPipeline m_pipeline = nullptr;
 
-		// Texture
-		wgpu::Sampler m_sampler = nullptr;
-		wgpu::Texture m_baseColorTexture = nullptr;
-		wgpu::TextureView m_baseColorTextureView = nullptr;
-		wgpu::Texture m_normalTexture = nullptr;
-		wgpu::TextureView m_normalTextureView = nullptr;
-
 		// Geometry
 		wgpu::Buffer m_vertexBuffer = nullptr;
 		wgpu::Buffer m_indexBuffer = nullptr;
@@ -198,8 +197,10 @@ namespace engine
 		int32_t m_indexCount = 0;
 
 		// Uniforms
-		wgpu::Buffer m_uniformBuffer = nullptr;
-		MyUniforms m_uniforms;
+		wgpu::Buffer m_frameUniformBuffer = nullptr;
+		wgpu::Buffer m_objectUniformBuffer = nullptr;
+		FrameUniforms m_frameUniforms;
+		ObjectUniforms m_objectUniforms;
 
 		// Lights
 		std::vector<LightStruct> m_lights;
@@ -208,20 +209,16 @@ namespace engine
 		bool m_lightsChanged = true;
 		std::map<size_t, glm::vec3> m_lightDirectionsUI; // Store UI direction angles in degrees
 
+		// Material
+		std::shared_ptr<engine::rendering::webgpu::WebGPUMaterial> m_material;
+
 		// Bind Group Layout
-		static constexpr size_t kBindGroupLayoutCount = 3;
+		static constexpr size_t kBindGroupLayoutCount = 4;
 		// Enum for bind group layout indices
-		enum BindGroupLayoutIndex
-		{
-			Uniform = 0,
-			Material = 1,
-			Light = 2
-		};
-		std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> m_bindGroupLayouts = {nullptr, nullptr, nullptr};
+		std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> m_bindGroupLayouts = {nullptr, nullptr, nullptr, nullptr};
 
 		// Bind Group
-		wgpu::BindGroup m_bindGroup = nullptr;
-		wgpu::BindGroup m_materialBindGroup = nullptr;
+		wgpu::BindGroup m_frameBindGroup = nullptr;
 		wgpu::BindGroup m_uniformBindGroup = nullptr;
 		wgpu::BindGroup m_lightBindGroup = nullptr;
 

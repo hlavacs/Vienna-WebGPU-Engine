@@ -1,64 +1,133 @@
 #include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
-
 #include <memory>
 #include <stdexcept>
-
+#include <optional>
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
 namespace engine::rendering::webgpu
 {
 
 	WebGPUMaterialFactory::WebGPUMaterialFactory(WebGPUContext &context)
-		: BaseWebGPUFactory(context) {}
+		: BaseWebGPUFactory(context)
+	{
+	}
+
+	static std::shared_ptr<WebGPUTexture> getTextureView(
+		WebGPUContext &context,
+		const TextureHandle &textureHandle,
+		const std::optional<glm::vec3> &fallbackColor)
+	{
+		auto &texFactory = context.textureFactory();
+
+		// First check if the texture handle is valid
+		if (textureHandle.valid())
+		{
+			auto texOpt = textureHandle.get();
+			if (texOpt && texOpt.value())
+			{
+				// Use the texture if it exists
+				return texFactory.createFrom(*texOpt.value());
+			}
+		}
+
+		// If no valid texture, use fallback color if provided
+		if (fallbackColor.has_value())
+		{
+			const auto &color = fallbackColor.value();
+			// Only create a texture from color if not default white
+			if (color != glm::vec3(1.0f))
+			{
+				return texFactory.createFromColor(color, 1, 1);
+			}
+		}
+
+		// Default to white texture
+		return texFactory.getWhiteTexture();
+	}
 
 	std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
-		const engine::rendering::Material::Handle &handle,
+		const engine::rendering::Material::Handle &materialHandle,
 		const WebGPUMaterialOptions &options)
 	{
-		auto materialOpt = handle.get();
-		if (!materialOpt || !materialOpt.value()) {
+		auto materialOpt = materialHandle.get();
+		if (!materialOpt || !materialOpt.value())
+		{
 			throw std::runtime_error("Invalid material handle in WebGPUMaterialFactory::createFromHandle");
-		}
+		}		
 
-		const auto& material = *materialOpt.value();
-		auto& texFactory = m_context.textureFactory();
-		wgpu::TextureView albedoView = nullptr;
+		const auto &material = *materialOpt.value();
+		auto &texFactory = m_context.textureFactory();
 
-		if (material.hasAlbedoTexture()) {
-			auto texOpt = material.getAlbedoTexture().get();
-			albedoView = (texOpt && texOpt.value())
-				? texFactory.createFrom(*texOpt.value())->getTextureView()
-				: texFactory.getWhiteTextureView();
-		} else {
-			glm::vec3 color = material.getAlbedoColor();
-			albedoView = (color != glm::vec3(1.0f))
-				? texFactory.createFromColor(color, 1, 1)->getTextureView()
-				: texFactory.getWhiteTextureView();
-		}
+		// Get the material properties
+		const auto &materialProps = material.getProperties();
 
-		wgpu::TextureView normalView = nullptr;
-		if (material.hasNormalTexture()) {
-			auto texHandle = material.getNormalTexture();
-			auto texOpt = texHandle.get();
-			if (texOpt && texOpt.value()) {
-				normalView = texFactory.createFrom(*texOpt.value())->getTextureView();
-			} else {
-				normalView = texFactory.getDefaultNormalTextureView();
-			}
-		} else {
-			normalView = texFactory.getDefaultNormalTextureView();
-		}
+		// Create diffuse color from properties
+		glm::vec3 diffuseColor(materialProps.diffuse[0], materialProps.diffuse[1], materialProps.diffuse[2]);
 
-		wgpu::BindGroupLayout bindGroupLayout = m_context.bindGroupFactory().createDefaultMaterialBindGroupLayout();
-		auto bindGroup = m_context.bindGroupFactory().createMaterialBindGroup(
-			bindGroupLayout,
-			albedoView,
-			normalView,
-			m_context.getDefaultSampler()
+		// Get texture views using the helper method
+		std::shared_ptr<WebGPUTexture> albedoView = getTextureView(
+			m_context,
+			material.getAlbedoTexture(),
+			std::optional<glm::vec3>(diffuseColor));
+
+		std::shared_ptr<WebGPUTexture> normalView = getTextureView(
+			m_context,
+			material.getNormalTexture(),
+			std::nullopt // No color fallback for normal maps
 		);
 
-		return std::make_shared<WebGPUMaterial>(m_context, handle, bindGroup, options);
+		wgpu::Buffer materialPropertiesBuffer =
+			m_context.bufferFactory().createUniformBuffer<Material::MaterialProperties>(&materialProps, 1u);
+
+		// Get additional texture views
+		std::shared_ptr<WebGPUTexture> metallicView = getTextureView(
+			m_context,
+			material.getMetallicTexture(),
+			std::nullopt);
+		std::shared_ptr<WebGPUTexture> roughnessView = getTextureView(
+			m_context,
+			material.getRoughnessTexture(),
+			std::nullopt);
+		std::shared_ptr<WebGPUTexture> aoView = getTextureView(
+			m_context,
+			material.getAOTexture(),
+			std::nullopt);
+		std::shared_ptr<WebGPUTexture> emissiveView = getTextureView(
+			m_context,
+			material.getEmissiveTexture(),
+			std::optional<glm::vec3>(glm::vec3(materialProps.emission[0], materialProps.emission[1], materialProps.emission[2])));
+
+		wgpu::Sampler sampler = m_context.getDefaultSampler();
+		if (m_bindGroupLayout == nullptr)
+		{
+			m_bindGroupLayout = m_context.bindGroupFactory().createDefaultMaterialBindGroupLayout();
+		}
+
+		wgpu::BindGroup bindGroup =  m_context.bindGroupFactory().createMaterialBindGroup(
+			m_bindGroupLayout,
+			materialPropertiesBuffer,
+			albedoView->getTextureView(),
+			normalView->getTextureView(),
+			sampler);
+
+		// Construct the textures struct with all required properties
+		WebGPUMaterialTextures textures;
+		textures.albedo    = albedoView;
+		textures.normal    = normalView;
+		textures.metallic  = metallicView;
+		textures.roughness = roughnessView;
+		textures.ao        = aoView;
+		textures.emissive  = emissiveView;
+
+		return std::make_shared<WebGPUMaterial>(
+			m_context,
+			materialHandle,
+			bindGroup,
+			materialPropertiesBuffer,
+			textures,
+			options
+		);
 	}
 
 	std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
