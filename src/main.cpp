@@ -76,7 +76,9 @@ int main(int argc, char **argv)
 			app.onFrame();
 		},
 		(void *)&app,
-		0, true);
+		0,
+		true
+	);
 
 #else // __EMSCRIPTEN__
 

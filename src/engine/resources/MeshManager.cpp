@@ -2,41 +2,42 @@
 
 namespace engine::resources
 {
-	std::optional<MeshManager::MeshPtr> MeshManager::createMesh(
-		std::vector<engine::rendering::Vertex> vertices,
-		std::vector<uint32_t> indices,
-		const std::string &name)
+std::optional<MeshManager::MeshPtr> MeshManager::createMesh(
+	std::vector<engine::rendering::Vertex> vertices,
+	std::vector<uint32_t> indices,
+	const std::string &name
+)
+{
+	auto mesh = std::make_shared<engine::rendering::Mesh>(std::move(vertices), std::move(indices));
+	if (!name.empty())
 	{
-		auto mesh = std::make_shared<engine::rendering::Mesh>(std::move(vertices), std::move(indices));
-		if (!name.empty())
-		{
-			mesh->setName(name);
-		}
-
-		auto handleOpt = add(mesh);
-		if (!handleOpt)
-		{
-			return std::nullopt;
-		}
-
-		return mesh;
+		mesh->setName(name);
 	}
 
-	std::optional<MeshManager::MeshPtr> MeshManager::createEmptyMesh(const std::string &name)
+	auto handleOpt = add(mesh);
+	if (!handleOpt)
 	{
-		auto mesh = std::make_shared<engine::rendering::Mesh>();
-		if (!name.empty())
-		{
-			mesh->setName(name);
-		}
-
-		auto handleOpt = add(mesh);
-		if (!handleOpt)
-		{
-			return std::nullopt;
-		}
-
-		return mesh;
+		return std::nullopt;
 	}
+
+	return mesh;
+}
+
+std::optional<MeshManager::MeshPtr> MeshManager::createEmptyMesh(const std::string &name)
+{
+	auto mesh = std::make_shared<engine::rendering::Mesh>();
+	if (!name.empty())
+	{
+		mesh->setName(name);
+	}
+
+	auto handleOpt = add(mesh);
+	if (!handleOpt)
+	{
+		return std::nullopt;
+	}
+
+	return mesh;
+}
 
 } // namespace engine::resources

@@ -4,16 +4,16 @@
 
 namespace engine::rendering::webgpu
 {
-	class WebGPUContext;
+class WebGPUContext;
 
-	class WebGPUSamplerFactory
-	{
-	public:
-		explicit WebGPUSamplerFactory(WebGPUContext &context);
+class WebGPUSamplerFactory
+{
+  public:
+	explicit WebGPUSamplerFactory(WebGPUContext &context);
 
-		wgpu::Sampler createDefaultSampler();
+	wgpu::Sampler createDefaultSampler();
 
-	private:
-		WebGPUContext &m_context;
-	};
+  private:
+	WebGPUContext &m_context;
+};
 } // namespace engine::rendering::webgpu

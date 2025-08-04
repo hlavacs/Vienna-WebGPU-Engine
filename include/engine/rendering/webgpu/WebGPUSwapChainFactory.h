@@ -4,17 +4,17 @@
 
 namespace engine::rendering::webgpu
 {
-	class WebGPUContext;
+class WebGPUContext;
 
-	class WebGPUSwapChainFactory
-	{
-	public:
-		explicit WebGPUSwapChainFactory(WebGPUContext &context);
+class WebGPUSwapChainFactory
+{
+  public:
+	explicit WebGPUSwapChainFactory(WebGPUContext &context);
 #ifdef __EMSCRIPTEN__
-		wgpu::SwapChain createSwapChain(wgpu::Surface surface, const wgpu::SwapChainDescriptor &desc);
+	wgpu::SwapChain createSwapChain(wgpu::Surface surface, const wgpu::SwapChainDescriptor &desc);
 #endif
 
-	private:
-		WebGPUContext &m_context;
-	};
+  private:
+	WebGPUContext &m_context;
+};
 } // namespace engine::rendering::webgpu
