@@ -1,29 +1,45 @@
+
 #include "engine/rendering/webgpu/WebGPUCamera.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
+#include <glm/glm.hpp>
 
 namespace engine::rendering::webgpu
 {
-
-WebGPUCamera::WebGPUCamera(Camera &camera, wgpu::Device device) :
-	m_camera(camera)
+WebGPUCamera::WebGPUCamera(WebGPUContext &context, const engine::rendering::Camera::Handle &cameraHandle) :
+	WebGPURenderObject<engine::rendering::Camera>(context, cameraHandle, Type::Camera)
 {
 	wgpu::BufferDescriptor desc{};
 	desc.size = sizeof(glm::mat4) * 2;
 	desc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-	m_uniformBuffer = device.createBuffer(desc);
+	desc.mappedAtCreation = false;
+	m_uniformBuffer = context.getDevice().createBuffer(desc);
+	updateGPUResources();
 }
 
-void WebGPUCamera::updateBuffer(wgpu::Queue queue)
+WebGPUCamera::~WebGPUCamera()
 {
-	struct
+	if (m_uniformBuffer)
+	{
+		m_uniformBuffer.destroy();
+		m_uniformBuffer.release();
+	}
+}
+
+void WebGPUCamera::updateGPUResources()
+{
+	const auto &camera = getCPUObject();
+	struct CameraMatrices
 	{
 		glm::mat4 view;
 		glm::mat4 proj;
-	} data{m_camera.getViewMatrix(), m_camera.getProjectionMatrix()};
-	queue.writeBuffer(m_uniformBuffer, 0, &data, sizeof(data));
+	};
+	CameraMatrices matrices{camera.getViewMatrix(), camera.getProjectionMatrix()};
+	m_context.getQueue().writeBuffer(m_uniformBuffer, 0, &matrices, sizeof(CameraMatrices));
 }
 
-wgpu::Buffer WebGPUCamera::getUniformBuffer() const { return m_uniformBuffer; }
-const glm::mat4 &WebGPUCamera::getViewMatrix() const { return m_camera.getViewMatrix(); }
-const glm::mat4 &WebGPUCamera::getProjectionMatrix() const { return m_camera.getProjectionMatrix(); }
+void WebGPUCamera::render(wgpu::CommandEncoder & /*encoder*/, wgpu::RenderPassEncoder & /*renderPass*/)
+{
+	// Camera does not issue draw calls directly
+}
 
 } // namespace engine::rendering::webgpu

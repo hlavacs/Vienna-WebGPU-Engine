@@ -20,7 +20,7 @@ struct VertexOutput {
 }
 
 ;
-
+// ToDo: Split in Camera on binding 0 and time (or other stuff) on other bindings
 struct FrameUniforms {
 	viewMatrix: mat4x4f,
 	projectionMatrix: mat4x4f,

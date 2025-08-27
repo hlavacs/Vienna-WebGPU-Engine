@@ -139,23 +139,12 @@ class Application
 	};
 	static_assert(sizeof(ObjectUniforms) % 16 == 0, "ObjectUniforms must match shader layout");
 
-	struct CameraState
-	{
-		// angles.x is the rotation of the camera around the global vertical axis, affected by mouse.x
-		// angles.y is the rotation of the camera around its local horizontal axis, affected by mouse.y
-		vec2 angles = {0.8f, 0.5f};
-		// zoom is the position of the camera along its local forward axis, affected by the scroll wheel
-		float zoom = -1.2f;
-	};
-
 	struct DragState
 	{
 		// Whether a drag action is ongoing (i.e., we are between mouse press and mouse release)
 		bool active = false;
 		// The position of the mouse at the beginning of the drag action
 		vec2 startMouse;
-		// The camera state at the beginning of the drag action
-		CameraState startCameraState;
 
 		// Constant settings
 		float sensitivity = 0.01f;
@@ -222,7 +211,10 @@ class Application
 	wgpu::BindGroup m_uniformBindGroup = nullptr;
 	wgpu::BindGroup m_lightBindGroup = nullptr;
 
-	CameraState m_cameraState;
+	// Camera
+	std::shared_ptr<engine::rendering::webgpu::WebGPUCamera> m_webgpuCamera;
+	std::shared_ptr<engine::rendering::Camera> m_camera;
+
 	DragState m_drag;
 
 	std::vector<std::shared_ptr<engine::rendering::webgpu::WebGPUModel>> m_webgpuModels;

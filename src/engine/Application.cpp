@@ -537,22 +537,13 @@ void Application::onMouseMove(double xpos, double ypos)
 {
 	if (m_drag.active)
 	{
-		// When Y is up, we need to adjust the mouse coordinates differently
-		// X controls rotation around Y axis, Y controls rotation around X axis
+		// Calculate delta from starting position
 		glm::vec2 currentMouse = glm::vec2(-(float)xpos, (float)ypos);
 		glm::vec2 delta = (currentMouse - m_drag.startMouse) * m_drag.sensitivity;
 
-		// For Y-up, we swap the meaning of x and y angles
-		// x now controls horizontal rotation (around Y)
-		// y controls vertical rotation (around X)
-		m_cameraState.angles.x = m_drag.startCameraState.angles.x + delta.x; // Horizontal rotation
-		m_cameraState.angles.y = m_drag.startCameraState.angles.y + delta.y; // Vertical rotation
+		m_camera->orbit(delta.x, delta.y);
 
-		// Clamp to avoid going too far when orbiting up/down
-		m_cameraState.angles.y = glm::clamp(m_cameraState.angles.y, -PI / 2 + 1e-5f, PI / 2 - 1e-5f);
-		updateViewMatrix();
-
-		// Inertia
+		// Inertia calculation for when the user releases the mouse
 		m_drag.velocity = delta - m_drag.previousDelta;
 		m_drag.previousDelta = delta;
 	}
@@ -565,7 +556,7 @@ void Application::onMouseButton(int button, bool pressed, int x, int y)
 		int xpos, ypos;
 		SDL_GetMouseState(&xpos, &ypos);
 		m_drag.startMouse = glm::vec2(-(float)xpos, (float)ypos);
-		m_drag.startCameraState = m_cameraState;
+		m_drag.previousDelta = glm::vec2(0.0f);
 	}
 	else if (!pressed && button == SDL_BUTTON_LEFT)
 	{
@@ -575,9 +566,27 @@ void Application::onMouseButton(int button, bool pressed, int x, int y)
 
 void Application::onScroll(double /* xoffset */, double yoffset)
 {
-	m_cameraState.zoom += m_drag.scrollSensitivity * static_cast<float>(yoffset);
-	m_cameraState.zoom = glm::clamp(m_cameraState.zoom, -2.0f, 2.0f);
-	updateViewMatrix();
+	// Use Camera zoom function directly
+	m_camera->zoom(static_cast<float>(yoffset) * m_drag.scrollSensitivity);
+}
+
+void Application::updateDragInertia()
+{
+	constexpr float eps = 1e-4f;
+	// Apply inertia only when the user released the click.
+	if (!m_drag.active)
+	{
+		// Avoid updating when velocity is negligible
+		if (std::abs(m_drag.velocity.x) < eps && std::abs(m_drag.velocity.y) < eps)
+		{
+			return;
+		}
+
+		m_camera->orbit(m_drag.velocity.x, m_drag.velocity.y);
+
+		// Dampen velocity for next frame
+		m_drag.velocity *= m_drag.intertia;
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -830,11 +839,33 @@ bool Application::initUniforms()
 	objectBufferDesc.mappedAtCreation = false;
 	m_objectUniformBuffer = m_context->getDevice().createBuffer(objectBufferDesc);
 
+	// Initialize camera
+	m_camera = std::make_shared<engine::rendering::Camera>();
+
+	// Set initial camera parameters (similar to what CameraState did)
+	float azimuth = 0.8f;								  // Similar to m_cameraState.angles.x
+	float elevation = 0.5f;								  // Similar to m_cameraState.angles.y
+	float distance = std::exp(-m_drag.scrollSensitivity); // Similar to exp(-m_cameraState.zoom)
+
+	// Get window aspect ratio
+	int width, height;
+	SDL_GL_GetDrawableSize(m_window, &width, &height);
+	float aspectRatio = width / static_cast<float>(height);
+
+	// Initialize the camera
+	m_camera->setOrbit(azimuth, elevation, distance);
+	m_camera->setAspect(aspectRatio);
+	m_camera->setFov(45.0f); // 45 degrees FOV
+	m_camera->setNearFar(0.01f, 100.0f);
+
+	// Create WebGPU camera
+	m_webgpuCamera = m_context->cameraFactory().createFromHandle(m_camera->getHandle());
+
 	// Initialize frame uniforms
-	m_frameUniforms.viewMatrix = glm::lookAt(vec3(-2.0f, -3.0f, 2.0f), vec3(0.0f), vec3(0, 0, 1));
-	m_frameUniforms.projectionMatrix = glm::perspective(45 * PI / 180, 640.0f / 480.0f, 0.01f, 100.0f);
-	m_frameUniforms.cameraWorldPosition = vec3(-2.0f, -3.0f, 2.0f);
-	m_frameUniforms.time = 1.0f;
+	m_frameUniforms.viewMatrix = m_camera->getViewMatrix();
+	m_frameUniforms.projectionMatrix = m_camera->getProjectionMatrix();
+	m_frameUniforms.cameraWorldPosition = m_camera->getPosition();
+	m_frameUniforms.time = 0.0f;
 	m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
 
 	// Initialize object uniforms
@@ -842,56 +873,29 @@ bool Application::initUniforms()
 	m_objectUniforms.normalMatrix = glm::transpose(glm::inverse(m_objectUniforms.modelMatrix));
 	m_context->getQueue().writeBuffer(m_objectUniformBuffer, 0, &m_objectUniforms, sizeof(ObjectUniforms));
 
-	updateProjectionMatrix();
-	updateViewMatrix();
-
 	return m_frameUniformBuffer != nullptr && m_objectUniformBuffer != nullptr;
 }
 
-void Application::terminateUniforms()
+// Replace updateProjectionMatrix to use the WebGPUCamera
+void Application::updateProjectionMatrix()
 {
-	if (m_frameUniformBuffer)
-	{
-		m_frameUniformBuffer.destroy();
-		m_frameUniformBuffer.release();
-	}
+	// Get current window dimensions
+	int width, height;
+	SDL_GL_GetDrawableSize(m_window, &width, &height);
+	float ratio = width / static_cast<float>(height);
 
-	if (m_objectUniformBuffer)
-	{
-		m_objectUniformBuffer.destroy();
-		m_objectUniformBuffer.release();
-	}
+	// Update the CPU camera's aspect ratio
+	m_camera->setAspect(ratio);
+	m_frameUniforms.projectionMatrix = m_camera->getProjectionMatrix();
 }
 
-bool Application::initLightingUniforms()
+// Replace updateViewMatrix to use the WebGPUCamera
+void Application::updateViewMatrix()
 {
-	// Initialize the lights buffer
-	// Create a storage buffer large enough for several lights
-	const size_t maxLights = 16; // Support up to 16 lights
-	const size_t lightsBufferSize = sizeof(LightsBuffer) + maxLights * sizeof(LightStruct);
+	m_webgpuCamera->updateGPUResources();
 
-	BufferDescriptor lightsBufDesc;
-	lightsBufDesc.size = lightsBufferSize;
-	lightsBufDesc.usage = BufferUsage::Storage | BufferUsage::CopyDst;
-	lightsBufDesc.mappedAtCreation = false;
-	m_lightsBuffer = m_context->getDevice().createBuffer(lightsBufDesc);
-
-	// Add a default ambient and directional light
-	addLight();
-	addLight();
-	m_lights[0].intensity = 0.2f;
-	m_lights[1].light_type = 1;
-
-	return m_lightsBuffer != nullptr;
-}
-
-void Application::terminateLightingUniforms()
-{
-	if (m_lightsBuffer)
-	{
-		m_lightsBuffer.destroy();
-		m_lightsBuffer.release();
-	}
+	m_frameUniforms.viewMatrix = m_camera->getViewMatrix();
+	m_frameUniforms.cameraWorldPosition = m_camera->getPosition();
 }
 
 void Application::updateLightingUniforms()
@@ -988,11 +992,19 @@ bool Application::initBindGroups()
 
 void Application::updateProjectionMatrix()
 {
+	// Get current window dimensions
 	int width, height;
 	SDL_GL_GetDrawableSize(m_window, &width, &height);
-	float ratio = width / (float)height;
-	// glm::perspectiveLH_ZO: left-handed, zero-to-one depth, +Z forward, +Y up
-	m_frameUniforms.projectionMatrix = glm::perspective(45.0f * PI / 180.0f, ratio, 0.01f, 100.0f);
+	float ratio = width / static_cast<float>(height);
+
+	// Update the CPU camera's aspect ratio
+	m_camera->setAspect(ratio);
+
+	// The WebGPUCamera will automatically update its buffer in updateGPUResources
+	m_webgpuCamera->updateGPUResources();
+
+	// Update frame uniforms for compatibility with other code
+	m_frameUniforms.projectionMatrix = m_camera->getProjectionMatrix();
 	m_context->getQueue().writeBuffer(
 		m_frameUniformBuffer,
 		offsetof(FrameUniforms, projectionMatrix),
@@ -1003,25 +1015,12 @@ void Application::updateProjectionMatrix()
 
 void Application::updateViewMatrix()
 {
-	// Unity-style: left-handed, Y-up, +Z forward
-	float cx = cos(m_cameraState.angles.x);
-	float sx = sin(m_cameraState.angles.x);
-	float cy = cos(m_cameraState.angles.y);
-	float sy = sin(m_cameraState.angles.y);
+	// The WebGPUCamera handles the view matrix update
+	m_webgpuCamera->updateGPUResources();
 
-	// For Y-up camera orbit:
-	// x controls rotation around Y axis (horizontal)
-	// y controls rotation around X axis (vertical)
-	// Position is calculated differently to maintain orbit around the origin
-	glm::vec3 position = glm::vec3(
-							 cx * cos(m_cameraState.angles.y), // X position
-							 sy,							   // Y position (up)
-							 sx * cos(m_cameraState.angles.y)  // Z position
-						 )
-						 * std::exp(-m_cameraState.zoom);
-
-	// Target is at origin, up is +Y
-	m_frameUniforms.viewMatrix = glm::lookAt(position, glm::vec3(0.0f), glm::vec3(0, 1, 0));
+	// Update frame uniforms for compatibility with other code
+	m_frameUniforms.viewMatrix = m_camera->getViewMatrix();
+	m_frameUniforms.cameraWorldPosition = m_camera->getPosition();
 	m_context->getQueue().writeBuffer(
 		m_frameUniformBuffer,
 		offsetof(FrameUniforms, viewMatrix),
@@ -1036,17 +1035,25 @@ void Application::updateDragInertia()
 	// Apply inertia only when the user released the click.
 	if (!m_drag.active)
 	{
-		// Avoid updating the matrix when the velocity is no longer noticeable
+		// Avoid updating when velocity is negligible
 		if (std::abs(m_drag.velocity.x) < eps && std::abs(m_drag.velocity.y) < eps)
 		{
 			return;
 		}
-		m_cameraState.angles += m_drag.velocity;
-		m_cameraState.angles.y = glm::clamp(m_cameraState.angles.y, -PI / 2 + 1e-5f, PI / 2 - 1e-5f);
-		// Dampen the velocity so that it decreases exponentially and stops
-		// after a few frames.
+
+		// Get current orbit parameters
+		float azimuth = m_camera->getAzimuth();
+		float elevation = m_camera->getElevation();
+
+		// Apply velocity to orbit parameters
+		azimuth += m_drag.velocity.x;
+		elevation += m_drag.velocity.y;
+
+		// Update camera orbit with new values
+		m_camera->setOrbit(azimuth, elevation, m_camera->getDistance());
+
+		// Dampen velocity for next frame
 		m_drag.velocity *= m_drag.intertia;
-		updateViewMatrix();
 	}
 }
 
@@ -1227,10 +1234,10 @@ void Application::updateGui(RenderPassEncoder renderPass)
 	// Camera controls section
 	if (ImGui::CollapsingHeader("Camera Controls"))
 	{
-		float zoomPercentage = (m_cameraState.zoom + 2.0f) / 4.0f * 100.0f; // Convert to 0-100%
+		float zoomPercentage = (m_camera->zoom() + 2.0f) / 4.0f * 100.0f; // Convert to 0-100%
 		if (ImGui::SliderFloat("Zoom", &zoomPercentage, 0.0f, 100.0f, "%.0f%%"))
 		{
-			m_cameraState.zoom = (zoomPercentage / 100.0f) * 4.0f - 2.0f; // Convert back
+			m_camera->setZoom((zoomPercentage / 100.0f) * 4.0f - 2.0f); // Convert back
 			updateViewMatrix();
 		}
 
