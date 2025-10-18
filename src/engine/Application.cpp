@@ -570,24 +570,6 @@ void Application::onScroll(double /* xoffset */, double yoffset)
 	m_camera->zoom(static_cast<float>(yoffset) * m_drag.scrollSensitivity);
 }
 
-void Application::updateDragInertia()
-{
-	constexpr float eps = 1e-4f;
-	// Apply inertia only when the user released the click.
-	if (!m_drag.active)
-	{
-		// Avoid updating when velocity is negligible
-		if (std::abs(m_drag.velocity.x) < eps && std::abs(m_drag.velocity.y) < eps)
-		{
-			return;
-		}
-
-		m_camera->orbit(m_drag.velocity.x, m_drag.velocity.y);
-
-		// Dampen velocity for next frame
-		m_drag.velocity *= m_drag.intertia;
-	}
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private methods
@@ -874,28 +856,6 @@ bool Application::initUniforms()
 	m_context->getQueue().writeBuffer(m_objectUniformBuffer, 0, &m_objectUniforms, sizeof(ObjectUniforms));
 
 	return m_frameUniformBuffer != nullptr && m_objectUniformBuffer != nullptr;
-}
-
-// Replace updateProjectionMatrix to use the WebGPUCamera
-void Application::updateProjectionMatrix()
-{
-	// Get current window dimensions
-	int width, height;
-	SDL_GL_GetDrawableSize(m_window, &width, &height);
-	float ratio = width / static_cast<float>(height);
-
-	// Update the CPU camera's aspect ratio
-	m_camera->setAspect(ratio);
-	m_frameUniforms.projectionMatrix = m_camera->getProjectionMatrix();
-}
-
-// Replace updateViewMatrix to use the WebGPUCamera
-void Application::updateViewMatrix()
-{
-	m_webgpuCamera->updateGPUResources();
-
-	m_frameUniforms.viewMatrix = m_camera->getViewMatrix();
-	m_frameUniforms.cameraWorldPosition = m_camera->getPosition();
 }
 
 void Application::updateLightingUniforms()
@@ -1234,23 +1194,10 @@ void Application::updateGui(RenderPassEncoder renderPass)
 	// Camera controls section
 	if (ImGui::CollapsingHeader("Camera Controls"))
 	{
-		float zoomPercentage = (m_camera->zoom() + 2.0f) / 4.0f * 100.0f; // Convert to 0-100%
+		float zoomPercentage = (m_camera->getDistance() + 2.0f) / 4.0f * 100.0f; // Convert to 0-100%
 		if (ImGui::SliderFloat("Zoom", &zoomPercentage, 0.0f, 100.0f, "%.0f%%"))
 		{
-			m_camera->setZoom((zoomPercentage / 100.0f) * 4.0f - 2.0f); // Convert back
-			updateViewMatrix();
-		}
-
-		glm::vec2 cameraAngles = glm::vec2(
-			glm::degrees(m_cameraState.angles.x),
-			glm::degrees(m_cameraState.angles.y)
-		);
-
-		if (ImGui::DragFloat2("Camera Rotation", glm::value_ptr(cameraAngles), 0.5f))
-		{
-			m_cameraState.angles.x = glm::radians(cameraAngles.x);
-			m_cameraState.angles.y = glm::radians(cameraAngles.y);
-			m_cameraState.angles.y = glm::clamp(m_cameraState.angles.y, -PI / 2 + 1e-5f, PI / 2 - 1e-5f);
+			m_camera->setDistance((zoomPercentage / 100.0f) * 4.0f - 2.0f); // Convert back
 			updateViewMatrix();
 		}
 	}
