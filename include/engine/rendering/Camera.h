@@ -35,61 +35,63 @@ struct Camera : public engine::core::Identifiable<Camera>,
 		incrementVersion();
 		calculateMatrices();
 	}
-	// Setters
+	
 	void setAzimuth(float azimuth)
 	{
 		m_azimuth = azimuth;
 		incrementVersion();
 		calculateMatrices();
 	}
+
 	void setElevation(float elevation)
 	{
 		m_elevation = elevation;
 		incrementVersion();
 		calculateMatrices();
 	}
+
 	void setDistance(float distance)
 	{
 		m_distance = distance;
 		incrementVersion();
 		calculateMatrices();
 	}
+
 	void setFov(float fovDegrees)
 	{
 		m_fov = fovDegrees;
 		incrementVersion();
 		calculateMatrices();
 	}
+
 	void setAspect(float aspect)
 	{
 		m_aspect = aspect;
 		incrementVersion();
 		calculateMatrices();
 	}
+
 	void setNear(float near)
 	{
 		m_near = near;
 		incrementVersion();
 		calculateMatrices();
 	}
+
 	void setFar(float far)
 	{
 		m_far = far;
 		incrementVersion();
 		calculateMatrices();
 	}
+
 	void setTarget(const glm::vec3 &target)
 	{
 		m_target = target;
 		incrementVersion();
 		calculateMatrices();
 	}
-	void setFov(float fovDegrees)
-	{
-		m_fov = fovDegrees;
-		incrementVersion();
-		calculateMatrices();
-	}
+
 	void setNearFar(float near, float far)
 	{
 		m_near = near;

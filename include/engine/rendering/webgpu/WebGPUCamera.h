@@ -1,7 +1,6 @@
 #pragma once
 #include "engine/rendering/Camera.h"
 #include "engine/rendering/webgpu/WebGPURenderObject.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
 #include <webgpu/webgpu.hpp>
 
 namespace engine::rendering::webgpu
