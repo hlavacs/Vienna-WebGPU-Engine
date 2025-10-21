@@ -153,6 +153,19 @@ if(EMSCRIPTEN)
 		PROPERTY LINK_DEPENDS
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/${SHELL_FILE}"
 	)
+else()
+    # Post-build: copy external DLLs
+    file(GLOB_RECURSE EXTERNAL_DLLS
+        "${CMAKE_CURRENT_BINARY_DIR}/external/*.dll"
+    )
+    foreach(DLL_FILE ${EXTERNAL_DLLS})
+        get_filename_component(DLL_NAME ${DLL_FILE} NAME)
+        add_custom_command(TARGET WebGPU_Engine POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${DLL_FILE}"
+                $<TARGET_FILE_DIR:WebGPU_Engine>/${DLL_NAME}
+        )
+    endforeach()
 endif()
 
 # Post-build: copy WebGPU binaries (defined in utils.cmake)
