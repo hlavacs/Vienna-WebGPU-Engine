@@ -155,7 +155,7 @@ class Application
 
 		// Constant settings
 		float sensitivity = 1.0f;
-		float scrollSensitivity = 2.5f;
+		float scrollSensitivity = 25.0f;
 
 		// Inertia
 		vec2 velocity = {0.0, 0.0};

@@ -511,7 +511,7 @@ void Application::processSDLEvents(float deltaTime)
 			break;
 
 		case SDL_MOUSEWHEEL:
-			onScroll(event.wheel.x, event.wheel.y);
+			onScroll(event.wheel.x, event.wheel.y, deltaTime);
 			break;
 
 		case SDL_KEYDOWN:
