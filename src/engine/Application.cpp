@@ -28,6 +28,8 @@
 #include "engine/rendering/BindGroupLayout.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include "engine/scene/CameraNode.h"
+#include "engine/scene/entity/Node.h"
 
 using namespace wgpu;
 using engine::rendering::Vertex;
@@ -115,13 +117,38 @@ void Application::onFrame()
 		reloadShader();
 		m_pendingShaderReload = false;
 	}
-	processSDLEvents();
-	updateDragInertia();
+	// Calculate delta time for node updates
+	static Uint64 lastFrameTime = SDL_GetTicks64();
+	Uint64 currentTime = SDL_GetTicks64();
+	float deltaTime = (currentTime - lastFrameTime) / 1000.0f;
+	lastFrameTime = currentTime;
+	processSDLEvents(deltaTime);
+	updateDragInertia(deltaTime);
 	updateLightingUniforms();
 
-	// Update uniform buffer
+
+	// Process frame lifecycle using the Scene system
+	if (m_scene)
+	{
+		// Handle Update and LateUpdate phases
+		updateSceneGraph(deltaTime);
+
+		// Handle preRender phase - this is where camera matrices are prepared
+		m_scene->preRender();
+
+		// Update frame uniforms and camera data from the active camera
+		if (m_cameraNode)
+		{
+			// Update frame uniforms for backwards compatibility
+			m_frameUniforms.viewMatrix = m_cameraNode->getViewMatrix();
+			m_frameUniforms.projectionMatrix = m_cameraNode->getProjectionMatrix();
+			m_frameUniforms.cameraWorldPosition = m_cameraNode->getPosition();
+		}
+	}
+
+	// Update time uniform
 	m_frameUniforms.time = static_cast<float>(static_cast<double>(SDL_GetTicks64() / 1000.0));
-	m_context->getQueue().writeBuffer(m_frameUniformBuffer, offsetof(FrameUniforms, time), &m_frameUniforms.time, sizeof(FrameUniforms::time));
+	m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
 
 #ifdef WEBGPU_BACKEND_WGPU
 	SurfaceTexture surfaceTexture;
@@ -189,28 +216,34 @@ void Application::onFrame()
 		return;
 	}
 
-	// Render all WebGPU models
+	// Update materials and models before rendering
+	m_material->update();
 	for (const auto &model : m_webgpuModels)
 	{
 		model->update();
 	}
-	m_material->update();
 
 	// Set binding groups that apply to all models
 	renderPass.setBindGroup(0, m_frameBindGroup, 0, nullptr);	// Frame uniforms (group 0)
 	renderPass.setBindGroup(1, m_lightBindGroup, 0, nullptr);	// Light data (group 1)
 	renderPass.setBindGroup(2, m_uniformBindGroup, 0, nullptr); // Object uniforms (group 2)
 
-	// Render all WebGPU models
+	// Execute the render phase of our scene
+	if (m_scene)
+	{
+		m_scene->render();
+	}
+
+	// Render WebGPU models
 	for (const auto &model : m_webgpuModels)
 	{
 		model->render(encoder, renderPass);
 	}
 
 	// If no models were rendered, log a warning
-	if (m_webgpuModels.empty())
+	if (m_webgpuModels.empty() && !m_scene->getActiveCamera())
 	{
-		spdlog::warn("No WebGPU models to render!");
+		spdlog::warn("No rendering occurred - no models or active camera!");
 	}
 
 	// Render debug axes if enabled (before UI so they appear in world space)
@@ -408,6 +441,12 @@ void Application::onFrame()
 	renderPass.end();
 	renderPass.release();
 
+	// Run postRender phase
+	if (m_scene)
+	{
+		m_scene->postRender();
+	}
+
 	nextTexture.release();
 
 	CommandBufferDescriptor cmdBufferDescriptor{};
@@ -431,7 +470,7 @@ void Application::onFrame()
 #endif
 }
 
-void Application::processSDLEvents()
+void Application::processSDLEvents(float deltaTime)
 {
 
 	SDL_Event event;
@@ -458,7 +497,7 @@ void Application::processSDLEvents()
 			break;
 
 		case SDL_MOUSEMOTION:
-			onMouseMove(event.motion.x, event.motion.y);
+			onMouseMove(event.motion.x, event.motion.y, deltaTime);
 			break;
 
 		case SDL_MOUSEBUTTONDOWN:
@@ -481,6 +520,23 @@ void Application::processSDLEvents()
 				// F5 key pressed - reload the shader
 				reloadShader();
 			}
+			else if (event.key.keysym.sym == SDLK_UP)
+			{
+				m_drag.elevation += 0.05f;
+			}
+			else if (event.key.keysym.sym == SDLK_DOWN)
+			{
+				m_drag.elevation -= 0.05f;
+			}
+			else if (event.key.keysym.sym == SDLK_LEFT)
+			{
+				m_drag.azimuth += 0.05f;
+			}
+			else if (event.key.keysym.sym == SDLK_RIGHT)
+			{
+				m_drag.azimuth -= 0.05f;
+			}
+			updateOrbitCamera();
 			// Fall through to handle other key events
 		case SDL_KEYUP:
 		case SDL_TEXTINPUT:
@@ -533,15 +589,21 @@ void Application::onResize()
 	assert(m_window);
 }
 
-void Application::onMouseMove(double xpos, double ypos)
+void Application::onMouseMove(double xpos, double ypos, float deltaTime)
 {
 	if (m_drag.active)
 	{
 		// Calculate delta from starting position
-		glm::vec2 currentMouse = glm::vec2(-(float)xpos, (float)ypos);
-		glm::vec2 delta = (currentMouse - m_drag.startMouse) * m_drag.sensitivity;
+		glm::vec2 currentMouse = glm::vec2((float)xpos, (float)ypos);
+		glm::vec2 delta = (currentMouse - m_drag.startMouse) * m_drag.sensitivity * deltaTime;
+		// Use sensitivity parameter for orbit speed
+		m_drag.azimuth -= delta.x;
+		m_drag.elevation += delta.y;
+		m_drag.elevation = glm::clamp(m_drag.elevation, -PI / 2 + 1e-5f, PI / 2 - 1e-5f);
 
-		m_camera->orbit(delta.x, delta.y);
+		// Update camera position based on new orbital parameters
+		updateOrbitCamera();
+		m_drag.startMouse = currentMouse;
 
 		// Inertia calculation for when the user releases the mouse
 		m_drag.velocity = delta - m_drag.previousDelta;
@@ -555,7 +617,8 @@ void Application::onMouseButton(int button, bool pressed, int x, int y)
 		m_drag.active = true;
 		int xpos, ypos;
 		SDL_GetMouseState(&xpos, &ypos);
-		m_drag.startMouse = glm::vec2(-(float)xpos, (float)ypos);
+		// Store without inversion to match onMouseMove
+		m_drag.startMouse = glm::vec2((float)xpos, (float)ypos);
 		m_drag.previousDelta = glm::vec2(0.0f);
 	}
 	else if (!pressed && button == SDL_BUTTON_LEFT)
@@ -564,12 +627,14 @@ void Application::onMouseButton(int button, bool pressed, int x, int y)
 	}
 }
 
-void Application::onScroll(double /* xoffset */, double yoffset)
+void Application::onScroll(double /* xoffset */, double yoffset, float  deltaTime)
 {
-	// Use Camera zoom function directly
-	m_camera->zoom(static_cast<float>(yoffset) * m_drag.scrollSensitivity);
-}
+	// Change the orbit distance - negative yoffset means zoom in
+	m_drag.distance -= static_cast<float>(yoffset) * m_drag.scrollSensitivity * deltaTime;
 
+	// Update camera position based on new distance
+	updateOrbitCamera();
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private methods
@@ -805,6 +870,28 @@ void Application::terminateGeometry()
 	}
 }
 
+void Application::resetCamera()
+{
+	glm::vec3 cameraPosition = glm::vec3(0.0f, 2.0f, -m_drag.distance); // Use negative Z to face towards origin
+
+	m_cameraNode->getTransform()->setLocalPosition(cameraPosition);
+	m_cameraNode->lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Look at origin with Y up
+
+	// Set projection parameters
+	if (m_cameraNode && m_cameraNode->getTransform())
+	{
+		glm::vec3 camPos = m_cameraNode->getTransform()->getLocalPosition();
+		glm::vec3 toCam = camPos - m_drag.targetPoint;
+		m_drag.distance = glm::length(toCam);
+		if (m_drag.distance > 1e-5f)
+		{
+			glm::vec3 dir = toCam / m_drag.distance;
+			m_drag.elevation = std::asin(dir.y);
+			m_drag.azimuth = std::atan2(dir.z, dir.x);
+		}
+	}
+}
+
 bool Application::initUniforms()
 {
 	// Create frame uniform buffer
@@ -821,32 +908,31 @@ bool Application::initUniforms()
 	objectBufferDesc.mappedAtCreation = false;
 	m_objectUniformBuffer = m_context->getDevice().createBuffer(objectBufferDesc);
 
-	// Initialize camera
-	m_camera = std::make_shared<engine::rendering::Camera>();
+	// Initialize scene and scene graph
+	m_scene = std::make_shared<engine::scene::Scene>();
+	m_rootNode = std::make_shared<engine::scene::entity::Node>();
+	m_scene->setRoot(m_rootNode);
 
-	// Set initial camera parameters (similar to what CameraState did)
-	float azimuth = 0.8f;								  // Similar to m_cameraState.angles.x
-	float elevation = 0.5f;								  // Similar to m_cameraState.angles.y
-	float distance = std::exp(-m_drag.scrollSensitivity); // Similar to exp(-m_cameraState.zoom)
+	// Create camera node
+	m_cameraNode = std::make_shared<engine::scene::CameraNode>();
+	m_rootNode->addChild(m_cameraNode);		// CameraNode is a SpatialNode, which is a Node
+	m_scene->setActiveCamera(m_cameraNode); // Set as active camera
+
+	resetCamera();
 
 	// Get window aspect ratio
 	int width, height;
 	SDL_GL_GetDrawableSize(m_window, &width, &height);
 	float aspectRatio = width / static_cast<float>(height);
 
-	// Initialize the camera
-	m_camera->setOrbit(azimuth, elevation, distance);
-	m_camera->setAspect(aspectRatio);
-	m_camera->setFov(45.0f); // 45 degrees FOV
-	m_camera->setNearFar(0.01f, 100.0f);
-
-	// Create WebGPU camera
-	m_webgpuCamera = m_context->cameraFactory().createFromHandle(m_camera->getHandle());
+	m_cameraNode->setFov(45.0f);
+	m_cameraNode->setAspect(aspectRatio);
+	m_cameraNode->setNearFar(0.01f, 100.0f);
 
 	// Initialize frame uniforms
-	m_frameUniforms.viewMatrix = m_camera->getViewMatrix();
-	m_frameUniforms.projectionMatrix = m_camera->getProjectionMatrix();
-	m_frameUniforms.cameraWorldPosition = m_camera->getPosition();
+	m_frameUniforms.viewMatrix = m_cameraNode->getViewMatrix();
+	m_frameUniforms.projectionMatrix = m_cameraNode->getProjectionMatrix();
+	m_frameUniforms.cameraWorldPosition = m_cameraNode->getTransform()->getPosition();
 	m_frameUniforms.time = 0.0f;
 	m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
 
@@ -856,6 +942,38 @@ bool Application::initUniforms()
 	m_context->getQueue().writeBuffer(m_objectUniformBuffer, 0, &m_objectUniforms, sizeof(ObjectUniforms));
 
 	return m_frameUniformBuffer != nullptr && m_objectUniformBuffer != nullptr;
+}
+
+bool Application::initLightingUniforms()
+{
+	// Initialize the lights buffer
+	// Create a storage buffer large enough for several lights
+	const size_t maxLights = 16; // Support up to 16 lights
+	const size_t lightsBufferSize = sizeof(LightsBuffer) + maxLights * sizeof(LightStruct);
+
+	BufferDescriptor lightsBufDesc;
+	lightsBufDesc.size = lightsBufferSize;
+	lightsBufDesc.usage = BufferUsage::Storage | BufferUsage::CopyDst;
+	lightsBufDesc.mappedAtCreation = false;
+	m_lightsBuffer = m_context->getDevice().createBuffer(lightsBufDesc);
+
+	// Add a default ambient and directional light
+	addLight();
+	addLight();
+	m_lights[0].intensity = 0.2f;
+	m_lights[1].light_type = 1;
+
+	return m_lightsBuffer != nullptr;
+}
+
+void Application::terminateLightingUniforms()
+{
+	return;
+}
+
+void Application::terminateUniforms()
+{
+	return;
 }
 
 void Application::updateLightingUniforms()
@@ -957,39 +1075,24 @@ void Application::updateProjectionMatrix()
 	SDL_GL_GetDrawableSize(m_window, &width, &height);
 	float ratio = width / static_cast<float>(height);
 
-	// Update the CPU camera's aspect ratio
-	m_camera->setAspect(ratio);
+	// Only update the CameraNode - no direct GPU updates
+	if (m_cameraNode)
+	{
+		m_cameraNode->setAspect(ratio);
+	}
 
-	// The WebGPUCamera will automatically update its buffer in updateGPUResources
-	m_webgpuCamera->updateGPUResources();
-
-	// Update frame uniforms for compatibility with other code
-	m_frameUniforms.projectionMatrix = m_camera->getProjectionMatrix();
-	m_context->getQueue().writeBuffer(
-		m_frameUniformBuffer,
-		offsetof(FrameUniforms, projectionMatrix),
-		&m_frameUniforms.projectionMatrix,
-		sizeof(FrameUniforms::projectionMatrix)
-	);
+	// The frame uniforms will be updated during the next frame's preRender phase
+	// No need to write to GPU buffer here
 }
 
 void Application::updateViewMatrix()
 {
-	// The WebGPUCamera handles the view matrix update
-	m_webgpuCamera->updateGPUResources();
-
-	// Update frame uniforms for compatibility with other code
-	m_frameUniforms.viewMatrix = m_camera->getViewMatrix();
-	m_frameUniforms.cameraWorldPosition = m_camera->getPosition();
-	m_context->getQueue().writeBuffer(
-		m_frameUniformBuffer,
-		offsetof(FrameUniforms, viewMatrix),
-		&m_frameUniforms.viewMatrix,
-		sizeof(FrameUniforms::viewMatrix)
-	);
+	// Method now empty - camera matrices are updated in onFrame's preRender phase
+	// Any changes to the camera are applied during the Scene's update/lateUpdate phase
+	// The frame uniforms will be updated during the next frame's preRender phase
 }
 
-void Application::updateDragInertia()
+void Application::updateDragInertia(float deltaTime)
 {
 	constexpr float eps = 1e-4f;
 	// Apply inertia only when the user released the click.
@@ -1001,19 +1104,14 @@ void Application::updateDragInertia()
 			return;
 		}
 
-		// Get current orbit parameters
-		float azimuth = m_camera->getAzimuth();
-		float elevation = m_camera->getElevation();
-
-		// Apply velocity to orbit parameters
-		azimuth += m_drag.velocity.x;
-		elevation += m_drag.velocity.y;
-
-		// Update camera orbit with new values
-		m_camera->setOrbit(azimuth, elevation, m_camera->getDistance());
+		// Apply velocity to orbit camera angles using sensitivity
+		m_drag.azimuth -= m_drag.velocity.x * m_drag.sensitivity;
+		m_drag.elevation += m_drag.velocity.y * m_drag.sensitivity;
+		// Update camera position based on new orbital parameters
+		updateOrbitCamera();
 
 		// Dampen velocity for next frame
-		m_drag.velocity *= m_drag.intertia;
+		m_drag.velocity *= m_drag.inertiaDecay;
 	}
 }
 
@@ -1192,13 +1290,69 @@ void Application::updateGui(RenderPassEncoder renderPass)
 	}
 
 	// Camera controls section
-	if (ImGui::CollapsingHeader("Camera Controls"))
+	if (ImGui::CollapsingHeader("Camera Controls", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		float zoomPercentage = (m_camera->getDistance() + 2.0f) / 4.0f * 100.0f; // Convert to 0-100%
-		if (ImGui::SliderFloat("Zoom", &zoomPercentage, 0.0f, 100.0f, "%.0f%%"))
+		// Get current camera position, show as vector
+		glm::vec3 cameraPos = m_cameraNode->getPosition();
+		ImGui::Text("Position: (%.2f, %.2f, %.2f)", cameraPos.x, cameraPos.y, cameraPos.z);
+
+		// Display distance from origin
+		float camDistance = glm::length(cameraPos);
+		ImGui::Text("Distance from origin: %.2f", camDistance);
+
+		// Camera orientation vectors
+		if (auto transform = m_cameraNode->getTransform())
 		{
-			m_camera->setDistance((zoomPercentage / 100.0f) * 4.0f - 2.0f); // Convert back
-			updateViewMatrix();
+			glm::vec3 forward = transform->forward();
+			glm::vec3 up = transform->up();
+			glm::vec3 right = transform->right();
+
+			ImGui::Separator();
+			ImGui::Text("Orientation Vectors:");
+			ImGui::Text("Forward: (%.2f, %.2f, %.2f)", forward.x, forward.y, forward.z);
+			ImGui::Text("Up: (%.2f, %.2f, %.2f)", up.x, up.y, up.z);
+			ImGui::Text("Right: (%.2f, %.2f, %.2f)", right.x, right.y, right.z);
+			ImGui::Text("Azimuth/Elevation: (%.2f / %.2f)", m_drag.azimuth, m_drag.elevation);
+
+			// Extract rotation as euler angles for easier understanding
+			glm::quat rotation = transform->getRotation();
+			glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
+
+			// Fix discontinuities in euler angle representation
+			if (eulerAngles.x > 90.0f)
+				eulerAngles.x -= 360.0f;
+			if (eulerAngles.y > 180.0f)
+				eulerAngles.y -= 360.0f;
+			if (eulerAngles.z > 180.0f)
+				eulerAngles.z -= 360.0f;
+
+			ImGui::Text("Rotation (degrees): (%.1f, %.1f, %.1f)", eulerAngles.x, eulerAngles.y, eulerAngles.z);
+		}
+
+		ImGui::Separator();
+
+		// Camera slider control
+		float zoomPercentage = (camDistance - 2.0f) / 8.0f * 100.0f; // Convert to 0-100%, with larger range
+		zoomPercentage = glm::clamp(zoomPercentage, 0.0f, 100.0f);	 // Ensure it's within range
+
+		if (ImGui::SliderFloat("Camera Distance", &zoomPercentage, 0.0f, 100.0f, "%.0f%%"))
+		{
+			float newDistance = (zoomPercentage / 100.0f) * 8.0f + 2.0f; // Convert back, with larger range
+			glm::vec3 dir = glm::normalize(cameraPos);
+			m_cameraNode->getTransform()->setLocalPosition(dir * newDistance);
+		}
+
+		// Add camera reset controls
+		if (ImGui::Button("Look At Origin"))
+		{
+			m_cameraNode->lookAt(glm::vec3(0.0f));
+		}
+
+		ImGui::SameLine();
+
+		if (ImGui::Button("Reset Camera"))
+		{
+			resetCamera();
 		}
 	}
 
@@ -1348,4 +1502,39 @@ bool Application::reloadShader()
 	spdlog::info("Shader reloaded successfully");
 	return true;
 }
+
+void Application::updateSceneGraph(float deltaTime)
+{
+	// Simply delegate to the Scene class which handles the full update cycle
+	if (m_scene)
+	{
+		m_scene->update(deltaTime);
+		m_scene->lateUpdate(deltaTime);
+	}
+}
+
+void Application::updateOrbitCamera()
+{
+	m_drag.azimuth = fmod(m_drag.azimuth, 2.0f * glm::pi<float>());
+	if (m_drag.azimuth < 0)
+	{
+		m_drag.azimuth += 2.0f * glm::pi<float>();
+	}
+	// Clamp distance
+	m_drag.distance = glm::clamp(m_drag.distance, 0.5f, 20.0f);
+
+	// --- Convert spherical coordinates to Cartesian (LH Y-up Z-forward) ---
+	float x = cos(m_drag.elevation) * cos(m_drag.azimuth);
+	float y = sin(m_drag.elevation);
+	float z = cos(m_drag.elevation) * sin(m_drag.azimuth);
+
+	glm::vec3 position = m_drag.targetPoint + glm::vec3(x, y, z) * m_drag.distance;
+
+	if (m_cameraNode && m_cameraNode->getTransform())
+	{
+		m_cameraNode->getTransform()->setLocalPosition(position);
+		m_cameraNode->lookAt(m_drag.targetPoint, glm::vec3(0.0f, 1.0f, 0.0f));
+	}
+}
+
 } // namespace engine

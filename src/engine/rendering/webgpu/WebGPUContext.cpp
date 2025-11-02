@@ -22,8 +22,6 @@ void WebGPUContext::initialize(void *windowHandle)
 	m_samplerFactory = std::make_unique<WebGPUSamplerFactory>(*this);
 	// m_swapChainFactory = std::make_unique<WebGPUSwapChainFactory>(*this);
 	m_modelFactory = std::make_unique<WebGPUModelFactory>(*this);
-
-	m_cameraFactory = std::make_unique<WebGPUCameraFactory>(*this);
 	m_lastWindowHandle = windowHandle;
 #ifdef __EMSCRIPTEN__
 	m_instance = wgpu::wgpuCreateInstance(nullptr);
@@ -229,14 +227,6 @@ WebGPUModelFactory &WebGPUContext::modelFactory()
 		throw std::runtime_error("WebGPUModelFactory not initialized!");
 	}
 	return *m_modelFactory;
-}
-WebGPUCameraFactory &WebGPUContext::cameraFactory()
-{
-	if (!m_cameraFactory)
-	{
-		throw std::runtime_error("WebGPUCameraFactory not initialized!");
-	}
-	return *m_cameraFactory;
 }
 
 wgpu::Buffer WebGPUContext::createBuffer(const wgpu::BufferDescriptor &desc)

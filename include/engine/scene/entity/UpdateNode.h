@@ -5,8 +5,9 @@ namespace engine::scene::entity
 {
 /**
  * @brief Node with update and lateUpdate methods for per-frame logic.
+ * Uses virtual inheritance to prevent diamond inheritance issues.
  */
-class UpdateNode : public Node
+class UpdateNode : public virtual Node
 {
   public:
 	using Ptr = std::shared_ptr<UpdateNode>;

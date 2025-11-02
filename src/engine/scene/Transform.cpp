@@ -134,10 +134,32 @@ void Transform::rotate(const glm::vec3 &eulerDegrees, bool local)
 	}
 }
 
-void Transform::lookAt(const glm::vec3 &target, const glm::vec3 &up)
+void Transform::lookAt(const glm::vec3 &target, const glm::vec3 &worldUp)
 {
-	glm::mat4 look = glm::lookAt(getPosition(), target, up);
-	setLocalRotation(glm::quat_cast(look));
+	glm::vec3 worldPos = getPosition();
+	glm::vec3 forward = target - worldPos;
+	float len = glm::length(forward);
+	if (len < 1e-5f)
+		return;
+	forward /= len;
+
+	glm::vec3 right = glm::cross(worldUp, forward);
+	if (glm::length2(right) < 1e-6f)
+		right = glm::normalize(glm::cross(glm::vec3(0.0f, 0.0f, 1.0f), forward));
+	else
+		right = glm::normalize(right);
+
+	glm::vec3 up = glm::cross(forward, right);
+
+	glm::mat3 rotMatrix(right, up, forward);
+	glm::quat worldRotation = glm::quat_cast(rotMatrix);
+
+	if (_parent)
+		_localRotation = glm::inverse(_parent->getRotation()) * worldRotation;
+	else
+		_localRotation = worldRotation;
+
+	markDirty();
 }
 
 void Transform::setParent(Ptr parent, bool keepWorld)
