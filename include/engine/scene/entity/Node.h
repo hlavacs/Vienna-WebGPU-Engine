@@ -7,7 +7,7 @@ namespace engine::scene::entity {
 /**
  * @brief Minimal base node type with parent-child structure and lifecycle.
  */
-class Node : public engine::core::Identifiable<Node> {
+class Node : public engine::core::Identifiable<Node>, public std::enable_shared_from_this<Node> {
 public:
 	using Ptr = std::shared_ptr<Node>;
 
@@ -38,6 +38,17 @@ public:
 	Node* getParent() const;
 	/** @brief Get children. */
 	const std::vector<Ptr>& getChildren() const;
+	
+	/** @brief Convert this node to a basic Node::Ptr (useful for adding to parent) */
+	template<typename T>
+	static Ptr toNodePtr(std::shared_ptr<T> derived) {
+		return std::static_pointer_cast<Node>(derived);
+	}
+	
+	/** @brief Convert this node to a basic Node::Ptr (useful for adding to parent) */
+	Ptr asNode() {
+		return std::static_pointer_cast<Node>(shared_from_this());
+	}
 
 protected:
 	bool enabled = true;

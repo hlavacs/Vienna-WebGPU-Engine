@@ -64,8 +64,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE void my_notify_fullscreen()
 
 int main(int argc, char **argv)
 {
-
+	std::cout << "Learn WebGPU for C++ - Application Starting..." << std::endl;
 	app.onInit();
+	
 
 #ifdef __EMSCRIPTEN__
 

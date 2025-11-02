@@ -154,8 +154,9 @@ class Transform : public std::enable_shared_from_this<Transform>
 
 	/**
 	 * @brief Rotates the transform to face a target position.
-	 * @param target The point to look at (in world space).
+	 * @param target The point to look at.
 	 * @param up The up direction (default is world up).
+	 * @param worldSpace If true, target is in world space; if false, in local space.
 	 */
 	void lookAt(const glm::vec3 &target, const glm::vec3 &up = glm::vec3(0, 1, 0));
 

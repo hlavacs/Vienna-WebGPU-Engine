@@ -11,6 +11,9 @@
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUModel.h"
 #include "engine/resources/ResourceManager.h"
+#include "engine/scene/CameraNode.h"
+#include "engine/scene/Scene.h"
+#include "engine/scene/entity/Node.h"
 
 // Forward declare
 struct SDL_Window;
@@ -39,9 +42,9 @@ class Application
 	void onResize();
 
 	// Mouse events
-	void onMouseMove(double xpos, double ypos);
+	void onMouseMove(double xpos, double ypos, float deltaTime);
 	void onMouseButton(int button, bool pressed, int x, int y);
-	void onScroll(double xoffset, double yoffset);
+	void onScroll(double xoffset, double yoffset, float deltaTime);
 
   private:
 	bool initSurface();
@@ -69,12 +72,16 @@ class Application
 
 	void updateProjectionMatrix();
 	void updateViewMatrix();
-	void updateDragInertia();
+	void updateDragInertia(float deltaTime);
+
+	// Orbit camera methods
+	void updateOrbitCamera();
+	void resetCamera();
 
 	bool initGui();										// called in onInit
 	void terminateGui();								// called in onFinish
 	void updateGui(wgpu::RenderPassEncoder renderPass); // called in onFrame
-	void processSDLEvents();							// called in onFrame
+	void processSDLEvents(float deltaTime);							// called in onFrame
 
   public:
 	SDL_Window *m_window = nullptr;
@@ -147,13 +154,19 @@ class Application
 		vec2 startMouse;
 
 		// Constant settings
-		float sensitivity = 0.01f;
-		float scrollSensitivity = 0.1f;
+		float sensitivity = 1.0f;
+		float scrollSensitivity = 2.5f;
 
 		// Inertia
 		vec2 velocity = {0.0, 0.0};
 		vec2 previousDelta;
-		float intertia = 0.9f;
+		float inertiaDecay = 0.9f;
+
+		// Orbit camera parameters
+		vec3 targetPoint = vec3(0.0f); // Point to orbit around (origin by default)
+		float azimuth = 0.0f;		   // Horizontal angle (around Y axis)
+		float elevation = 0.0f;		   // Vertical angle (0 is equator, pi/2 is north pole)
+		float distance = 5.0f;		   // Distance from target
 	};
 
 	// Window and Device
@@ -211,9 +224,11 @@ class Application
 	wgpu::BindGroup m_uniformBindGroup = nullptr;
 	wgpu::BindGroup m_lightBindGroup = nullptr;
 
-	// Camera
-	std::shared_ptr<engine::rendering::webgpu::WebGPUCamera> m_webgpuCamera;
-	std::shared_ptr<engine::rendering::Camera> m_camera;
+	// Scene Graph and Camera
+	std::shared_ptr<engine::scene::entity::Node> m_rootNode;
+	std::shared_ptr<engine::scene::CameraNode> m_cameraNode;
+	std::shared_ptr<engine::scene::Scene> m_scene;
+	wgpu::Buffer m_cameraBuffer = nullptr; // Buffer for camera data
 
 	DragState m_drag;
 
@@ -226,6 +241,9 @@ class Application
 	// Debug rendering resources
 	wgpu::ShaderModule m_debugShaderModule = nullptr;
 	wgpu::RenderPipeline m_debugPipeline = nullptr;
+
+	// Scene graph management
+	void updateSceneGraph(float deltaTime);
 
 	// Helper methods for light management
 	void addLight();

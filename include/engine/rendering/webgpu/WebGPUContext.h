@@ -7,7 +7,6 @@
 // Include all factory headers
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
-#include "engine/rendering/webgpu/WebGPUCameraFactory.h"
 #include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
 #include "engine/rendering/webgpu/WebGPUMeshFactory.h"
 #include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
@@ -94,7 +93,6 @@ class WebGPUContext
 	WebGPUBindGroupFactory &bindGroupFactory();
 	// WebGPUSwapChainFactory &swapChainFactory();
 	WebGPUModelFactory &modelFactory();
-	WebGPUCameraFactory &cameraFactory();
 
   private:
 	void initDevice();
@@ -119,7 +117,6 @@ class WebGPUContext
 	std::unique_ptr<WebGPUBindGroupFactory> m_bindGroupFactory;
 	// std::unique_ptr<WebGPUSwapChainFactory> m_swapChainFactory;
 	std::unique_ptr<WebGPUModelFactory> m_modelFactory;
-	std::unique_ptr<WebGPUCameraFactory> m_cameraFactory;
 };
 
 } // namespace engine::rendering::webgpu
