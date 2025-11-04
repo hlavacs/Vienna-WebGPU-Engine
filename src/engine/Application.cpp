@@ -124,27 +124,22 @@ void Application::onFrame()
 	lastFrameTime = currentTime;
 	processSDLEvents(deltaTime);
 	updateDragInertia(deltaTime);
-	updateLightingUniforms();
-
 
 	// Process frame lifecycle using the Scene system
 	if (m_scene)
 	{
-		// Handle Update and LateUpdate phases
-		updateSceneGraph(deltaTime);
-
-		// Handle preRender phase - this is where camera matrices are prepared
-		m_scene->preRender();
-
-		// Update frame uniforms and camera data from the active camera
-		if (m_cameraNode)
+		m_scene->onFrame(deltaTime);
+		auto cam = m_scene->getActiveCamera();
+		if (cam)
 		{
 			// Update frame uniforms for backwards compatibility
-			m_frameUniforms.viewMatrix = m_cameraNode->getViewMatrix();
-			m_frameUniforms.projectionMatrix = m_cameraNode->getProjectionMatrix();
-			m_frameUniforms.cameraWorldPosition = m_cameraNode->getPosition();
+			m_frameUniforms.viewMatrix = cam->getViewMatrix();
+			m_frameUniforms.projectionMatrix = cam->getProjectionMatrix();
+			m_frameUniforms.cameraWorldPosition = cam->getPosition();
 		}
 	}
+
+	updateLightingUniforms();
 
 	// Update time uniform
 	m_frameUniforms.time = static_cast<float>(static_cast<double>(SDL_GetTicks64() / 1000.0));
@@ -627,7 +622,7 @@ void Application::onMouseButton(int button, bool pressed, int x, int y)
 	}
 }
 
-void Application::onScroll(double /* xoffset */, double yoffset, float  deltaTime)
+void Application::onScroll(double /* xoffset */, double yoffset, float deltaTime)
 {
 	// Change the orbit distance - negative yoffset means zoom in
 	m_drag.distance -= static_cast<float>(yoffset) * m_drag.scrollSensitivity * deltaTime;
@@ -872,23 +867,22 @@ void Application::terminateGeometry()
 
 void Application::resetCamera()
 {
-	glm::vec3 cameraPosition = glm::vec3(0.0f, 2.0f, -m_drag.distance); // Use negative Z to face towards origin
-
-	m_cameraNode->getTransform()->setLocalPosition(cameraPosition);
-	m_cameraNode->lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Look at origin with Y up
+	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
+	if (!cam || !cam->getTransform())
+		return;
+	glm::vec3 cameraPosition = glm::vec3(0.0f, 2.0f, -m_drag.distance);
+	cam->getTransform()->setLocalPosition(cameraPosition);
+	cam->lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	// Set projection parameters
-	if (m_cameraNode && m_cameraNode->getTransform())
+	glm::vec3 camPos = cam->getTransform()->getLocalPosition();
+	glm::vec3 toCam = camPos - m_drag.targetPoint;
+	m_drag.distance = glm::length(toCam);
+	if (m_drag.distance > 1e-5f)
 	{
-		glm::vec3 camPos = m_cameraNode->getTransform()->getLocalPosition();
-		glm::vec3 toCam = camPos - m_drag.targetPoint;
-		m_drag.distance = glm::length(toCam);
-		if (m_drag.distance > 1e-5f)
-		{
-			glm::vec3 dir = toCam / m_drag.distance;
-			m_drag.elevation = std::asin(dir.y);
-			m_drag.azimuth = std::atan2(dir.z, dir.x);
-		}
+		glm::vec3 dir = toCam / m_drag.distance;
+		m_drag.elevation = std::asin(dir.y);
+		m_drag.azimuth = std::atan2(dir.z, dir.x);
 	}
 }
 
@@ -913,11 +907,7 @@ bool Application::initUniforms()
 	m_rootNode = std::make_shared<engine::scene::entity::Node>();
 	m_scene->setRoot(m_rootNode);
 
-	// Create camera node
-	m_cameraNode = std::make_shared<engine::scene::CameraNode>();
-	m_rootNode->addChild(m_cameraNode);		// CameraNode is a SpatialNode, which is a Node
-	m_scene->setActiveCamera(m_cameraNode); // Set as active camera
-
+	// Camera node creation and management is now handled by the scene externally.
 	resetCamera();
 
 	// Get window aspect ratio
@@ -925,16 +915,20 @@ bool Application::initUniforms()
 	SDL_GL_GetDrawableSize(m_window, &width, &height);
 	float aspectRatio = width / static_cast<float>(height);
 
-	m_cameraNode->setFov(45.0f);
-	m_cameraNode->setAspect(aspectRatio);
-	m_cameraNode->setNearFar(0.01f, 100.0f);
+	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
+	if (cam)
+	{
+		cam->setFov(45.0f);
+		cam->setAspect(aspectRatio);
+		cam->setNearFar(0.01f, 100.0f);
 
-	// Initialize frame uniforms
-	m_frameUniforms.viewMatrix = m_cameraNode->getViewMatrix();
-	m_frameUniforms.projectionMatrix = m_cameraNode->getProjectionMatrix();
-	m_frameUniforms.cameraWorldPosition = m_cameraNode->getTransform()->getPosition();
-	m_frameUniforms.time = 0.0f;
-	m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
+		// Initialize frame uniforms
+		m_frameUniforms.viewMatrix = cam->getViewMatrix();
+		m_frameUniforms.projectionMatrix = cam->getProjectionMatrix();
+		m_frameUniforms.cameraWorldPosition = cam->getTransform()->getPosition();
+		m_frameUniforms.time = 0.0f;
+		m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
+	}
 
 	// Initialize object uniforms
 	m_objectUniforms.modelMatrix = mat4x4(1.0);
@@ -1076,9 +1070,10 @@ void Application::updateProjectionMatrix()
 	float ratio = width / static_cast<float>(height);
 
 	// Only update the CameraNode - no direct GPU updates
-	if (m_cameraNode)
+	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
+	if (cam)
 	{
-		m_cameraNode->setAspect(ratio);
+		cam->setAspect(ratio);
 	}
 
 	// The frame uniforms will be updated during the next frame's preRender phase
@@ -1289,11 +1284,12 @@ void Application::updateGui(RenderPassEncoder renderPass)
 		}
 	}
 
+	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
 	// Camera controls section
-	if (ImGui::CollapsingHeader("Camera Controls", ImGuiTreeNodeFlags_DefaultOpen))
+	if (ImGui::CollapsingHeader("Camera Controls", ImGuiTreeNodeFlags_DefaultOpen) && cam)
 	{
 		// Get current camera position, show as vector
-		glm::vec3 cameraPos = m_cameraNode->getPosition();
+		glm::vec3 cameraPos = cam->getPosition();
 		ImGui::Text("Position: (%.2f, %.2f, %.2f)", cameraPos.x, cameraPos.y, cameraPos.z);
 
 		// Display distance from origin
@@ -1301,7 +1297,7 @@ void Application::updateGui(RenderPassEncoder renderPass)
 		ImGui::Text("Distance from origin: %.2f", camDistance);
 
 		// Camera orientation vectors
-		if (auto transform = m_cameraNode->getTransform())
+		if (auto transform = cam->getTransform())
 		{
 			glm::vec3 forward = transform->forward();
 			glm::vec3 up = transform->up();
@@ -1339,13 +1335,13 @@ void Application::updateGui(RenderPassEncoder renderPass)
 		{
 			float newDistance = (zoomPercentage / 100.0f) * 8.0f + 2.0f; // Convert back, with larger range
 			glm::vec3 dir = glm::normalize(cameraPos);
-			m_cameraNode->getTransform()->setLocalPosition(dir * newDistance);
+			cam->getTransform()->setLocalPosition(dir * newDistance);
 		}
 
 		// Add camera reset controls
 		if (ImGui::Button("Look At Origin"))
 		{
-			m_cameraNode->lookAt(glm::vec3(0.0f));
+			cam->lookAt(glm::vec3(0.0f));
 		}
 
 		ImGui::SameLine();
@@ -1530,10 +1526,11 @@ void Application::updateOrbitCamera()
 
 	glm::vec3 position = m_drag.targetPoint + glm::vec3(x, y, z) * m_drag.distance;
 
-	if (m_cameraNode && m_cameraNode->getTransform())
+	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
+	if (cam && cam->getTransform())
 	{
-		m_cameraNode->getTransform()->setLocalPosition(position);
-		m_cameraNode->lookAt(m_drag.targetPoint, glm::vec3(0.0f, 1.0f, 0.0f));
+		cam->getTransform()->setLocalPosition(position);
+		cam->lookAt(m_drag.targetPoint, glm::vec3(0.0f, 1.0f, 0.0f));
 	}
 }
 

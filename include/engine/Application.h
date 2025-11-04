@@ -224,9 +224,8 @@ class Application
 	wgpu::BindGroup m_uniformBindGroup = nullptr;
 	wgpu::BindGroup m_lightBindGroup = nullptr;
 
-	// Scene Graph and Camera
+	// Scene Graph
 	std::shared_ptr<engine::scene::entity::Node> m_rootNode;
-	std::shared_ptr<engine::scene::CameraNode> m_cameraNode;
 	std::shared_ptr<engine::scene::Scene> m_scene;
 	wgpu::Buffer m_cameraBuffer = nullptr; // Buffer for camera data
 
