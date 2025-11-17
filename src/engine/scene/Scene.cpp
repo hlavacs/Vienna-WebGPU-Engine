@@ -138,7 +138,7 @@ void Scene::render()
 			auto renderNode = std::dynamic_pointer_cast<entity::RenderNode>(node);
 			if (renderNode)
 			{
-				renderNode->render();
+				// TODO: renderNode->onRenderCollect(collector);
 			}
 
 			// Process children

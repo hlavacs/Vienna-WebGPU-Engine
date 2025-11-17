@@ -23,7 +23,7 @@ class WebGPUModelFactory : public BaseWebGPUFactory<engine::rendering::Model, We
 	 */
 	std::shared_ptr<WebGPUModel> createFromHandle(
 		const engine::rendering::Model::Handle &handle,
-		const WebGPUModelOptions &options = {}
+		const WebGPUModelOptions &options
 	);
 
 	/**

@@ -59,7 +59,6 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
 	}
 
 	const auto &material = *materialOpt.value();
-	auto &texFactory = m_context.textureFactory();
 
 	// Get the material properties
 	const auto &materialProps = material.getProperties();

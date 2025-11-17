@@ -19,9 +19,10 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandle(
 		throw std::runtime_error("Invalid texture handle in WebGPUTextureFactory::createFromHandle");
 	}
 	const auto &texture = *textureOpt.value();
-
+	std::string textureName = texture.getName().value_or(std::to_string(textureHandle.id()));
 	// Prepare texture descriptor
 	wgpu::TextureDescriptor desc{};
+	desc.label = ("Texture" + textureName).c_str();
 	desc.dimension = wgpu::TextureDimension::_2D;
 	desc.size.width = texture.getWidth();
 	desc.size.height = texture.getHeight();
@@ -65,21 +66,17 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandle(
 	wgpu::TextureView nextTexture = gpuTexture.createView(viewDesc);
 
 	return std::make_shared<WebGPUTexture>(
-		m_context,
-		textureHandle,
 		gpuTexture,
 		nextTexture,
-		texture.getWidth(),
-		texture.getHeight(),
-		desc.format
+		desc,
+		viewDesc
 	);
 }
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	const glm::vec3 &color,
 	uint32_t width,
-	uint32_t height,
-	const WebGPUTextureOptions &options
+	uint32_t height
 )
 {
 	// Create a width x height RGBA8 texture with the given color
@@ -96,6 +93,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 		rgba[i * 4 + 3] = a;
 	}
 	wgpu::TextureDescriptor desc{};
+	desc.label = ("ColorTexture (" + std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b) + "," + std::to_string(a) + ")").c_str();
 	desc.dimension = wgpu::TextureDimension::_2D;
 	desc.size.width = width;
 	desc.size.height = height;
@@ -135,13 +133,32 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	auto texture = engine::rendering::Texture(width, height, 4, std::move(rgba));
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
 	return std::make_shared<WebGPUTexture>(
-		m_context,
-		texture.getHandle(),
 		gpuTexture,
 		view,
-		width,
-		height,
-		desc.format
+		desc,
+		viewDesc
+	);
+}
+
+std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
+	const wgpu::TextureDescriptor &textureDesc,
+	const wgpu::TextureViewDescriptor &viewDesc
+)
+{
+	// Assert compatibility between descriptors
+	assert(textureDesc.format == viewDesc.format && "Texture and view formats must match");
+	assert(viewDesc.baseMipLevel + viewDesc.mipLevelCount <= textureDesc.mipLevelCount && "View mip levels must be within texture mip levels");
+	assert(viewDesc.baseArrayLayer + viewDesc.arrayLayerCount <= textureDesc.size.depthOrArrayLayers && "View array layers must be within texture array layers");
+	// Optionally check dimension compatibility
+	assert(viewDesc.dimension == wgpu::TextureViewDimension::_2D && textureDesc.dimension == wgpu::TextureDimension::_2D && "Only 2D textures/views supported");
+
+	wgpu::Texture gpuTexture = m_context.createTexture(textureDesc);
+	wgpu::TextureView view = gpuTexture.createView(viewDesc);
+	return std::make_shared<WebGPUTexture>(
+		gpuTexture,
+		view,
+		textureDesc,
+		viewDesc
 	);
 }
 
