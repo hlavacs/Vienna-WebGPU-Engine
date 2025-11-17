@@ -13,6 +13,7 @@ WebGPUContext::WebGPUContext() :
 
 void WebGPUContext::initialize(void *windowHandle)
 {
+	m_surfaceManager = std::make_unique<WebGPUSurfaceManager>(*this);
 	m_bufferFactory = std::make_unique<WebGPUBufferFactory>(*this);
 	m_meshFactory = std::make_unique<WebGPUMeshFactory>(*this);
 	m_textureFactory = std::make_unique<WebGPUTextureFactory>(*this);
@@ -21,7 +22,10 @@ void WebGPUContext::initialize(void *windowHandle)
 	m_pipelineFactory = std::make_unique<WebGPUPipelineFactory>(*this);
 	m_samplerFactory = std::make_unique<WebGPUSamplerFactory>(*this);
 	// m_swapChainFactory = std::make_unique<WebGPUSwapChainFactory>(*this);
+	m_depthTextureFactory = std::make_unique<WebGPUDepthTextureFactory>(*this);
 	m_modelFactory = std::make_unique<WebGPUModelFactory>(*this);
+	m_depthStencilStateFactory = std::make_unique<WebGPUDepthStencilStateFactory>();
+	m_renderPassFactory = std::make_unique<WebGPURenderPassFactory>(*this);
 	m_lastWindowHandle = windowHandle;
 #ifdef __EMSCRIPTEN__
 	m_instance = wgpu::wgpuCreateInstance(nullptr);
@@ -31,14 +35,29 @@ void WebGPUContext::initialize(void *windowHandle)
 	assert(m_instance);
 	initSurface(windowHandle);
 	initDevice();
+
+	// ToDo: Move this to the surface manager
+	SDL_Window *sdlWindow = static_cast<SDL_Window *>(windowHandle);
+	int width, height;
+	SDL_GL_GetDrawableSize(sdlWindow, &width, &height);
+
+	WebGPUSurfaceManager::Config config;
+	config.format = getSwapChainFormat();
+	config.width = width;
+	config.height = height;
+	config.presentMode = wgpu::PresentMode::Fifo;
+	m_surfaceManager->reconfigure(config);
+
 }
 
 void WebGPUContext::initSurface(void *windowHandle)
 {
 	if (m_surface)
 		return;
+
 	SDL_Window *sdlWindow = static_cast<SDL_Window *>(windowHandle);
-	m_surface = wgpu::Surface(SDL_GetWGPUSurface(m_instance, sdlWindow));
+	m_surface = wgpu::Surface(SDL_GetWGPUSurface(m_instance, sdlWindow));	
+	
 	assert(m_surface);
 }
 
@@ -147,6 +166,15 @@ void WebGPUContext::initDevice()
 	assert(m_defaultSampler);
 }
 
+WebGPUSurfaceManager &WebGPUContext::surfaceManager()
+{
+	if (!m_surfaceManager)
+	{
+		throw std::runtime_error("WebGPUSurfaceManager not initialized!");
+	}
+	return *m_surfaceManager;
+}
+
 WebGPUMeshFactory &WebGPUContext::meshFactory()
 {
 	if (!m_meshFactory)
@@ -227,6 +255,33 @@ WebGPUModelFactory &WebGPUContext::modelFactory()
 		throw std::runtime_error("WebGPUModelFactory not initialized!");
 	}
 	return *m_modelFactory;
+}
+
+WebGPUDepthTextureFactory &WebGPUContext::depthTextureFactory()
+{
+	if (!m_depthTextureFactory)
+	{
+		throw std::runtime_error("WebGPUDepthTextureFactory not initialized!");
+	}
+	return *m_depthTextureFactory;
+}
+
+WebGPUDepthStencilStateFactory &WebGPUContext::depthStencilStateFactory()
+{
+	if (!m_depthStencilStateFactory)
+	{
+		throw std::runtime_error("WebGPUDepthStencilStateFactory not initialized!");
+	}
+	return *m_depthStencilStateFactory;
+}
+
+WebGPURenderPassFactory &WebGPUContext::renderPassFactory()
+{
+	if (!m_renderPassFactory)
+	{
+		throw std::runtime_error("WebGPURenderPassFactory not initialized!");
+	}
+	return *m_renderPassFactory;
 }
 
 wgpu::Buffer WebGPUContext::createBuffer(const wgpu::BufferDescriptor &desc)

@@ -4,7 +4,7 @@
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
-// Include all factory headers
+#include "engine/rendering/webgpu/WebGPUSurfaceManager.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
@@ -14,6 +14,9 @@
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 // #include "engine/rendering/webgpu/WebGPUSwapChainFactory.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
+#include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
+#include "engine/rendering/webgpu/WebGPUDepthStencilStateFactory.h"
+#include "engine/rendering/webgpu/WebGPURenderPassFactory.h"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -82,6 +85,9 @@ class WebGPUContext
 
 	// === Texture Utility ===
 	wgpu::Texture createTexture(const wgpu::TextureDescriptor &desc);
+	
+	// === Surface Manager Accessor ===
+	WebGPUSurfaceManager &surfaceManager();
 
 	// === Factory Accessors ===
 	WebGPUMeshFactory &meshFactory();
@@ -92,6 +98,9 @@ class WebGPUContext
 	WebGPUBufferFactory &bufferFactory();
 	WebGPUBindGroupFactory &bindGroupFactory();
 	// WebGPUSwapChainFactory &swapChainFactory();
+	WebGPUDepthTextureFactory &depthTextureFactory();
+	WebGPUDepthStencilStateFactory &depthStencilStateFactory();
+	WebGPURenderPassFactory &renderPassFactory();
 	WebGPUModelFactory &modelFactory();
 
   private:
@@ -106,6 +115,9 @@ class WebGPUContext
 	wgpu::Queue m_queue = nullptr;
 	wgpu::TextureFormat m_swapChainFormat = wgpu::TextureFormat::Undefined;
 	wgpu::Sampler m_defaultSampler = nullptr;
+	
+	// Surface manager
+	std::unique_ptr<WebGPUSurfaceManager> m_surfaceManager;
 
 	// Factory members
 	std::unique_ptr<WebGPUMeshFactory> m_meshFactory;
@@ -116,6 +128,9 @@ class WebGPUContext
 	std::unique_ptr<WebGPUBufferFactory> m_bufferFactory;
 	std::unique_ptr<WebGPUBindGroupFactory> m_bindGroupFactory;
 	// std::unique_ptr<WebGPUSwapChainFactory> m_swapChainFactory;
+	std::unique_ptr<WebGPUDepthTextureFactory> m_depthTextureFactory;
+	std::unique_ptr<WebGPUDepthStencilStateFactory> m_depthStencilStateFactory;
+	std::unique_ptr<WebGPURenderPassFactory> m_renderPassFactory;
 	std::unique_ptr<WebGPUModelFactory> m_modelFactory;
 };
 

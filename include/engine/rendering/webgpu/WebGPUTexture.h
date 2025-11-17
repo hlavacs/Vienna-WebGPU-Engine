@@ -2,57 +2,62 @@
 #include <memory>
 #include <webgpu/webgpu.hpp>
 
-#include "engine/rendering/Texture.h"
-#include "engine/rendering/webgpu/WebGPURenderObject.h"
-
 namespace engine::rendering::webgpu
 {
-/**
- * @brief Options for configuring a WebGPUTexture.
- */
-struct WebGPUTextureOptions
-{
-};
 
 /**
  * @class WebGPUTexture
- * @brief GPU-side texture: wraps a WebGPU texture and view.
+ * @brief GPU-side texture: wraps a WebGPU texture and its view, descriptors, and provides accessors.
+ *
+ * This class encapsulates a WebGPU texture and its associated view, along with the descriptors
+ * used to create them. It provides accessors for all relevant properties and ensures resource
+ * cleanup. Used for all GPU-side textures, including color, normal, and depth textures.
  */
-class WebGPUTexture : public WebGPURenderObject<engine::rendering::Texture>
+class WebGPUTexture
 {
   public:
 	/**
-	 * @brief Construct a WebGPUTexture from a Texture handle and GPU texture.
-	 * @param context The WebGPU context.
-	 * @param textureHandle Handle to the CPU-side Texture.
+	 * @brief Constructs a WebGPUTexture from descriptors and GPU objects.
+	 *
 	 * @param texture The GPU-side texture.
 	 * @param textureView The GPU-side texture view.
-	 * @param width Width of the texture.
-	 * @param height Height of the texture.
-	 * @param format Format of the texture.
-	 * @param options Optional texture options.
+	 * @param textureDesc The texture descriptor used to create the texture.
+	 * @param viewDesc The texture view descriptor used to create the view.
+	 *
+	 * @throws Assertion failure if width/height are zero or resources are invalid.
 	 */
 	WebGPUTexture(
-		WebGPUContext &context,
-		const engine::rendering::Texture::Handle &textureHandle,
 		wgpu::Texture texture,
 		wgpu::TextureView textureView,
-		uint32_t width,
-		uint32_t height,
-		wgpu::TextureFormat format,
-		WebGPUTextureOptions options = {}
-	);
+		const wgpu::TextureDescriptor &textureDesc,
+		const wgpu::TextureViewDescriptor &viewDesc
+	) : m_texture(texture),
+		m_textureView(textureView),
+		m_textureDesc(textureDesc),
+		m_viewDesc(viewDesc),
+		m_isSurfaceTexture(texture == nullptr)
+	{
+		assert(m_textureDesc.size.width > 0 && "Texture width must be > 0");
+		assert(m_textureDesc.size.height > 0 && "Texture height must be > 0");
+		assert(m_textureView); // Should be valid
+	}
+	
+	/**
+	 * @brief Returns true if this is a surface texture (only view is relevant).
+	 */
+	bool isSurfaceTexture() const { return m_isSurfaceTexture; }
 
 	/**
 	 * @brief Destructor that cleans up WebGPU resources.
+	 *
+	 * Releases the texture view and texture to prevent memory leaks.
 	 */
-	~WebGPUTexture() override
+	~WebGPUTexture()
 	{
 		if (m_textureView)
 		{
 			m_textureView.release();
 		}
-
 		if (m_texture)
 		{
 			m_texture.release();
@@ -60,61 +65,83 @@ class WebGPUTexture : public WebGPURenderObject<engine::rendering::Texture>
 	}
 
 	/**
-	 * @brief Render the texture (used for debug visualization).
-	 * @param encoder The command encoder.
-	 * @param renderPass The render pass.
+	 * @brief Checks if the buffer matches the given size and format.
+	 * @param w Width to check.
+	 * @param h Height to check.
+	 * @param f Format to check.
+	 * @return True if all parameters match, false otherwise.
 	 */
-	void render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass) override;
+	bool matches(uint32_t w, uint32_t h, wgpu::TextureFormat f) const
+	{
+		return getWidth() == w && getHeight() == h && getFormat() == f;
+	}
 
 	/**
-	 * @brief Get the WebGPU texture.
-	 * @return The WebGPU texture.
+	 * @brief Gets the underlying WebGPU texture.
+	 * @return The WebGPU texture object.
 	 */
 	wgpu::Texture getTexture() const { return m_texture; }
 
 	/**
-	 * @brief Get the WebGPU texture view.
-	 * @return The WebGPU texture view.
+	 * @brief Gets the WebGPU texture view.
+	 * @return The WebGPU texture view object.
 	 */
 	wgpu::TextureView getTextureView() const { return m_textureView; }
 
 	/**
-	 * @brief Get the width of the texture.
+	 * @brief Gets the width of the texture in pixels.
 	 * @return Width in pixels.
 	 */
-	uint32_t getWidth() const { return m_width; }
+	uint32_t getWidth() const { return m_textureDesc.size.width; }
 
 	/**
-	 * @brief Get the height of the texture.
+	 * @brief Gets the height of the texture in pixels.
 	 * @return Height in pixels.
 	 */
-	uint32_t getHeight() const { return m_height; }
+	uint32_t getHeight() const { return m_textureDesc.size.height; }
 
 	/**
-	 * @brief Get the format of the texture.
+	 * @brief Gets the format of the texture.
 	 * @return The WebGPU texture format.
 	 */
-	wgpu::TextureFormat getFormat() const { return m_format; }
+	wgpu::TextureFormat getFormat() const { return m_textureDesc.format; }
 
 	/**
-	 * @brief Get the texture options.
-	 * @return The texture options.
+	 * @brief Gets the texture descriptor used for this texture.
+	 * @return The WebGPU texture descriptor.
 	 */
-	const WebGPUTextureOptions &getOptions() const { return m_options; }
+	const wgpu::TextureDescriptor &getTextureDescriptor() const { return m_textureDesc; }
+
+	/**
+	 * @brief Gets the texture view descriptor used for this texture view.
+	 * @return The WebGPU texture view descriptor.
+	 */
+	const wgpu::TextureViewDescriptor &getTextureViewDescriptor() const { return m_viewDesc; }
 
   protected:
 	/**
-	 * @brief Update GPU resources when CPU texture changes.
+	 * @brief True if this is a surface texture (only view is relevant).
 	 */
-	void updateGPUResources() override;
-
-  private:
+	bool m_isSurfaceTexture = false;
+	/**
+	 * @brief The underlying WebGPU texture resource.
+	 */
 	wgpu::Texture m_texture;
+
+	/**
+	 * @brief The view of the WebGPU texture.
+	 */
 	wgpu::TextureView m_textureView;
-	uint32_t m_width;
-	uint32_t m_height;
-	wgpu::TextureFormat m_format;
-	WebGPUTextureOptions m_options;
+
+	/**
+	 * @brief Descriptor used to create the texture.
+	 */
+	wgpu::TextureDescriptor m_textureDesc;
+
+	/**
+	 * @brief Descriptor used to create the texture view.
+	 */
+	wgpu::TextureViewDescriptor m_viewDesc;
 };
 
 } // namespace engine::rendering::webgpu

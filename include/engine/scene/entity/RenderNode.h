@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/scene/entity/Node.h"
+#include "engine/rendering/RenderCollector.h"
 
 namespace engine::scene::entity
 {
@@ -15,11 +16,11 @@ class RenderNode : public virtual Node
 
 	/** @brief Called before rendering begins. For preparation and state setup. */
 	virtual void preRender() {}
-	
-	/** @brief Called during the rendering phase. For actual draw calls. */
-	virtual void render() {}
-	
+
 	/** @brief Called after rendering completes. For cleanup. */
 	virtual void postRender() {}
+
+	/** @brief Collect render data for this node (Option B). */
+	virtual void onRenderCollect(engine::rendering::RenderCollector &collector) {}
 };
 } // namespace engine::scene::entity

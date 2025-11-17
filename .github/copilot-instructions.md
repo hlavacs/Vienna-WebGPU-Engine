@@ -7,7 +7,7 @@ This document provides essential knowledge to help AI coding assistants be produ
 
 **Indentation:** Use tabs for indentation, not spaces. All C++ and shader files should consistently use tab-based formatting.
 
-**Naming Conventions:** Use `CamelCase`
+**Naming Conventions:** Use `camelCase`
 
 **File Structure:** Organize files by feature or module, with clear naming to indicate purpose. For namespaces use in style `engine::rendering::webgpu` not multiple `{namespace webgpu; namespace rendering; namespace engine; }`.
 
@@ -110,8 +110,23 @@ CPU Resource (e.g., Material) → Resource Manager → WebGPUFactory → GPU Res
 
 ## Key Files for Reference
 
-- `include/engine/rendering/webgpu/WebGPUContext.h`: Core WebGPU context that manages all GPU resources
-- `include/engine/rendering/webgpu/WebGPUBindGroupFactory.h`: Factory for creating bind groups and layouts
-- `include/engine/rendering/Material.h`: CPU-side material definition
-- `resources/shader.wgsl`: Main shader with material and lighting implementation
-- `src/engine/Application.cpp`: Main application initialization and render loop
+- `include/engine/rendering/webgpu/WebGPUContext.h`: Core WebGPU context that manages all GPU resources, device, and factories.
+- `include/engine/rendering/webgpu/WebGPUBindGroupFactory.h`: Factory for creating bind groups and layouts for shader resources.
+- `include/engine/rendering/Material.h`: CPU-side material definition, properties, and texture references.
+- `resources/shader.wgsl`: Main shader with material and lighting implementation, including bind group layout definitions.
+- `src/engine/Application.cpp`: Main application initialization, event loop, and integration point for rendering, input, and UI. Now delegates camera management to the scene.
+- `include/engine/Application.h`: Application class definition, including DragState for orbit camera and resource handles.
+- `include/engine/scene/Scene.h` / `src/engine/scene/Scene.cpp`: Scene graph management, node hierarchy, and frame lifecycle. Scene always contains a root node and a camera node by default, and manages the active camera.
+- `include/engine/scene/CameraNode.h` / `src/engine/scene/CameraNode.cpp`: Camera node implementation, view/projection matrix logic, and camera transform.
+- `include/engine/scene/entity/Node.h` / `src/engine/scene/entity/Node.cpp`: Base node class for the scene graph, supporting parent/child relationships and traversal.
+- `include/engine/scene/entity/UpdateNode.h` / `src/engine/scene/entity/RenderNode.h`: Specialized node types for update and render logic in the scene graph.
+- `src/engine/scene/Transform.cpp`: Transform component for position, rotation, and scale, with Unity-like lazy matrix updates and lookAt logic.
+
+### Node System and Scene Architecture
+
+- The engine uses a hierarchical node system (`Node`), supporting parent/child relationships and traversal. All scene objects are nodes, and the root node is always present.
+- The `Scene` class manages the node hierarchy, frame lifecycle (update, lateUpdate, preRender, render, postRender), and the active camera.
+- By default, every `Scene` creates a root node and a camera node as a child, and sets the camera as the active camera.
+- Camera management is now fully handled by the scene; the application queries the active camera from the scene for all rendering and control logic.
+- Specialized node types (`UpdateNode`, `RenderNode`) allow for custom update and render logic to be attached to nodes in the graph.
+- The transform system stores local position, rotation, and scale, and updates world matrices lazily, similar to Unity. The `lookAt` method only updates local rotation and marks the transform as dirty.

@@ -26,6 +26,9 @@
 
 #include "engine/Application.h"
 #include "engine/rendering/BindGroupLayout.h"
+#include "engine/rendering/FrameUniforms.h"
+#include "engine/rendering/LightUniforms.h"
+#include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 #include "engine/scene/CameraNode.h"
@@ -145,55 +148,26 @@ void Application::onFrame()
 	m_frameUniforms.time = static_cast<float>(static_cast<double>(SDL_GetTicks64() / 1000.0));
 	m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
 
-#ifdef WEBGPU_BACKEND_WGPU
-	SurfaceTexture surfaceTexture;
-	m_surface.getCurrentTexture(&surfaceTexture);
-	TextureView nextTexture = Texture(surfaceTexture.texture).createView();
-#else  // WEBGPU_BACKEND_WGPU
-	TextureView nextTexture = m_swapChain.getCurrentTextureView();
-#endif // WEBGPU_BACKEND_WGPU
-	if (!nextTexture)
-	{
-		std::cerr << "Cannot acquire next swap chain texture" << std::endl;
-	}
+	auto surfaceTexture = m_context->surfaceManager().acquireNextTexture();
+	
 
 	CommandEncoderDescriptor commandEncoderDesc;
 	commandEncoderDesc.label = "Command Encoder";
 	CommandEncoder encoder = m_context->getDevice().createCommandEncoder(commandEncoderDesc);
 
-	RenderPassDescriptor renderPassDesc{};
-
-	RenderPassColorAttachment renderPassColorAttachment{};
-	renderPassColorAttachment.view = nextTexture;
-	renderPassColorAttachment.resolveTarget = nullptr;
-#ifdef __EMSCRIPTEN__
-	renderPassColorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
-	renderPassColorAttachment.loadOp = LoadOp::Clear;
-	renderPassColorAttachment.storeOp = StoreOp::Store;
-	renderPassColorAttachment.clearValue = Color{0.05, 0.05, 0.05, 1.0};
-	renderPassDesc.colorAttachmentCount = 1;
-	renderPassDesc.colorAttachments = &renderPassColorAttachment;
-
-	RenderPassDepthStencilAttachment depthStencilAttachment;
-	depthStencilAttachment.view = m_depthTextureView;
-	depthStencilAttachment.depthClearValue = 1.0f;
-	depthStencilAttachment.depthLoadOp = LoadOp::Clear;
-	depthStencilAttachment.depthStoreOp = StoreOp::Store;
-	depthStencilAttachment.depthReadOnly = false;
-	depthStencilAttachment.stencilClearValue = 0;
-#ifdef WEBGPU_BACKEND_WGPU
-	depthStencilAttachment.stencilLoadOp = LoadOp::Clear;
-	depthStencilAttachment.stencilStoreOp = StoreOp::Store;
-#else
-	depthStencilAttachment.stencilLoadOp = LoadOp::Undefined;
-	depthStencilAttachment.stencilStoreOp = StoreOp::Undefined;
-#endif
-	depthStencilAttachment.stencilReadOnly = true;
-
-	renderPassDesc.depthStencilAttachment = &depthStencilAttachment;
-
-	renderPassDesc.timestampWrites = nullptr;
+	if (m_renderPassContext == nullptr)
+	{
+		m_renderPassContext = m_context->renderPassFactory().createDefault(
+			surfaceTexture,
+			m_depthBuffer
+		);
+	} else {
+		m_renderPassContext->updateView(
+			surfaceTexture,
+			m_depthBuffer
+		);
+	}
+	RenderPassDescriptor& renderPassDesc = m_renderPassContext->getRenderPassDescriptor();
 	RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDesc);
 
 	// Ensure pipeline is valid before setting it
@@ -207,7 +181,6 @@ void Application::onFrame()
 		renderPass.end();
 		renderPass.release();
 		encoder.release();
-		nextTexture.release();
 		return;
 	}
 
@@ -240,7 +213,7 @@ void Application::onFrame()
 	{
 		spdlog::warn("No rendering occurred - no models or active camera!");
 	}
-
+	/*
 	// Render debug axes if enabled (before UI so they appear in world space)
 	if (m_showDebugAxes)
 	{
@@ -418,7 +391,7 @@ void Application::onFrame()
 			// Note: We can't release these resources here because they're still being used by the GPU
 			// They will be automatically released when they go out of scope after renderPass.end() and queue.submit()
 		}
-	}
+	}*/
 
 	// We add the GUI drawing commands to the render pass
 	updateGui(renderPass);
@@ -442,7 +415,7 @@ void Application::onFrame()
 		m_scene->postRender();
 	}
 
-	nextTexture.release();
+	// ToDo: Release even needed considering it in destructor? nextTexture.release();
 
 	CommandBufferDescriptor cmdBufferDescriptor{};
 	cmdBufferDescriptor.label = "Command buffer";
@@ -452,7 +425,7 @@ void Application::onFrame()
 	command.release();
 
 #ifdef WEBGPU_BACKEND_WGPU
-	m_surface.present();
+	m_context->getSurface().present();
 #else
 #ifndef __EMSCRIPTEN__
 	m_swapChain.present();
@@ -569,13 +542,15 @@ bool Application::isRunning()
 
 void Application::onResize()
 {
-	// Terminate in reverse order
-	terminateDepthBuffer();
-	terminateSurface();
-
-	// Re-init
-	initSurface();
-	initDepthBuffer();
+	int width, height;
+	SDL_GL_GetDrawableSize(m_window, &width, &height);
+	m_context->surfaceManager().updateIfNeeded(width, height);
+	if (m_depthBuffer)
+	{
+		m_depthBuffer->resize(*m_context, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+		m_depthTexture = m_depthBuffer->getTexture();
+		m_depthTextureView = m_depthBuffer->getTextureView();
+	}
 
 	updateProjectionMatrix();
 
@@ -642,42 +617,12 @@ EM_JS(void, setCanvasNativeSize, (int width, int height), {
 
 bool Application::initSurface()
 {
-	m_context->terminateSurface();
-	m_surface = m_context->getSurface();
-	// Get the current size of the window's framebuffer:
-	int width, height;
-	SDL_GL_GetDrawableSize(m_window, &width, &height);
-
-#ifdef WEBGPU_BACKEND_WGPU
-	SurfaceConfiguration config;
-	config.width = static_cast<uint32_t>(width);
-	config.height = static_cast<uint32_t>(height);
-	config.usage = TextureUsage::RenderAttachment;
-	config.format = m_context->getSwapChainFormat();
-	config.presentMode = PresentMode::Fifo;
-	config.alphaMode = CompositeAlphaMode::Auto;
-	config.device = m_context->getDevice();
-	m_surface.configure(config);
-#else  // WEBGPU_BACKEND_WGPU
-	SwapChainDescriptor desc;
-	desc.width = static_cast<uint32_t>(width);
-	desc.height = static_cast<uint32_t>(height);
-	desc.usage = TextureUsage::RenderAttachment;
-	desc.format = m_context->getSwapChainFormat();
-	desc.presentMode = PresentMode::Fifo;
-	m_swapChain = wgpuDeviceCreateSwapChain(m_context->getDevice(), m_surface, &desc);
-#endif // WEBGPU_BACKEND_WGPU
-
-	// Check that surface and swapchain/surface config are valid
-	assert(m_surface);
-	assert(m_context->getSwapChainFormat() != wgpu::TextureFormat::Undefined && "SwapChain format must be defined");
-
 	return true;
 }
 
 void Application::terminateSurface()
 {
-
+	return;
 #ifndef WEBGPU_BACKEND_WGPU
 	m_swapChain.release();
 	m_surface.release();
@@ -691,31 +636,22 @@ bool Application::initDepthBuffer()
 	// Get the current size of the window's framebuffer:
 	int width, height;
 	SDL_GL_GetDrawableSize(m_window, &width, &height);
+	if (m_depthBuffer)
+	{
+		m_depthBuffer->resize(*m_context, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+		m_depthTexture = m_depthBuffer->getTexture();
+		m_depthTextureView = m_depthBuffer->getTextureView();
+		return true;
+	}
 
-	// Create the depth texture
-	TextureDescriptor depthTextureDesc;
-	depthTextureDesc.dimension = TextureDimension::_2D;
-	depthTextureDesc.format = m_depthTextureFormat;
-	depthTextureDesc.mipLevelCount = 1;
-	depthTextureDesc.sampleCount = 1;
-	depthTextureDesc.size = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
-	depthTextureDesc.usage = TextureUsage::RenderAttachment;
-	depthTextureDesc.viewFormatCount = 1;
-	depthTextureDesc.viewFormats = (WGPUTextureFormat *)&m_depthTextureFormat;
-	m_depthTexture = m_context->getDevice().createTexture(depthTextureDesc);
-	std::cout << "Depth texture: " << m_depthTexture << std::endl;
+	m_depthBuffer = m_context->depthTextureFactory().createDefault(
+		static_cast<uint32_t>(width),
+		static_cast<uint32_t>(height),
+		m_depthTextureFormat
+	);
 
-	// Create the view of the depth texture manipulated by the rasterizer
-	TextureViewDescriptor depthTextureViewDesc;
-	depthTextureViewDesc.aspect = TextureAspect::DepthOnly;
-	depthTextureViewDesc.baseArrayLayer = 0;
-	depthTextureViewDesc.arrayLayerCount = 1;
-	depthTextureViewDesc.baseMipLevel = 0;
-	depthTextureViewDesc.mipLevelCount = 1;
-	depthTextureViewDesc.dimension = TextureViewDimension::_2D;
-	depthTextureViewDesc.format = m_depthTextureFormat;
-	m_depthTextureView = m_depthTexture.createView(depthTextureViewDesc);
-	std::cout << "Depth texture view: " << m_depthTextureView << std::endl;
+	m_depthTexture = m_depthBuffer->getTexture();
+	m_depthTextureView = m_depthBuffer->getTextureView();
 
 	// Check that created texture and view are valid
 	assert(m_depthTexture);
@@ -729,6 +665,7 @@ void Application::terminateDepthBuffer()
 	m_depthTextureView.release();
 	m_depthTexture.destroy();
 	m_depthTexture.release();
+	m_depthBuffer = nullptr;
 }
 
 bool Application::initRenderPipeline()

@@ -185,6 +185,7 @@ class Application
 
 	// Depth Buffer
 	wgpu::TextureFormat m_depthTextureFormat = wgpu::TextureFormat::Depth24Plus;
+	std::shared_ptr<engine::rendering::webgpu::WebGPUDepthTexture> m_depthBuffer;
 	wgpu::Texture m_depthTexture = nullptr;
 	wgpu::TextureView m_depthTextureView = nullptr;
 
@@ -228,6 +229,8 @@ class Application
 	std::shared_ptr<engine::scene::entity::Node> m_rootNode;
 	std::shared_ptr<engine::scene::Scene> m_scene;
 	wgpu::Buffer m_cameraBuffer = nullptr; // Buffer for camera data
+
+	std::shared_ptr<engine::rendering::webgpu::WebGPURenderPassContext> m_renderPassContext;
 
 	DragState m_drag;
 
