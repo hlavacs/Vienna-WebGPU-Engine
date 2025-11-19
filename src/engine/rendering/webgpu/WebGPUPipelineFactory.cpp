@@ -188,4 +188,12 @@ wgpu::RenderPipeline WebGPUPipelineFactory::getDefaultRenderPipeline()
 	return m_defaultPipeline;
 }
 
+wgpu::PipelineLayout WebGPUPipelineFactory::createPipelineLayout(const wgpu::BindGroupLayout *layouts, uint32_t layoutCount)
+{
+	wgpu::PipelineLayoutDescriptor layoutDesc{};
+	layoutDesc.bindGroupLayoutCount = layoutCount;
+	layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout *)layouts;
+	return m_context.getDevice().createPipelineLayout(layoutDesc);
+}
+
 } // namespace engine::rendering::webgpu

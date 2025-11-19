@@ -21,14 +21,14 @@ std::shared_ptr<WebGPUMesh> WebGPUMeshFactory::createFromHandle(
 	const auto &mesh = *meshOpt.value();
 
 	// Upload vertex buffer
-	wgpu::Buffer vertexBuffer = m_context.createBufferWithData(mesh.getVertices(), wgpu::BufferUsage::Vertex);
+	wgpu::Buffer vertexBuffer = m_context.bufferFactory().createBufferWithData(mesh.getVertices(), wgpu::BufferUsage::Vertex);
 	uint32_t vertexCount = static_cast<uint32_t>(mesh.getVertices().size());
 
 	// Upload index buffer if present
 	wgpu::Buffer indexBuffer = nullptr;
 	if (mesh.isIndexed() && !mesh.getIndices().empty())
 	{
-		indexBuffer = m_context.createBufferWithData(mesh.getIndices(), wgpu::BufferUsage::Index);
+		indexBuffer = m_context.bufferFactory().createBufferWithData(mesh.getIndices(), wgpu::BufferUsage::Index);
 	}
 
 	return std::make_shared<WebGPUMesh>(

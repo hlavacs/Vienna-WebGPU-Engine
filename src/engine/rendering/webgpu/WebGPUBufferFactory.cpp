@@ -13,6 +13,34 @@ namespace engine::rendering::webgpu
 WebGPUBufferFactory::WebGPUBufferFactory(WebGPUContext &context) :
 	m_context(context) {}
 
+wgpu::Buffer WebGPUBufferFactory::createBuffer(const wgpu::BufferDescriptor &desc)
+{
+	return m_context.getDevice().createBuffer(desc);
+}
+
+wgpu::Buffer WebGPUBufferFactory::createBufferWithData(const void *data, size_t size, wgpu::BufferUsage usage, bool mappedAtCreation)
+{
+	wgpu::BufferDescriptor desc;
+	desc.size = size;
+	desc.usage = usage | wgpu::BufferUsage::CopyDst;
+	desc.mappedAtCreation = mappedAtCreation;
+
+	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
+
+	if (mappedAtCreation && size > 0 && data)
+	{
+		void *mapped = buffer.getMappedRange(0, size);
+		memcpy(mapped, data, size);
+		buffer.unmap();
+	}
+	else if (!mappedAtCreation && size > 0 && data)
+	{
+		m_context.getQueue().writeBuffer(buffer, 0, data, size);
+	}
+
+	return buffer;
+}
+
 wgpu::Buffer WebGPUBufferFactory::createUniformBuffer(std::size_t size)
 {
 	wgpu::BufferDescriptor desc = {};
@@ -91,7 +119,38 @@ wgpu::Buffer WebGPUBufferFactory::createIndexBuffer(const std::vector<T> &data)
 	return createIndexBuffer(data.data(), data.size());
 }
 
-// Explicit template instantiations for common types
+wgpu::Buffer WebGPUBufferFactory::createBufferFromLayoutEntry(
+	const WebGPUBindGroupLayoutInfo &layoutInfo,
+	uint32_t binding,
+	size_t size
+)
+{
+	const wgpu::BindGroupLayoutEntry *entry = layoutInfo.findEntryByBinding(binding);
+	assert(entry != nullptr && "Binding not found in layout");
+
+	// Determine buffer size
+	size_t bufferSize = size > 0 ? size : static_cast<size_t>(entry->buffer.minBindingSize);
+	assert(bufferSize > 0 && "Buffer size must be greater than 0");
+
+	// Create buffer with appropriate usage flags based on buffer type
+	wgpu::BufferDescriptor desc;
+	desc.size = bufferSize;
+	
+	if (entry->buffer.type == wgpu::BufferBindingType::Uniform)
+	{
+		desc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+	}
+	else if (entry->buffer.type == wgpu::BufferBindingType::Storage || entry->buffer.type == wgpu::BufferBindingType::ReadOnlyStorage)
+	{
+		desc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
+	}
+	else
+	{
+		desc.usage = wgpu::BufferUsage::CopyDst;
+	}
+	
+	return m_context.getDevice().createBuffer(desc);
+}// Explicit template instantiations for common types
 // (Add more as needed for your engine)
 template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<float>(const float *, std::size_t);
 template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<float>(const std::vector<float> &);

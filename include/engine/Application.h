@@ -8,6 +8,8 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/core/PathProvider.h"
+#include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUModel.h"
 #include "engine/resources/ResourceManager.h"
@@ -57,6 +59,10 @@ class Application
 	void terminateRenderPipeline();
 	bool reloadShader();
 
+    bool initDebugPipeline();
+    void updateDebugRendering(wgpu::RenderPassEncoder renderPass);
+    void terminateDebugPipeline();
+
 	bool initGeometry();
 	void terminateGeometry();
 
@@ -73,6 +79,7 @@ class Application
 	void updateProjectionMatrix();
 	void updateViewMatrix();
 	void updateDragInertia(float deltaTime);
+	
 
 	// Orbit camera methods
 	void updateOrbitCamera();
@@ -217,8 +224,9 @@ class Application
 
 	// Bind Group Layout
 	static constexpr size_t kBindGroupLayoutCount = 4;
+	static constexpr size_t kMaxLights = 16;
 	// Enum for bind group layout indices
-	std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> m_bindGroupLayouts = {nullptr, nullptr, nullptr, nullptr};
+	std::array<std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroupLayoutInfo>, kBindGroupLayoutCount> m_bindGroupLayouts = {nullptr, nullptr, nullptr, nullptr};
 
 	// Bind Group
 	wgpu::BindGroup m_frameBindGroup = nullptr;
@@ -243,6 +251,14 @@ class Application
 	// Debug rendering resources
 	wgpu::ShaderModule m_debugShaderModule = nullptr;
 	wgpu::RenderPipeline m_debugPipeline = nullptr;
+	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroupLayoutInfo> m_debugBindGroupLayoutInfo = nullptr;
+	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroup> m_debugBindGroupInfo = nullptr;
+	
+	// Cached for convenience
+	wgpu::BindGroup m_debugBindGroup = nullptr;
+	wgpu::Buffer m_debugViewProjBuffer = nullptr;
+	wgpu::Buffer m_debugTransformsBuffer = nullptr;
+	size_t m_debugMaxInstances = 4; // Max number of debug axes
 
 	// Scene graph management
 	void updateSceneGraph(float deltaTime);

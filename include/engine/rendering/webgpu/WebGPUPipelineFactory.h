@@ -38,6 +38,9 @@ class WebGPUPipelineFactory
 	// Returns a default pipeline (created on first call, then cached)
 	wgpu::RenderPipeline getDefaultRenderPipeline();
 
+	// Helper to create a pipeline layout from bind group layouts
+	wgpu::PipelineLayout createPipelineLayout(const wgpu::BindGroupLayout *layouts, uint32_t layoutCount);
+
   private:
 	WebGPUContext &m_context;
 	wgpu::RenderPipeline m_defaultPipeline = nullptr; // Cached default pipeline

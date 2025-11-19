@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/rendering/Material.h"
 #include "engine/rendering/webgpu/BaseWebGPUFactory.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
 #include <memory>
 
@@ -34,6 +35,6 @@ class WebGPUMaterialFactory : public BaseWebGPUFactory<engine::rendering::Materi
 	);
 
   private:
-	wgpu::BindGroupLayout m_bindGroupLayout = nullptr;
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> m_bindGroupLayoutInfo = nullptr;
 };
 } // namespace engine::rendering::webgpu

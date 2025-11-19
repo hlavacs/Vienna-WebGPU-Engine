@@ -105,13 +105,13 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
 	);
 
 	wgpu::Sampler sampler = m_context.getDefaultSampler();
-	if (m_bindGroupLayout == nullptr)
+	if (m_bindGroupLayoutInfo == nullptr)
 	{
-		m_bindGroupLayout = m_context.bindGroupFactory().createDefaultMaterialBindGroupLayout();
+		m_bindGroupLayoutInfo = m_context.bindGroupFactory().createDefaultMaterialBindGroupLayout();
 	}
 
 	wgpu::BindGroup bindGroup = m_context.bindGroupFactory().createMaterialBindGroup(
-		m_bindGroupLayout,
+		m_bindGroupLayoutInfo->getLayout(),
 		materialPropertiesBuffer,
 		albedoView->getTextureView(),
 		normalView->getTextureView(),
