@@ -1,6 +1,9 @@
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
+#include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 
 #include <cassert>
+#include <spdlog/spdlog.h>
 
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
@@ -97,24 +100,21 @@ wgpu::BindGroup WebGPUBindGroupFactory::createBindGroupFromDescriptor(const wgpu
 }
 // === Custom/Default Layouts ===
 
-wgpu::BindGroupLayout WebGPUBindGroupFactory::createDefaultMaterialBindGroupLayout()
+std::shared_ptr<WebGPUBindGroupLayoutInfo> WebGPUBindGroupFactory::createDefaultMaterialBindGroupLayout()
 {
-
-	wgpu::BindGroupLayout layout = createCustomBindGroupLayout(
+	return createCustomBindGroupLayout(
 		createUniformBindGroupLayoutEntry<Material::MaterialProperties>(),
 		createSamplerBindGroupLayoutEntry(),
 		createTextureBindGroupLayoutEntry(), // Diffuse texture
-		createTextureBindGroupLayoutEntry()
-	); // Normal texture
-	return layout;
+		createTextureBindGroupLayoutEntry()	 // Normal texture
+	);
 }
 
-wgpu::BindGroupLayout WebGPUBindGroupFactory::createDefaultLightingBindGroupLayout()
+std::shared_ptr<WebGPUBindGroupLayoutInfo> WebGPUBindGroupFactory::createDefaultLightingBindGroupLayout()
 {
-	auto layout = createCustomBindGroupLayout(
+	return createCustomBindGroupLayout(
 		createStorageBindGroupLayoutEntry(0, wgpu::ShaderStage::Fragment, true)
 	);
-	return layout;
 }
 
 // === Generic Bind Group Creation ===
@@ -180,6 +180,146 @@ wgpu::BindGroup WebGPUBindGroupFactory::createLightingBindGroup(
 
 	wgpu::BindGroup group = createBindGroup(layout, entries);
 	return group;
+}
+
+wgpu::BindGroup WebGPUBindGroupFactory::createBindGroupFromLayout(
+	const WebGPUBindGroupLayoutInfo &layoutInfo,
+	const std::vector<wgpu::Buffer> &buffers
+)
+{
+	std::vector<wgpu::BindGroupEntry> entries;
+	entries.reserve(layoutInfo.getEntryCount());
+
+	for (uint32_t i = 0; i < layoutInfo.getEntryCount(); ++i)
+	{
+		const auto layoutEntry = layoutInfo.getEntry(i);
+
+		// Ensure we have enough buffers
+		if (layoutEntry->binding >= buffers.size())
+		{
+			spdlog::error("Not enough buffers provided for binding {}", layoutEntry->binding);
+			return nullptr;
+		}
+
+		wgpu::BindGroupEntry entry{};
+		entry.binding = layoutEntry->binding;
+		entry.buffer = buffers[layoutEntry->binding];
+		entry.offset = 0;
+
+		if (layoutEntry->buffer.minBindingSize > 0)
+		{
+			entry.size = layoutEntry->buffer.minBindingSize;
+		}
+		else
+		{
+			entry.size = 0;
+		}
+
+		entries.push_back(entry);
+	}
+
+	return createBindGroup(layoutInfo.getLayout(), entries);
+}
+
+wgpu::BindGroup WebGPUBindGroupFactory::createBindGroupFromLayout(
+	const WebGPUBindGroupLayoutInfo &layoutInfo,
+	const std::vector<std::pair<wgpu::Buffer, size_t>> &bufferSizes
+)
+{
+	std::vector<wgpu::BindGroupEntry> entries;
+	entries.reserve(layoutInfo.getEntryCount());
+
+	for (uint32_t i = 0; i < layoutInfo.getEntryCount(); ++i)
+	{
+		const auto layoutEntry = layoutInfo.getEntry(i);
+
+		// Ensure we have enough buffers
+		if (layoutEntry->binding >= bufferSizes.size())
+		{
+			spdlog::error("Not enough buffers provided for binding {}", layoutEntry->binding);
+			return nullptr;
+		}
+
+		const auto &[buffer, size] = bufferSizes[layoutEntry->binding];
+
+		wgpu::BindGroupEntry entry{};
+		entry.binding = layoutEntry->binding;
+		entry.buffer = buffer;
+		entry.offset = 0;
+		entry.size = size;
+
+		entries.push_back(entry);
+	}
+
+	return createBindGroup(layoutInfo.getLayout(), entries);
+}
+
+std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroupWithBuffers(
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> layoutInfo,
+	const std::vector<size_t> &bufferSizes
+)
+{
+	if (!layoutInfo)
+	{
+		spdlog::error("Invalid layout info provided");
+		return nullptr;
+	}
+
+	std::vector<wgpu::Buffer> buffers;
+	std::vector<wgpu::BindGroupEntry> entries;
+	buffers.reserve(layoutInfo->getEntryCount());
+	entries.reserve(layoutInfo->getEntryCount());
+
+	for (uint32_t i = 0; i < layoutInfo->getEntryCount(); ++i)
+	{
+		const auto layoutEntry = layoutInfo->getEntry(i);
+
+		// Determine buffer size
+		size_t bufferSize = 0;
+		if (i < bufferSizes.size() && bufferSizes[i] > 0)
+		{
+			bufferSize = bufferSizes[i];
+		}
+		else if (layoutEntry->buffer.minBindingSize > 0)
+		{
+			bufferSize = layoutEntry->buffer.minBindingSize;
+		}
+		else
+		{
+			spdlog::error("Cannot determine buffer size for binding {}", layoutEntry->binding);
+			return nullptr;
+		}
+
+		// Create buffer using the buffer factory
+		wgpu::Buffer buffer = m_context.bufferFactory().createBufferFromLayoutEntry(*layoutInfo, layoutEntry->binding, bufferSize);
+
+		if (!buffer)
+		{
+			spdlog::error("Failed to create buffer for binding {}", layoutEntry->binding);
+			return nullptr;
+		}
+
+		buffers.push_back(buffer);
+
+		// Create bind group entry
+		wgpu::BindGroupEntry entry{};
+		entry.binding = layoutEntry->binding;
+		entry.buffer = buffer;
+		entry.offset = 0;
+		entry.size = bufferSize;
+		entries.push_back(entry);
+	}
+
+	// Create the bind group
+	wgpu::BindGroup bindGroup = createBindGroup(layoutInfo->getLayout(), entries);
+
+	if (!bindGroup)
+	{
+		spdlog::error("Failed to create bind group");
+		return nullptr;
+	}
+
+	return std::make_shared<WebGPUBindGroup>(bindGroup, layoutInfo, buffers);
 }
 
 void WebGPUBindGroupFactory::cleanup()

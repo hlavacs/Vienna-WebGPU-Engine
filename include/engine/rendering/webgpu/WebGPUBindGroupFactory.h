@@ -4,6 +4,9 @@
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
+#include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
+
 namespace engine::rendering::webgpu
 {
 
@@ -45,6 +48,7 @@ class WebGPUBindGroupFactory
 		uint32_t visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment
 	)
 	{
+		static_assert(std::is_standard_layout_v<T>, "Uniform buffer type must be standard layout");
 		wgpu::BindGroupLayoutEntry entry = {};
 		entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
 		entry.visibility = visibility;
@@ -101,10 +105,10 @@ class WebGPUBindGroupFactory
 	 * @brief Helper to create a vector of BindGroupLayoutEntries with auto binding assignment.
 	 * @tparam Entries Variadic BindGroupLayoutEntry arguments.
 	 * @param rawEntries BindGroupLayoutEntry objects (with binding=-1 for auto).
-	 * @return std::vector<wgpu::BindGroupLayoutEntry>
+	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
 	 */
 	template <typename... Entries>
-	wgpu::BindGroupLayout createCustomBindGroupLayout(Entries &&...rawEntries)
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> createCustomBindGroupLayout(Entries &&...rawEntries)
 	{
 		static_assert((std::is_convertible_v<Entries, wgpu::BindGroupLayoutEntry> && ...), "All arguments must be convertible to wgpu::BindGroupLayoutEntry");
 
@@ -124,7 +128,7 @@ class WebGPUBindGroupFactory
 		}
 		wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
 		auto layout = createBindGroupLayoutFromDescriptor(desc);
-		return layout;
+		return std::make_shared<WebGPUBindGroupLayoutInfo>(layout, desc);
 	}
 
 	// === Descriptor creation ===
@@ -155,13 +159,15 @@ class WebGPUBindGroupFactory
 
 	/**
 	 * @brief Create a default material BindGroupLayout (albedo, normal, sampler).
+	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
 	 */
-	wgpu::BindGroupLayout createDefaultMaterialBindGroupLayout();
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> createDefaultMaterialBindGroupLayout();
 
 	/**
 	 * @brief Create a default lighting BindGroupLayout (uniform buffer).
+	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
 	 */
-	wgpu::BindGroupLayout createDefaultLightingBindGroupLayout();
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> createDefaultLightingBindGroupLayout();
 
 	// === Bind Groups ===
 
@@ -193,9 +199,45 @@ class WebGPUBindGroupFactory
 	);
 
 	/**
+	 * @brief Creates a bind group from layout info and buffers.
+	 * Automatically constructs bind group entries based on the layout.
+	 * @param layoutInfo The bind group layout info containing entry metadata.
+	 * @param buffers Buffers to bind, in order of binding indices.
+	 * @return The created bind group.
+	 */
+	wgpu::BindGroup createBindGroupFromLayout(
+		const WebGPUBindGroupLayoutInfo &layoutInfo,
+		const std::vector<wgpu::Buffer> &buffers
+	);
+
+	/**
+	 * @brief Creates a bind group from layout info with explicit buffer sizes.
+	 * Useful when you need to specify exact buffer ranges.
+	 * @param layoutInfo The bind group layout info containing entry metadata.
+	 * @param bufferSizes Pairs of buffer and size for each binding.
+	 * @return The created bind group.
+	 */
+	wgpu::BindGroup createBindGroupFromLayout(
+		const WebGPUBindGroupLayoutInfo &layoutInfo,
+		const std::vector<std::pair<wgpu::Buffer, size_t>> &bufferSizes
+	);
+
+	/**
 	 * @brief Release all created bind groups and layouts.
 	 */
 	void cleanup();
+
+	/**
+	 * @brief Creates a complete bind group with buffers from layout info.
+	 * Automatically creates all buffers and the bind group based on the layout.
+	 * @param layoutInfo The bind group layout info containing entry metadata.
+	 * @param bufferSizes Optional sizes for each buffer. If empty, uses minBindingSize from layout.
+	 * @return Shared pointer to the created bind group.
+	 */
+	std::shared_ptr<WebGPUBindGroup> createBindGroupWithBuffers(
+		std::shared_ptr<WebGPUBindGroupLayoutInfo> layoutInfo,
+		const std::vector<size_t> &bufferSizes = {}
+	);
 
   private:
 	WebGPUContext &m_context;

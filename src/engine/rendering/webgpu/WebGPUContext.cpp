@@ -284,32 +284,6 @@ WebGPURenderPassFactory &WebGPUContext::renderPassFactory()
 	return *m_renderPassFactory;
 }
 
-wgpu::Buffer WebGPUContext::createBuffer(const wgpu::BufferDescriptor &desc)
-{
-	return m_device.createBuffer(desc);
-}
-
-wgpu::Buffer WebGPUContext::createBufferWithData(const void *data, size_t size, wgpu::BufferUsage usage)
-{
-	// --------------- Create buffer descriptor ---------------
-	wgpu::BufferDescriptor desc;
-	desc.size = size;
-	desc.usage = usage | wgpu::BufferUsage::CopyDst;
-	desc.mappedAtCreation = true;
-
-	// --------------- Create buffer ---------------
-	wgpu::Buffer buffer = m_device.createBuffer(desc);
-
-	// --------------- Copy data if available ---------------
-	if (size > 0 && data)
-	{
-		void *mapped = buffer.getMappedRange(0, size);
-		memcpy(mapped, data, size);
-		buffer.unmap();
-	}
-	return buffer;
-}
-
 wgpu::Texture WebGPUContext::createTexture(const wgpu::TextureDescriptor &desc)
 {
 	// --------------- Create texture ---------------

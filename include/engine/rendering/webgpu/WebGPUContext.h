@@ -59,30 +59,6 @@ class WebGPUContext
 	wgpu::TextureFormat getSwapChainFormat() const { return m_swapChainFormat; }
 	wgpu::Sampler getDefaultSampler() const { return m_defaultSampler; }
 
-	// === Buffer Utilities ===
-
-	/**
-	 * @brief Creates a GPU buffer with the given descriptor.
-	 */
-	wgpu::Buffer createBuffer(const wgpu::BufferDescriptor &desc);
-
-	/**
-	 * @brief Creates and uploads data to a GPU buffer.
-	 * @param data Pointer to data to upload.
-	 * @param size Size in bytes.
-	 * @param usage Buffer usage flags.
-	 */
-	wgpu::Buffer createBufferWithData(const void *data, size_t size, wgpu::BufferUsage usage);
-
-	/**
-	 * @brief Creates and uploads data from a std::vector<T>.
-	 */
-	template <typename T>
-	wgpu::Buffer createBufferWithData(const std::vector<T> &vec, wgpu::BufferUsage usage)
-	{
-		return createBufferWithData(vec.data(), vec.size() * sizeof(T), usage);
-	}
-
 	// === Texture Utility ===
 	wgpu::Texture createTexture(const wgpu::TextureDescriptor &desc);
 	

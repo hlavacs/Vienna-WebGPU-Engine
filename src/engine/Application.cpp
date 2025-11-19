@@ -100,6 +100,8 @@ bool Application::onInit()
 		return false;
 	if (!initRenderPipeline())
 		return false;
+	if (!initDebugPipeline())
+		return false;
 	if (!initGeometry())
 		return false;
 	if (!initUniforms())
@@ -149,7 +151,6 @@ void Application::onFrame()
 	m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
 
 	auto surfaceTexture = m_context->surfaceManager().acquireNextTexture();
-	
 
 	CommandEncoderDescriptor commandEncoderDesc;
 	commandEncoderDesc.label = "Command Encoder";
@@ -161,13 +162,15 @@ void Application::onFrame()
 			surfaceTexture,
 			m_depthBuffer
 		);
-	} else {
+	}
+	else
+	{
 		m_renderPassContext->updateView(
 			surfaceTexture,
 			m_depthBuffer
 		);
 	}
-	RenderPassDescriptor& renderPassDesc = m_renderPassContext->getRenderPassDescriptor();
+	RenderPassDescriptor &renderPassDesc = m_renderPassContext->getRenderPassDescriptor();
 	RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDesc);
 
 	// Ensure pipeline is valid before setting it
@@ -213,185 +216,8 @@ void Application::onFrame()
 	{
 		spdlog::warn("No rendering occurred - no models or active camera!");
 	}
-	/*
-	// Render debug axes if enabled (before UI so they appear in world space)
-	if (m_showDebugAxes)
-	{
-		// Load the debug shader module if not already loaded
-		if (!m_debugShaderModule)
-		{
-			m_debugShaderModule = engine::resources::ResourceManager::loadShaderModule(
-				engine::core::PathProvider::getResource("debug.wgsl"),
-				m_context->getDevice()
-			);
 
-			if (!m_debugShaderModule)
-			{
-				spdlog::error("Failed to load debug shader!");
-			}
-			else
-			{
-				// Create bind group layout for debug shader using the factory
-				std::vector<wgpu::BindGroupLayoutEntry> entries;
-
-				// View-Projection matrix (binding 0)
-				entries.push_back(m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<glm::mat4x4>(0, static_cast<uint32_t>(ShaderStage::Vertex)));
-
-				// Transform matrices storage buffer (binding 1)
-				entries.push_back(m_context->bindGroupFactory().createStorageBindGroupLayoutEntry(1, wgpu::ShaderStage::Vertex, true));
-
-				// Create bind group layout
-				wgpu::BindGroupLayoutDescriptor layoutDesc{};
-				layoutDesc.entryCount = static_cast<uint32_t>(entries.size());
-				layoutDesc.entries = entries.data();
-
-				wgpu::BindGroupLayout debugBindGroupLayout =
-					m_context->getDevice().createBindGroupLayout(layoutDesc);
-
-				// Create pipeline layout with debug bind group layout
-				wgpu::PipelineLayoutDescriptor pipelineLayoutDesc{};
-				pipelineLayoutDesc.bindGroupLayoutCount = 1;
-				pipelineLayoutDesc.bindGroupLayouts = (WGPUBindGroupLayout *)&debugBindGroupLayout;
-				wgpu::PipelineLayout debugPipelineLayout =
-					m_context->getDevice().createPipelineLayout(pipelineLayoutDesc);
-
-				// Create shader info
-				engine::rendering::webgpu::WebGPUShaderInfo vertexShaderInfo(m_debugShaderModule, "vs_main");
-				engine::rendering::webgpu::WebGPUShaderInfo fragmentShaderInfo(m_debugShaderModule, "fs_main");
-
-				// Create pipeline descriptor using the factory
-				wgpu::RenderPipelineDescriptor pipelineDesc = m_context->pipelineFactory().createRenderPipelineDescriptor(
-					&vertexShaderInfo,
-					&fragmentShaderInfo,
-					m_context->getSwapChainFormat(),
-					m_depthTextureFormat,
-					true
-				);
-
-				// Customize for debug rendering (line list, no vertex input)
-				pipelineDesc.vertex.bufferCount = 0; // No vertex buffers needed for debug axes
-				pipelineDesc.primitive.topology = wgpu::PrimitiveTopology::LineList;
-				pipelineDesc.layout = debugPipelineLayout;
-
-				// Create the pipeline using the factory
-				m_debugPipeline = m_context->pipelineFactory().createRenderPipeline(pipelineDesc);
-
-				// Clean up
-				debugBindGroupLayout.release();
-				debugPipelineLayout.release();
-			}
-		}
-
-		// Draw debug axes if pipeline exists
-		if (m_debugPipeline)
-		{
-			// Set debug pipeline
-			renderPass.setPipeline(m_debugPipeline);
-
-			// Calculate total number of instances
-			size_t numInstances = m_lights.size(); // Debug axes for each light
-
-			// Create transforms buffer for the instances
-			std::vector<glm::mat4> transforms;
-			transforms.reserve(numInstances);
-
-			// Add transforms for each light
-			for (const auto &light : m_lights)
-			{
-				glm::mat4 transform = glm::mat4(1.0f);
-
-				// For point/spot lights, use position
-				if (light.light_type == 2 || light.light_type == 3)
-				{
-					transform[3] = glm::vec4(glm::vec3(light.transform[3]), 1.0f); // Extract position from transform
-				}
-
-				// Get the rotation from the stored UI angles to ensure consistency
-				size_t lightIndex = &light - &m_lights[0]; // Calculate light index
-				if (m_lightDirectionsUI.find(lightIndex) != m_lightDirectionsUI.end())
-				{
-					glm::vec3 angles = m_lightDirectionsUI[lightIndex];
-
-					// Build rotation matrix from UI angles
-					glm::mat4 rotX = glm::rotate(glm::mat4(1.0f), glm::radians(angles.x), glm::vec3(1.0f, 0.0f, 0.0f));
-					glm::mat4 rotY = glm::rotate(glm::mat4(1.0f), glm::radians(angles.y), glm::vec3(0.0f, 1.0f, 0.0f));
-					glm::mat4 rotZ = glm::rotate(glm::mat4(1.0f), glm::radians(angles.z), glm::vec3(0.0f, 0.0f, 1.0f));
-					glm::mat4 rotation = rotZ * rotY * rotX;
-
-					// Copy rotation part to transform
-					glm::mat3 rotPart = glm::mat3(rotation);
-					transform[0] = glm::vec4(rotPart[0], 0.0f);
-					transform[1] = glm::vec4(rotPart[1], 0.0f);
-					transform[2] = glm::vec4(rotPart[2], 0.0f);
-					// Position is already set in transform[3]
-				}
-				else
-				{
-					// Fallback to using the light's transform directly if no UI angles are stored
-					glm::mat3 rotPart = glm::mat3(light.transform);
-					transform[0] = glm::vec4(rotPart[0], 0.0f);
-					transform[1] = glm::vec4(rotPart[1], 0.0f);
-					transform[2] = glm::vec4(rotPart[2], 0.0f);
-				}
-
-				// Scale axes based on light intensity
-				float scale = 0.2f + light.intensity * 0.1f;
-				transform = glm::scale(transform, glm::vec3(scale));
-
-				transforms.push_back(transform);
-			}
-
-			// Create combined view-projection matrix
-			glm::mat4 viewProj = m_frameUniforms.projectionMatrix * m_frameUniforms.viewMatrix;
-
-			// Create buffers
-			wgpu::BufferDescriptor viewProjBufferDesc{};
-			viewProjBufferDesc.size = sizeof(glm::mat4);
-			viewProjBufferDesc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-			wgpu::Buffer viewProjBuffer = m_context->getDevice().createBuffer(viewProjBufferDesc);
-			m_context->getQueue().writeBuffer(viewProjBuffer, 0, &viewProj, sizeof(glm::mat4));
-
-			wgpu::BufferDescriptor transformsBufferDesc{};
-			transformsBufferDesc.size = transforms.size() * sizeof(glm::mat4);
-			transformsBufferDesc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
-			wgpu::Buffer transformsBuffer = m_context->getDevice().createBuffer(transformsBufferDesc);
-			m_context->getQueue().writeBuffer(transformsBuffer, 0, transforms.data(), transforms.size() * sizeof(glm::mat4));
-
-			// Create bind group entries using the consistent pattern
-			std::vector<wgpu::BindGroupEntry> entries;
-
-			// View-projection matrix entry
-			wgpu::BindGroupEntry viewProjEntry{};
-			viewProjEntry.binding = 0;
-			viewProjEntry.buffer = viewProjBuffer;
-			viewProjEntry.offset = 0;
-			viewProjEntry.size = sizeof(glm::mat4);
-			entries.push_back(viewProjEntry);
-
-			// Transform matrices entry
-			wgpu::BindGroupEntry transformsEntry{};
-			transformsEntry.binding = 1;
-			transformsEntry.buffer = transformsBuffer;
-			transformsEntry.offset = 0;
-			transformsEntry.size = transforms.size() * sizeof(glm::mat4);
-			entries.push_back(transformsEntry);
-
-			// Create the bind group
-			wgpu::BindGroupDescriptor bindGroupDesc{};
-			bindGroupDesc.layout = m_debugPipeline.getBindGroupLayout(0);
-			bindGroupDesc.entryCount = static_cast<uint32_t>(entries.size());
-			bindGroupDesc.entries = entries.data();
-
-			wgpu::BindGroup debugBindGroup = m_context->getDevice().createBindGroup(bindGroupDesc);
-
-			// Set bind group and draw
-			renderPass.setBindGroup(0, debugBindGroup, 0, nullptr);
-			renderPass.draw(6, static_cast<uint32_t>(numInstances), 0, 0);
-
-			// Note: We can't release these resources here because they're still being used by the GPU
-			// They will be automatically released when they go out of scope after renderPass.end() and queue.submit()
-		}
-	}*/
+	updateDebugRendering(renderPass);
 
 	// We add the GUI drawing commands to the render pass
 	updateGui(renderPass);
@@ -531,6 +357,7 @@ void Application::onFinish()
 
 	m_context->bindGroupFactory().cleanup();
 	terminateRenderPipeline();
+	terminateDebugPipeline();
 	terminateDepthBuffer();
 	terminateSurface();
 }
@@ -696,10 +523,6 @@ bool Application::initRenderPipeline()
 		true
 	);
 
-	// Create the pipeline layout with all four bind group layouts
-	wgpu::PipelineLayoutDescriptor layoutDesc{};
-	layoutDesc.bindGroupLayoutCount = kBindGroupLayoutCount;
-
 	// Make sure all bind groups are non-null before creating the layout
 	for (size_t i = 0; i < kBindGroupLayoutCount; i++)
 	{
@@ -710,12 +533,24 @@ bool Application::initRenderPipeline()
 		}
 	}
 
-	layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout *)m_bindGroupLayouts.data();
-	wgpu::PipelineLayout layout = m_context->getDevice().createPipelineLayout(layoutDesc);
+	// Extract raw layouts from WebGPUBindGroupLayoutInfo objects
+	std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> layouts = {
+		m_bindGroupLayouts[0]->getLayout(),
+		m_bindGroupLayouts[1]->getLayout(),
+		m_bindGroupLayouts[2]->getLayout(),
+		m_bindGroupLayouts[3]->getLayout()
+	};
+
+	// Create the pipeline layout using the factory helper
+	wgpu::PipelineLayout layout = m_context->pipelineFactory().createPipelineLayout(layouts.data(), kBindGroupLayoutCount);
 	pipelineDesc.layout = layout;
 
 	// Create the pipeline using the factory
 	m_pipeline = m_context->pipelineFactory().createRenderPipeline(pipelineDesc);
+
+	// Release the temporary layout
+	layout.release();
+
 	std::cout << "Render pipeline: " << m_pipeline << std::endl;
 
 	// Check that color target format matches swapchain format
@@ -738,6 +573,178 @@ void Application::terminateRenderPipeline()
 	}
 	m_pipeline.release();
 	m_shaderModule.release();
+}
+
+bool Application::initDebugPipeline()
+{
+	// Load debug shader
+	m_debugShaderModule = engine::resources::ResourceManager::loadShaderModule(
+		engine::core::PathProvider::getResource("debug.wgsl"),
+		m_context->getDevice()
+	);
+
+	if (!m_debugShaderModule)
+	{
+		spdlog::error("Failed to load debug shader!");
+		return false;
+	}
+
+	m_debugBindGroupLayoutInfo = m_context->bindGroupFactory().createCustomBindGroupLayout(
+		m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<glm::mat4x4>(-1, static_cast<uint32_t>(wgpu::ShaderStage::Vertex)),
+		m_context->bindGroupFactory().createStorageBindGroupLayoutEntry(-1, wgpu::ShaderStage::Vertex, true)
+	);
+	
+
+	// Create pipeline
+	engine::rendering::webgpu::WebGPUShaderInfo vertexShaderInfo(m_debugShaderModule, "vs_main");
+	engine::rendering::webgpu::WebGPUShaderInfo fragmentShaderInfo(m_debugShaderModule, "fs_main");
+
+	wgpu::RenderPipelineDescriptor pipelineDesc = m_context->pipelineFactory().createRenderPipelineDescriptor(
+		&vertexShaderInfo,
+		&fragmentShaderInfo,
+		m_context->getSwapChainFormat(),
+		m_depthTextureFormat,
+		true
+	);
+
+	pipelineDesc.vertex.bufferCount = 0;
+	pipelineDesc.primitive.topology = wgpu::PrimitiveTopology::LineList;
+
+	wgpu::BindGroupLayout debugLayout = m_debugBindGroupLayoutInfo->getLayout();
+	wgpu::PipelineLayout debugPipelineLayout = m_context->pipelineFactory().createPipelineLayout(&debugLayout, 1);
+	pipelineDesc.layout = debugPipelineLayout;
+
+	m_debugPipeline = m_context->pipelineFactory().createRenderPipeline(pipelineDesc);
+	debugPipelineLayout.release();
+
+	if (!m_debugPipeline)
+	{
+		spdlog::error("Failed to create debug pipeline!");
+		return false;
+	}
+
+	// Create bind group with buffers - all in one call!
+	m_debugBindGroupInfo = m_context->bindGroupFactory().createBindGroupWithBuffers(
+		m_debugBindGroupLayoutInfo,
+		{
+			sizeof(glm::mat4),  // binding 0: view-projection matrix
+			m_debugMaxInstances * sizeof(glm::mat4)  // binding 1: transform matrices
+		}
+	);
+
+	if (!m_debugBindGroupInfo)
+	{
+		spdlog::error("Failed to create debug bind group!");
+		return false;
+	}
+
+	// Extract individual resources for convenience
+	m_debugBindGroup = m_debugBindGroupInfo->getBindGroup();
+	m_debugViewProjBuffer = m_debugBindGroupInfo->getBuffer(0);
+	m_debugTransformsBuffer = m_debugBindGroupInfo->getBuffer(1);
+
+	return true;
+}
+
+void Application::updateDebugRendering(wgpu::RenderPassEncoder renderPass)
+{
+	if (!m_showDebugAxes || !m_debugPipeline)
+		return;
+
+	// Build transforms
+	std::vector<glm::mat4> transforms;
+	transforms.reserve(m_lights.size());
+
+	for (size_t i = 0; i < m_lights.size(); ++i)
+	{
+		const auto &light = m_lights[i];
+		glm::mat4 transform = glm::mat4(1.0f);
+
+		// Set position for point/spot lights
+		if (light.light_type == 2 || light.light_type == 3)
+		{
+			transform[3] = glm::vec4(glm::vec3(light.transform[3]), 1.0f);
+		}
+
+		// Apply rotation from UI angles or light transform
+		if (m_lightDirectionsUI.find(i) != m_lightDirectionsUI.end())
+		{
+			glm::vec3 angles = m_lightDirectionsUI[i];
+			glm::mat4 rotation =
+				glm::rotate(glm::mat4(1.0f), glm::radians(angles.z), glm::vec3(0, 0, 1)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.y), glm::vec3(0, 1, 0)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.x), glm::vec3(1, 0, 0));
+
+			glm::mat3 rotPart = glm::mat3(rotation);
+			transform[0] = glm::vec4(rotPart[0], 0.0f);
+			transform[1] = glm::vec4(rotPart[1], 0.0f);
+			transform[2] = glm::vec4(rotPart[2], 0.0f);
+		}
+		else
+		{
+			glm::mat3 rotPart = glm::mat3(light.transform);
+			transform[0] = glm::vec4(rotPart[0], 0.0f);
+			transform[1] = glm::vec4(rotPart[1], 0.0f);
+			transform[2] = glm::vec4(rotPart[2], 0.0f);
+		}
+
+		// Scale by intensity
+		float scale = 0.2f + light.intensity * 0.1f;
+		transform = glm::scale(transform, glm::vec3(scale));
+
+		transforms.push_back(transform);
+	}
+
+	if (transforms.empty())
+		return;
+
+	// Check if we need to resize the buffer
+	if (transforms.size() > m_debugMaxInstances)
+	{
+		// Update max instances with some headroom
+		m_debugMaxInstances = transforms.size() + 8;
+
+		// Recreate bind group with new buffer sizes - much simpler!
+		m_debugBindGroupInfo = m_context->bindGroupFactory().createBindGroupWithBuffers(
+			m_debugBindGroupLayoutInfo,
+			{
+				sizeof(glm::mat4),  // binding 0: view-projection matrix
+				m_debugMaxInstances * sizeof(glm::mat4)  // binding 1: transform matrices
+			}
+		);
+
+		// Update cached references
+		m_debugBindGroup = m_debugBindGroupInfo->getBindGroup();
+		m_debugViewProjBuffer = m_debugBindGroupInfo->getBuffer(0);
+		m_debugTransformsBuffer = m_debugBindGroupInfo->getBuffer(1);
+
+		spdlog::info("Resized debug transforms buffer to {} instances", m_debugMaxInstances);
+	}
+
+	// Update buffers (reuse existing buffers)
+	glm::mat4 viewProj = m_frameUniforms.projectionMatrix * m_frameUniforms.viewMatrix;
+	m_context->getQueue().writeBuffer(m_debugViewProjBuffer, 0, &viewProj, sizeof(glm::mat4));
+	m_context->getQueue().writeBuffer(m_debugTransformsBuffer, 0, transforms.data(), transforms.size() * sizeof(glm::mat4));
+
+	// Render
+	renderPass.setPipeline(m_debugPipeline);
+	renderPass.setBindGroup(0, m_debugBindGroup, 0, nullptr);
+	renderPass.draw(6, static_cast<uint32_t>(transforms.size()), 0, 0);
+}
+
+void Application::terminateDebugPipeline()
+{
+	// WebGPUBindGroup will automatically clean up bind group and buffers via shared_ptr
+	m_debugBindGroupInfo.reset();
+	
+	// Clear cached references (they're already released by WebGPUBindGroup)
+	m_debugBindGroup = nullptr;
+	m_debugViewProjBuffer = nullptr;
+	m_debugTransformsBuffer = nullptr;
+	
+	// m_debugBindGroupLayoutInfo will be released automatically via shared_ptr
+	if (m_debugPipeline)
+		m_debugPipeline.release();
+	if (m_debugShaderModule)
+		m_debugShaderModule.release();
 }
 
 bool Application::initGeometry()
@@ -826,18 +833,10 @@ void Application::resetCamera()
 bool Application::initUniforms()
 {
 	// Create frame uniform buffer
-	BufferDescriptor frameBufferDesc;
-	frameBufferDesc.size = sizeof(FrameUniforms);
-	frameBufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Uniform;
-	frameBufferDesc.mappedAtCreation = false;
-	m_frameUniformBuffer = m_context->getDevice().createBuffer(frameBufferDesc);
+	m_frameUniformBuffer = m_context->bufferFactory().createUniformBuffer(sizeof(FrameUniforms));
 
 	// Create object uniform buffer
-	BufferDescriptor objectBufferDesc;
-	objectBufferDesc.size = sizeof(ObjectUniforms);
-	objectBufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Uniform;
-	objectBufferDesc.mappedAtCreation = false;
-	m_objectUniformBuffer = m_context->getDevice().createBuffer(objectBufferDesc);
+	m_objectUniformBuffer = m_context->bufferFactory().createUniformBuffer(sizeof(ObjectUniforms));
 
 	// Initialize scene and scene graph
 	m_scene = std::make_shared<engine::scene::Scene>();
@@ -882,11 +881,7 @@ bool Application::initLightingUniforms()
 	const size_t maxLights = 16; // Support up to 16 lights
 	const size_t lightsBufferSize = sizeof(LightsBuffer) + maxLights * sizeof(LightStruct);
 
-	BufferDescriptor lightsBufDesc;
-	lightsBufDesc.size = lightsBufferSize;
-	lightsBufDesc.usage = BufferUsage::Storage | BufferUsage::CopyDst;
-	lightsBufDesc.mappedAtCreation = false;
-	m_lightsBuffer = m_context->getDevice().createBuffer(lightsBufDesc);
+	m_lightsBuffer = m_context->bufferFactory().createStorageBuffer(lightsBufferSize);
 
 	// Add a default ambient and directional light
 	addLight();
@@ -967,7 +962,7 @@ bool Application::initBindGroups()
 	frameEntry.size = sizeof(FrameUniforms);
 
 	m_frameBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_bindGroupLayouts[BindGroupLayoutIndex::FrameIndex],
+		m_bindGroupLayouts[BindGroupLayoutIndex::FrameIndex]->getLayout(),
 		std::vector<wgpu::BindGroupEntry>{frameEntry}
 	);
 
@@ -979,7 +974,7 @@ bool Application::initBindGroups()
 	objectEntry.size = sizeof(ObjectUniforms);
 
 	m_uniformBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_bindGroupLayouts[BindGroupLayoutIndex::UniformIndex],
+		m_bindGroupLayouts[BindGroupLayoutIndex::UniformIndex]->getLayout(),
 		{objectEntry}
 	);
 
@@ -992,7 +987,7 @@ bool Application::initBindGroups()
 	lightsStorageEntry.size = sizeof(LightsBuffer) + 16 * sizeof(LightStruct);
 
 	m_lightBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_bindGroupLayouts[BindGroupLayoutIndex::LightIndex],
+		m_bindGroupLayouts[BindGroupLayoutIndex::LightIndex]->getLayout(),
 		{lightsStorageEntry}
 	);
 
@@ -1105,10 +1100,28 @@ void Application::updateGui(RenderPassEncoder renderPass)
 	// Lights section
 	if (ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		// Add light button
+		// Add light button (disabled if max lights reached)
+		bool maxLightsReached = m_lights.size() >= kMaxLights;
+		if (maxLightsReached)
+		{
+			ImGui::BeginDisabled();
+		}
+		
 		if (ImGui::Button("Add Light"))
 		{
 			addLight();
+		}
+		
+		if (maxLightsReached)
+		{
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			ImGui::TextDisabled("(Max %zu lights)", kMaxLights);
+		}
+		else
+		{
+			ImGui::SameLine();
+			ImGui::TextDisabled("(%zu/%zu)", m_lights.size(), kMaxLights);
 		}
 
 		// Light list
@@ -1392,21 +1405,23 @@ bool Application::reloadShader()
 		true
 	);
 
-	// Use the existing pipeline layout
-	wgpu::PipelineLayoutDescriptor layoutDesc{};
-	layoutDesc.bindGroupLayoutCount = kBindGroupLayoutCount;
-	layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout *)m_bindGroupLayouts.data();
-	wgpu::PipelineLayout layout = m_context->getDevice().createPipelineLayout(layoutDesc);
+	// Extract raw layouts from WebGPUBindGroupLayoutInfo objects
+	std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> layouts = {
+		m_bindGroupLayouts[0]->getLayout(),
+		m_bindGroupLayouts[1]->getLayout(),
+		m_bindGroupLayouts[2]->getLayout(),
+		m_bindGroupLayouts[3]->getLayout()
+	};
+
+	// Create the pipeline layout using the factory helper
+	wgpu::PipelineLayout layout = m_context->pipelineFactory().createPipelineLayout(layouts.data(), kBindGroupLayoutCount);
 	pipelineDesc.layout = layout;
 
 	// Create the new pipeline
 	auto newPipeline = m_context->pipelineFactory().createRenderPipeline(pipelineDesc);
 
 	// Release the temporary layout
-	if (layout)
-	{
-		layout.release();
-	}
+	layout.release();
 
 	if (!newPipeline)
 	{
