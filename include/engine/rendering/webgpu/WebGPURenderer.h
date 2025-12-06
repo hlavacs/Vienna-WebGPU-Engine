@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/rendering/Renderer.h"
+#include "engine/scene/CameraNode.h"
 
 #include "engine/rendering/Model.h"
 #include "engine/rendering/webgpu/WebGPUModel.h"
@@ -17,11 +18,11 @@ class WebGPURenderer : public engine::rendering::Renderer
 	WebGPURenderer(WebGPUContext *context);
 	virtual ~WebGPURenderer();
 
-	void initialize() override;
-	void beginFrame(const engine::scene::CameraNode &camera) override;
-	void renderScene(const engine::rendering::RenderCollector &collector) override;
-	void submitFrame() override;
-	void shutdown() override;
+	void initialize();
+	void beginFrame(const engine::scene::CameraNode &camera);
+	void renderScene(const engine::rendering::RenderCollector &collector);
+	void submitFrame();
+	void shutdown();
 
   private:
 	WebGPUContext *m_context = nullptr;

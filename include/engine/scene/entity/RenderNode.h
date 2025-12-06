@@ -12,6 +12,11 @@ class RenderNode : public virtual Node
 {
   public:
 	using Ptr = std::shared_ptr<RenderNode>;
+	
+	RenderNode() {
+		addNodeType(NodeType::Render);
+	}
+	
 	virtual ~RenderNode() = default;
 
 	/** @brief Called before rendering begins. For preparation and state setup. */

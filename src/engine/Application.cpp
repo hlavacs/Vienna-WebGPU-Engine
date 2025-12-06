@@ -32,24 +32,14 @@
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 #include "engine/scene/CameraNode.h"
+#include "engine/scene/entity/LightNode.h"
+#include "engine/scene/entity/ModelRenderNode.h"
 #include "engine/scene/entity/Node.h"
 
 using namespace wgpu;
 using engine::rendering::Vertex;
 
 constexpr float PI = 3.14159265358979323846f;
-
-// Custom ImGui widgets
-namespace ImGui
-{
-bool DragDirection(const char *label, glm::vec4 &direction)
-{
-	glm::vec2 angles = glm::degrees(glm::polar(glm::vec3(direction)));
-	bool changed = ImGui::DragFloat2(label, glm::value_ptr(angles));
-	direction = glm::vec4(glm::euclidean(glm::radians(angles)), direction.w);
-	return changed;
-}
-} // namespace ImGui
 
 namespace engine
 {
@@ -92,23 +82,19 @@ bool Application::onInit()
 	}
 	// Now initialize context with window
 	m_context->initialize(m_window);
-	if (!initSurface())
-		return false;
-	if (!initDepthBuffer())
-		return false;
-	if (!initBindGroupLayout())
-		return false;
-	if (!initRenderPipeline())
+	
+	// Create the scene and camera
+	m_scene = std::make_shared<engine::scene::Scene>();
+	
+	// Get window size for camera aspect ratio
+	SDL_GetWindowSize(m_window, &m_currentWidth, &m_currentHeight);
+	if (!initRenderer())
 		return false;
 	if (!initDebugPipeline())
 		return false;
 	if (!initGeometry())
 		return false;
 	if (!initUniforms())
-		return false;
-	if (!initLightingUniforms())
-		return false;
-	if (!initBindGroups())
 		return false;
 	if (!initGui())
 		return false;
@@ -117,16 +103,12 @@ bool Application::onInit()
 
 void Application::onFrame()
 {
-	if (m_pendingShaderReload)
-	{
-		reloadShader();
-		m_pendingShaderReload = false;
-	}
 	// Calculate delta time for node updates
 	static Uint64 lastFrameTime = SDL_GetTicks64();
 	Uint64 currentTime = SDL_GetTicks64();
 	float deltaTime = (currentTime - lastFrameTime) / 1000.0f;
 	lastFrameTime = currentTime;
+	
 	processSDLEvents(deltaTime);
 	updateDragInertia(deltaTime);
 
@@ -134,133 +116,36 @@ void Application::onFrame()
 	if (m_scene)
 	{
 		m_scene->onFrame(deltaTime);
-		auto cam = m_scene->getActiveCamera();
-		if (cam)
-		{
-			// Update frame uniforms for backwards compatibility
-			m_frameUniforms.viewMatrix = cam->getViewMatrix();
-			m_frameUniforms.projectionMatrix = cam->getProjectionMatrix();
-			m_frameUniforms.cameraWorldPosition = cam->getPosition();
-		}
 	}
 
-	updateLightingUniforms();
-
-	// Update time uniform
+	// Update frame uniforms from active camera
+	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
+	if (cam)
+	{
+		m_frameUniforms.viewMatrix = cam->getViewMatrix();
+		m_frameUniforms.projectionMatrix = cam->getProjectionMatrix();
+		m_frameUniforms.cameraWorldPosition = cam->getPosition();
+	}
 	m_frameUniforms.time = static_cast<float>(static_cast<double>(SDL_GetTicks64() / 1000.0));
-	m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
 
-	auto surfaceTexture = m_context->surfaceManager().acquireNextTexture();
-
-	CommandEncoderDescriptor commandEncoderDesc;
-	commandEncoderDesc.label = "Command Encoder";
-	CommandEncoder encoder = m_context->getDevice().createCommandEncoder(commandEncoderDesc);
-
-	if (m_renderPassContext == nullptr)
+	// Use Renderer to render the frame
+	if (m_renderer && m_scene)
 	{
-		m_renderPassContext = m_context->renderPassFactory().createDefault(
-			surfaceTexture,
-			m_depthBuffer
+		// Update renderer's frame uniforms
+		m_renderer->updateFrameUniforms(m_frameUniforms);
+		
+		// Render the frame with UI callback - Renderer owns the frame bind group
+		m_renderer->renderFrame(
+			m_scene->getRenderCollector(),
+			[this](wgpu::RenderPassEncoder renderPass) {
+				this->updateGui(renderPass);
+			}
 		);
 	}
-	else
-	{
-		m_renderPassContext->updateView(
-			surfaceTexture,
-			m_depthBuffer
-		);
-	}
-	RenderPassDescriptor &renderPassDesc = m_renderPassContext->getRenderPassDescriptor();
-	RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDesc);
-
-	// Ensure pipeline is valid before setting it
-	if (m_pipeline)
-	{
-		renderPass.setPipeline(m_pipeline);
-	}
-	else
-	{
-		spdlog::error("Invalid render pipeline in onFrame!");
-		renderPass.end();
-		renderPass.release();
-		encoder.release();
-		return;
-	}
-
-	// Update materials and models before rendering
-	m_material->update();
-	for (const auto &model : m_webgpuModels)
-	{
-		model->update();
-	}
-
-	// Set binding groups that apply to all models
-	renderPass.setBindGroup(0, m_frameBindGroup, 0, nullptr);	// Frame uniforms (group 0)
-	renderPass.setBindGroup(1, m_lightBindGroup, 0, nullptr);	// Light data (group 1)
-	renderPass.setBindGroup(2, m_uniformBindGroup, 0, nullptr); // Object uniforms (group 2)
-
-	// Execute the render phase of our scene
-	if (m_scene)
-	{
-		m_scene->render();
-	}
-
-	// Render WebGPU models
-	for (const auto &model : m_webgpuModels)
-	{
-		model->render(encoder, renderPass);
-	}
-
-	// If no models were rendered, log a warning
-	if (m_webgpuModels.empty() && !m_scene->getActiveCamera())
-	{
-		spdlog::warn("No rendering occurred - no models or active camera!");
-	}
-
-	updateDebugRendering(renderPass);
-
-	// We add the GUI drawing commands to the render pass
-	updateGui(renderPass);
-
-	// Defensive check before ending render pass
-	assert(renderPass && "RenderPassEncoder is invalid before end()");
-
-	// Only assert these if we have models to render
-	if (!m_webgpuModels.empty())
-	{
-		assert(m_pipeline && "Pipeline is invalid before end()");
-	}
-
-	// End the render pass
-	renderPass.end();
-	renderPass.release();
-
-	// Run postRender phase
-	if (m_scene)
-	{
-		m_scene->postRender();
-	}
-
-	// ToDo: Release even needed considering it in destructor? nextTexture.release();
-
-	CommandBufferDescriptor cmdBufferDescriptor{};
-	cmdBufferDescriptor.label = "Command buffer";
-	CommandBuffer command = encoder.finish(cmdBufferDescriptor);
-	encoder.release();
-	m_context->getQueue().submit(command);
-	command.release();
-
-#ifdef WEBGPU_BACKEND_WGPU
-	m_context->getSurface().present();
-#else
-#ifndef __EMSCRIPTEN__
-	m_swapChain.present();
-#endif
-#endif
 
 #ifdef WEBGPU_BACKEND_DAWN
 	// Check for pending error callbacks
-	m_device.tick();
+	m_context->getDevice().tick();
 #endif
 }
 
@@ -311,8 +196,11 @@ void Application::processSDLEvents(float deltaTime)
 		case SDL_KEYDOWN:
 			if (event.key.keysym.sym == SDLK_F5)
 			{
-				// F5 key pressed - reload the shader
-				reloadShader();
+				// F5 key pressed - reload shaders via Renderer
+				if (m_renderer)
+				{
+					m_renderer->pipelineManager().reloadAllPipelines();
+				}
 			}
 			else if (event.key.keysym.sym == SDLK_UP)
 			{
@@ -343,23 +231,14 @@ void Application::processSDLEvents(float deltaTime)
 void Application::onFinish()
 {
 	terminateGui();
-	terminateLightingUniforms();
 	terminateUniforms();
 	terminateGeometry();
 
-	// Release bind groups
-	if (m_frameBindGroup)
-		m_frameBindGroup.release();
-	if (m_uniformBindGroup)
-		m_uniformBindGroup.release();
-	if (m_lightBindGroup)
-		m_lightBindGroup.release();
+	// Note: Bind groups are now managed by the Renderer
 
 	m_context->bindGroupFactory().cleanup();
-	terminateRenderPipeline();
+	terminateRenderer();
 	terminateDebugPipeline();
-	terminateDepthBuffer();
-	terminateSurface();
 }
 
 bool Application::isRunning()
@@ -371,19 +250,21 @@ void Application::onResize()
 {
 	int width, height;
 	SDL_GL_GetDrawableSize(m_window, &width, &height);
+	
+	// Update stored dimensions
+	m_currentWidth = width;
+	m_currentHeight = height;
+	
 	m_context->surfaceManager().updateIfNeeded(width, height);
-	if (m_depthBuffer)
+	m_renderer->onResize(width, height);
+	
+	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
+	if (cam)
 	{
-		m_depthBuffer->resize(*m_context, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-		m_depthTexture = m_depthBuffer->getTexture();
-		m_depthTextureView = m_depthBuffer->getTextureView();
+		// Update aspect ratio based on current window size
+		float aspect = m_currentWidth / static_cast<float>(m_currentHeight);
+		cam->setAspect(aspect);
 	}
-
-	updateProjectionMatrix();
-
-	// Defensive asserts after resize
-	assert(m_context);
-	assert(m_window);
 }
 
 void Application::onMouseMove(double xpos, double ypos, float deltaTime)
@@ -442,137 +323,24 @@ EM_JS(void, setCanvasNativeSize, (int width, int height), {
 });
 #endif
 
-bool Application::initSurface()
+
+bool Application::initRenderer()
 {
+	// Create the renderer
+	m_renderer = std::make_unique<engine::rendering::Renderer>(m_context);
+
+	if (!m_renderer->initialize())
+	{
+		spdlog::error("Failed to initialize Renderer!");
+		return false;
+	}
+	
 	return true;
 }
 
-void Application::terminateSurface()
+void Application::terminateRenderer()
 {
-	return;
-#ifndef WEBGPU_BACKEND_WGPU
-	m_swapChain.release();
-	m_surface.release();
-#else
-	m_context->terminateSurface();
-#endif
-}
-
-bool Application::initDepthBuffer()
-{
-	// Get the current size of the window's framebuffer:
-	int width, height;
-	SDL_GL_GetDrawableSize(m_window, &width, &height);
-	if (m_depthBuffer)
-	{
-		m_depthBuffer->resize(*m_context, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-		m_depthTexture = m_depthBuffer->getTexture();
-		m_depthTextureView = m_depthBuffer->getTextureView();
-		return true;
-	}
-
-	m_depthBuffer = m_context->depthTextureFactory().createDefault(
-		static_cast<uint32_t>(width),
-		static_cast<uint32_t>(height),
-		m_depthTextureFormat
-	);
-
-	m_depthTexture = m_depthBuffer->getTexture();
-	m_depthTextureView = m_depthBuffer->getTextureView();
-
-	// Check that created texture and view are valid
-	assert(m_depthTexture);
-	assert(m_depthTextureView);
-
-	return m_depthTextureView != nullptr;
-}
-
-void Application::terminateDepthBuffer()
-{
-	m_depthTextureView.release();
-	m_depthTexture.destroy();
-	m_depthTexture.release();
-	m_depthBuffer = nullptr;
-}
-
-bool Application::initRenderPipeline()
-{
-	// Defensive asserts for resource validity and format consistency
-	assert(m_context);
-	assert(m_context->getDevice());
-	assert(m_context->getSwapChainFormat() != wgpu::TextureFormat::Undefined && "SwapChain format must be defined");
-	assert(m_depthTextureFormat != wgpu::TextureFormat::Undefined && "Depth texture format must be defined");
-
-	m_shaderModule = engine::resources::ResourceManager::loadShaderModule(engine::core::PathProvider::getResource("shader.wgsl"), m_context->getDevice());
-	if (!m_shaderModule)
-	{
-		std::cerr << "Could not load shader module!" << std::endl;
-		return false;
-	}
-
-	engine::rendering::webgpu::WebGPUShaderInfo vertexShaderInfo(m_shaderModule, "vs_main");
-	engine::rendering::webgpu::WebGPUShaderInfo fragmentShaderInfo(m_shaderModule, "fs_main");
-
-	std::cout << "Creating render pipeline using WebGPUPipelineFactory..." << std::endl;
-
-	wgpu::RenderPipelineDescriptor pipelineDesc = m_context->pipelineFactory().createRenderPipelineDescriptor(
-		&vertexShaderInfo,
-		&fragmentShaderInfo,
-		m_context->getSwapChainFormat(),
-		m_depthTextureFormat,
-		true
-	);
-
-	// Make sure all bind groups are non-null before creating the layout
-	for (size_t i = 0; i < kBindGroupLayoutCount; i++)
-	{
-		if (!m_bindGroupLayouts[i])
-		{
-			spdlog::error("Bind group layout at index {} is null!", i);
-			return false;
-		}
-	}
-
-	// Extract raw layouts from WebGPUBindGroupLayoutInfo objects
-	std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> layouts = {
-		m_bindGroupLayouts[0]->getLayout(),
-		m_bindGroupLayouts[1]->getLayout(),
-		m_bindGroupLayouts[2]->getLayout(),
-		m_bindGroupLayouts[3]->getLayout()
-	};
-
-	// Create the pipeline layout using the factory helper
-	wgpu::PipelineLayout layout = m_context->pipelineFactory().createPipelineLayout(layouts.data(), kBindGroupLayoutCount);
-	pipelineDesc.layout = layout;
-
-	// Create the pipeline using the factory
-	m_pipeline = m_context->pipelineFactory().createRenderPipeline(pipelineDesc);
-
-	// Release the temporary layout
-	layout.release();
-
-	std::cout << "Render pipeline: " << m_pipeline << std::endl;
-
-	// Check that color target format matches swapchain format
-	assert(m_context->getSwapChainFormat() == m_context->getSwapChainFormat() && "Pipeline color target format must match swapchain format");
-	// Check that depth stencil format matches depth texture format
-	assert(m_depthTextureFormat == m_depthTextureFormat && "Pipeline depth stencil format must match depth texture format");
-
-	return m_pipeline != nullptr;
-}
-
-void Application::terminateRenderPipeline()
-{
-	if (m_debugPipeline)
-	{
-		m_debugPipeline.release();
-	}
-	if (m_debugShaderModule)
-	{
-		m_debugShaderModule.release();
-	}
-	m_pipeline.release();
-	m_shaderModule.release();
+	m_renderer.reset();
 }
 
 bool Application::initDebugPipeline()
@@ -593,7 +361,6 @@ bool Application::initDebugPipeline()
 		m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<glm::mat4x4>(-1, static_cast<uint32_t>(wgpu::ShaderStage::Vertex)),
 		m_context->bindGroupFactory().createStorageBindGroupLayoutEntry(-1, wgpu::ShaderStage::Vertex, true)
 	);
-	
 
 	// Create pipeline
 	engine::rendering::webgpu::WebGPUShaderInfo vertexShaderInfo(m_debugShaderModule, "vs_main");
@@ -611,13 +378,11 @@ bool Application::initDebugPipeline()
 	pipelineDesc.primitive.topology = wgpu::PrimitiveTopology::LineList;
 
 	wgpu::BindGroupLayout debugLayout = m_debugBindGroupLayoutInfo->getLayout();
-	wgpu::PipelineLayout debugPipelineLayout = m_context->pipelineFactory().createPipelineLayout(&debugLayout, 1);
-	pipelineDesc.layout = debugPipelineLayout;
 
-	m_debugPipeline = m_context->pipelineFactory().createRenderPipeline(pipelineDesc);
-	debugPipelineLayout.release();
+	// Create the debug pipeline using the factory (creates layout + pipeline wrapper)
+	m_debugPipeline = m_context->pipelineFactory().createPipeline(pipelineDesc, &debugLayout, 1);
 
-	if (!m_debugPipeline)
+	if (!m_debugPipeline || !m_debugPipeline->isValid())
 	{
 		spdlog::error("Failed to create debug pipeline!");
 		return false;
@@ -627,8 +392,8 @@ bool Application::initDebugPipeline()
 	m_debugBindGroupInfo = m_context->bindGroupFactory().createBindGroupWithBuffers(
 		m_debugBindGroupLayoutInfo,
 		{
-			sizeof(glm::mat4),  // binding 0: view-projection matrix
-			m_debugMaxInstances * sizeof(glm::mat4)  // binding 1: transform matrices
+			sizeof(glm::mat4),						// binding 0: view-projection matrix
+			m_debugMaxInstances * sizeof(glm::mat4) // binding 1: transform matrices
 		}
 	);
 
@@ -646,107 +411,6 @@ bool Application::initDebugPipeline()
 	return true;
 }
 
-void Application::updateDebugRendering(wgpu::RenderPassEncoder renderPass)
-{
-	if (!m_showDebugAxes || !m_debugPipeline)
-		return;
-
-	// Build transforms
-	std::vector<glm::mat4> transforms;
-	transforms.reserve(m_lights.size());
-
-	for (size_t i = 0; i < m_lights.size(); ++i)
-	{
-		const auto &light = m_lights[i];
-		glm::mat4 transform = glm::mat4(1.0f);
-
-		// Set position for point/spot lights
-		if (light.light_type == 2 || light.light_type == 3)
-		{
-			transform[3] = glm::vec4(glm::vec3(light.transform[3]), 1.0f);
-		}
-
-		// Apply rotation from UI angles or light transform
-		if (m_lightDirectionsUI.find(i) != m_lightDirectionsUI.end())
-		{
-			glm::vec3 angles = m_lightDirectionsUI[i];
-			glm::mat4 rotation =
-				glm::rotate(glm::mat4(1.0f), glm::radians(angles.z), glm::vec3(0, 0, 1)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.y), glm::vec3(0, 1, 0)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.x), glm::vec3(1, 0, 0));
-
-			glm::mat3 rotPart = glm::mat3(rotation);
-			transform[0] = glm::vec4(rotPart[0], 0.0f);
-			transform[1] = glm::vec4(rotPart[1], 0.0f);
-			transform[2] = glm::vec4(rotPart[2], 0.0f);
-		}
-		else
-		{
-			glm::mat3 rotPart = glm::mat3(light.transform);
-			transform[0] = glm::vec4(rotPart[0], 0.0f);
-			transform[1] = glm::vec4(rotPart[1], 0.0f);
-			transform[2] = glm::vec4(rotPart[2], 0.0f);
-		}
-
-		// Scale by intensity
-		float scale = 0.2f + light.intensity * 0.1f;
-		transform = glm::scale(transform, glm::vec3(scale));
-
-		transforms.push_back(transform);
-	}
-
-	if (transforms.empty())
-		return;
-
-	// Check if we need to resize the buffer
-	if (transforms.size() > m_debugMaxInstances)
-	{
-		// Update max instances with some headroom
-		m_debugMaxInstances = transforms.size() + 8;
-
-		// Recreate bind group with new buffer sizes - much simpler!
-		m_debugBindGroupInfo = m_context->bindGroupFactory().createBindGroupWithBuffers(
-			m_debugBindGroupLayoutInfo,
-			{
-				sizeof(glm::mat4),  // binding 0: view-projection matrix
-				m_debugMaxInstances * sizeof(glm::mat4)  // binding 1: transform matrices
-			}
-		);
-
-		// Update cached references
-		m_debugBindGroup = m_debugBindGroupInfo->getBindGroup();
-		m_debugViewProjBuffer = m_debugBindGroupInfo->getBuffer(0);
-		m_debugTransformsBuffer = m_debugBindGroupInfo->getBuffer(1);
-
-		spdlog::info("Resized debug transforms buffer to {} instances", m_debugMaxInstances);
-	}
-
-	// Update buffers (reuse existing buffers)
-	glm::mat4 viewProj = m_frameUniforms.projectionMatrix * m_frameUniforms.viewMatrix;
-	m_context->getQueue().writeBuffer(m_debugViewProjBuffer, 0, &viewProj, sizeof(glm::mat4));
-	m_context->getQueue().writeBuffer(m_debugTransformsBuffer, 0, transforms.data(), transforms.size() * sizeof(glm::mat4));
-
-	// Render
-	renderPass.setPipeline(m_debugPipeline);
-	renderPass.setBindGroup(0, m_debugBindGroup, 0, nullptr);
-	renderPass.draw(6, static_cast<uint32_t>(transforms.size()), 0, 0);
-}
-
-void Application::terminateDebugPipeline()
-{
-	// WebGPUBindGroup will automatically clean up bind group and buffers via shared_ptr
-	m_debugBindGroupInfo.reset();
-	
-	// Clear cached references (they're already released by WebGPUBindGroup)
-	m_debugBindGroup = nullptr;
-	m_debugViewProjBuffer = nullptr;
-	m_debugTransformsBuffer = nullptr;
-	
-	// m_debugBindGroupLayoutInfo will be released automatically via shared_ptr
-	if (m_debugPipeline)
-		m_debugPipeline.release();
-	if (m_debugShaderModule)
-		m_debugShaderModule.release();
-}
-
 bool Application::initGeometry()
 {
 	// List of model files to load
@@ -758,18 +422,18 @@ bool Application::initGeometry()
 	m_webgpuModels.clear();
 	if (!m_resourceManager || !m_resourceManager->m_modelManager)
 	{
-		std::cerr << "ResourceManager or ModelManager not available!" << std::endl;
+		spdlog::error("ResourceManager or ModelManager not available!");
 		return false;
 	}
 
-	// Create WebGPU models from model paths
+	// Create WebGPU models and add them as ModelRenderNodes to the scene
 	engine::rendering::webgpu::WebGPUModelFactory modelFactory(*m_context);
 	for (const auto &modelPath : modelPaths)
 	{
 		auto modelOpt = m_resourceManager->m_modelManager->createModel(modelPath);
 		if (!modelOpt || !*modelOpt)
 		{
-			std::cerr << "Could not load model: " << modelPath << std::endl;
+			spdlog::error("Could not load model: {}", modelPath);
 			continue;
 		}
 
@@ -778,10 +442,22 @@ bool Application::initGeometry()
 		{
 			m_webgpuModels.push_back(webgpuModel);
 			m_material = webgpuModel->getMaterial();
+
+			// Create a ModelRenderNode and add it to the scene
+			auto modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(
+				modelOpt.value()->getHandle()
+			);
+
+			auto rootNode = m_scene->getRoot();
+			if (rootNode)
+			{
+				rootNode->addChild(modelNode);
+				spdlog::info("Added ModelRenderNode to scene for: {}", modelPath);
+			}
 		}
 		else
 		{
-			std::cerr << "Could not create WebGPUModel for: " << modelPath << std::endl;
+			spdlog::error("Could not create WebGPUModel for: {}", modelPath);
 		}
 	}
 
@@ -792,21 +468,6 @@ void Application::terminateGeometry()
 {
 	// Clear WebGPUModels collection first
 	m_webgpuModels.clear();
-
-	// Release vertex and index buffers
-	if (m_vertexBuffer)
-	{
-		m_vertexBuffer.destroy();
-		m_vertexBuffer.release();
-		m_vertexCount = 0;
-	}
-
-	if (m_indexBuffer)
-	{
-		m_indexBuffer.destroy();
-		m_indexBuffer.release();
-		m_indexCount = 0;
-	}
 }
 
 void Application::resetCamera()
@@ -814,11 +475,12 @@ void Application::resetCamera()
 	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
 	if (!cam || !cam->getTransform())
 		return;
+
 	glm::vec3 cameraPosition = glm::vec3(0.0f, 2.0f, -m_drag.distance);
 	cam->getTransform()->setLocalPosition(cameraPosition);
 	cam->lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-	// Set projection parameters
+	// Set orbit parameters from current position
 	glm::vec3 camPos = cam->getTransform()->getLocalPosition();
 	glm::vec3 toCam = camPos - m_drag.targetPoint;
 	m_drag.distance = glm::length(toCam);
@@ -832,213 +494,82 @@ void Application::resetCamera()
 
 bool Application::initUniforms()
 {
-	// Create frame uniform buffer
-	m_frameUniformBuffer = m_context->bufferFactory().createUniformBuffer(sizeof(FrameUniforms));
-
-	// Create object uniform buffer
-	m_objectUniformBuffer = m_context->bufferFactory().createUniformBuffer(sizeof(ObjectUniforms));
-
-	// Initialize scene and scene graph
-	m_scene = std::make_shared<engine::scene::Scene>();
-	m_rootNode = std::make_shared<engine::scene::entity::Node>();
-	m_scene->setRoot(m_rootNode);
-
-	// Camera node creation and management is now handled by the scene externally.
-	resetCamera();
-
-	// Get window aspect ratio
-	int width, height;
-	SDL_GL_GetDrawableSize(m_window, &width, &height);
-	float aspectRatio = width / static_cast<float>(height);
-
-	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
-	if (cam)
+	if (!m_scene)
 	{
-		cam->setFov(45.0f);
-		cam->setAspect(aspectRatio);
-		cam->setNearFar(0.01f, 100.0f);
-
-		// Initialize frame uniforms
-		m_frameUniforms.viewMatrix = cam->getViewMatrix();
-		m_frameUniforms.projectionMatrix = cam->getProjectionMatrix();
-		m_frameUniforms.cameraWorldPosition = cam->getTransform()->getPosition();
-		m_frameUniforms.time = 0.0f;
-		m_context->getQueue().writeBuffer(m_frameUniformBuffer, 0, &m_frameUniforms, sizeof(FrameUniforms));
+		spdlog::error("Cannot initialize uniforms: scene is null");
+		return false;
 	}
 
-	// Initialize object uniforms
-	m_objectUniforms.modelMatrix = mat4x4(1.0);
-	m_objectUniforms.normalMatrix = glm::transpose(glm::inverse(m_objectUniforms.modelMatrix));
-	m_context->getQueue().writeBuffer(m_objectUniformBuffer, 0, &m_objectUniforms, sizeof(ObjectUniforms));
+	// Note: Frame uniforms and bind groups are now managed by the Renderer
+	// This function kept for backwards compatibility
 
-	return m_frameUniformBuffer != nullptr && m_objectUniformBuffer != nullptr;
-}
+	// Create root node if it doesn't exist
+	if (!m_scene->getRoot())
+	{
+		auto rootNode = std::make_shared<engine::scene::entity::Node>();
+		m_scene->setRoot(rootNode);
+	}
 
-bool Application::initLightingUniforms()
-{
-	// Initialize the lights buffer
-	// Create a storage buffer large enough for several lights
-	const size_t maxLights = 16; // Support up to 16 lights
-	const size_t lightsBufferSize = sizeof(LightsBuffer) + maxLights * sizeof(LightStruct);
-
-	m_lightsBuffer = m_context->bufferFactory().createStorageBuffer(lightsBufferSize);
-
-	// Add a default ambient and directional light
-	addLight();
-	addLight();
-	m_lights[0].intensity = 0.2f;
-	m_lights[1].light_type = 1;
-
-	return m_lightsBuffer != nullptr;
-}
-
-void Application::terminateLightingUniforms()
-{
-	return;
+	return true;
 }
 
 void Application::terminateUniforms()
 {
-	return;
+	// Note: Frame uniforms are now managed by the Renderer
+	// This function kept for backwards compatibility
 }
 
-void Application::updateLightingUniforms()
+void Application::terminateDebugPipeline()
 {
-	// Update lights buffer when changed
-	if (m_lightsChanged && !m_lights.empty())
+	if (m_debugPipeline)
 	{
-		// Update the header with the current count
-		m_lightsBufferHeader.count = static_cast<uint32_t>(m_lights.size());
-
-		// Write the header
-		m_context->getQueue().writeBuffer(
-			m_lightsBuffer,
-			0,
-			&m_lightsBufferHeader,
-			sizeof(LightsBuffer)
-		);
-
-		// Write the lights array right after the header
-		if (!m_lights.empty())
-		{
-			m_context->getQueue().writeBuffer(
-				m_lightsBuffer,
-				sizeof(LightsBuffer),
-				m_lights.data(),
-				m_lights.size() * sizeof(LightStruct)
-			);
-		}
-
-		m_lightsChanged = false;
+		m_debugPipeline = nullptr;
 	}
-}
-
-bool Application::initBindGroupLayout()
-{
-	// Uniform Bind Group Layout
-	m_bindGroupLayouts[BindGroupLayoutIndex::FrameIndex] = m_context->bindGroupFactory().createCustomBindGroupLayout(
-		m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<FrameUniforms>()
-	);
-	// Lighting Bind Group Layout
-	m_bindGroupLayouts[BindGroupLayoutIndex::LightIndex] = m_context->bindGroupFactory().createDefaultLightingBindGroupLayout();
-	// Uniform Bind Group Layout
-	m_bindGroupLayouts[BindGroupLayoutIndex::UniformIndex] = m_context->bindGroupFactory().createCustomBindGroupLayout(
-		m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<ObjectUniforms>()
-	);
-	// Material Bind Group Layout
-	m_bindGroupLayouts[BindGroupLayoutIndex::MaterialIndex] = m_context->bindGroupFactory().createDefaultMaterialBindGroupLayout();
-	// Light Bind Group Layout
-
-	return m_bindGroupLayouts[BindGroupLayoutIndex::FrameIndex] && m_bindGroupLayouts[BindGroupLayoutIndex::LightIndex] && m_bindGroupLayouts[BindGroupLayoutIndex::UniformIndex] && m_bindGroupLayouts[BindGroupLayoutIndex::MaterialIndex];
-}
-
-bool Application::initBindGroups()
-{
-	// Create frame bind group
-	wgpu::BindGroupEntry frameEntry = {};
-	frameEntry.binding = 0;
-	frameEntry.buffer = m_frameUniformBuffer;
-	frameEntry.offset = 0;
-	frameEntry.size = sizeof(FrameUniforms);
-
-	m_frameBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_bindGroupLayouts[BindGroupLayoutIndex::FrameIndex]->getLayout(),
-		std::vector<wgpu::BindGroupEntry>{frameEntry}
-	);
-
-	// Create object bind group
-	wgpu::BindGroupEntry objectEntry = {};
-	objectEntry.binding = 0;
-	objectEntry.buffer = m_objectUniformBuffer;
-	objectEntry.offset = 0;
-	objectEntry.size = sizeof(ObjectUniforms);
-
-	m_uniformBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_bindGroupLayouts[BindGroupLayoutIndex::UniformIndex]->getLayout(),
-		{objectEntry}
-	);
-
-	// The storage buffer entry for multiple lights
-	wgpu::BindGroupEntry lightsStorageEntry = {};
-	lightsStorageEntry.binding = 0;
-	lightsStorageEntry.buffer = m_lightsBuffer;
-	lightsStorageEntry.offset = 0;
-	// Space for up to 16 lights
-	lightsStorageEntry.size = sizeof(LightsBuffer) + 16 * sizeof(LightStruct);
-
-	m_lightBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_bindGroupLayouts[BindGroupLayoutIndex::LightIndex]->getLayout(),
-		{lightsStorageEntry}
-	);
-
-	return m_frameBindGroup != nullptr && m_lightBindGroup != nullptr && m_uniformBindGroup != nullptr;
+	if (m_debugBindGroup)
+	{
+		m_debugBindGroup.release();
+	}
+	if (m_debugViewProjBuffer)
+	{
+		m_debugViewProjBuffer.destroy();
+		m_debugViewProjBuffer.release();
+	}
+	if (m_debugTransformsBuffer)
+	{
+		m_debugTransformsBuffer.destroy();
+		m_debugTransformsBuffer.release();
+	}
 }
 
 void Application::updateProjectionMatrix()
 {
-	// Get current window dimensions
-	int width, height;
-	SDL_GL_GetDrawableSize(m_window, &width, &height);
-	float ratio = width / static_cast<float>(height);
-
-	// Only update the CameraNode - no direct GPU updates
 	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
 	if (cam)
 	{
-		cam->setAspect(ratio);
+		// Update aspect ratio based on current window size
+		float aspect = m_currentWidth / static_cast<float>(m_currentHeight);
+		cam->setAspect(aspect);
 	}
-
-	// The frame uniforms will be updated during the next frame's preRender phase
-	// No need to write to GPU buffer here
-}
-
-void Application::updateViewMatrix()
-{
-	// Method now empty - camera matrices are updated in onFrame's preRender phase
-	// Any changes to the camera are applied during the Scene's update/lateUpdate phase
-	// The frame uniforms will be updated during the next frame's preRender phase
 }
 
 void Application::updateDragInertia(float deltaTime)
 {
-	constexpr float eps = 1e-4f;
-	// Apply inertia only when the user released the click.
-	if (!m_drag.active)
+	if (!m_drag.active && glm::length(m_drag.velocity) > 1e-4f)
 	{
-		// Avoid updating when velocity is negligible
-		if (std::abs(m_drag.velocity.x) < eps && std::abs(m_drag.velocity.y) < eps)
-		{
-			return;
-		}
+		// Apply inertia
+		m_drag.azimuth += m_drag.velocity.x * m_drag.sensitivity * deltaTime;
+		m_drag.elevation += m_drag.velocity.y * m_drag.sensitivity * deltaTime;
 
-		// Apply velocity to orbit camera angles using sensitivity
-		m_drag.azimuth -= m_drag.velocity.x * m_drag.sensitivity;
-		m_drag.elevation += m_drag.velocity.y * m_drag.sensitivity;
-		// Update camera position based on new orbital parameters
-		updateOrbitCamera();
-
-		// Dampen velocity for next frame
+		// Decay velocity
 		m_drag.velocity *= m_drag.inertiaDecay;
+
+		// Update camera position
+		updateOrbitCamera();
+	}
+	else if (!m_drag.active)
+	{
+		// Stop completely when velocity is negligible
+		m_drag.velocity = glm::vec2(0.0f);
 	}
 }
 
@@ -1072,9 +603,12 @@ void Application::updateGui(RenderPassEncoder renderPass)
 	ImGui::Begin("Lighting & Camera Controls");
 
 	// Shader reload button
-	if (ImGui::Button("Reload Shader (F5)"))
+	if (ImGui::Button("Reload Shaders (F5)"))
 	{
-		m_pendingShaderReload = true;
+		if (m_renderer)
+		{
+			m_renderer->pipelineManager().reloadAllPipelines();
+		}
 	}
 
 	ImGui::Separator();
@@ -1082,14 +616,16 @@ void Application::updateGui(RenderPassEncoder renderPass)
 	// Debug visualization toggle
 	ImGui::Checkbox("Show Debug Axes", &m_showDebugAxes);
 
-	// Material properties in a single section
-	if (ImGui::CollapsingHeader("Material Properties"))
+	// Material properties section
+	if (ImGui::CollapsingHeader("Material Properties") && m_material)
 	{
 		auto materialProperties = m_material->getCPUObject().getProperties();
 		bool materialsChanged = false;
-		materialsChanged |= ImGui::DragFloat3("Diffuse (Kd)", materialProperties.diffuse, 0.05f, 0.0f, 2.0f);
-		materialsChanged |= ImGui::DragFloat3("Specular (Ks)", materialProperties.specular, 0.05f, 0.0f, 2.0f);
-		materialsChanged |= ImGui::DragFloat("Hardness", &materialProperties.roughness, 0.5f, 1.0f, 128.0f);
+
+		materialsChanged |= ImGui::ColorEdit3("Diffuse (Kd)", materialProperties.diffuse);
+		materialsChanged |= ImGui::ColorEdit3("Specular (Ks)", materialProperties.specular);
+		materialsChanged |= ImGui::SliderFloat("Roughness", &materialProperties.roughness, 0.0f, 1.0f);
+		materialsChanged |= ImGui::SliderFloat("Metallic", &materialProperties.metallic, 0.0f, 1.0f);
 
 		if (materialsChanged)
 		{
@@ -1100,28 +636,10 @@ void Application::updateGui(RenderPassEncoder renderPass)
 	// Lights section
 	if (ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		// Add light button (disabled if max lights reached)
-		bool maxLightsReached = m_lights.size() >= kMaxLights;
-		if (maxLightsReached)
-		{
-			ImGui::BeginDisabled();
-		}
-		
+		// Add light button
 		if (ImGui::Button("Add Light"))
 		{
 			addLight();
-		}
-		
-		if (maxLightsReached)
-		{
-			ImGui::EndDisabled();
-			ImGui::SameLine();
-			ImGui::TextDisabled("(Max %zu lights)", kMaxLights);
-		}
-		else
-		{
-			ImGui::SameLine();
-			ImGui::TextDisabled("(%zu/%zu)", m_lights.size(), kMaxLights);
 		}
 
 		// Light list
@@ -1129,7 +647,7 @@ void Application::updateGui(RenderPassEncoder renderPass)
 		{
 			ImGui::PushID(static_cast<int>(i));
 
-			LightStruct &light = m_lights[i];
+			engine::rendering::LightStruct &light = m_lights[i];
 			const char *lightTypeNames[] = {"Ambient", "Directional", "Point", "Spot"};
 
 			// Create light header with type dropdown and remove button
@@ -1160,6 +678,7 @@ void Application::updateGui(RenderPassEncoder renderPass)
 
 				glm::vec3 position = glm::vec3(light.transform[3]);
 
+				// Initialize UI angles if not present
 				if (m_lightDirectionsUI.find(i) == m_lightDirectionsUI.end())
 				{
 					glm::mat3 rotMatrix = glm::mat3(light.transform);
@@ -1171,6 +690,7 @@ void Application::updateGui(RenderPassEncoder renderPass)
 
 				glm::vec3 &angles = m_lightDirectionsUI[i];
 
+				// Position control for point and spot lights
 				if (light.light_type > 1)
 				{
 					if (ImGui::DragFloat3("Position", glm::value_ptr(position), 0.1f))
@@ -1187,15 +707,16 @@ void Application::updateGui(RenderPassEncoder renderPass)
 					}
 				}
 
+				// Direction control for directional and spot lights
 				if (light.light_type == 1 || light.light_type == 3)
 				{
-					if (ImGui::DragFloat3("Direction", glm::value_ptr(angles), 0.5f))
+					if (ImGui::DragFloat3("Direction (degrees)", glm::value_ptr(angles), 0.5f))
 					{
-						// Build rotation matrix
-						glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(angles.z), glm::vec3(0, 0, 1)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.y), glm::vec3(0, 1, 0)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.x), glm::vec3(1, 0, 0));
+						// Build rotation matrix from Euler angles
+						glm::mat4 rotation =
+							glm::rotate(glm::mat4(1.0f), glm::radians(angles.z), glm::vec3(0, 0, 1)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.y), glm::vec3(0, 1, 0)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.x), glm::vec3(1, 0, 0));
 
-						// Apply rotation to transform
-						if (light.light_type == 0)
+						if (light.light_type == 1)
 						{
 							// For directional lights, just use rotation
 							light.transform = rotation;
@@ -1215,7 +736,6 @@ void Application::updateGui(RenderPassEncoder renderPass)
 					if (ImGui::SliderFloat("Cone Angle", &light.spot_angle, 0.1f, 2.0f))
 						m_lightsChanged = true;
 
-					// Add a slider for controlling the softness of the spotlight edges
 					if (ImGui::SliderFloat("Edge Softness", &light.spot_softness, 0.0f, 0.95f, "%.2f"))
 						m_lightsChanged = true;
 				}
@@ -1225,11 +745,11 @@ void Application::updateGui(RenderPassEncoder renderPass)
 
 			ImGui::PopID();
 
-			// Handle removal after PopID to keep the ID stack balanced
+			// Handle removal after PopID
 			if (shouldRemove)
 			{
 				removeLight(i);
-				break; // Break since we modified the array
+				break;
 			}
 		}
 	}
@@ -1238,8 +758,8 @@ void Application::updateGui(RenderPassEncoder renderPass)
 	// Camera controls section
 	if (ImGui::CollapsingHeader("Camera Controls", ImGuiTreeNodeFlags_DefaultOpen) && cam)
 	{
-		// Get current camera position, show as vector
-		glm::vec3 cameraPos = cam->getPosition();
+		// Get current camera position
+		glm::vec3 cameraPos = cam->getTransform() ? cam->getTransform()->getLocalPosition() : glm::vec3(0.0f);
 		ImGui::Text("Position: (%.2f, %.2f, %.2f)", cameraPos.x, cameraPos.y, cameraPos.z);
 
 		// Display distance from origin
@@ -1260,7 +780,7 @@ void Application::updateGui(RenderPassEncoder renderPass)
 			ImGui::Text("Right: (%.2f, %.2f, %.2f)", right.x, right.y, right.z);
 			ImGui::Text("Azimuth/Elevation: (%.2f / %.2f)", m_drag.azimuth, m_drag.elevation);
 
-			// Extract rotation as euler angles for easier understanding
+			// Extract rotation as euler angles
 			glm::quat rotation = transform->getRotation();
 			glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
 
@@ -1277,18 +797,18 @@ void Application::updateGui(RenderPassEncoder renderPass)
 
 		ImGui::Separator();
 
-		// Camera slider control
-		float zoomPercentage = (camDistance - 2.0f) / 8.0f * 100.0f; // Convert to 0-100%, with larger range
-		zoomPercentage = glm::clamp(zoomPercentage, 0.0f, 100.0f);	 // Ensure it's within range
+		// Camera distance slider
+		float zoomPercentage = (camDistance - 2.0f) / 8.0f * 100.0f;
+		zoomPercentage = glm::clamp(zoomPercentage, 0.0f, 100.0f);
 
 		if (ImGui::SliderFloat("Camera Distance", &zoomPercentage, 0.0f, 100.0f, "%.0f%%"))
 		{
-			float newDistance = (zoomPercentage / 100.0f) * 8.0f + 2.0f; // Convert back, with larger range
-			glm::vec3 dir = glm::normalize(cameraPos);
-			cam->getTransform()->setLocalPosition(dir * newDistance);
+			float newDistance = (zoomPercentage / 100.0f) * 8.0f + 2.0f;
+			m_drag.distance = newDistance;
+			updateOrbitCamera();
 		}
 
-		// Add camera reset controls
+		// Camera reset controls
 		if (ImGui::Button("Look At Origin"))
 		{
 			cam->lookAt(glm::vec3(0.0f));
@@ -1311,173 +831,126 @@ void Application::updateGui(RenderPassEncoder renderPass)
 
 void Application::addLight()
 {
-	LightStruct newLight;
-	newLight.light_type = m_lights.empty() ? 0 : 2; // First light is directional, others are point by default
+	// Create a new LightNode
+	auto lightNode = std::make_shared<engine::scene::entity::LightNode>();
 
-	// Set default direction angles (in degrees)
-	float pitchDegrees = 140.0f;
-	float yawDegrees = -30.0f;
-	float rollDegrees = 0.0f;
+	// Set light type (first light is directional, others are point)
+	uint32_t lightType = m_lights.empty() ? 1 : 2; // 1=directional, 2=point
+	lightNode->setLightType(lightType);
 
-	// Initialize rotation matrices from angles
-	glm::mat4 rotX = glm::rotate(glm::mat4(1.0f), glm::radians(pitchDegrees), glm::vec3(1.0f, 0.0f, 0.0f));
-	glm::mat4 rotY = glm::rotate(glm::mat4(1.0f), glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
-	glm::mat4 rotZ = glm::rotate(glm::mat4(1.0f), glm::radians(rollDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
-	glm::mat4 rotation = rotZ * rotY * rotX; // Apply Z, then Y, then X rotation
+	// Set default properties
+	lightNode->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
+	lightNode->setIntensity(1.0f);
+	lightNode->setSpotAngle(0.5f);
+	lightNode->setSpotSoftness(0.2f);
 
-	// Set position based on light type
-	glm::vec3 position = glm::vec3(0.0f, 1.0f, 0.0f);
+	// Set default position and rotation
+	if (lightType == 1) // Directional
+	{
+		// Set default direction angles (in degrees)
+		float pitchDegrees = 140.0f;
+		float yawDegrees = -30.0f;
+		float rollDegrees = 0.0f;
 
-	// Create transform with both rotation and position
-	glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * rotation;
-	newLight.transform = transform;
+		// Create rotation from euler angles
+		glm::quat rotation = glm::quat(glm::radians(glm::vec3(pitchDegrees, yawDegrees, rollDegrees)));
+		lightNode->getTransform()->setLocalRotation(rotation);
+		lightNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, 0.0f));
 
-	// Set other light properties
-	newLight.color = {1.0f, 1.0f, 1.0f};
-	newLight.intensity = 1.0f;
-	newLight.spot_angle = 0.5f;
-	newLight.spot_softness = 0.2f;
+		// Store UI angles
+		size_t newLightIndex = m_lights.size();
+		m_lightDirectionsUI[newLightIndex] = glm::vec3(pitchDegrees, yawDegrees, rollDegrees);
+	}
+	else // Point light
+	{
+		lightNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 0.0f));
+	}
 
-	// Store the index of the new light
-	size_t newLightIndex = m_lights.size();
+	// Add the light node to the scene
+	auto rootNode = m_scene->getRoot();
+	if (rootNode)
+	{
+		rootNode->addChild(lightNode);
 
-	// Add the light to the array
-	m_lights.push_back(newLight);
+		// Sync the light data to m_lights array for UI compatibility
+		// Note: LightNode uses engine::rendering::LightStruct, Application uses Application::LightStruct
+		// We need to copy the data
+		auto &lightData = lightNode->getLightData();
+		engine::rendering::LightStruct appLight;
+		appLight.transform = lightData.transform;
+		appLight.color = lightData.color;
+		appLight.intensity = lightData.intensity;
+		appLight.light_type = lightData.light_type;
+		appLight.spot_angle = lightData.spot_angle;
+		appLight.spot_softness = lightData.spot_softness;
 
-	// Store the UI angles for the new light in the member variable
-	m_lightDirectionsUI[newLightIndex] = glm::vec3(pitchDegrees, yawDegrees, rollDegrees);
+		m_lights.push_back(appLight);
+		m_lightsChanged = true;
 
-	m_lightsChanged = true;
+		spdlog::info("Added light node (type: {})", lightType == 1 ? "directional" : "point");
+	}
 }
 
 void Application::removeLight(size_t index)
 {
-	if (index < m_lights.size())
+	if (index >= m_lights.size())
 	{
-		// Remove the light from the array
-		m_lights.erase(m_lights.begin() + index);
+		spdlog::warn("Cannot remove light at index {}: out of bounds", index);
+		return;
+	}
 
-		// Remove the UI angles for this light
-		m_lightDirectionsUI.erase(index);
+	// Remove from m_lights vector
+	m_lights.erase(m_lights.begin() + index);
 
-		// Re-index any UI angles for lights after the removed one
-		for (size_t i = index; i < m_lights.size(); i++)
+	// Remove UI angles for this light
+	m_lightDirectionsUI.erase(index);
+
+	// Re-index remaining lights in the UI map
+	std::map<size_t, glm::vec3> newDirectionsUI;
+	for (const auto &[idx, angles] : m_lightDirectionsUI)
+	{
+		if (idx > index)
 		{
-			if (m_lightDirectionsUI.find(i + 1) != m_lightDirectionsUI.end())
-			{
-				m_lightDirectionsUI[i] = m_lightDirectionsUI[i + 1];
-				m_lightDirectionsUI.erase(i + 1);
-			}
+			newDirectionsUI[idx - 1] = angles;
 		}
-
-		m_lightsChanged = true;
-	}
-}
-
-bool Application::reloadShader()
-{
-	spdlog::info("Reloading shader...");
-
-	// Wait for any pending GPU operations to complete
-	m_context->getQueue().submit(0, nullptr);
-
-	// Create a new shader module first
-	auto newShaderModule = engine::resources::ResourceManager::loadShaderModule(
-		engine::core::PathProvider::getResource("shader.wgsl"),
-		m_context->getDevice()
-	);
-
-	if (!newShaderModule)
-	{
-		spdlog::error("Failed to reload shader module!");
-		return false;
-	}
-
-	// Create new pipeline with updated shader
-	engine::rendering::webgpu::WebGPUShaderInfo vertexShaderInfo(newShaderModule, "vs_main");
-	engine::rendering::webgpu::WebGPUShaderInfo fragmentShaderInfo(newShaderModule, "fs_main");
-
-	wgpu::RenderPipelineDescriptor pipelineDesc = m_context->pipelineFactory().createRenderPipelineDescriptor(
-		&vertexShaderInfo,
-		&fragmentShaderInfo,
-		m_context->getSwapChainFormat(),
-		m_depthTextureFormat,
-		true
-	);
-
-	// Extract raw layouts from WebGPUBindGroupLayoutInfo objects
-	std::array<wgpu::BindGroupLayout, kBindGroupLayoutCount> layouts = {
-		m_bindGroupLayouts[0]->getLayout(),
-		m_bindGroupLayouts[1]->getLayout(),
-		m_bindGroupLayouts[2]->getLayout(),
-		m_bindGroupLayouts[3]->getLayout()
-	};
-
-	// Create the pipeline layout using the factory helper
-	wgpu::PipelineLayout layout = m_context->pipelineFactory().createPipelineLayout(layouts.data(), kBindGroupLayoutCount);
-	pipelineDesc.layout = layout;
-
-	// Create the new pipeline
-	auto newPipeline = m_context->pipelineFactory().createRenderPipeline(pipelineDesc);
-
-	// Release the temporary layout
-	layout.release();
-
-	if (!newPipeline)
-	{
-		spdlog::error("Failed to create new pipeline after shader reload!");
-		if (newShaderModule)
+		else
 		{
-			newShaderModule.release();
+			newDirectionsUI[idx] = angles;
 		}
-		return false;
 	}
+	m_lightDirectionsUI = newDirectionsUI;
 
-	// Only release old resources after new ones are successfully created
-	if (m_pipeline)
-	{
-		m_pipeline.release();
-	}
-	if (m_shaderModule)
-	{
-		m_shaderModule.release();
-	}
+	// TODO: Remove the corresponding LightNode from the scene graph
+	// This requires tracking which node corresponds to which index
+	// For now, we'll just update the lights buffer
 
-	// Assign new resources
-	m_shaderModule = newShaderModule;
-	m_pipeline = newPipeline;
-
-	spdlog::info("Shader reloaded successfully");
-	return true;
-}
-
-void Application::updateSceneGraph(float deltaTime)
-{
-	// Simply delegate to the Scene class which handles the full update cycle
-	if (m_scene)
-	{
-		m_scene->update(deltaTime);
-		m_scene->lateUpdate(deltaTime);
-	}
+	m_lightsChanged = true;
+	spdlog::info("Removed light at index {}", index);
 }
 
 void Application::updateOrbitCamera()
 {
+	// Normalize azimuth to [0, 2π]
 	m_drag.azimuth = fmod(m_drag.azimuth, 2.0f * glm::pi<float>());
 	if (m_drag.azimuth < 0)
 	{
 		m_drag.azimuth += 2.0f * glm::pi<float>();
 	}
+
+	// Clamp elevation to avoid gimbal lock
+	m_drag.elevation = glm::clamp(m_drag.elevation, -glm::pi<float>() / 2.0f + 0.01f, glm::pi<float>() / 2.0f - 0.01f);
+
 	// Clamp distance
 	m_drag.distance = glm::clamp(m_drag.distance, 0.5f, 20.0f);
 
-	// --- Convert spherical coordinates to Cartesian (LH Y-up Z-forward) ---
+	// Convert spherical coordinates to Cartesian
 	float x = cos(m_drag.elevation) * cos(m_drag.azimuth);
 	float y = sin(m_drag.elevation);
 	float z = cos(m_drag.elevation) * sin(m_drag.azimuth);
 
 	glm::vec3 position = m_drag.targetPoint + glm::vec3(x, y, z) * m_drag.distance;
 
+	// Update camera position and look-at
 	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
 	if (cam && cam->getTransform())
 	{
