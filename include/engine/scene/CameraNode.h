@@ -1,7 +1,8 @@
 #pragma once
-#include "engine/scene/SpatialNode.h"
+#include "engine/scene/entity/Node.h"
 #include "engine/scene/entity/UpdateNode.h"
 #include "engine/scene/entity/RenderNode.h"
+#include "engine/scene/SpatialNode.h"
 #include <memory>
 #include <glm/glm.hpp>
 
@@ -12,9 +13,9 @@ namespace engine::scene {
  * Stores transform and projection parameters directly in the node.
  * No separate Camera class required - all camera data is contained here.
  * Uses standard transform operations with utility methods for common camera operations.
- * Inherits from both SpatialNode, UpdateNode and RenderNode, using virtual inheritance to avoid diamond inheritance issues.
+ * Inherits from SpatialNode (for transform), UpdateNode and RenderNode, using virtual inheritance to avoid diamond inheritance issues.
  */
-class CameraNode : public SpatialNode, public entity::UpdateNode, public entity::RenderNode {
+class CameraNode : public entity::UpdateNode, public entity::RenderNode, public SpatialNode {
 public:
 	using Ptr = std::shared_ptr<CameraNode>;
 	

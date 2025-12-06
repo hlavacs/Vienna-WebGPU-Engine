@@ -12,7 +12,8 @@ WebGPUSurfaceManager::WebGPUSurfaceManager(WebGPUContext &context) : m_context(c
 
 bool WebGPUSurfaceManager::updateIfNeeded(uint32_t width, uint32_t height)
 {
-	// update config dimensions
+	// Update config dimensions but defer applying to avoid blocking
+	// Surface will be reconfigured on next acquireNextTexture() call
 	m_config.width = width;
 	m_config.height = height;
 
@@ -74,16 +75,15 @@ std::shared_ptr<WebGPUTexture> WebGPUSurfaceManager::acquireNextTexture()
 
 #ifdef WEBGPU_BACKEND_WGPU
 	wgpu::SurfaceTexture surfaceTexture{};
-	surface.configure(m_config.asSurfaceConfiguration(m_context.getDevice()));
 	surface.getCurrentTexture(&surfaceTexture);
-
-	wgpu::TextureView nextTexture = wgpu::Texture(surfaceTexture.texture).createView();
 
 	if (!surfaceTexture.texture)
 	{
 		// ToDo: std::cerr << "[WebGPUSurfaceManager] Failed to acquire surface texture.\n";
 		return nullptr;
 	}
+
+	wgpu::TextureView nextTexture = wgpu::Texture(surfaceTexture.texture).createView();
 
 	// Build descriptors based on current config and acquired texture
 	wgpu::TextureDescriptor texDesc{};

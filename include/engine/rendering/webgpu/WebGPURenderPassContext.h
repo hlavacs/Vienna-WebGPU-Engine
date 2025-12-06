@@ -1,5 +1,6 @@
 #pragma once
 
+#include "engine/core/Identifiable.h"
 #include "engine/rendering/webgpu/WebGPUDepthTexture.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 #include <memory>
@@ -16,7 +17,7 @@ namespace engine::rendering::webgpu
  * WebGPU RenderPassDescriptor for use in rendering. It provides methods to update
  * attachments, query configuration, and validate texture compatibility.
  */
-struct WebGPURenderPassContext
+struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderPassContext>
 {
   protected:
 	std::vector<std::shared_ptr<WebGPUTexture>> m_colorTextures;
@@ -158,13 +159,48 @@ struct WebGPURenderPassContext
 		m_renderPassDesc.colorAttachments = m_colorAttachmentCopies.data();
 		m_renderPassDesc.colorAttachmentCount = m_colorAttachmentCopies.size();
 
+		// --- Update depth view (if provided) ---
 		if (newDepthTexture)
 		{
-			if (!m_depthAttachmentCopy)
-				return false;
 			m_depthTexture = newDepthTexture;
-			m_depthAttachmentCopy->view = m_depthTexture->getTextureView();
-			m_renderPassDesc.depthStencilAttachment = &(*m_depthAttachmentCopy);
+			if (m_depthAttachmentCopy)
+			{
+				m_depthAttachmentCopy->view = newDepthTexture->getTextureView();
+				m_renderPassDesc.depthStencilAttachment = &(*m_depthAttachmentCopy);
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * @brief Updates color texture view from a raw TextureView (for swapchain textures).
+	 * @param newColorView Raw texture view (typically from swapchain).
+	 * @param newDepthTexture Optional new depth texture to set.
+	 * @param colorIndex Index of the color attachment to update (default 0).
+	 * @return True if update succeeded.
+	 */
+	bool updateViewRaw(wgpu::TextureView newColorView, std::shared_ptr<WebGPUDepthTexture> newDepthTexture = nullptr, size_t colorIndex = 0)
+	{
+		if (colorIndex >= m_colorAttachmentCopies.size())
+			return false;
+
+		// --- Update color view directly ---
+		m_colorAttachmentCopies[colorIndex].view = newColorView;
+
+		// IMPORTANT: rebind color attachments in the descriptor
+		m_renderPassDesc.colorAttachments = m_colorAttachmentCopies.data();
+		m_renderPassDesc.colorAttachmentCount = m_colorAttachmentCopies.size();
+
+		// --- Update depth view (if provided) ---
+		if (newDepthTexture)
+		{
+			m_depthTexture = newDepthTexture;
+			if (m_depthAttachmentCopy)
+			{
+				m_depthAttachmentCopy->view = newDepthTexture->getTextureView();
+				m_renderPassDesc.depthStencilAttachment = &(*m_depthAttachmentCopy);
+			}
 		}
 
 		return true;

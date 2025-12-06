@@ -19,6 +19,9 @@ Scene::Scene() : m_root(nullptr), m_activeCamera(nullptr)
 
 void Scene::onFrame(float deltaTime)
 {
+	// Clear render collector at the start of each frame
+	m_renderCollector.clear();
+	
 	// Complete frame lifecycle
 	update(deltaTime);
 	lateUpdate(deltaTime);
@@ -39,10 +42,13 @@ void Scene::update(float deltaTime)
 		if (node->isEnabled())
 		{
 			// If this is an UpdateNode, call its update method
-			auto updateNode = std::dynamic_pointer_cast<entity::UpdateNode>(node);
-			if (updateNode)
+			if (node->isUpdate())
 			{
-				updateNode->update(dt);
+				auto updateNode = node->asUpdateNode();
+				if (updateNode)
+				{
+					updateNode->update(dt);
+				}
 			}
 
 			// Process children
@@ -69,10 +75,13 @@ void Scene::lateUpdate(float deltaTime)
 		if (node->isEnabled())
 		{
 			// If this is an UpdateNode, call its lateUpdate method
-			auto updateNode = std::dynamic_pointer_cast<entity::UpdateNode>(node);
-			if (updateNode)
+			if (node->isUpdate())
 			{
-				updateNode->lateUpdate(dt);
+				auto updateNode = node->asUpdateNode();
+				if (updateNode)
+				{
+					updateNode->lateUpdate(dt);
+				}
 			}
 
 			// Process children
@@ -105,10 +114,13 @@ void Scene::preRender()
 		if (node->isEnabled())
 		{
 			// If this is a RenderNode, call its preRender method
-			auto renderNode = std::dynamic_pointer_cast<entity::RenderNode>(node);
-			if (renderNode)
+			if (node->isRender())
 			{
-				renderNode->preRender();
+				auto renderNode = node->asRenderNode();
+				if (renderNode)
+				{
+					renderNode->preRender();
+				}
 			}
 
 			// Process children
@@ -128,17 +140,20 @@ void Scene::render()
 	if (!m_root || !m_activeCamera)
 		return;
 
-	// Process all RenderNodes in the scene graph for render
+	// Process all RenderNodes in the scene graph for render collection
 	std::function<void(entity::Node::Ptr)> processRenderNodes;
-	processRenderNodes = [&processRenderNodes](entity::Node::Ptr node)
+	processRenderNodes = [&processRenderNodes, this](entity::Node::Ptr node)
 	{
 		if (node->isEnabled())
 		{
-			// If this is a RenderNode, call its render method
-			auto renderNode = std::dynamic_pointer_cast<entity::RenderNode>(node);
-			if (renderNode)
+			// If this is a RenderNode, call its onRenderCollect method
+			if (node->isRender())
 			{
-				// TODO: renderNode->onRenderCollect(collector);
+				auto renderNode = node->asRenderNode();
+				if (renderNode)
+				{
+					renderNode->onRenderCollect(m_renderCollector);
+				}
 			}
 
 			// Process children
@@ -165,10 +180,13 @@ void Scene::postRender()
 		if (node->isEnabled())
 		{
 			// If this is a RenderNode, call its postRender method
-			auto renderNode = std::dynamic_pointer_cast<entity::RenderNode>(node);
-			if (renderNode)
+			if (node->isRender())
 			{
-				renderNode->postRender();
+				auto renderNode = node->asRenderNode();
+				if (renderNode)
+				{
+					renderNode->postRender();
+				}
 			}
 
 			// Process children

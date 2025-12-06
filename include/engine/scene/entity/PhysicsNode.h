@@ -10,6 +10,11 @@ class PhysicsNode : public Node
 {
   public:
 	using Ptr = std::shared_ptr<PhysicsNode>;
+	
+	PhysicsNode() {
+		addNodeType(NodeType::Physics);
+	}
+	
 	virtual ~PhysicsNode() = default;
 
 	/** @brief Called at fixed intervals for physics. */

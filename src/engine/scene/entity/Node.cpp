@@ -1,8 +1,11 @@
 #include "engine/scene/entity/Node.h"
+#include "engine/scene/entity/RenderNode.h"
+#include "engine/scene/entity/UpdateNode.h"
+#include "engine/scene/entity/PhysicsNode.h"
 
 namespace engine::scene::entity
 {
-Node::Node() = default;
+Node::Node() {}
 Node::~Node() { onDestroy(); }
 
 void Node::start()
@@ -87,4 +90,32 @@ void Node::removeChild(Ptr child)
 
 Node *Node::getParent() const { return parent; }
 const std::vector<Node::Ptr> &Node::getChildren() const { return children; }
+
+std::shared_ptr<RenderNode> Node::asRenderNode()
+{
+	if (isRender())
+	{
+		return std::dynamic_pointer_cast<RenderNode>(shared_from_this());
+	}
+	return nullptr;
+}
+
+std::shared_ptr<UpdateNode> Node::asUpdateNode()
+{
+	if (isUpdate())
+	{
+		return std::dynamic_pointer_cast<UpdateNode>(shared_from_this());
+	}
+	return nullptr;
+}
+
+std::shared_ptr<PhysicsNode> Node::asPhysicsNode()
+{
+	if (isPhysics())
+	{
+		return std::dynamic_pointer_cast<PhysicsNode>(shared_from_this());
+	}
+	return nullptr;
+}
+
 } // namespace engine::scene::entity

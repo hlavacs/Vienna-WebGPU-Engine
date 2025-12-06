@@ -34,10 +34,10 @@ class WebGPUBindGroupLayoutInfo
 	{
 		assert(m_layout && "BindGroupLayout must be valid");
 		assert(m_layoutDesc.entryCount > 0 && "BindGroupLayoutInfo must have at least one entry");
-		
+
 		// Copy entries to ensure they remain valid (descriptor entries pointer can be temporary)
 		m_entries.assign(m_layoutDesc.entries, m_layoutDesc.entries + m_layoutDesc.entryCount);
-		
+
 		// Update descriptor to point to our owned copy
 		m_layoutDesc.entries = m_entries.data();
 	}
@@ -98,7 +98,7 @@ class WebGPUBindGroupLayoutInfo
 	 * @return Pointer to the bind group layout entry at the specified index.
 	 * @throws Assertion failure if index is out of bounds.
 	 */
-	const wgpu::BindGroupLayoutEntry* getEntry(size_t index) const
+	const wgpu::BindGroupLayoutEntry *getEntry(size_t index) const
 	{
 		assert(index < m_entries.size() && "Entry index out of bounds");
 		return &m_entries[index];

@@ -16,11 +16,35 @@ WebGPUPipelineFactory::WebGPUPipelineFactory(WebGPUContext &context) :
 {
 }
 
-wgpu::RenderPipeline WebGPUPipelineFactory::createRenderPipeline(const wgpu::RenderPipelineDescriptor &descriptor)
+std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createPipeline(
+	const wgpu::RenderPipelineDescriptor &descriptor,
+	const wgpu::BindGroupLayout *layouts,
+	uint32_t layoutCount
+)
 {
+	// Create the pipeline layout
+	wgpu::PipelineLayout layout = createPipelineLayout(layouts, layoutCount);
+	if (!layout)
+	{
+		std::cerr << "Failed to create pipeline layout" << std::endl;
+		return nullptr;
+	}
+
+	// Create a copy of the descriptor and set the layout
 	wgpu::RenderPipelineDescriptor desc = descriptor;
-	// The layout must be set by the caller before calling this, or after descriptor creation
-	return m_context.getDevice().createRenderPipeline(desc);
+	desc.layout = layout;
+
+	// Create the pipeline
+	wgpu::RenderPipeline pipeline = m_context.getDevice().createRenderPipeline(desc);
+	if (!pipeline)
+	{
+		std::cerr << "Failed to create render pipeline" << std::endl;
+		layout.release();
+		return nullptr;
+	}
+
+	// Wrap in WebGPUPipeline (layout ownership transferred)
+	return std::make_shared<WebGPUPipeline>(pipeline, layout, desc);
 }
 
 wgpu::RenderPipelineDescriptor WebGPUPipelineFactory::createRenderPipelineDescriptor(
@@ -143,7 +167,7 @@ wgpu::RenderPipelineDescriptor WebGPUPipelineFactory::createRenderPipelineDescri
 	if (vertexShader)
 	{
 		desc.vertex.module = vertexShader->module;
-		desc.vertex.entryPoint = vertexShader->entryPoint.c_str();
+		desc.vertex.entryPoint = vertexShader->getVertexEntryPoint().c_str();
 	}
 	desc.vertex.bufferCount = 1;
 	desc.vertex.buffers = &defaultVertexBufferLayout;
@@ -153,7 +177,7 @@ wgpu::RenderPipelineDescriptor WebGPUPipelineFactory::createRenderPipelineDescri
 	{
 		static wgpu::FragmentState fragmentState = {};
 		fragmentState.module = fragmentShader->module;
-		fragmentState.entryPoint = fragmentShader->entryPoint.c_str();
+		fragmentState.entryPoint = fragmentShader->getFragmentEntryPoint().c_str();
 		fragmentState.targetCount = 1;
 		fragmentState.targets = &defaultColorTarget;
 		fragmentState.constantCount = 0;
@@ -176,13 +200,13 @@ wgpu::RenderPipelineDescriptor WebGPUPipelineFactory::createRenderPipelineDescri
 	return desc;
 }
 
-wgpu::RenderPipeline WebGPUPipelineFactory::getDefaultRenderPipeline()
+std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::getDefaultRenderPipeline()
 {
 	if (!m_defaultPipelineInitialized)
 	{
 		// You must call this with valid shader modules and layout before use!
 		// This is just a placeholder and will not work until properly set up.
-		std::cerr << "WebGPUPipelineFactory::getDefaultRenderPipeline: Not implemented. Use createRenderPipeline instead." << std::endl;
+		std::cerr << "WebGPUPipelineFactory::getDefaultRenderPipeline: Not implemented. Use createPipeline instead." << std::endl;
 		return nullptr;
 	}
 	return m_defaultPipeline;

@@ -8,14 +8,21 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/core/PathProvider.h"
+#include "engine/rendering/FrameUniforms.h"
+#include "engine/rendering/LightUniforms.h"
+#include "engine/rendering/ObjectUniforms.h"
+#include "engine/rendering/RenderCollector.h"
+#include "engine/rendering/Renderer.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUModel.h"
+#include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/resources/ResourceManager.h"
 #include "engine/scene/CameraNode.h"
 #include "engine/scene/Scene.h"
 #include "engine/scene/entity/Node.h"
+#include "engine/scene/entity/RenderNode.h"
 
 // Forward declare
 struct SDL_Window;
@@ -49,19 +56,11 @@ class Application
 	void onScroll(double xoffset, double yoffset, float deltaTime);
 
   private:
-	bool initSurface();
-	void terminateSurface();
+	bool initRenderer();
+	void terminateRenderer();
 
-	bool initDepthBuffer();
-	void terminateDepthBuffer();
-
-	bool initRenderPipeline();
-	void terminateRenderPipeline();
-	bool reloadShader();
-
-    bool initDebugPipeline();
-    void updateDebugRendering(wgpu::RenderPassEncoder renderPass);
-    void terminateDebugPipeline();
+	bool initDebugPipeline();
+	void terminateDebugPipeline();
 
 	bool initGeometry();
 	void terminateGeometry();
@@ -69,17 +68,8 @@ class Application
 	bool initUniforms();
 	void terminateUniforms();
 
-	bool initLightingUniforms();
-	void terminateLightingUniforms();
-	void updateLightingUniforms();
-
-	bool initBindGroupLayout();
-	bool initBindGroups();
-
 	void updateProjectionMatrix();
-	void updateViewMatrix();
 	void updateDragInertia(float deltaTime);
-	
 
 	// Orbit camera methods
 	void updateOrbitCamera();
@@ -88,7 +78,7 @@ class Application
 	bool initGui();										// called in onInit
 	void terminateGui();								// called in onFinish
 	void updateGui(wgpu::RenderPassEncoder renderPass); // called in onFrame
-	void processSDLEvents(float deltaTime);							// called in onFrame
+	void processSDLEvents(float deltaTime);				// called in onFrame
 
   public:
 	SDL_Window *m_window = nullptr;
@@ -96,6 +86,7 @@ class Application
   private:
 	std::shared_ptr<engine::resources::ResourceManager> m_resourceManager = nullptr;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUContext> m_context = nullptr;
+	std::unique_ptr<engine::rendering::Renderer> m_renderer = nullptr;
 
 	bool m_shouldClose = false;
 
@@ -104,54 +95,6 @@ class Application
 	using vec4 = glm::vec4;
 	using vec3 = glm::vec3;
 	using vec2 = glm::vec2;
-
-	/**
-	 * Frame uniforms (camera, time) - matches shader's FrameUniforms
-	 */
-	struct FrameUniforms
-	{
-		mat4x4 viewMatrix;
-		mat4x4 projectionMatrix;
-		vec3 cameraWorldPosition;
-		float time;
-	};
-	static_assert(sizeof(FrameUniforms) % 16 == 0, "FrameUniforms must match shader layout");
-
-	/**
-	 * Light struct - matches shader's Light
-	 */
-	struct LightStruct
-	{
-		glm::mat4 transform = glm::mat4(1.0f); // transformation matrix for the light (includes position and rotation)
-		glm::vec3 color = {1.0f, 1.0f, 1.0f};
-		float intensity = 1.0f; // light intensity
-
-		uint32_t light_type = 0;	// 0 = ambient, 1 = directional, 2 = point, 3 = spot
-		float spot_angle = 0.5f;	// for spot (in radians)
-		float spot_softness = 0.2f; // for spotlight softness
-		float _pad = 0.0f;			// padding to ensure 16-byte alignment
-	};
-	static_assert(sizeof(LightStruct) % 16 == 0, "LightStruct must match WGSL layout");
-
-	/**
-	 * Lights buffer - matches shader's LightsBuffer
-	 */
-	struct LightsBuffer
-	{
-		uint32_t count = 0;
-		float pad3[3]; // padding to ensure 16-byte alignment
-	};
-	static_assert(sizeof(LightsBuffer) % 16 == 0, "LightsBuffer must match WGSL layout");
-
-	/**
-	 * Object uniforms (model matrix) - matches shader's ObjectUniforms
-	 */
-	struct ObjectUniforms
-	{
-		mat4x4 modelMatrix;
-		mat4x4 normalMatrix; // For normal transformations
-	};
-	static_assert(sizeof(ObjectUniforms) % 16 == 0, "ObjectUniforms must match shader layout");
 
 	struct DragState
 	{
@@ -178,90 +121,44 @@ class Application
 
 	// Window and Device
 	int m_currentWidth = 0, m_currentHeight = 0;
-	wgpu::Instance m_instance = nullptr;
-	wgpu::Surface m_surface = nullptr;
-#ifndef WEBGPU_BACKEND_WGPU
-	// To this date, Dawn still needs a SwapChain
-	wgpu::SwapChain m_swapChain = nullptr;
-#endif // WEBGPU_BACKEND_DAWN
-	wgpu::Device m_device = nullptr;
-	wgpu::Queue m_queue = nullptr;
-	wgpu::TextureFormat m_swapChainFormat = wgpu::TextureFormat::Undefined;
-	// Keep the error callback alive
-	std::unique_ptr<wgpu::ErrorCallback> m_errorCallbackHandle;
 
-	// Depth Buffer
+	// Depth Buffer (kept for backwards compatibility with old code)
 	wgpu::TextureFormat m_depthTextureFormat = wgpu::TextureFormat::Depth24Plus;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUDepthTexture> m_depthBuffer;
 	wgpu::Texture m_depthTexture = nullptr;
 	wgpu::TextureView m_depthTextureView = nullptr;
 
-	// Render Pipeline
-	wgpu::ShaderModule m_shaderModule = nullptr;
-	wgpu::RenderPipeline m_pipeline = nullptr;
+	// Uniforms (kept for Application use - Renderer has its own frame uniforms)
+	engine::rendering::FrameUniforms m_frameUniforms;
 
-	// Geometry
-	wgpu::Buffer m_vertexBuffer = nullptr;
-	wgpu::Buffer m_indexBuffer = nullptr;
-	int32_t m_vertexCount = 0;
-	int32_t m_indexCount = 0;
-
-	// Uniforms
-	wgpu::Buffer m_frameUniformBuffer = nullptr;
-	wgpu::Buffer m_objectUniformBuffer = nullptr;
-	FrameUniforms m_frameUniforms;
-	ObjectUniforms m_objectUniforms;
-
-	// Lights
-	std::vector<LightStruct> m_lights;
+	// Lights (kept for backwards compatibility - TODO: migrate to scene graph)
+	std::vector<engine::rendering::LightStruct> m_lights;
 	wgpu::Buffer m_lightsBuffer = nullptr;
-	LightsBuffer m_lightsBufferHeader;
+	engine::rendering::LightsBuffer m_lightsBufferHeader;
 	bool m_lightsChanged = true;
 	std::map<size_t, glm::vec3> m_lightDirectionsUI; // Store UI direction angles in degrees
 
-	// Material
+	// Material (kept for backwards compatibility)
 	std::shared_ptr<engine::rendering::webgpu::WebGPUMaterial> m_material;
 
-	// Bind Group Layout
-	static constexpr size_t kBindGroupLayoutCount = 4;
-	static constexpr size_t kMaxLights = 16;
-	// Enum for bind group layout indices
-	std::array<std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroupLayoutInfo>, kBindGroupLayoutCount> m_bindGroupLayouts = {nullptr, nullptr, nullptr, nullptr};
-
-	// Bind Group
-	wgpu::BindGroup m_frameBindGroup = nullptr;
-	wgpu::BindGroup m_uniformBindGroup = nullptr;
-	wgpu::BindGroup m_lightBindGroup = nullptr;
-
 	// Scene Graph
-	std::shared_ptr<engine::scene::entity::Node> m_rootNode;
 	std::shared_ptr<engine::scene::Scene> m_scene;
-	wgpu::Buffer m_cameraBuffer = nullptr; // Buffer for camera data
-
-	std::shared_ptr<engine::rendering::webgpu::WebGPURenderPassContext> m_renderPassContext;
 
 	DragState m_drag;
 
+	// Old models (kept for backwards compatibility - TODO: migrate to scene graph)
 	std::vector<std::shared_ptr<engine::rendering::webgpu::WebGPUModel>> m_webgpuModels;
 
-	bool m_pendingShaderReload = false;
-
-	// Debug
+	// Debug (kept for backwards compatibility)
 	bool m_showDebugAxes = false;
-	// Debug rendering resources
 	wgpu::ShaderModule m_debugShaderModule = nullptr;
-	wgpu::RenderPipeline m_debugPipeline = nullptr;
+	std::shared_ptr<engine::rendering::webgpu::WebGPUPipeline> m_debugPipeline = nullptr;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroupLayoutInfo> m_debugBindGroupLayoutInfo = nullptr;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroup> m_debugBindGroupInfo = nullptr;
-	
-	// Cached for convenience
 	wgpu::BindGroup m_debugBindGroup = nullptr;
 	wgpu::Buffer m_debugViewProjBuffer = nullptr;
 	wgpu::Buffer m_debugTransformsBuffer = nullptr;
-	size_t m_debugMaxInstances = 4; // Max number of debug axes
-
-	// Scene graph management
-	void updateSceneGraph(float deltaTime);
+	size_t m_debugMaxInstances = 4;
 
 	// Helper methods for light management
 	void addLight();

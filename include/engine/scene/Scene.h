@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/scene/entity/Node.h"
 #include "engine/scene/CameraNode.h"
+#include "engine/rendering/RenderCollector.h"
 #include <memory>
 
 namespace engine::scene
@@ -46,8 +47,12 @@ public:
     /** @brief Get the active camera */
     CameraNode::Ptr getActiveCamera() const { return m_activeCamera; }
     
+    /** @brief Get the render collector for this frame */
+    const engine::rendering::RenderCollector& getRenderCollector() const { return m_renderCollector; }
+    
 private:
     entity::Node::Ptr m_root;
     CameraNode::Ptr m_activeCamera;
+    engine::rendering::RenderCollector m_renderCollector;
 };
 } // namespace engine::scene

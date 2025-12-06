@@ -6,8 +6,10 @@
 namespace engine::scene
 {
 
-CameraNode::CameraNode() : SpatialNode()
+CameraNode::CameraNode()
 {
+	addNodeType(entity::NodeType::Camera);
+	
 	// Initialize camera parameters
 	m_fov = 45.0f;
 	m_aspect = 16.0f / 9.0f;
@@ -30,7 +32,7 @@ CameraNode::CameraNode() : SpatialNode()
 
 void CameraNode::setTransform(const std::shared_ptr<Transform> &t)
 {
-	SpatialNode::setTransform(t);
+	m_transform = t;
 	updateMatrices();
 }
 

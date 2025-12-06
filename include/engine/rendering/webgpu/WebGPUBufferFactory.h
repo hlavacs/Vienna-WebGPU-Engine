@@ -40,11 +40,11 @@ class WebGPUBufferFactory
 
 	/**
 	 * @brief Creates a buffer from a bind group layout entry.
-	 * 
+	 *
 	 * Creates a buffer with the appropriate usage flags based on the layout entry's buffer type.
 	 * The buffer is created with the size from the layout entry's minBindingSize, or a custom size if provided.
 	 * No data is uploaded - use queue.writeBuffer() or mappedAtCreation separately to upload data.
-	 * 
+	 *
 	 * @param layoutInfo The bind group layout info containing the entry.
 	 * @param binding The binding number to create buffer for.
 	 * @param size The size in bytes (if 0, uses minBindingSize from entry).

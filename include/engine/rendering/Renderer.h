@@ -1,34 +1,107 @@
 #pragma once
-#include "engine/rendering/FrameUniforms.h"
+
+#include <functional>
+#include <memory>
+#include <unordered_map>
+#include <webgpu/webgpu.hpp>
+
+#include "engine/rendering/PipelineManager.h"
 #include "engine/rendering/RenderCollector.h"
-#include "engine/scene/CameraNode.h"
+#include "engine/rendering/RenderPassManager.h"
+#include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUModel.h"
 
 namespace engine::rendering
 {
 
+// Forward declarations
+struct FrameUniforms;
+
+/**
+ * @brief Central renderer that orchestrates the rendering pipeline.
+ *
+ * Manages render passes, pipelines, and executes rendering of collected
+ * scene data. Separates rendering logic from application/scene logic.
+ */
 class Renderer
 {
   public:
-	virtual ~Renderer() = default;
+	Renderer(std::shared_ptr<webgpu::WebGPUContext> context);
+	~Renderer();
 
-	// Initialize GPU resources or backend
-	virtual void initialize() = 0;
+	/**
+	 * @brief Initializes the renderer with default passes and pipelines.
+	 * @return True if initialization succeeded.
+	 */
+	bool initialize();
 
-	// Start a new frame, update frame uniforms
-	virtual void beginFrame(const scene::CameraNode &camera) = 0;
+	/**
+	 * @brief Updates frame uniforms (camera, time, etc).
+	 * @param frameUniforms The frame-level uniform data.
+	 */
+	void updateFrameUniforms(const FrameUniforms &frameUniforms);
 
-	// Render collected scene data
-	virtual void renderScene(const RenderCollector &collector) = 0;
+	/**
+	 * @brief Renders a frame using collected scene data.
+	 * @param collector Collected render items and lights.
+	 * @param uiCallback Optional callback for rendering UI/debug overlays.
+	 */
+	void renderFrame(
+		const RenderCollector &collector,
+		std::function<void(wgpu::RenderPassEncoder)> uiCallback = nullptr
+	);
 
-	// Submit frame to GPU
-	virtual void submitFrame() = 0;
+	/**
+	 * @brief Handles window resize events.
+	 * @param width New width.
+	 * @param height New height.
+	 */
+	void onResize(uint32_t width, uint32_t height);
 
-	// Shutdown renderer and release GPU resources
-	virtual void shutdown() = 0;
+	/**
+	 * @brief Gets the pipeline manager.
+	 * @return Reference to pipeline manager.
+	 */
+	PipelineManager &pipelineManager() { return *m_pipelineManager; }
 
-  protected:
-	// Cached frame data (view, projection, camera position, time)
-	FrameUniforms m_frameUniforms;
+	/**
+	 * @brief Gets the render pass manager.
+	 * @return Reference to render pass manager.
+	 */
+	RenderPassManager &renderPassManager() { return *m_renderPassManager; }
+
+  private:
+	std::shared_ptr<webgpu::WebGPUContext> m_context;
+	std::unique_ptr<PipelineManager> m_pipelineManager;
+	std::unique_ptr<RenderPassManager> m_renderPassManager;
+
+	// Cached resources
+	std::shared_ptr<webgpu::WebGPUDepthTexture> m_depthBuffer;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_frameBindGroup;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
+	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_objectUniformLayout;
+	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_lightBindGroupLayout;
+
+	wgpu::Buffer m_frameUniformBuffer = nullptr;
+	wgpu::Buffer m_lightsBuffer = nullptr;
+	wgpu::Buffer m_objectUniformBuffer = nullptr;
+
+	// WebGPU model cache (CPU Model Handle -> GPU Model)
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
+
+	// Main render pass ID
+	uint64_t m_mainPassId = 0;
+
+	bool setupDefaultPipelines();
+	bool setupDefaultRenderPasses();
+	bool createFrameBindGroup();
+	bool createLightBindGroup();
+	void updateLights(const std::vector<LightStruct> &lights);
+	
+	std::shared_ptr<webgpu::WebGPUModel> getOrCreateWebGPUModel(
+		const engine::core::Handle<engine::rendering::Model> &modelHandle
+	);
 };
 
 } // namespace engine::rendering

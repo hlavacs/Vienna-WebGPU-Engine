@@ -44,6 +44,7 @@ class Identifiable
 	Identifiable(Identifiable &&) noexcept = default;
 	Identifiable &operator=(Identifiable &&) noexcept = default;
 
+	uint64_t getId() const { return m_id; }
 	HandleType getHandle() const;
 
 	std::optional<std::string> getName() const;

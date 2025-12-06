@@ -4,7 +4,9 @@
 namespace engine::rendering::webgpu
 {
 
-WebGPURenderer::WebGPURenderer(WebGPUContext *context) : m_context(context)
+WebGPURenderer::WebGPURenderer(WebGPUContext *context) 
+	: Renderer(std::shared_ptr<WebGPUContext>(context, [](WebGPUContext*){})), // Non-owning shared_ptr
+	  m_context(context)
 {
 }
 

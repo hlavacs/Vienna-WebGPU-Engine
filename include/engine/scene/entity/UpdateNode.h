@@ -11,6 +11,11 @@ class UpdateNode : public virtual Node
 {
   public:
 	using Ptr = std::shared_ptr<UpdateNode>;
+	
+	UpdateNode() {
+		addNodeType(NodeType::Update);
+	}
+	
 	virtual ~UpdateNode() = default;
 
 	/** @brief Called every frame. */

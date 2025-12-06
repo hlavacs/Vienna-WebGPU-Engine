@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+#include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
 namespace engine::rendering::webgpu
@@ -11,7 +13,18 @@ class WebGPUPipelineFactory
   public:
 	explicit WebGPUPipelineFactory(WebGPUContext &context);
 
-	wgpu::RenderPipeline createRenderPipeline(const wgpu::RenderPipelineDescriptor &descriptor);
+	/**
+	 * @brief Creates a WebGPUPipeline wrapper from descriptor and bind group layouts.
+	 * @param descriptor The render pipeline descriptor.
+	 * @param layouts Array of bind group layouts for the pipeline.
+	 * @param layoutCount Number of bind group layouts.
+	 * @return Shared pointer to WebGPUPipeline wrapper.
+	 */
+	std::shared_ptr<WebGPUPipeline> createPipeline(
+		const wgpu::RenderPipelineDescriptor &descriptor,
+		const wgpu::BindGroupLayout *layouts,
+		uint32_t layoutCount
+	);
 
 	// Create pipeline descriptor
 	wgpu::RenderPipelineDescriptor createRenderPipelineDescriptor(
@@ -36,14 +49,14 @@ class WebGPUPipelineFactory
 	);
 
 	// Returns a default pipeline (created on first call, then cached)
-	wgpu::RenderPipeline getDefaultRenderPipeline();
+	std::shared_ptr<WebGPUPipeline> getDefaultRenderPipeline();
 
 	// Helper to create a pipeline layout from bind group layouts
 	wgpu::PipelineLayout createPipelineLayout(const wgpu::BindGroupLayout *layouts, uint32_t layoutCount);
 
   private:
 	WebGPUContext &m_context;
-	wgpu::RenderPipeline m_defaultPipeline = nullptr; // Cached default pipeline
+	std::shared_ptr<WebGPUPipeline> m_defaultPipeline = nullptr; // Cached default pipeline
 	bool m_defaultPipelineInitialized = false;
 };
 
