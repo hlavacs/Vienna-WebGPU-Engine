@@ -21,6 +21,7 @@
 #include "engine/resources/ResourceManager.h"
 #include "engine/scene/CameraNode.h"
 #include "engine/scene/Scene.h"
+#include "engine/scene/entity/LightNode.h"
 #include "engine/scene/entity/Node.h"
 #include "engine/scene/entity/RenderNode.h"
 
@@ -131,11 +132,8 @@ class Application
 	// Uniforms (kept for Application use - Renderer has its own frame uniforms)
 	engine::rendering::FrameUniforms m_frameUniforms;
 
-	// Lights (kept for backwards compatibility - TODO: migrate to scene graph)
-	std::vector<engine::rendering::LightStruct> m_lights;
-	wgpu::Buffer m_lightsBuffer = nullptr;
-	engine::rendering::LightsBuffer m_lightsBufferHeader;
-	bool m_lightsChanged = true;
+	// Lights - managed as LightNodes in the scene graph
+	std::vector<std::shared_ptr<engine::scene::entity::LightNode>> m_lightNodes;
 	std::map<size_t, glm::vec3> m_lightDirectionsUI; // Store UI direction angles in degrees
 
 	// Material (kept for backwards compatibility)

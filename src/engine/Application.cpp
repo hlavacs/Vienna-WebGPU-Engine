@@ -643,11 +643,17 @@ void Application::updateGui(RenderPassEncoder renderPass)
 		}
 
 		// Light list
-		for (size_t i = 0; i < m_lights.size(); ++i)
+		for (size_t i = 0; i < m_lightNodes.size(); ++i)
 		{
 			ImGui::PushID(static_cast<int>(i));
 
-			engine::rendering::LightStruct &light = m_lights[i];
+			auto &lightNode = m_lightNodes[i];
+			if (!lightNode)
+			{
+				ImGui::PopID();
+				continue;
+			}
+
 			const char *lightTypeNames[] = {"Ambient", "Directional", "Point", "Spot"};
 
 			// Create light header with type dropdown and remove button
@@ -663,81 +669,78 @@ void Application::updateGui(RenderPassEncoder renderPass)
 			if (open)
 			{
 				// Light type
-				int currentType = static_cast<int>(light.light_type);
+				int currentType = static_cast<int>(lightNode->getLightType());
 				if (ImGui::Combo("Type", &currentType, lightTypeNames, 4))
 				{
-					light.light_type = static_cast<uint32_t>(currentType);
-					m_lightsChanged = true;
+					lightNode->setLightType(static_cast<uint32_t>(currentType));
 				}
 
-				if (ImGui::ColorEdit3("Color", glm::value_ptr(light.color)))
-					m_lightsChanged = true;
+				glm::vec3 color = lightNode->getColor();
+				if (ImGui::ColorEdit3("Color", glm::value_ptr(color)))
+				{
+					lightNode->setColor(color);
+				}
 
-				if (ImGui::SliderFloat("Intensity", &light.intensity, 0.0f, 5.0f))
-					m_lightsChanged = true;
+				float intensity = lightNode->getIntensity();
+				if (ImGui::SliderFloat("Intensity", &intensity, 0.0f, 5.0f))
+				{
+					lightNode->setIntensity(intensity);
+				}
 
-				glm::vec3 position = glm::vec3(light.transform[3]);
+				auto transform = lightNode->getTransform();
+				if (!transform)
+				{
+					ImGui::TreePop();
+					ImGui::PopID();
+					continue;
+				}
+
+				glm::vec3 position = transform->getLocalPosition();
 
 				// Initialize UI angles if not present
 				if (m_lightDirectionsUI.find(i) == m_lightDirectionsUI.end())
 				{
-					glm::mat3 rotMatrix = glm::mat3(light.transform);
-					glm::vec3 xAxis = glm::normalize(glm::vec3(rotMatrix[0]));
-					float pitch = glm::degrees(asin(-xAxis.y));
-					float yaw = glm::degrees(atan2(xAxis.z, xAxis.x));
-					m_lightDirectionsUI[i] = glm::vec3(pitch, yaw, 0.0f);
+					glm::quat rotation = transform->getRotation();
+					glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
+					m_lightDirectionsUI[i] = eulerAngles;
 				}
 
 				glm::vec3 &angles = m_lightDirectionsUI[i];
 
 				// Position control for point and spot lights
-				if (light.light_type > 1)
+				if (lightNode->getLightType() > 1)
 				{
 					if (ImGui::DragFloat3("Position", glm::value_ptr(position), 0.1f))
 					{
-						// Update position while preserving rotation
-						glm::mat3 rotation = glm::mat3(light.transform);
-						light.transform = glm::mat4(
-							glm::vec4(rotation[0], 0.0f),
-							glm::vec4(rotation[1], 0.0f),
-							glm::vec4(rotation[2], 0.0f),
-							glm::vec4(position, 1.0f)
-						);
-						m_lightsChanged = true;
+						transform->setLocalPosition(position);
 					}
 				}
 
 				// Direction control for directional and spot lights
-				if (light.light_type == 1 || light.light_type == 3)
+				if (lightNode->getLightType() == 1 || lightNode->getLightType() == 3)
 				{
 					if (ImGui::DragFloat3("Direction (degrees)", glm::value_ptr(angles), 0.5f))
 					{
-						// Build rotation matrix from Euler angles
-						glm::mat4 rotation =
-							glm::rotate(glm::mat4(1.0f), glm::radians(angles.z), glm::vec3(0, 0, 1)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.y), glm::vec3(0, 1, 0)) * glm::rotate(glm::mat4(1.0f), glm::radians(angles.x), glm::vec3(1, 0, 0));
-
-						if (light.light_type == 1)
-						{
-							// For directional lights, just use rotation
-							light.transform = rotation;
-						}
-						else
-						{
-							// For spot lights, preserve position
-							light.transform = glm::translate(glm::mat4(1.0f), position) * rotation;
-						}
-						m_lightsChanged = true;
+						// Build rotation from Euler angles
+						glm::quat rotation = glm::quat(glm::radians(angles));
+						transform->setLocalRotation(rotation);
 					}
 				}
 
 				// Spot angle for spot lights
-				if (light.light_type == 3)
+				if (lightNode->getLightType() == 3)
 				{
-					if (ImGui::SliderFloat("Cone Angle", &light.spot_angle, 0.1f, 2.0f))
-						m_lightsChanged = true;
+					float spotAngle = lightNode->getLightData().spot_angle;
+					if (ImGui::SliderFloat("Cone Angle", &spotAngle, 0.1f, 2.0f))
+					{
+						lightNode->setSpotAngle(spotAngle);
+					}
 
-					if (ImGui::SliderFloat("Edge Softness", &light.spot_softness, 0.0f, 0.95f, "%.2f"))
-						m_lightsChanged = true;
+					float spotSoftness = lightNode->getLightData().spot_softness;
+					if (ImGui::SliderFloat("Edge Softness", &spotSoftness, 0.0f, 0.95f, "%.2f"))
+					{
+						lightNode->setSpotSoftness(spotSoftness);
+					}
 				}
 
 				ImGui::TreePop();
@@ -835,7 +838,7 @@ void Application::addLight()
 	auto lightNode = std::make_shared<engine::scene::entity::LightNode>();
 
 	// Set light type (first light is directional, others are point)
-	uint32_t lightType = m_lights.empty() ? 1 : 2; // 1=directional, 2=point
+	uint32_t lightType = m_lightNodes.empty() ? 1 : 2; // 1=directional, 2=point
 	lightNode->setLightType(lightType);
 
 	// Set default properties
@@ -858,7 +861,7 @@ void Application::addLight()
 		lightNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, 0.0f));
 
 		// Store UI angles
-		size_t newLightIndex = m_lights.size();
+		size_t newLightIndex = m_lightNodes.size();
 		m_lightDirectionsUI[newLightIndex] = glm::vec3(pitchDegrees, yawDegrees, rollDegrees);
 	}
 	else // Point light
@@ -872,20 +875,8 @@ void Application::addLight()
 	{
 		rootNode->addChild(lightNode);
 
-		// Sync the light data to m_lights array for UI compatibility
-		// Note: LightNode uses engine::rendering::LightStruct, Application uses Application::LightStruct
-		// We need to copy the data
-		auto &lightData = lightNode->getLightData();
-		engine::rendering::LightStruct appLight;
-		appLight.transform = lightData.transform;
-		appLight.color = lightData.color;
-		appLight.intensity = lightData.intensity;
-		appLight.light_type = lightData.light_type;
-		appLight.spot_angle = lightData.spot_angle;
-		appLight.spot_softness = lightData.spot_softness;
-
-		m_lights.push_back(appLight);
-		m_lightsChanged = true;
+		// Add to our tracking vector
+		m_lightNodes.push_back(lightNode);
 
 		spdlog::info("Added light node (type: {})", lightType == 1 ? "directional" : "point");
 	}
@@ -893,14 +884,21 @@ void Application::addLight()
 
 void Application::removeLight(size_t index)
 {
-	if (index >= m_lights.size())
+	if (index >= m_lightNodes.size())
 	{
 		spdlog::warn("Cannot remove light at index {}: out of bounds", index);
 		return;
 	}
 
-	// Remove from m_lights vector
-	m_lights.erase(m_lights.begin() + index);
+	// Remove from scene graph
+	auto lightNode = m_lightNodes[index];
+	if (lightNode && lightNode->getParent())
+	{
+		lightNode->getParent()->removeChild(lightNode);
+	}
+
+	// Remove from tracking vector
+	m_lightNodes.erase(m_lightNodes.begin() + index);
 
 	// Remove UI angles for this light
 	m_lightDirectionsUI.erase(index);
@@ -920,11 +918,6 @@ void Application::removeLight(size_t index)
 	}
 	m_lightDirectionsUI = newDirectionsUI;
 
-	// TODO: Remove the corresponding LightNode from the scene graph
-	// This requires tracking which node corresponds to which index
-	// For now, we'll just update the lights buffer
-
-	m_lightsChanged = true;
 	spdlog::info("Removed light at index {}", index);
 }
 

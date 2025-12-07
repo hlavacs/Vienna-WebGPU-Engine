@@ -12,8 +12,6 @@ WebGPUSurfaceManager::WebGPUSurfaceManager(WebGPUContext &context) : m_context(c
 
 bool WebGPUSurfaceManager::updateIfNeeded(uint32_t width, uint32_t height)
 {
-	// Update config dimensions but defer applying to avoid blocking
-	// Surface will be reconfigured on next acquireNextTexture() call
 	m_config.width = width;
 	m_config.height = height;
 
@@ -39,6 +37,7 @@ void WebGPUSurfaceManager::reconfigure(const std::optional<Config> &config)
 
 void WebGPUSurfaceManager::applyConfig()
 {
+	m_context.terminateSurface();
 	auto surface = m_context.getSurface();
 
 	// terminate/recreate surface if backend requires
