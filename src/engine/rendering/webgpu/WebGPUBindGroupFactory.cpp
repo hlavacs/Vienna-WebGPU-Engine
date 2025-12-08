@@ -103,10 +103,10 @@ wgpu::BindGroup WebGPUBindGroupFactory::createBindGroupFromDescriptor(const wgpu
 std::shared_ptr<WebGPUBindGroupLayoutInfo> WebGPUBindGroupFactory::createDefaultMaterialBindGroupLayout()
 {
 	return createCustomBindGroupLayout(
-		createUniformBindGroupLayoutEntry<Material::MaterialProperties>(),
-		createSamplerBindGroupLayoutEntry(),
-		createTextureBindGroupLayoutEntry(), // Diffuse texture
-		createTextureBindGroupLayoutEntry()	 // Normal texture
+		createUniformBindGroupLayoutEntry<Material::MaterialProperties>(-1, wgpu::ShaderStage::Fragment),
+		createSamplerBindGroupLayoutEntry(-1, wgpu::ShaderStage::Fragment),
+		createTextureBindGroupLayoutEntry(-1, wgpu::ShaderStage::Fragment), // Diffuse texture
+		createTextureBindGroupLayoutEntry(-1, wgpu::ShaderStage::Fragment)	 // Normal texture
 	);
 }
 
@@ -265,7 +265,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroupWithBuff
 		return nullptr;
 	}
 
-	std::vector<wgpu::Buffer> buffers;
+	std::vector<std::shared_ptr<WebGPUBuffer>> buffers;
 	std::vector<wgpu::BindGroupEntry> entries;
 	buffers.reserve(layoutInfo->getEntryCount());
 	entries.reserve(layoutInfo->getEntryCount());
@@ -291,9 +291,10 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroupWithBuff
 		}
 
 		// Create buffer using the buffer factory
-		wgpu::Buffer buffer = m_context.bufferFactory().createBufferFromLayoutEntry(*layoutInfo, layoutEntry->binding, bufferSize);
+		std::string bufferName = "Buffer_Binding" + std::to_string(layoutEntry->binding);
+		auto buffer = m_context.bufferFactory().createBufferFromLayoutEntry(*layoutInfo, layoutEntry->binding, bufferName, false, bufferSize);
 
-		if (!buffer)
+		if (!buffer || !buffer->isValid())
 		{
 			spdlog::error("Failed to create buffer for binding {}", layoutEntry->binding);
 			return nullptr;
@@ -304,7 +305,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroupWithBuff
 		// Create bind group entry
 		wgpu::BindGroupEntry entry{};
 		entry.binding = layoutEntry->binding;
-		entry.buffer = buffer;
+		entry.buffer = buffer->getBuffer();
 		entry.offset = 0;
 		entry.size = bufferSize;
 		entries.push_back(entry);

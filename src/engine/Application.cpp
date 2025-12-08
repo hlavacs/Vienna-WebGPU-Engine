@@ -2,6 +2,12 @@
 // Significant modifications, refactoring, and extensions have been made for this project.
 // Original code © 2022-2024 Elie Michel, MIT License.
 
+/**
+ * TODO:
+ * 1. Facotry schlauer machen in bindgroup verkettungen
+2. Überlegung wie ich das mache wo materials ihrhe sachen rien schrieben oder ob der renderer das ausliest oder wie wo was 
+ */
+
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_LEFT_HANDED
 #include <glm/ext.hpp>
@@ -90,8 +96,6 @@ bool Application::onInit()
 	SDL_GetWindowSize(m_window, &m_currentWidth, &m_currentHeight);
 	if (!initRenderer())
 		return false;
-	if (!initDebugPipeline())
-		return false;
 	if (!initGeometry())
 		return false;
 	if (!initUniforms())
@@ -141,6 +145,9 @@ void Application::onFrame()
 				this->updateGui(renderPass);
 			}
 		);
+		
+		// Post-render cleanup phase
+		m_scene->postRender();
 	}
 
 #ifdef WEBGPU_BACKEND_DAWN
@@ -238,7 +245,6 @@ void Application::onFinish()
 
 	m_context->bindGroupFactory().cleanup();
 	terminateRenderer();
-	terminateDebugPipeline();
 }
 
 bool Application::isRunning()
@@ -341,74 +347,6 @@ bool Application::initRenderer()
 void Application::terminateRenderer()
 {
 	m_renderer.reset();
-}
-
-bool Application::initDebugPipeline()
-{
-	// Load debug shader
-	m_debugShaderModule = engine::resources::ResourceManager::loadShaderModule(
-		engine::core::PathProvider::getResource("debug.wgsl"),
-		m_context->getDevice()
-	);
-
-	if (!m_debugShaderModule)
-	{
-		spdlog::error("Failed to load debug shader!");
-		return false;
-	}
-
-	m_debugBindGroupLayoutInfo = m_context->bindGroupFactory().createCustomBindGroupLayout(
-		m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<glm::mat4x4>(-1, static_cast<uint32_t>(wgpu::ShaderStage::Vertex)),
-		m_context->bindGroupFactory().createStorageBindGroupLayoutEntry(-1, wgpu::ShaderStage::Vertex, true)
-	);
-
-	// Create pipeline
-	engine::rendering::webgpu::WebGPUShaderInfo vertexShaderInfo(m_debugShaderModule, "vs_main");
-	engine::rendering::webgpu::WebGPUShaderInfo fragmentShaderInfo(m_debugShaderModule, "fs_main");
-
-	wgpu::RenderPipelineDescriptor pipelineDesc = m_context->pipelineFactory().createRenderPipelineDescriptor(
-		&vertexShaderInfo,
-		&fragmentShaderInfo,
-		m_context->getSwapChainFormat(),
-		m_depthTextureFormat,
-		true
-	);
-
-	pipelineDesc.vertex.bufferCount = 0;
-	pipelineDesc.primitive.topology = wgpu::PrimitiveTopology::LineList;
-
-	wgpu::BindGroupLayout debugLayout = m_debugBindGroupLayoutInfo->getLayout();
-
-	// Create the debug pipeline using the factory (creates layout + pipeline wrapper)
-	m_debugPipeline = m_context->pipelineFactory().createPipeline(pipelineDesc, &debugLayout, 1);
-
-	if (!m_debugPipeline || !m_debugPipeline->isValid())
-	{
-		spdlog::error("Failed to create debug pipeline!");
-		return false;
-	}
-
-	// Create bind group with buffers - all in one call!
-	m_debugBindGroupInfo = m_context->bindGroupFactory().createBindGroupWithBuffers(
-		m_debugBindGroupLayoutInfo,
-		{
-			sizeof(glm::mat4),						// binding 0: view-projection matrix
-			m_debugMaxInstances * sizeof(glm::mat4) // binding 1: transform matrices
-		}
-	);
-
-	if (!m_debugBindGroupInfo)
-	{
-		spdlog::error("Failed to create debug bind group!");
-		return false;
-	}
-
-	// Extract individual resources for convenience
-	m_debugBindGroup = m_debugBindGroupInfo->getBindGroup();
-	m_debugViewProjBuffer = m_debugBindGroupInfo->getBuffer(0);
-	m_debugTransformsBuffer = m_debugBindGroupInfo->getBuffer(1);
-
-	return true;
 }
 
 bool Application::initGeometry()
@@ -519,28 +457,6 @@ void Application::terminateUniforms()
 	// This function kept for backwards compatibility
 }
 
-void Application::terminateDebugPipeline()
-{
-	if (m_debugPipeline)
-	{
-		m_debugPipeline = nullptr;
-	}
-	if (m_debugBindGroup)
-	{
-		m_debugBindGroup.release();
-	}
-	if (m_debugViewProjBuffer)
-	{
-		m_debugViewProjBuffer.destroy();
-		m_debugViewProjBuffer.release();
-	}
-	if (m_debugTransformsBuffer)
-	{
-		m_debugTransformsBuffer.destroy();
-		m_debugTransformsBuffer.release();
-	}
-}
-
 void Application::updateProjectionMatrix()
 {
 	auto cam = m_scene ? m_scene->getActiveCamera() : nullptr;
@@ -611,10 +527,14 @@ void Application::updateGui(RenderPassEncoder renderPass)
 		}
 	}
 
-	ImGui::Separator();
+	ImGui::SameLine();
+	
+	// Debug rendering toggle (functionality to be implemented)
+	static bool showDebugRendering = false;
+	ImGui::Checkbox("Debug Rendering", &showDebugRendering);
+	// TODO: Connect to Renderer's debug visualization when implemented
 
-	// Debug visualization toggle
-	ImGui::Checkbox("Show Debug Axes", &m_showDebugAxes);
+	ImGui::Separator();
 
 	// Material properties section
 	if (ImGui::CollapsingHeader("Material Properties") && m_material)

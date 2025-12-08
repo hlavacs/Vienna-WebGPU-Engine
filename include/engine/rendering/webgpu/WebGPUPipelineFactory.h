@@ -18,12 +18,14 @@ class WebGPUPipelineFactory
 	 * @param descriptor The render pipeline descriptor.
 	 * @param layouts Array of bind group layouts for the pipeline.
 	 * @param layoutCount Number of bind group layouts.
+	 * @param shaderInfo Optional shader info to store in the pipeline.
 	 * @return Shared pointer to WebGPUPipeline wrapper.
 	 */
 	std::shared_ptr<WebGPUPipeline> createPipeline(
 		const wgpu::RenderPipelineDescriptor &descriptor,
 		const wgpu::BindGroupLayout *layouts,
-		uint32_t layoutCount
+		uint32_t layoutCount,
+		std::shared_ptr<WebGPUShaderInfo> shaderInfo = nullptr
 	);
 
 	// Create pipeline descriptor

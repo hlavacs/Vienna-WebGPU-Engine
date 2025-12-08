@@ -80,7 +80,8 @@ class ResourceManagerBase
 		auto it = m_resources.find(handle);
 		if (it != m_resources.end())
 		{
-			it->first.invalidate();
+			// const_cast needed because map key is const, but we need to invalidate
+			const_cast<HandleType&>(it->first).invalidate();
 			m_resources.erase(it);
 			return true;
 		}
@@ -171,7 +172,8 @@ class ResourceManagerBase
 		std::scoped_lock lock(m_mutex);
 		for (auto &[handle, _] : m_resources)
 		{
-			handle.invalidate();
+			// const_cast needed because map key is const, but we need to invalidate
+			const_cast<HandleType&>(handle).invalidate();
 		}
 		m_resources.clear();
 	}

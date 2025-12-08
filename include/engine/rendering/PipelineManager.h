@@ -9,6 +9,7 @@
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include "engine/resources/ResourceManagerBase.h"
 
 namespace engine::rendering
 {
@@ -33,9 +34,11 @@ struct PipelineConfig
  * Caches pipelines by name, handles shader reloading, and manages
  * pipeline configurations for different rendering techniques.
  */
-class PipelineManager
+class PipelineManager : public engine::resources::ResourceManagerBase<webgpu::WebGPUPipeline>
 {
   public:
+	using WebGPUPipelinePtr = std::shared_ptr<engine::rendering::webgpu::WebGPUPipeline>;
+
 	PipelineManager(webgpu::WebGPUContext &context);
 	~PipelineManager();
 
@@ -53,6 +56,13 @@ class PipelineManager
 	 * @return The pipeline, or nullptr if not found.
 	 */
 	std::shared_ptr<webgpu::WebGPUPipeline> getPipeline(const std::string &name) const;
+
+	/**
+	 * @brief Gets the shader info for a pipeline.
+	 * @param name Pipeline identifier.
+	 * @return The shader info, or nullptr if not found.
+	 */
+	std::shared_ptr<webgpu::WebGPUShaderInfo> getShaderInfo(const std::string &name) const;
 
 	/**
 	 * @brief Reloads a pipeline from its shader file.
@@ -79,23 +89,16 @@ class PipelineManager
 	void clear();
 
   private:
-	struct PipelineEntry
-	{
-		std::shared_ptr<webgpu::WebGPUPipeline> pipeline;
-		std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo;
-		PipelineConfig config;
-
-		PipelineEntry() = default;
-		PipelineEntry(std::shared_ptr<webgpu::WebGPUPipeline> p, 
-		              std::shared_ptr<webgpu::WebGPUShaderInfo> s, 
-		              const PipelineConfig &c)
-			: pipeline(std::move(p)), shaderInfo(std::move(s)), config(c) {}
-	};
-
 	webgpu::WebGPUContext &m_context;
-	std::unordered_map<std::string, PipelineEntry> m_pipelines;
+	
+	// Name-to-handle mapping for fast lookup by name
+	std::unordered_map<std::string, engine::core::Handle<webgpu::WebGPUPipeline>> m_nameToHandle;
+	
+	// Handle-to-config mapping for hot-reloading (shader info is stored in WebGPUPipeline)
+	std::unordered_map<engine::core::Handle<webgpu::WebGPUPipeline>, PipelineConfig> m_configs;
 
-	bool createPipelineInternal(const std::string &name, const PipelineConfig &config, PipelineEntry &entry);
+	bool createPipelineInternal(const std::string &name, const PipelineConfig &config, 
+	                            std::shared_ptr<webgpu::WebGPUPipeline> &outPipeline);
 };
 
 } // namespace engine::rendering

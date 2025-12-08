@@ -19,13 +19,13 @@ WebGPUModel::WebGPUModel(
 
 void WebGPUModel::render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass)
 {
-	// First set up the material state
+	// 1. Bind material resources first (bind group 3)
 	if (m_material)
 	{
 		m_material->render(encoder, renderPass);
 	}
-
-	// Then render the mesh
+	
+	// 2. Then render the mesh with the material bound
 	if (m_mesh)
 	{
 		m_mesh->render(encoder, renderPass);
@@ -34,14 +34,17 @@ void WebGPUModel::render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder 
 
 void WebGPUModel::updateGPUResources()
 {
-	try
+	// Update mesh if it has changed
+	if (m_mesh)
 	{
-		// This would be called when the CPU model changes
-		// Here you would update the mesh and material references
+		m_mesh->update();
 	}
-	catch (const std::exception &e)
+	
+	// Update material if it has changed
+	// This will trigger WebGPUMaterial::updateGPUResources() only if dirty
+	if (m_material)
 	{
-		// Log error or handle invalid model
+		m_material->update();
 	}
 }
 

@@ -1,10 +1,13 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
+#include <string>
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
+#include "engine/rendering/webgpu/WebGPUBuffer.h"
 
 namespace engine::rendering::webgpu
 {
@@ -39,7 +42,7 @@ class WebGPUBufferFactory
 	}
 
 	/**
-	 * @brief Creates a buffer from a bind group layout entry.
+	 * @brief Creates a WebGPUBuffer from a bind group layout entry.
 	 *
 	 * Creates a buffer with the appropriate usage flags based on the layout entry's buffer type.
 	 * The buffer is created with the size from the layout entry's minBindingSize, or a custom size if provided.
@@ -47,14 +50,92 @@ class WebGPUBufferFactory
 	 *
 	 * @param layoutInfo The bind group layout info containing the entry.
 	 * @param binding The binding number to create buffer for.
+	 * @param name Debug name for the buffer.
+	 * @param isGlobal Whether this is a global (engine-managed) buffer.
 	 * @param size The size in bytes (if 0, uses minBindingSize from entry).
-	 * @return Created buffer configured according to the layout entry.
+	 * @return Shared pointer to WebGPUBuffer configured according to the layout entry.
 	 */
-	wgpu::Buffer createBufferFromLayoutEntry(
+	std::shared_ptr<WebGPUBuffer> createBufferFromLayoutEntry(
 		const WebGPUBindGroupLayoutInfo &layoutInfo,
 		uint32_t binding,
+		const std::string &name,
+		bool isGlobal = false,
 		size_t size = 0
 	);
+
+	// === WebGPUBuffer Creation Methods ===
+
+	/**
+	 * @brief Creates a uniform buffer wrapped in WebGPUBuffer.
+	 * @param name Debug name for the buffer.
+	 * @param binding Binding index in the shader.
+	 * @param size Size in bytes.
+	 * @param isGlobal Whether this is a global (engine-managed) buffer.
+	 */
+	std::shared_ptr<WebGPUBuffer> createUniformBufferWrapped(
+		const std::string &name,
+		uint32_t binding,
+		std::size_t size,
+		bool isGlobal = false
+	);
+
+	/**
+	 * @brief Creates a uniform buffer with data, wrapped in WebGPUBuffer.
+	 */
+	template <typename T>
+	std::shared_ptr<WebGPUBuffer> createUniformBufferWrapped(
+		const std::string &name,
+		uint32_t binding,
+		const T *data,
+		std::size_t count,
+		bool isGlobal = false
+	);
+
+	/**
+	 * @brief Creates a uniform buffer from vector, wrapped in WebGPUBuffer.
+	 */
+	template <typename T>
+	std::shared_ptr<WebGPUBuffer> createUniformBufferWrapped(
+		const std::string &name,
+		uint32_t binding,
+		const std::vector<T> &data,
+		bool isGlobal = false
+	);
+
+	/**
+	 * @brief Creates a storage buffer wrapped in WebGPUBuffer.
+	 */
+	std::shared_ptr<WebGPUBuffer> createStorageBufferWrapped(
+		const std::string &name,
+		uint32_t binding,
+		std::size_t size,
+		bool isGlobal = false
+	);
+
+	/**
+	 * @brief Creates a storage buffer with data, wrapped in WebGPUBuffer.
+	 */
+	template <typename T>
+	std::shared_ptr<WebGPUBuffer> createStorageBufferWrapped(
+		const std::string &name,
+		uint32_t binding,
+		const T *data,
+		std::size_t count,
+		bool isGlobal = false
+	);
+
+	/**
+	 * @brief Creates a storage buffer from vector, wrapped in WebGPUBuffer.
+	 */
+	template <typename T>
+	std::shared_ptr<WebGPUBuffer> createStorageBufferWrapped(
+		const std::string &name,
+		uint32_t binding,
+		const std::vector<T> &data,
+		bool isGlobal = false
+	);
+
+	// === Legacy Raw Buffer Creation Methods (deprecated, kept for compatibility) ===
 
 	wgpu::Buffer createUniformBuffer(std::size_t size);
 	template <typename T>

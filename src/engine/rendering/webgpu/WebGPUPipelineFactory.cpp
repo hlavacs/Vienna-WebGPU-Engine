@@ -19,7 +19,8 @@ WebGPUPipelineFactory::WebGPUPipelineFactory(WebGPUContext &context) :
 std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createPipeline(
 	const wgpu::RenderPipelineDescriptor &descriptor,
 	const wgpu::BindGroupLayout *layouts,
-	uint32_t layoutCount
+	uint32_t layoutCount,
+	std::shared_ptr<WebGPUShaderInfo> shaderInfo
 )
 {
 	// Create the pipeline layout
@@ -43,8 +44,8 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createPipeline(
 		return nullptr;
 	}
 
-	// Wrap in WebGPUPipeline (layout ownership transferred)
-	return std::make_shared<WebGPUPipeline>(pipeline, layout, desc);
+	// Wrap in WebGPUPipeline with shader info (layout ownership transferred)
+	return std::make_shared<WebGPUPipeline>(pipeline, layout, desc, shaderInfo);
 }
 
 wgpu::RenderPipelineDescriptor WebGPUPipelineFactory::createRenderPipelineDescriptor(
@@ -62,18 +63,18 @@ wgpu::RenderPipelineDescriptor WebGPUPipelineFactory::createRenderPipelineDescri
 	wgpu::RenderPipelineDescriptor desc = {};
 	if (vertexShader)
 	{
-		desc.vertex.module = vertexShader->module;
-		desc.vertex.entryPoint = vertexShader->entryPoint.c_str();
+		desc.vertex.module = vertexShader->getModule();
+		desc.vertex.entryPoint = vertexShader->getVertexEntryPoint().c_str();
 	}
 	desc.vertex.bufferCount = vertexBufferCount;
 	desc.vertex.buffers = vertexBuffers;
 	desc.vertex.constantCount = 0;
 	desc.vertex.constants = nullptr;
-	if (fragmentShader && fragmentShader->module)
+	if (fragmentShader && fragmentShader->getModule())
 	{
 		static wgpu::FragmentState fragmentState = {};
-		fragmentState.module = fragmentShader->module;
-		fragmentState.entryPoint = fragmentShader->entryPoint.c_str();
+		fragmentState.module = fragmentShader->getModule();
+		fragmentState.entryPoint = fragmentShader->getFragmentEntryPoint().c_str();
 		fragmentState.targetCount = colorTargetCount;
 		fragmentState.targets = colorTargets;
 		fragmentState.constantCount = 0;
@@ -166,17 +167,17 @@ wgpu::RenderPipelineDescriptor WebGPUPipelineFactory::createRenderPipelineDescri
 	wgpu::RenderPipelineDescriptor desc = {};
 	if (vertexShader)
 	{
-		desc.vertex.module = vertexShader->module;
+		desc.vertex.module = vertexShader->getModule();
 		desc.vertex.entryPoint = vertexShader->getVertexEntryPoint().c_str();
 	}
 	desc.vertex.bufferCount = 1;
 	desc.vertex.buffers = &defaultVertexBufferLayout;
 	desc.vertex.constantCount = 0;
 	desc.vertex.constants = nullptr;
-	if (fragmentShader && fragmentShader->module)
+	if (fragmentShader && fragmentShader->getModule())
 	{
 		static wgpu::FragmentState fragmentState = {};
-		fragmentState.module = fragmentShader->module;
+		fragmentState.module = fragmentShader->getModule();
 		fragmentState.entryPoint = fragmentShader->getFragmentEntryPoint().c_str();
 		fragmentState.targetCount = 1;
 		fragmentState.targets = &defaultColorTarget;

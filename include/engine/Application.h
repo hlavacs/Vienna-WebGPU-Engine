@@ -60,9 +60,6 @@ class Application
 	bool initRenderer();
 	void terminateRenderer();
 
-	bool initDebugPipeline();
-	void terminateDebugPipeline();
-
 	bool initGeometry();
 	void terminateGeometry();
 
@@ -146,17 +143,6 @@ class Application
 
 	// Old models (kept for backwards compatibility - TODO: migrate to scene graph)
 	std::vector<std::shared_ptr<engine::rendering::webgpu::WebGPUModel>> m_webgpuModels;
-
-	// Debug (kept for backwards compatibility)
-	bool m_showDebugAxes = false;
-	wgpu::ShaderModule m_debugShaderModule = nullptr;
-	std::shared_ptr<engine::rendering::webgpu::WebGPUPipeline> m_debugPipeline = nullptr;
-	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroupLayoutInfo> m_debugBindGroupLayoutInfo = nullptr;
-	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroup> m_debugBindGroupInfo = nullptr;
-	wgpu::BindGroup m_debugBindGroup = nullptr;
-	wgpu::Buffer m_debugViewProjBuffer = nullptr;
-	wgpu::Buffer m_debugTransformsBuffer = nullptr;
-	size_t m_debugMaxInstances = 4;
 
 	// Helper methods for light management
 	void addLight();

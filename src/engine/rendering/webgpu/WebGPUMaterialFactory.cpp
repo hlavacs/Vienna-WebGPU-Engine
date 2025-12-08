@@ -1,9 +1,12 @@
 #include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
-#include "engine/rendering/webgpu/WebGPUTexture.h"
+
 #include <memory>
 #include <optional>
 #include <stdexcept>
+
+#include "engine/rendering/Material.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 
 namespace engine::rendering::webgpu
 {
@@ -118,23 +121,50 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
 		sampler
 	);
 
-	// Construct the textures struct with all required properties
-	WebGPUMaterialTextures textures;
-	textures.albedo = albedoView;
-	textures.normal = normalView;
-	textures.metallic = metallicView;
-	textures.roughness = roughnessView;
-	textures.ao = aoView;
-	textures.emissive = emissiveView;
+	// Construct the texture dictionary with all loaded textures
+	std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> textureMap;
+	textureMap[MaterialTextureSlots::ALBEDO] = albedoView;
+	textureMap[MaterialTextureSlots::NORMAL] = normalView;
+	textureMap[MaterialTextureSlots::METALLIC] = metallicView;
+	textureMap[MaterialTextureSlots::ROUGHNESS] = roughnessView;
+	textureMap[MaterialTextureSlots::AO] = aoView;
+	textureMap[MaterialTextureSlots::EMISSIVE] = emissiveView;
 
-	return std::make_shared<WebGPUMaterial>(
+	auto webgpuMaterial = std::make_shared<WebGPUMaterial>(
 		m_context,
 		materialHandle,
-		bindGroup,
-		materialPropertiesBuffer,
-		textures,
+		textureMap,
 		options
 	);
+
+	// Determine pipeline name based on material's shader type
+	std::string pipelineName = "main"; // Default to main (Lit shader)
+	ShaderType shaderType = material.getShaderType();
+	
+	switch (shaderType)
+	{
+		case ShaderType::Lit:
+			pipelineName = "main";
+			break;
+		case ShaderType::Debug:
+			pipelineName = "debug";
+			break;
+		case ShaderType::Unlit:
+			// Future: when unlit shader is implemented
+			pipelineName = "unlit";
+			break;
+		case ShaderType::Custom:
+			// Future: custom shader pipeline lookup
+			pipelineName = "main"; // Fallback to main for now
+			break;
+	}
+	
+	webgpuMaterial->setPipelineName(pipelineName);
+
+	// NOTE: Pipeline handle must be set externally before calling updateGPUResources()
+	// This is for backwards compatibility - prefer using createFromHandle with pipeline handle
+
+	return webgpuMaterial;
 }
 
 std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(

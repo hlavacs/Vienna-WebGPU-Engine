@@ -105,6 +105,45 @@ Vienna-WebGPU-Engine is an educational WebGPU-based rendering engine with cross-
 
 CPU Resource (e.g., Material) → Resource Manager → WebGPUFactory → GPU Resource (e.g., WebGPUMaterial) → Renderer
 
+### Resource Loaders
+
+**Location**: `include/engine/resources/loaders/`
+
+All loaders derive from base classes and follow a consistent loading pattern:
+
+1. **GeometryLoader** (`GeometryLoader.h`) - Abstract base class
+   - Base for ObjLoader and GltfLoader
+   - Handles coordinate system transformations
+   - Method: `loadMesh(path, outMesh, ...)` - Load geometry into Mesh object
+
+2. **ObjLoader** (`ObjLoader.h`)
+   - Loads Wavefront .obj files
+   - Supports materials via .mtl files
+   - Default coordinate system: +Y up, -Z forward (OpenGL convention)
+
+3. **GltfLoader** (`GltfLoader.h`)
+   - Loads glTF/GLB files (binary and text)
+   - Supports embedded materials and textures
+   - Default coordinate system: +Y up, +Z forward (glTF convention)
+
+4. **TextureLoader** (`TextureLoader.h`)
+   - Loads image files (PNG, JPG, etc.) using stb_image
+   - Method: `loadTexture(path, outTexture)` - Load texture into Texture object
+   - Handles sRGB and linear color spaces
+
+**Loading Pattern:**
+```cpp
+// 1. Create managers with loaders
+auto textureLoader = std::make_shared<TextureLoader>(basePath);
+auto textureManager = std::make_shared<TextureManager>(textureLoader);
+
+// 2. Load resource (CPU-side)
+auto textureHandle = textureManager->loadTexture("path/to/texture.png");
+
+// 3. Create GPU resource via factory
+auto gpuTexture = context.textureFactory().createFromHandle(textureHandle);
+```
+
 ## Common Patterns and Conventions
 
 1. **Resource Cleanup**: WebGPU resources need explicit cleanup with `.release()`
@@ -115,14 +154,170 @@ CPU Resource (e.g., Material) → Resource Manager → WebGPUFactory → GPU Res
    - Group 1: Light data
    - Group 2: Object uniforms (model matrix)
    - Group 3: Material data (properties, textures)
+5. **Eager vs Lazy Resource Creation**:
+   - **Eager (ShaderFactory)**: Buffers with known sizes (uniforms, storage buffers) → Created immediately during shader build
+   - **Lazy (WebGPUMaterial)**: Resources depending on material data (textures, samplers) → Created when all dependencies are ready
+   - **Reusable Buffers**: Material property buffers are created once and updated via `writeBuffer()`
+   - **Recreated Bind Groups**: Bind groups are recreated when texture references change, but underlying textures persist
+
+## Factory System Reference
+
+**CRITICAL RULE:** Always prefer using existing factories over creating WebGPU resources manually. All GPU resource creation should go through the factory pattern.
+
+### WebGPU Factories (All accessible via WebGPUContext)
+
+The `WebGPUContext` is your gateway to all factories. Access them via:
+- `context.meshFactory()` → Creates GPU meshes from CPU mesh data
+- `context.textureFactory()` → Creates GPU textures from CPU textures or colors
+- `context.materialFactory()` → Creates GPU materials with bind groups
+- `context.modelFactory()` → Creates GPU models from CPU model data
+- `context.pipelineFactory()` → Creates render pipelines with shader configurations
+- `context.samplerFactory()` → Creates texture samplers
+- `context.bufferFactory()` → Creates GPU buffers (vertex, index, uniform, storage)
+- `context.bindGroupFactory()` → Creates bind groups and layouts for shader resources
+- `context.depthTextureFactory()` → Creates depth textures for rendering
+- `context.depthStencilStateFactory()` → Creates depth-stencil state configurations
+- `context.renderPassFactory()` → Creates render pass configurations
+- `context.shaderFactory()` → Creates shaders with automatic bind group layout generation
+- `context.shaderRegistry()` → Manages shader instances and hot-reloading
+
+#### BaseWebGPUFactory<SourceT, ProductT>
+
+Most factories inherit from this template base class:
+- **Pattern**: `createFrom(source)` or `createFromHandle(handle)` → creates GPU resource from CPU resource
+- **Type Safety**: Ensures `SourceT` derives from `Identifiable<SourceT>` for handle-based access
+- **Location**: `include/engine/rendering/webgpu/BaseWebGPUFactory.h`
+
+#### Individual Factory Details
+
+1. **WebGPUTextureFactory** (`include/engine/rendering/webgpu/WebGPUTextureFactory.h`)
+   - `createFromHandle(handle)` - Create from Texture handle
+   - `createFromColor(color, width, height)` - Create solid color texture
+   - `createFromDescriptors(textureDesc, viewDesc)` - Create from raw descriptors
+
+2. **WebGPUMaterialFactory** (`include/engine/rendering/webgpu/WebGPUMaterialFactory.h`)
+   - `createFromHandle(handle)` - Create GPU material with bind groups from CPU Material
+   - Automatically creates material property buffer and texture bind groups
+
+3. **WebGPUMeshFactory** (`include/engine/rendering/webgpu/WebGPUMeshFactory.h`)
+   - `createFromHandle(handle)` - Create GPU mesh buffers from CPU Mesh data
+   - Creates vertex and index buffers automatically
+
+4. **WebGPUModelFactory** (`include/engine/rendering/webgpu/WebGPUModelFactory.h`)
+   - `createFromHandle(handle)` - Create GPU model from CPU Model
+   - Handles mesh and material conversion automatically
+
+5. **WebGPUBufferFactory** (`include/engine/rendering/webgpu/WebGPUBufferFactory.h`)
+   - `createBuffer(desc)` - Create buffer from descriptor
+   - `createBufferWithData(data, size, usage)` - Create and upload data
+   - `createBufferFromLayoutEntry(layoutInfo, binding, ...)` - Create buffer matching bind group layout
+   - Template method for std::vector: `createBufferWithData(vec, usage)`
+
+6. **WebGPUBindGroupFactory** (`include/engine/rendering/webgpu/WebGPUBindGroupFactory.h`)
+   - `createUniformBindGroupLayoutEntry<T>(binding, visibility)` - Helper for uniform buffers
+   - `createStorageBindGroupLayoutEntry(...)` - Helper for storage buffers
+   - `createTextureBindGroupLayoutEntry(...)` - Helper for textures
+   - `createSamplerBindGroupLayoutEntry(...)` - Helper for samplers
+   - `createBindGroupLayout(layoutInfo)` - Create bind group layout
+   - `createBindGroup(...)` - Create bind group with resources
+
+7. **WebGPUPipelineFactory** (`include/engine/rendering/webgpu/WebGPUPipelineFactory.h`)
+   - `createPipeline(descriptor, layouts, layoutCount)` - Create render pipeline
+   - `createRenderPipelineDescriptor(...)` - Helper to build pipeline descriptors
+   - `getDefaultRenderPipeline()` - Returns cached default pipeline
+   - `createPipelineLayout(layouts, count)` - Create pipeline layout
+
+8. **ShaderFactory** (`include/engine/rendering/webgpu/ShaderFactory.h`)
+   - `createShader(path, entryPoint, stage)` - Load and create shader module
+   - `createShaderWithBindGroups(...)` - Create shader with automatic bind group layout generation
+   - Supports uniform buffers, storage buffers, textures, and samplers
+   - Returns `WebGPUShaderInfo` with shader module and bind group layouts
+
+9. **WebGPUDepthTextureFactory** (`include/engine/rendering/webgpu/WebGPUDepthTextureFactory.h`)
+   - `createDefault(width, height, format)` - Create default depth texture
+   - `create(width, height, format, mipLevels, arrayLayers, sampleCount, usage)` - Fully configurable
+
+10. **WebGPUSamplerFactory** (`include/engine/rendering/webgpu/WebGPUSamplerFactory.h`)
+    - `createDefaultSampler()` - Create default texture sampler
+
+11. **WebGPURenderPassFactory** (`include/engine/rendering/webgpu/WebGPURenderPassFactory.h`)
+    - Creates render pass configurations with color and depth attachments
+
+12. **WebGPUDepthStencilStateFactory** (`include/engine/rendering/webgpu/WebGPUDepthStencilStateFactory.h`)
+    - Creates depth-stencil state configurations for pipelines
+
+### Resource Managers (CPU-Side)
+
+All managers derive from `ResourceManagerBase<T>` which provides:
+- Resource registration, lookup by ID/handle
+- Automatic handle resolution via `Handle<T>::get()`
+- Resource lifecycle management
+
+**Location**: `include/engine/resources/`
+
+1. **TextureManager** (`TextureManager.h`)
+   - Manages CPU-side `Texture` objects
+   - Loads textures via `TextureLoader`
+   - Method: `loadTexture(path)` → returns `Texture::Handle`
+
+2. **MeshManager** (`MeshManager.h`)
+   - Manages CPU-side `Mesh` objects
+   - Stores vertex/index data, material references
+
+3. **MaterialManager** (`MaterialManager.h`)
+   - Manages CPU-side `Material` objects
+   - Stores material properties and texture references
+   - Requires `TextureManager` for texture loading
+
+4. **ModelManager** (`ModelManager.h`)
+   - Manages CPU-side `Model` objects (collections of meshes)
+   - Requires `MeshManager` and `MaterialManager`
+   - Loads models via `ObjLoader` or `GltfLoader`
+
+5. **ResourceManager** (`ResourceManager.h`)
+   - Aggregate manager containing all sub-managers
+   - Provides high-level loading methods
+   - Members: `m_textureManager`, `m_meshManager`, `m_materialManager`, `m_modelManager`
+   - Loaders: `m_objLoader`, `m_gltfLoader`, `m_textureLoader`
+
+### Rendering Managers
+
+1. **PipelineManager** (`include/engine/rendering/PipelineManager.h`)
+   - Manages render pipelines with hot-reloading support
+   - `createPipeline(name, config)` - Create and register pipeline
+   - `getPipeline(name)` - Get cached pipeline by name
+   - `reloadPipeline(name)` - Reload shader and recreate pipeline
+   - `reloadAllPipelines()` - Reload all registered pipelines
+   - Stores `PipelineConfig` for each pipeline (shader, formats, layouts, topology, etc.)
+
+2. **RenderPassManager** (`include/engine/rendering/RenderPassManager.h`)
+   - Manages render pass configurations
+   - `registerPass(passContext)` - Register render pass
+   - `beginPass(passId, encoder)` - Begin render pass
+   - `updatePassAttachments(passId, colorTexture, depthBuffer)` - Update on resize
+
+3. **RenderBufferManager** (`include/engine/rendering/RenderBufferManager.h`)
+   - Double-buffering for render state (thread-safe)
+   - `acquireWriteBuffer()` - Get buffer for writing
+   - `submitWrite()` - Submit written data
+   - `acquireReadBuffer()` - Get buffer for reading
+
+4. **WebGPUSurfaceManager** (`include/engine/rendering/webgpu/WebGPUSurfaceManager.h`)
+   - Manages WebGPU surface and swap chain
+   - Handles surface creation, resizing, and frame presentation
 
 ## Important Tips
 
-1. Always check WebGPU resource creation success with validation
-2. Understand the difference between CPU resources (`Texture`, `Material`) and GPU resources (`WebGPUTexture`, `WebGPUMaterial`)
-3. When modifying shaders, ensure bind group layouts match the shader definitions
-4. For material properties, use the `MaterialProperties` struct for consistency
-5. WebGPU resources must be explicitly released to prevent memory leaks
+1. **ALWAYS use factories** - Never create WebGPU resources (buffers, textures, pipelines, etc.) manually
+2. **Access factories through WebGPUContext** - The context owns all factory instances
+3. Always check WebGPU resource creation success with validation
+4. Understand the difference between CPU resources (`Texture`, `Material`) and GPU resources (`WebGPUTexture`, `WebGPUMaterial`)
+5. When modifying shaders, ensure bind group layouts match the shader definitions
+6. For material properties, use the `MaterialProperties` struct for consistency
+7. WebGPU resources must be explicitly released to prevent memory leaks
+8. Use `BaseWebGPUFactory` pattern when creating new factory types
+9. **Before creating new GPU resources**, check if a factory already exists for that resource type
+10. **Resource flow**: Load via Manager → Create GPU version via Factory → Use in Renderer
 
 ## Key Files for Reference
 

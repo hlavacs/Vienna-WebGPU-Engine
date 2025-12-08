@@ -17,6 +17,7 @@
 #include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
 #include "engine/rendering/webgpu/WebGPUDepthStencilStateFactory.h"
 #include "engine/rendering/webgpu/WebGPURenderPassFactory.h"
+#include "engine/rendering/webgpu/ShaderFactory.h"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -78,6 +79,8 @@ class WebGPUContext
 	WebGPUDepthStencilStateFactory &depthStencilStateFactory();
 	WebGPURenderPassFactory &renderPassFactory();
 	WebGPUModelFactory &modelFactory();
+	ShaderFactory &shaderFactory();
+	ShaderRegistry &shaderRegistry();
 
   private:
 	void initDevice();
@@ -108,6 +111,8 @@ class WebGPUContext
 	std::unique_ptr<WebGPUDepthStencilStateFactory> m_depthStencilStateFactory;
 	std::unique_ptr<WebGPURenderPassFactory> m_renderPassFactory;
 	std::unique_ptr<WebGPUModelFactory> m_modelFactory;
+	std::unique_ptr<ShaderFactory> m_shaderFactory;
+	std::unique_ptr<ShaderRegistry> m_shaderRegistry;
 };
 
 } // namespace engine::rendering::webgpu

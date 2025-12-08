@@ -1,9 +1,12 @@
 #pragma once
 #include <memory>
 #include <webgpu/webgpu.hpp>
+#include "engine/core/Identifiable.h"
 
 namespace engine::rendering::webgpu
 {
+
+class WebGPUShaderInfo;
 
 /**
  * @class WebGPUPipeline
@@ -12,26 +15,33 @@ namespace engine::rendering::webgpu
  * This class encapsulates a WebGPU render pipeline along with its layout and the descriptor
  * used to create it. It provides accessors for all relevant properties and ensures resource
  * cleanup via RAII. Used for all GPU-side render pipelines.
+ * 
+ * Implements Identifiable so materials can reference pipelines via Handle<WebGPUPipeline>.
  */
-class WebGPUPipeline
+class WebGPUPipeline : public engine::core::Identifiable<WebGPUPipeline>
 {
   public:
+	using Handle = engine::core::Handle<WebGPUPipeline>;
+	
 	/**
 	 * @brief Constructs a WebGPUPipeline from a pipeline, layout, and descriptor.
 	 *
 	 * @param pipeline The GPU-side render pipeline.
 	 * @param layout The pipeline layout (can be released after pipeline creation if desired).
 	 * @param desc The render pipeline descriptor used to create the pipeline.
+	 * @param shaderInfo Optional shader info for bind group layout access.
 	 *
 	 * @throws Assertion failure if pipeline is invalid.
 	 */
 	WebGPUPipeline(
 		wgpu::RenderPipeline pipeline,
 		wgpu::PipelineLayout layout,
-		const wgpu::RenderPipelineDescriptor &desc
+		const wgpu::RenderPipelineDescriptor &desc,
+		std::shared_ptr<WebGPUShaderInfo> shaderInfo = nullptr
 	) : m_pipeline(pipeline),
 		m_layout(layout),
-		m_descriptor(desc)
+		m_descriptor(desc),
+		m_shaderInfo(shaderInfo)
 	{
 		assert(m_pipeline && "Pipeline must be valid");
 	}
@@ -111,6 +121,12 @@ class WebGPUPipeline
 	bool isValid() const { return m_pipeline != nullptr; }
 
 	/**
+	 * @brief Gets the shader info associated with this pipeline.
+	 * @return Shared pointer to WebGPUShaderInfo, or nullptr if not set.
+	 */
+	std::shared_ptr<WebGPUShaderInfo> getShaderInfo() const { return m_shaderInfo; }
+
+	/**
 	 * @brief Implicit conversion to wgpu::RenderPipeline for convenience.
 	 */
 	operator wgpu::RenderPipeline() const { return m_pipeline; }
@@ -119,6 +135,7 @@ class WebGPUPipeline
 	wgpu::RenderPipeline m_pipeline;
 	wgpu::PipelineLayout m_layout;
 	wgpu::RenderPipelineDescriptor m_descriptor;
+	std::shared_ptr<WebGPUShaderInfo> m_shaderInfo;
 };
 
 } // namespace engine::rendering::webgpu

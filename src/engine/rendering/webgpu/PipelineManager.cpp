@@ -8,7 +8,8 @@ namespace engine::rendering
 {
 
 PipelineManager::PipelineManager(webgpu::WebGPUContext &context)
-    : m_context(context)
+    : ResourceManagerBase<webgpu::WebGPUPipeline>(),  // Initialize base (sets up resolver)
+      m_context(context)
 {
 }
 
@@ -19,38 +20,85 @@ PipelineManager::~PipelineManager()
 
 bool PipelineManager::createPipeline(const std::string &name, const PipelineConfig &config)
 {
-    if (m_pipelines.find(name) != m_pipelines.end())
+    // Check if pipeline with this name already exists
+    auto it = m_nameToHandle.find(name);
+    if (it != m_nameToHandle.end())
     {
         spdlog::warn("Pipeline '{}' already exists, replacing", name);
         removePipeline(name);
     }
 
-    PipelineEntry entry;
-    if (!createPipelineInternal(name, config, entry))
+    // Create the pipeline
+    std::shared_ptr<webgpu::WebGPUPipeline> pipeline;
+    
+    if (!createPipelineInternal(name, config, pipeline))
     {
         return false;
     }
 
-    m_pipelines[name] = std::move(entry);
+    // Register with base ResourceManagerBase (sets up handle resolution)
+    auto handleOpt = add(pipeline);
+    if (!handleOpt)
+    {
+        spdlog::error("Failed to register pipeline '{}' with base manager", name);
+        return false;
+    }
+
+    auto handle = handleOpt.value();
+    
+    // Store name-to-handle mapping
+    m_nameToHandle[name] = handle;
+    
+    // Store config for reloading (shader info is in the pipeline itself)
+    m_configs[handle] = config;
+
     spdlog::info("Created pipeline: {}", name);
     return true;
 }
 
 std::shared_ptr<webgpu::WebGPUPipeline> PipelineManager::getPipeline(const std::string &name) const
 {
-    auto it = m_pipelines.find(name);
-    if (it == m_pipelines.end())
+    auto it = m_nameToHandle.find(name);
+    if (it == m_nameToHandle.end())
     {
         spdlog::error("Pipeline '{}' not found", name);
         return nullptr;
     }
-    return it->second.pipeline;
+    
+    // Use base class get() method with handle
+    auto pipelineOpt = get(it->second);
+    if (!pipelineOpt)
+    {
+        spdlog::error("Pipeline '{}' handle is invalid", name);
+        return nullptr;
+    }
+    
+    return pipelineOpt.value();
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> PipelineManager::getShaderInfo(const std::string &name) const
+{
+    auto it = m_nameToHandle.find(name);
+    if (it == m_nameToHandle.end())
+    {
+        return nullptr;
+    }
+    
+    // Get pipeline from base class
+    auto pipelineOpt = get(it->second);
+    if (!pipelineOpt)
+    {
+        return nullptr;
+    }
+    
+    // Return shader info from the pipeline itself
+    return pipelineOpt.value()->getShaderInfo();
 }
 
 bool PipelineManager::reloadPipeline(const std::string &name)
 {
-    auto it = m_pipelines.find(name);
-    if (it == m_pipelines.end())
+    auto it = m_nameToHandle.find(name);
+    if (it == m_nameToHandle.end())
     {
         spdlog::error("Cannot reload pipeline '{}' - not found", name);
         return false;
@@ -58,25 +106,43 @@ bool PipelineManager::reloadPipeline(const std::string &name)
 
     spdlog::info("Reloading pipeline: {}", name);
 
+    auto handle = it->second;
+    auto configIt = m_configs.find(handle);
+    if (configIt == m_configs.end())
+    {
+        spdlog::error("Cannot reload pipeline '{}' - no config found", name);
+        return false;
+    }
+
     // Wait for GPU to finish
     m_context.getQueue().submit(0, nullptr);
 
     // Create new pipeline with same config
-    PipelineEntry newEntry;
-    if (!createPipelineInternal(name, it->second.config, newEntry))
+    std::shared_ptr<webgpu::WebGPUPipeline> newPipeline;
+    
+    if (!createPipelineInternal(name, configIt->second, newPipeline))
     {
         spdlog::error("Failed to reload pipeline '{}'", name);
         return false;
     }
 
-    // Release old resources
-    // WebGPUPipeline wrapper handles cleanup automatically via shared_ptr
-    it->second.pipeline.reset();
-    // Shader module cleanup is handled by the shared_ptr WebGPUShaderInfo
-    it->second.shaderInfo.reset();
+    // Remove old pipeline from base manager
+    remove(handle);
+    m_configs.erase(configIt);
 
-    // Replace with new
-    it->second = std::move(newEntry);
+    // Register new pipeline with base manager
+    auto newHandleOpt = add(newPipeline);
+    if (!newHandleOpt)
+    {
+        spdlog::error("Failed to register reloaded pipeline '{}'", name);
+        return false;
+    }
+
+    auto newHandle = newHandleOpt.value();
+    
+    // Update mappings
+    m_nameToHandle[name] = newHandle;
+    m_configs[newHandle] = configIt->second;
 
     spdlog::info("Pipeline '{}' reloaded successfully", name);
     return true;
@@ -87,7 +153,15 @@ size_t PipelineManager::reloadAllPipelines()
     spdlog::info("Reloading all pipelines...");
     size_t successCount = 0;
 
-    for (auto &[name, entry] : m_pipelines)
+    // Copy names to avoid iterator invalidation during reload
+    std::vector<std::string> names;
+    names.reserve(m_nameToHandle.size());
+    for (const auto &[name, _] : m_nameToHandle)
+    {
+        names.push_back(name);
+    }
+
+    for (const auto &name : names)
     {
         if (reloadPipeline(name))
         {
@@ -95,41 +169,49 @@ size_t PipelineManager::reloadAllPipelines()
         }
     }
 
-    spdlog::info("Reloaded {}/{} pipelines", successCount, m_pipelines.size());
+    spdlog::info("Reloaded {}/{} pipelines", successCount, names.size());
     return successCount;
 }
 
 void PipelineManager::removePipeline(const std::string &name)
 {
-    auto it = m_pipelines.find(name);
-    if (it != m_pipelines.end())
+    auto it = m_nameToHandle.find(name);
+    if (it != m_nameToHandle.end())
     {
-        // WebGPUPipeline wrapper handles cleanup automatically via shared_ptr
-        it->second.pipeline.reset();
-        it->second.shaderInfo.reset();
-        m_pipelines.erase(it);
+        auto handle = it->second;
+        
+        // Remove from base ResourceManagerBase
+        remove(handle);
+        
+        // Remove config
+        m_configs.erase(handle);
+        
+        // Remove name mapping
+        m_nameToHandle.erase(it);
+        
         spdlog::info("Removed pipeline: {}", name);
     }
 }
 
 void PipelineManager::clear()
 {
-    for (auto &[name, entry] : m_pipelines)
-    {
-        // WebGPUPipeline wrapper handles cleanup automatically via shared_ptr
-        entry.pipeline.reset();
-        entry.shaderInfo.reset();
-    }
-    m_pipelines.clear();
+    // Clear name mappings
+    m_nameToHandle.clear();
+    
+    // Clear configs
+    m_configs.clear();
+    
+    // Clear base class resources (this will invalidate handles and release pipelines)
+    ResourceManagerBase<webgpu::WebGPUPipeline>::clear();
 }
 
 bool PipelineManager::createPipelineInternal(
     const std::string &name,
     const PipelineConfig &config,
-    PipelineEntry &entry)
+    std::shared_ptr<webgpu::WebGPUPipeline> &outPipeline)
 {
     // Validate shader info from config
-    if (!config.shaderInfo || !config.shaderInfo->module)
+    if (!config.shaderInfo || !config.shaderInfo->isValid())
     {
         spdlog::error("No shader info provided in config for pipeline '{}'", name);
         return false;
@@ -160,21 +242,19 @@ bool PipelineManager::createPipelineInternal(
     }
 
     // Create pipeline using factory (creates layout + pipeline wrapper)
-    entry.pipeline = m_context.pipelineFactory().createPipeline(
+    // Pass shader info so it's stored in the WebGPUPipeline
+    outPipeline = m_context.pipelineFactory().createPipeline(
         pipelineDesc,
         layouts.data(),
-        static_cast<uint32_t>(layouts.size())
+        static_cast<uint32_t>(layouts.size()),
+        shaderInfo  // Pass shader info to be stored in pipeline
     );
 
-    if (!entry.pipeline || !entry.pipeline->isValid())
+    if (!outPipeline || !outPipeline->isValid())
     {
         spdlog::error("Failed to create pipeline '{}'", name);
         return false;
     }
-
-    // Store shader info and config for hot-reloading
-    entry.shaderInfo = shaderInfo;
-    entry.config = config;
 
     return true;
 }
