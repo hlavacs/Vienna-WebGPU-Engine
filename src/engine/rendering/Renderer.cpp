@@ -66,6 +66,14 @@ void Renderer::updateFrameUniforms(const FrameUniforms &frameUniforms)
 		// Use template version for implicit size
 		m_mainShader->updateBindGroupBuffer(0, 0, frameUniforms);
 	}
+	
+	// Also update debug shader's viewProj matrix (binding 0, group 0)
+	if (m_debugShader)
+	{
+		m_debugShader->setQueue(m_context->getQueue());
+		glm::mat4 viewProj = frameUniforms.projectionMatrix * frameUniforms.viewMatrix;
+		m_debugShader->updateBindGroupBuffer(0, 0, viewProj);
+	}
 }
 
 void Renderer::renderFrame(
@@ -191,17 +199,23 @@ void Renderer::renderFrame(
 		webgpuModel->render(encoder, renderPass);
 	}
 
-	// 10. Render UI/debug overlays if callback provided
+	// 10. Render debug transforms if any
+	if (!collector.getDebugTransforms().empty())
+	{
+		renderDebugTransforms(renderPass, collector.getDebugTransforms());
+	}
+
+	// 11. Render UI/debug overlays if callback provided
 	if (uiCallback)
 	{
 		uiCallback(renderPass);
 	}
 
-	// 11. End render pass
+	// 12. End render pass
 	renderPass.end();
 	renderPass.release();
 
-	// 12. Finish encoder and submit commands
+	// 13. Finish encoder and submit commands
 	wgpu::CommandBufferDescriptor cmdBufferDesc{};
 	cmdBufferDesc.label = "Frame Command Buffer";
 	wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
@@ -275,6 +289,9 @@ bool Renderer::setupDefaultPipelines()
 		spdlog::warn("Failed to get Debug shader from ShaderRegistry - debug rendering will be unavailable");
 		return true; // Don't fail initialization if debug shader fails
 	}
+	
+	// Store debug shader reference
+	m_debugShader = debugShaderInfo;
 
 	// Debug pipeline for line rendering
 	PipelineConfig debugConfig;
@@ -373,6 +390,35 @@ std::shared_ptr<webgpu::WebGPUModel> Renderer::getOrCreateWebGPUModel(
 	spdlog::debug("Created and cached WebGPUModel for model ID: {}", modelId);
 
 	return webgpuModel;
+}
+
+void Renderer::renderDebugTransforms(wgpu::RenderPassEncoder renderPass, const std::vector<glm::mat4> &transforms)
+{
+	if (!m_debugShader || transforms.empty())
+	{
+		return;
+	}
+	
+	// Get debug pipeline
+	auto debugPipeline = m_pipelineManager->getPipeline("debug");
+	if (!debugPipeline || !debugPipeline->isValid())
+	{
+		spdlog::warn("Debug pipeline not available");
+		return;
+	}
+	
+	uint32_t transformCount = static_cast<uint32_t>(transforms.size());
+	
+	// Set queue for buffer updates
+	m_debugShader->setQueue(m_context->getQueue());
+	
+	// Update bind group 0, binding 1 with transform data (storage buffer)
+	m_debugShader->updateBindGroupBuffer(0, 1, transforms.data(), transformCount * sizeof(glm::mat4));
+	
+	// Render debug axes - each transform draws 6 vertices (3 axes × 2 vertices/line)
+	renderPass.setPipeline(debugPipeline->getPipeline());
+	renderPass.setBindGroup(0, m_debugShader->getBindGroup(0)->getBindGroup(), 0, nullptr);
+	renderPass.draw(6, transformCount, 0, 0);
 }
 
 } // namespace engine::rendering

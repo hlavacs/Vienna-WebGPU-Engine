@@ -1,27 +1,53 @@
 #include "engine/GameEngine.h"
+#include "engine/core/PathProvider.h"
+#include "engine/rendering/FrameUniforms.h"
 #include <chrono>
+#include <iostream>
+
+#include <SDL.h>
+#include <sdl2webgpu.h>
+#include <spdlog/spdlog.h>
+#include <backends/imgui_impl_sdl2.h>
 
 namespace engine
 {
 
 GameEngine::GameEngine() :
-	renderBufferManager(2), running(true) {}
+	running(false)
+{
+#ifdef DEBUG_ROOT_DIR
+	engine::core::PathProvider::initialize(DEBUG_ROOT_DIR, ASSETS_ROOT_DIR);
+#else
+	engine::core::PathProvider::initialize();
+#endif
+
+	spdlog::info("EXE Root: {}", engine::core::PathProvider::getExecutableRoot().string());
+	spdlog::info("LIB Root: {}", engine::core::PathProvider::getLibraryRoot().string());
+
+	m_resourceManager = std::make_shared<engine::resources::ResourceManager>(
+		engine::core::PathProvider::getResourceRoot());
+	m_context = std::make_shared<engine::rendering::webgpu::WebGPUContext>();
+	m_sceneManager = std::make_shared<engine::scene::SceneManager>();
+	
+	// Setup engine context for node system access
+	m_engineContext.setInputManager(&m_inputManager);
+	m_engineContext.setWebGPUContext(m_context.get());
+	m_engineContext.setResourceManager(m_resourceManager.get());
+	m_engineContext.setSceneManager(m_sceneManager.get());
+	
+	// Give scene manager access to engine context
+	m_sceneManager->setEngineContext(&m_engineContext);
+}
+
+GameEngine::~GameEngine()
+{
+	stop();
+	cleanup();
+}
 
 void GameEngine::setOptions(const GameEngineOptions &opts)
 {
 	options = opts;
-}
-
-void GameEngine::addComponent(std::shared_ptr<engine::game::GameComponent> comp)
-{
-	std::lock_guard<std::mutex> lock(componentMutex);
-	gameComponents.push_back(comp);
-}
-
-void GameEngine::clearComponents()
-{
-	std::lock_guard<std::mutex> lock(componentMutex);
-	gameComponents.clear();
 }
 
 void GameEngine::stop()
@@ -29,8 +55,78 @@ void GameEngine::stop()
 	running = false;
 	if (physicsThread.joinable())
 		physicsThread.join();
-	if (renderThread.joinable())
-		renderThread.join();
+}
+
+bool GameEngine::initialize()
+{
+	// Create SDL window
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
+	{
+		spdlog::error("Could not initialize SDL2: {}", SDL_GetError());
+		return false;
+	}
+
+	Uint32 windowFlags = SDL_WINDOW_SHOWN;
+	if (options.resizableWindow)
+		windowFlags |= SDL_WINDOW_RESIZABLE;
+	if (options.fullscreen)
+		windowFlags |= SDL_WINDOW_FULLSCREEN;
+
+	m_window = SDL_CreateWindow(
+		"Vienna WebGPU Engine",
+		SDL_WINDOWPOS_CENTERED,
+		SDL_WINDOWPOS_CENTERED,
+		options.windowWidth,
+		options.windowHeight,
+		windowFlags);
+
+	if (!m_window)
+	{
+		spdlog::error("Could not create window!");
+		return false;
+	}
+
+	// Initialize WebGPU context
+	m_context->initialize(m_window);
+
+	// Create renderer
+	m_renderer = std::make_shared<engine::rendering::Renderer>(m_context);
+	if (!m_renderer->initialize())
+	{
+		spdlog::error("Failed to initialize renderer!");
+		return false;
+	}
+
+	// Create ImGui manager
+	m_imguiManager = std::make_shared<engine::ui::ImGuiManager>();
+	if (!m_imguiManager->initialize(m_window, m_context))
+	{
+		spdlog::error("Failed to initialize ImGuiManager!");
+		return false;
+	}
+	
+	m_initialized = true;
+	return true;
+}
+
+void GameEngine::cleanup()
+{
+	if (m_imguiManager)
+		m_imguiManager.reset();
+
+	if (m_renderer)
+		m_renderer.reset();
+
+	if (m_context)
+		m_context.reset();
+
+	if (m_window)
+	{
+		SDL_DestroyWindow(m_window);
+		m_window = nullptr;
+	}
+
+	SDL_Quit();
 }
 
 static double getCurrentTime()
@@ -41,34 +137,151 @@ static double getCurrentTime()
 
 void GameEngine::run()
 {
+	// Initialize window, WebGPU, renderer if not already done
+	if (!m_initialized)
+	{
+		if (!initialize())
+		{
+			spdlog::error("Failed to initialize GameEngine!");
+			return;
+		}
+	}
+
 	running = true;
-	// Launch physics and render threads
-	physicsThread = std::thread(&GameEngine::physicsLoop, this);
-	renderThread = std::thread(&GameEngine::renderLoop, this);
-	// Main/game logic loop
+
+	// Launch physics thread if enabled
+	if (options.runPhysics)
+		physicsThread = std::thread(&GameEngine::physicsLoop, this);
+
+	// Main/game logic loop (runs on main thread)
 	gameLoop();
+
+	// Clean shutdown
 	stop();
+	cleanup();
 }
 
 void GameEngine::gameLoop()
 {
 	double previousTime = getCurrentTime();
+
 	while (running)
 	{
+		// Handle SDL events (window close, input, etc.)
+		SDL_Event event;
+		while (SDL_PollEvent(&event))
+		{
+			// Pass events to ImGui first
+			if (m_imguiManager)
+			{
+				ImGui_ImplSDL2_ProcessEvent(&event);
+			}
+
+			// Process input events
+			m_inputManager.processEvent(event);
+
+			// Handle window events
+			if (event.type == SDL_QUIT)
+			{
+				running = false;
+			}
+			else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED)
+			{
+				m_currentWidth = event.window.data1;
+				m_currentHeight = event.window.data2;
+				// Update camera aspect ratio if needed
+				auto activeScene = m_sceneManager->getActiveScene();
+				if (activeScene)
+				{
+					auto cam = activeScene->getActiveCamera();
+					if (cam)
+					{
+						cam->setAspect(static_cast<float>(m_currentWidth) / static_cast<float>(m_currentHeight));
+					}
+				}
+			}
+		}
+
 		double currentTime = getCurrentTime();
 		float frameDelta = static_cast<float>(currentTime - previousTime);
 		previousTime = currentTime;
+
+		// Clamp delta time to prevent spiral of death
+		if (frameDelta > options.maxDeltaTime)
+			frameDelta = options.maxDeltaTime;
+
 		accumulatedTime += frameDelta;
-		// inputManager.pollEvents();
-		// Variable timestep update & late update
+
+		// Get active scene from scene manager
+		auto activeScene = m_sceneManager->getActiveScene();
+		if (activeScene)
 		{
-			std::lock_guard<std::mutex> lock(componentMutex);
-			for (auto &comp : gameComponents)
-				comp->update(frameDelta);
-			for (auto &comp : gameComponents)
-				comp->lateUpdate(frameDelta);
+			activeScene->onFrame(frameDelta);
+
+			// Update camera uniforms and render
+			auto cam = activeScene->getActiveCamera();
+			if (cam && m_renderer)
+			{
+				// Update frame uniforms from active camera
+				engine::rendering::FrameUniforms frameUniforms;
+				frameUniforms.viewMatrix = cam->getViewMatrix();
+				frameUniforms.projectionMatrix = cam->getProjectionMatrix();
+				frameUniforms.cameraWorldPosition = cam->getPosition();
+				frameUniforms.time = static_cast<float>(SDL_GetTicks64() / 1000.0);
+
+				// Render the frame using the scene's render collector
+				m_renderer->updateFrameUniforms(frameUniforms);
+				
+				// Create UI render callback that delegates to ImGuiManager
+				std::function<void(wgpu::RenderPassEncoder)> uiRenderCallback = nullptr;
+				if (m_imguiManager)
+				{
+					uiRenderCallback = [this](wgpu::RenderPassEncoder renderPass) {
+						m_imguiManager->render(renderPass);
+					};
+				}
+				
+				m_renderer->renderFrame(activeScene->getRenderCollector(), uiRenderCallback);
+			}
+
+			// Post-render cleanup
+			activeScene->postRender();
 		}
-		// (Optionally sleep/yield for pacing)
+		
+		// Reset per-frame input state
+		m_inputManager.endFrame();
+
+		// Update frame statistics
+		static int frameCount = 0;
+		static double fpsTimer = 0.0;
+		frameCount++;
+		fpsTimer += frameDelta;
+		m_currentFrameTime = frameDelta * 1000.0f; // Convert to milliseconds
+		
+		if (fpsTimer >= 1.0)
+		{
+			m_currentFPS = frameCount / static_cast<float>(fpsTimer);
+			
+			// Log frame stats if enabled
+			if (options.showFrameStats)
+			{
+				spdlog::info("FPS: {} | Frame Time: {:.2f}ms", static_cast<int>(m_currentFPS), m_currentFrameTime);
+			}
+			
+			frameCount = 0;
+			fpsTimer = 0.0;
+		}
+
+		// Frame rate limiting (if enabled)
+		if (options.limitFrameRate && !options.enableVSync)
+		{
+			double targetFrameTime = 1.0 / options.targetFrameRate;
+			double frameTime = getCurrentTime() - currentTime;
+			if (frameTime < targetFrameTime)
+			{
+				SDL_Delay(static_cast<Uint32>((targetFrameTime - frameTime) * 1000.0));
+			}
+		}
 	}
 }
 
@@ -82,31 +295,29 @@ void GameEngine::physicsLoop()
 		float frameDelta = static_cast<float>(currentTime - previousTime);
 		previousTime = currentTime;
 		localAccum += frameDelta;
-		while (localAccum >= options.fixedDeltaTime)
+		
+		int subSteps = 0;
+		while (localAccum >= options.fixedDeltaTime && subSteps < options.maxSubSteps)
 		{
-			physicsEngine.step(options.fixedDeltaTime);
-			{
-				std::lock_guard<std::mutex> lock(componentMutex);
-				for (auto &comp : gameComponents)
-					comp->fixedUpdate(options.fixedDeltaTime);
-			}
-			localAccum -= options.fixedDeltaTime;
-		}
-		// TODO: (Optionally sleep/yield for pacing)
-	}
-}
+			// Step physics engine
+			m_physicsEngine.step(options.fixedDeltaTime);
 
-void GameEngine::renderLoop()
-{
-	while (running)
-	{
-		// Acquire the latest ready render state for rendering
-		const auto &renderState = renderBufferManager.acquireReadBuffer();
-		// TODO: Submit renderState to the renderer here
-		// renderer.render(renderState);
-		renderBufferManager.releaseReadBuffer();
-		// (Optionally sleep/yield for pacing)
+			// Fixed update for active scene
+			auto activeScene = m_sceneManager->getActiveScene();
+			if (activeScene)
+			{
+				// TODO: Add fixedUpdate() method to Scene if needed for physics
+				// activeScene->fixedUpdate(options.fixedDeltaTime);
+			}
+
+			localAccum -= options.fixedDeltaTime;
+			subSteps++;
+		}
+
+		// Sleep briefly to avoid busy-waiting
+		SDL_Delay(1);
 	}
 }
 
 } // namespace engine
+

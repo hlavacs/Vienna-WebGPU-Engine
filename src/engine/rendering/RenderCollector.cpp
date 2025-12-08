@@ -17,6 +17,11 @@ void RenderCollector::addLight(const LightStruct &light)
     m_lights.push_back(light);
 }
 
+void RenderCollector::addDebugTransform(const glm::mat4 &transform)
+{
+    m_debugTransforms.push_back(transform);
+}
+
 void RenderCollector::sort()
 {
     // Sort by layer first, then by model handle for batching
@@ -32,6 +37,7 @@ void RenderCollector::clear()
 {
     m_renderItems.clear();
     m_lights.clear();
+    m_debugTransforms.clear();
 }
 
 const std::vector<RenderItem> &RenderCollector::getRenderItems() const
