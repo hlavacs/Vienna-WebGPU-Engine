@@ -4,6 +4,12 @@
 #include "engine/rendering/RenderCollector.h"
 #include <memory>
 
+namespace engine
+{
+class EngineContext;
+class GameEngine;
+}
+
 namespace engine::scene
 {
 /**
@@ -16,6 +22,30 @@ public:
     
     Scene();
     virtual ~Scene() = default;
+    
+    /** @brief Set the root node of the scene */
+    void setRoot(entity::Node::Ptr root) { m_root = root; }
+    
+    /** @brief Get the root node of the scene */
+    entity::Node::Ptr getRoot() const { return m_root; }
+    
+    /** @brief Set the active camera */
+    void setActiveCamera(CameraNode::Ptr camera) { m_activeCamera = camera; }
+    
+    /** @brief Get the active camera */
+    CameraNode::Ptr getActiveCamera() const { return m_activeCamera; }
+    
+    /** @brief Get the render collector for this frame */
+    const engine::rendering::RenderCollector& getRenderCollector() const { return m_renderCollector; }
+    
+    /** @brief Set the engine context for node access to engine systems */
+    void setEngineContext(engine::EngineContext* context) { m_engineContext = context; }
+    
+    /** @brief Get the engine context */
+    engine::EngineContext* getEngineContext() const { return m_engineContext; }
+
+protected:
+    friend class engine::GameEngine;
     
     /** @brief Process a complete frame lifecycle */
     void onFrame(float deltaTime);
@@ -35,24 +65,10 @@ public:
     /** @brief Post-render phase - cleanup after rendering */
     void postRender();
     
-    /** @brief Set the root node of the scene */
-    void setRoot(entity::Node::Ptr root) { m_root = root; }
-    
-    /** @brief Get the root node of the scene */
-    entity::Node::Ptr getRoot() const { return m_root; }
-    
-    /** @brief Set the active camera */
-    void setActiveCamera(CameraNode::Ptr camera) { m_activeCamera = camera; }
-    
-    /** @brief Get the active camera */
-    CameraNode::Ptr getActiveCamera() const { return m_activeCamera; }
-    
-    /** @brief Get the render collector for this frame */
-    const engine::rendering::RenderCollector& getRenderCollector() const { return m_renderCollector; }
-    
 private:
     entity::Node::Ptr m_root;
     CameraNode::Ptr m_activeCamera;
     engine::rendering::RenderCollector m_renderCollector;
+    engine::EngineContext* m_engineContext = nullptr;
 };
 } // namespace engine::scene

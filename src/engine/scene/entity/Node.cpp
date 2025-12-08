@@ -75,6 +75,7 @@ void Node::addChild(Ptr child)
 	if (!child)
 		return;
 	child->parent = this;
+	child->setEngineContext(m_engineContext); // Propagate context to child
 	children.push_back(child);
 	if (enabled && child->isEnabled())
 		child->start();
@@ -86,6 +87,18 @@ void Node::removeChild(Ptr child)
 		return;
 	children.erase(std::remove(children.begin(), children.end(), child), children.end());
 	child->parent = nullptr;
+	child->setEngineContext(nullptr); // Clear context when removed
+}
+
+void Node::setEngineContext(engine::EngineContext* context)
+{
+	m_engineContext = context;
+	// Propagate to all children
+	for (auto& child : children)
+	{
+		if (child)
+			child->setEngineContext(context);
+	}
 }
 
 Node *Node::getParent() const { return parent; }

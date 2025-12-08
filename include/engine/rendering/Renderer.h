@@ -81,6 +81,9 @@ class Renderer
 
 	// Main shader (holds global buffers for frame, lights, object, material)
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_mainShader = nullptr;
+	
+	// Debug shader for rendering axes/gizmos
+	std::shared_ptr<webgpu::WebGPUShaderInfo> m_debugShader = nullptr;
 
 	// WebGPU model cache (CPU Model Handle -> GPU Model)
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
@@ -91,6 +94,7 @@ class Renderer
 	bool setupDefaultPipelines();
 	bool setupDefaultRenderPasses();
 	void updateLights(const std::vector<LightStruct> &lights);
+	void renderDebugTransforms(wgpu::RenderPassEncoder renderPass, const std::vector<glm::mat4> &transforms);
 	
 	std::shared_ptr<webgpu::WebGPUModel> getOrCreateWebGPUModel(
 		const engine::core::Handle<engine::rendering::Model> &modelHandle

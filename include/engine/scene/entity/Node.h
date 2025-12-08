@@ -4,6 +4,17 @@
 #include <cstdint>
 #include "engine/core/Identifiable.h"
 
+namespace engine
+{
+class EngineContext;
+}
+
+namespace engine::scene
+{
+class Scene;
+class SceneManager;
+}
+
 namespace engine::scene::entity {
 
 // Forward declarations for casting helpers
@@ -52,6 +63,10 @@ inline bool hasNodeType(NodeType flags, NodeType type) {
 class Node : public engine::core::Identifiable<Node>, public std::enable_shared_from_this<Node> {
 public:
 	using Ptr = std::shared_ptr<Node>;
+	
+	// Allow Scene and SceneManager to set engine context
+	friend class engine::scene::Scene;
+	friend class engine::scene::SceneManager;
 
 	Node();
 	virtual ~Node();
@@ -120,8 +135,17 @@ public:
 	Ptr asNode() {
 		return std::static_pointer_cast<Node>(shared_from_this());
 	}
+	
+	/** @brief Get the engine context (access to input, resources, etc.) */
+	engine::EngineContext* getEngineContext() const { return m_engineContext; }
+	
+	/** @brief Convenient read-only access to engine context */
+	const engine::EngineContext* engine() const { return m_engineContext; }
 
 protected:
+	/** @brief Set the engine context (called by scene/parent) - friend access only */
+	void setEngineContext(engine::EngineContext* context);
+	
 	/** @brief Set the node type flags (to be called by derived classes). */
 	void setNodeType(NodeType type) { m_nodeType = type; }
 	
@@ -133,5 +157,6 @@ protected:
 	Node* parent = nullptr;
 	std::vector<Ptr> children;
 	NodeType m_nodeType = NodeType::Base;
+	engine::EngineContext* m_engineContext = nullptr;
 };
 } // namespace engine::scene::entity

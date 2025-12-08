@@ -341,3 +341,44 @@ All managers derive from `ResourceManagerBase<T>` which provides:
 - Camera management is now fully handled by the scene; the application queries the active camera from the scene for all rendering and control logic.
 - Specialized node types (`UpdateNode`, `RenderNode`) allow for custom update and render logic to be attached to nodes in the graph.
 - The transform system stores local position, rotation, and scale, and updates world matrices lazily, similar to Unity. The `lookAt` method only updates local rotation and marks the transform as dirty.
+
+### EngineContext and System Access
+
+- **EngineContext** (`include/engine/EngineContext.h`): Provides nodes with access to core engine systems without circular dependencies
+  - Accessible via `node->engine()` from any node (read-only, const)
+  - Provides convenient shortcuts:
+    - `engine()->input()` - Input state and events (InputManager)
+    - `engine()->gpu()` - GPU device and resources (WebGPUContext)
+    - `engine()->resources()` - Asset loading and management (ResourceManager)
+    - `engine()->scenes()` - Scene creation and switching (SceneManager)
+  - Automatically propagated to child nodes when added to the scene graph
+  - Set by `GameEngine` during initialization and passed through `SceneManager` → `Scene` → `Node` hierarchy
+  - **Friend access only**: Only `Scene` and `SceneManager` can set the context (protected `setEngineContext()`)
+
+- **GameEngine** is now minimal and focused on core loop responsibilities:
+  - Window and WebGPU initialization
+  - Main game loop (update, render, physics)
+  - Event processing (SDL events, input, window resize)
+  - Manages core subsystems: `InputManager`, `PhysicsEngine`, `Renderer`, `ImGuiManager`
+  - Does NOT handle scene setup, lighting, models - that's in `main.cpp` or scene-specific code
+  
+- **InputManager** (`include/engine/input/InputManager.h`):
+  - Processes SDL input events via `processEvent(const SDL_Event&)`
+  - Query input state: `isKeyPressed(SDL_Scancode)`
+  - Accessible from nodes via `engine()->input()`
+  
+**Example - Node accessing engine systems:**
+```cpp
+// In your custom UpdateNode::update()
+if (engine()->input()->isKeyPressed(SDL_SCANCODE_W)) {
+    // Move forward
+    getTransform()->translate(glm::vec3(0, 0, speed * deltaTime));
+}
+
+// Load a texture
+auto textureHandle = engine()->resources()->m_textureManager->loadTexture("path/to/texture.png");
+
+// Access GPU context
+auto device = engine()->gpu()->getDevice();
+```
+
