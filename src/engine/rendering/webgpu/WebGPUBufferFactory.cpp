@@ -119,9 +119,103 @@ wgpu::Buffer WebGPUBufferFactory::createIndexBuffer(const std::vector<T> &data)
 	return createIndexBuffer(data.data(), data.size());
 }
 
-wgpu::Buffer WebGPUBufferFactory::createBufferFromLayoutEntry(
+// === WebGPUBuffer Creation Methods ===
+
+std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped(
+	const std::string &name,
+	uint32_t binding,
+	std::size_t size,
+	bool isGlobal
+)
+{
+	wgpu::BufferDescriptor desc = {};
+	desc.size = size;
+	desc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+	desc.label = name.c_str();
+
+	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage), isGlobal);
+}
+
+template <typename T>
+std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped(
+	const std::string &name,
+	uint32_t binding,
+	const T *data,
+	std::size_t count,
+	bool isGlobal
+)
+{
+	size_t size = sizeof(T) * count;
+	auto buffer = createUniformBufferWrapped(name, binding, size, isGlobal);
+	if (data && count > 0)
+	{
+		m_context.getQueue().writeBuffer(buffer->getBuffer(), 0, data, size);
+	}
+	return buffer;
+}
+
+template <typename T>
+std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped(
+	const std::string &name,
+	uint32_t binding,
+	const std::vector<T> &data,
+	bool isGlobal
+)
+{
+	return createUniformBufferWrapped(name, binding, data.data(), data.size(), isGlobal);
+}
+
+std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped(
+	const std::string &name,
+	uint32_t binding,
+	std::size_t size,
+	bool isGlobal
+)
+{
+	wgpu::BufferDescriptor desc = {};
+	desc.size = size;
+	desc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
+	desc.label = name.c_str();
+
+	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage), isGlobal);
+}
+
+template <typename T>
+std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped(
+	const std::string &name,
+	uint32_t binding,
+	const T *data,
+	std::size_t count,
+	bool isGlobal
+)
+{
+	size_t size = sizeof(T) * count;
+	auto buffer = createStorageBufferWrapped(name, binding, size, isGlobal);
+	if (data && count > 0)
+	{
+		m_context.getQueue().writeBuffer(buffer->getBuffer(), 0, data, size);
+	}
+	return buffer;
+}
+
+template <typename T>
+std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped(
+	const std::string &name,
+	uint32_t binding,
+	const std::vector<T> &data,
+	bool isGlobal
+)
+{
+	return createStorageBufferWrapped(name, binding, data.data(), data.size(), isGlobal);
+}
+
+std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
 	const WebGPUBindGroupLayoutInfo &layoutInfo,
 	uint32_t binding,
+	const std::string &name,
+	bool isGlobal,
 	size_t size
 )
 {
@@ -135,6 +229,7 @@ wgpu::Buffer WebGPUBufferFactory::createBufferFromLayoutEntry(
 	// Create buffer with appropriate usage flags based on buffer type
 	wgpu::BufferDescriptor desc;
 	desc.size = bufferSize;
+	desc.label = name.c_str();
 
 	if (entry->buffer.type == wgpu::BufferBindingType::Uniform)
 	{
@@ -149,9 +244,29 @@ wgpu::Buffer WebGPUBufferFactory::createBufferFromLayoutEntry(
 		desc.usage = wgpu::BufferUsage::CopyDst;
 	}
 
-	return m_context.getDevice().createBuffer(desc);
-} // Explicit template instantiations for common types
-// (Add more as needed for your engine)
+	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, bufferSize, static_cast<WGPUBufferUsageFlags>(desc.usage), isGlobal);
+}
+
+// Explicit template instantiations for wrapped buffer creation
+template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped<float>(
+	const std::string &, uint32_t, const float *, std::size_t, bool
+);
+template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped<float>(
+	const std::string &, uint32_t, const std::vector<float> &, bool
+);
+template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped<engine::rendering::Material::MaterialProperties>(
+	const std::string &, uint32_t, const engine::rendering::Material::MaterialProperties *, std::size_t, bool
+);
+
+template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped<float>(
+	const std::string &, uint32_t, const float *, std::size_t, bool
+);
+template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped<float>(
+	const std::string &, uint32_t, const std::vector<float> &, bool
+);
+
+// Explicit template instantiations for legacy methods (deprecated)
 template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<float>(const float *, std::size_t);
 template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<float>(const std::vector<float> &);
 template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<engine::rendering::Material::MaterialProperties>(

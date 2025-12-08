@@ -25,9 +25,10 @@ void Scene::onFrame(float deltaTime)
 	// Complete frame lifecycle
 	update(deltaTime);
 	lateUpdate(deltaTime);
-	preRender();
-	render();
-	postRender();
+	collectRenderData(); // Collect and sort render items
+	preRender();         // Prepare nodes for rendering
+	// Note: actual rendering happens in Application via Renderer
+	// postRender() is called by Application after rendering
 }
 
 void Scene::update(float deltaTime)
@@ -96,6 +97,42 @@ void Scene::lateUpdate(float deltaTime)
 	processLateUpdateNodes(m_root, deltaTime);
 }
 
+void Scene::collectRenderData()
+{
+	if (!m_root || !m_activeCamera)
+		return;
+
+	// Process all RenderNodes in the scene graph for render collection
+	std::function<void(entity::Node::Ptr)> processRenderNodes;
+	processRenderNodes = [&processRenderNodes, this](entity::Node::Ptr node)
+	{
+		if (node->isEnabled())
+		{
+			// If this is a RenderNode, call its onRenderCollect method
+			if (node->isRender())
+			{
+				auto renderNode = node->asRenderNode();
+				if (renderNode)
+				{
+					renderNode->onRenderCollect(m_renderCollector);
+				}
+			}
+
+			// Process children
+			for (const auto &child : node->getChildren())
+			{
+				processRenderNodes(child);
+			}
+		}
+	};
+
+	// Start traversal from root
+	processRenderNodes(m_root);
+	
+	// Sort collected items for optimal rendering
+	m_renderCollector.sort();
+}
+
 void Scene::preRender()
 {
 	if (!m_root)
@@ -133,39 +170,6 @@ void Scene::preRender()
 
 	// Start traversal from root
 	processPreRenderNodes(m_root);
-}
-
-void Scene::render()
-{
-	if (!m_root || !m_activeCamera)
-		return;
-
-	// Process all RenderNodes in the scene graph for render collection
-	std::function<void(entity::Node::Ptr)> processRenderNodes;
-	processRenderNodes = [&processRenderNodes, this](entity::Node::Ptr node)
-	{
-		if (node->isEnabled())
-		{
-			// If this is a RenderNode, call its onRenderCollect method
-			if (node->isRender())
-			{
-				auto renderNode = node->asRenderNode();
-				if (renderNode)
-				{
-					renderNode->onRenderCollect(m_renderCollector);
-				}
-			}
-
-			// Process children
-			for (const auto &child : node->getChildren())
-			{
-				processRenderNodes(child);
-			}
-		}
-	};
-
-	// Start traversal from root
-	processRenderNodes(m_root);
 }
 
 void Scene::postRender()

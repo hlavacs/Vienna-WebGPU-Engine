@@ -7,39 +7,18 @@
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/ObjectUniforms.h"
+#include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
 #include "engine/resources/ResourceManager.h"
 
 namespace engine::rendering
 {
 
-Renderer::Renderer(std::shared_ptr<webgpu::WebGPUContext> context)
-	: m_context(context)
-	, m_pipelineManager(std::make_unique<PipelineManager>(*context))
-	, m_renderPassManager(std::make_unique<RenderPassManager>(*context))
+Renderer::Renderer(std::shared_ptr<webgpu::WebGPUContext> context) : m_context(context), m_pipelineManager(std::make_unique<PipelineManager>(*context)), m_renderPassManager(std::make_unique<RenderPassManager>(*context))
 {
 }
 
-Renderer::~Renderer()
-{
-	if (m_frameUniformBuffer)
-	{
-		m_frameUniformBuffer.destroy();
-		m_frameUniformBuffer.release();
-	}
-
-	if (m_lightsBuffer)
-	{
-		m_lightsBuffer.destroy();
-		m_lightsBuffer.release();
-	}
-	
-	if (m_objectUniformBuffer)
-	{
-		m_objectUniformBuffer.destroy();
-		m_objectUniformBuffer.release();
-	}
-}
+Renderer::~Renderer() = default;
 
 bool Renderer::initialize()
 {
@@ -58,58 +37,10 @@ bool Renderer::initialize()
 		return false;
 	}
 
-	// Create frame uniform buffer
-	wgpu::BufferDescriptor frameUniformDesc{};
-	frameUniformDesc.label = "Frame Uniforms";
-	frameUniformDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform;
-	frameUniformDesc.size = sizeof(FrameUniforms);
-	frameUniformDesc.mappedAtCreation = false;
-	m_frameUniformBuffer = m_context->getDevice().createBuffer(frameUniformDesc);
-
-	if (!m_frameUniformBuffer)
-	{
-		spdlog::error("Failed to create frame uniform buffer");
-		return false;
-	}
-
-	// Create lights buffer
-	const size_t maxLights = 16;
-	const size_t lightsBufferSize = sizeof(LightsBuffer) + maxLights * sizeof(LightStruct);
-	m_lightsBuffer = m_context->bufferFactory().createStorageBuffer(lightsBufferSize);
-
-	if (!m_lightsBuffer)
-	{
-		spdlog::error("Failed to create lights buffer");
-		return false;
-	}
-
-	// Create object uniform buffer
-	m_objectUniformBuffer = m_context->bufferFactory().createUniformBuffer(sizeof(ObjectUniforms));
-
-	if (!m_objectUniformBuffer)
-	{
-		spdlog::error("Failed to create object uniform buffer");
-		return false;
-	}
-
-	// Setup default pipelines (must be done before creating bind groups)
+	// Setup default pipelines
 	if (!setupDefaultPipelines())
 	{
 		spdlog::error("Failed to setup pipelines");
-		return false;
-	}
-
-	// Create frame bind group (after pipeline setup so layout exists)
-	if (!createFrameBindGroup())
-	{
-		spdlog::error("Failed to create frame bind group");
-		return false;
-	}
-
-	// Create light bind group (after pipeline setup so layout exists)
-	if (!createLightBindGroup())
-	{
-		spdlog::error("Failed to create light bind group");
 		return false;
 	}
 
@@ -126,12 +57,15 @@ bool Renderer::initialize()
 
 void Renderer::updateFrameUniforms(const FrameUniforms &frameUniforms)
 {
-	m_context->getQueue().writeBuffer(
-		m_frameUniformBuffer,
-		0,
-		&frameUniforms,
-		sizeof(FrameUniforms)
-	);
+	// Write to the main shader's frame uniforms buffer (group 0, binding 0)
+	if (m_mainShader)
+	{
+		// Set queue once for convenience
+		m_mainShader->setQueue(m_context->getQueue());
+		
+		// Use template version for implicit size
+		m_mainShader->updateBindGroupBuffer(0, 0, frameUniforms);
+	}
 }
 
 void Renderer::renderFrame(
@@ -175,70 +109,86 @@ void Renderer::renderFrame(
 	// 5. Begin main render pass
 	wgpu::RenderPassEncoder renderPass = m_renderPassManager->beginPass(m_mainPassId, encoder);
 
-	// Keep bind groups alive until after render pass ends
-	std::vector<wgpu::BindGroup> objectBindGroups;
-
-	// 6. Get main pipeline
-	auto mainPipeline = m_pipelineManager->getPipeline("main");
-	if (mainPipeline && mainPipeline->isValid())
+	// 6. Ensure shader GPU resources are initialized (lazy creation on first use)
+	// This creates global buffers and bind groups for frame/lights/objects
+	if (m_mainShader)
 	{
-		renderPass.setPipeline(mainPipeline->getPipeline());
+		m_mainShader->setQueue(m_context->getQueue());
+		m_mainShader->startRenderPass(renderPass);
+	}
 
-		// 7. Bind frame-level bind group (group 0: camera, time, etc.) - owned by Renderer
-		renderPass.setBindGroup(0, m_frameBindGroup->getBindGroup(), 0, nullptr);
+	// 7. Render all collected items
+	std::string currentPipelineName = ""; // Track current pipeline to avoid redundant switches
+	std::shared_ptr<webgpu::WebGPUShaderInfo> currentShader = nullptr;
 
-		// 8. Bind light bind group (group 1: lighting data)
-		if (m_lightBindGroup)
+	for (const auto &item : collector.getRenderItems())
+	{
+		// Get or create WebGPUModel for this handle
+		auto webgpuModel = getOrCreateWebGPUModel(item.model);
+		if (!webgpuModel)
 		{
-			renderPass.setBindGroup(1, m_lightBindGroup->getBindGroup(), 0, nullptr);
+			spdlog::warn("Failed to get WebGPUModel for render item");
+			continue;
 		}
 
-		// 9. Render all collected items
-		objectBindGroups.reserve(collector.getRenderItems().size());
-
-		for (const auto &item : collector.getRenderItems())
+		// Determine which pipeline to use based on material
+		std::string pipelineName = "main"; // Default
+		auto material = webgpuModel->getMaterial();
+		if (material)
 		{
-			// Get or create WebGPUModel for this handle
-			auto webgpuModel = getOrCreateWebGPUModel(item.model);
-			if (!webgpuModel)
+			pipelineName = material->getPipelineName();
+		}
+
+		// Set pipeline if it changed (avoid redundant pipeline switches)
+		if (pipelineName != currentPipelineName)
+		{
+			auto pipeline = m_pipelineManager->getPipeline(pipelineName);
+			if (pipeline && pipeline->isValid())
 			{
-				spdlog::warn("Failed to get WebGPUModel for render item");
+				renderPass.setPipeline(pipeline->getPipeline());
+				currentPipelineName = pipelineName;
+
+				// Get the shader info for this pipeline
+				currentShader = m_pipelineManager->getShaderInfo(pipelineName);
+				
+				// Set the pipeline handle on the material immediately when pipeline changes
+				if (material)
+				{
+					material->setPipelineHandle(pipeline->getHandle());
+				}
+			}
+			else
+			{
+				spdlog::warn("Pipeline '{}' not found, skipping render item", pipelineName);
 				continue;
 			}
-
-			// Update object uniforms with world transform
-			ObjectUniforms objectUniforms;
-			objectUniforms.modelMatrix = item.worldTransform;
-			objectUniforms.normalMatrix = glm::transpose(glm::inverse(item.worldTransform));
-
-			m_context->getQueue().writeBuffer(
-				m_objectUniformBuffer,
-				0,
-				&objectUniforms,
-				sizeof(ObjectUniforms)
-			);
-
-			// Create bind group for object uniforms (group 2)
-			wgpu::BindGroupEntry objectEntry = {};
-			objectEntry.binding = 0;
-			objectEntry.buffer = m_objectUniformBuffer;
-			objectEntry.offset = 0;
-			objectEntry.size = sizeof(ObjectUniforms);
-
-			auto objectBindGroup = m_context->bindGroupFactory().createBindGroup(
-				m_objectUniformLayout->getLayout(),
-				{objectEntry}
-			);
-
-			renderPass.setBindGroup(2, objectBindGroup, 0, nullptr);
-
-			// Update and render the model (group 3: material will be set inside)
-			webgpuModel->update();
-			webgpuModel->render(encoder, renderPass);
-
-			// Keep bind group alive - don't release until after render pass ends
-			objectBindGroups.push_back(objectBindGroup);
 		}
+
+		if (!currentShader)
+		{
+			spdlog::warn("No shader info for pipeline '{}'", pipelineName);
+			continue;
+		}
+
+		// Update object uniforms (Group 2)
+		// Object uniforms (model/normal matrices) change per object, so we must write them
+		// for each draw call to the shared global buffer
+		ObjectUniforms objectUniforms;
+		objectUniforms.modelMatrix = item.worldTransform;
+		objectUniforms.normalMatrix = glm::transpose(glm::inverse(item.worldTransform));
+
+		// Set queue and render pass for current shader
+		currentShader->setQueue(m_context->getQueue());
+
+		// Write to shader's bind group 2, binding 0 (object uniforms)
+		// Use template version for implicit size
+		currentShader->updateBindGroupBuffer(2, 0, objectUniforms);
+		
+		// Update and render the model
+		// update() triggers dirty-flag-based updates for mesh data
+		webgpuModel->update();
+		currentShader->startRenderPass(renderPass);
+		webgpuModel->render(encoder, renderPass);
 	}
 
 	// 10. Render UI/debug overlays if callback provided
@@ -258,12 +208,6 @@ void Renderer::renderFrame(
 
 	// 13. Release resources after encoding is complete
 	encoder.release();
-
-	// Release object bind groups
-	for (auto &bindGroup : objectBindGroups)
-	{
-		bindGroup.release();
-	}
 
 	m_context->getQueue().submit(commands);
 	commands.release();
@@ -290,44 +234,29 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 
 bool Renderer::setupDefaultPipelines()
 {
-	// Load main shader module
-	auto mainShaderModule = engine::resources::ResourceManager::loadShaderModule(
-		engine::core::PathProvider::getResource("shader.wgsl"),
-		m_context->getDevice()
-	);
+	// Get the lit shader from ShaderRegistry (already initialized in WebGPUContext)
+	m_mainShader = m_context->shaderRegistry().getShader(ShaderType::Lit);
 
-	if (!mainShaderModule)
+	if (!m_mainShader || !m_mainShader->isValid())
 	{
-		spdlog::error("Failed to load main shader module");
+		spdlog::error("Failed to get Lit shader from ShaderRegistry");
 		return false;
 	}
 
-	// Create shader info with combined vertex/fragment entry points
-	auto mainShaderInfo = std::make_shared<webgpu::WebGPUShaderInfo>(
-		mainShaderModule,
-		"vs_main",  // vertex entry point
-		"fs_main"   // fragment entry point
-	);
-
-	// Create bind group layouts
-	auto frameLayout = m_context->bindGroupFactory().createCustomBindGroupLayout(
-		m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<FrameUniforms>()
-	);
-
-	m_lightBindGroupLayout = m_context->bindGroupFactory().createDefaultLightingBindGroupLayout();
-
-	m_objectUniformLayout = m_context->bindGroupFactory().createCustomBindGroupLayout(
-		m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<ObjectUniforms>()
-	);
-
-	auto materialLayout = m_context->bindGroupFactory().createDefaultMaterialBindGroupLayout();
+	// Extract the created bind group layout infos from the shader
+	const auto &layoutInfos = m_mainShader->getBindGroupLayoutInfos();
+	if (layoutInfos.size() < 4)
+	{
+		spdlog::error("ShaderFactory didn't create expected bind group layouts (got {}, expected 4)", layoutInfos.size());
+		return false;
+	}
 
 	// Main rendering pipeline
 	PipelineConfig mainConfig;
-	mainConfig.shaderInfo = mainShaderInfo;
+	mainConfig.shaderInfo = m_mainShader;
 	mainConfig.colorFormat = m_context->getSwapChainFormat();
 	mainConfig.depthFormat = wgpu::TextureFormat::Depth24Plus;
-	mainConfig.bindGroupLayouts = {frameLayout, m_lightBindGroupLayout, m_objectUniformLayout, materialLayout};
+	mainConfig.bindGroupLayouts = layoutInfos;
 	mainConfig.enableDepth = true;
 	mainConfig.topology = wgpu::PrimitiveTopology::TriangleList;
 	mainConfig.vertexBufferCount = 1;
@@ -338,24 +267,14 @@ bool Renderer::setupDefaultPipelines()
 		return false;
 	}
 
-	// Load debug shader module
-	auto debugShaderModule = engine::resources::ResourceManager::loadShaderModule(
-		engine::core::PathProvider::getResource("debug.wgsl"),
-		m_context->getDevice()
-	);
+	// Get the debug shader from ShaderRegistry
+	auto debugShaderInfo = m_context->shaderRegistry().getShader(ShaderType::Debug);
 
-	if (!debugShaderModule)
+	if (!debugShaderInfo || !debugShaderInfo->isValid())
 	{
-		spdlog::warn("Failed to load debug shader module - debug rendering will be unavailable");
+		spdlog::warn("Failed to get Debug shader from ShaderRegistry - debug rendering will be unavailable");
 		return true; // Don't fail initialization if debug shader fails
 	}
-
-	// Create debug shader info
-	auto debugShaderInfo = std::make_shared<webgpu::WebGPUShaderInfo>(
-		debugShaderModule,
-		"vs_main",
-		"fs_main"
-	);
 
 	// Debug pipeline for line rendering
 	PipelineConfig debugConfig;
@@ -366,25 +285,22 @@ bool Renderer::setupDefaultPipelines()
 	debugConfig.vertexBufferCount = 0;
 	debugConfig.enableDepth = true;
 
-	auto debugLayout = m_context->bindGroupFactory().createCustomBindGroupLayout(
-		m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<glm::mat4x4>(
-			-1,
-			static_cast<uint32_t>(wgpu::ShaderStage::Vertex)
-		),
-		m_context->bindGroupFactory().createStorageBindGroupLayoutEntry(
-			-1,
-			wgpu::ShaderStage::Vertex,
-			true
-		)
-	);
+	// Use ShaderFactory-generated layout
+	auto debugLayoutInfos = debugShaderInfo->getBindGroupLayoutInfos();
+	if (debugLayoutInfos.empty())
+	{
+		spdlog::error("Debug shader has no bind group layouts");
+		return false;
+	}
 
-	debugConfig.bindGroupLayouts = {debugLayout};
+	debugConfig.bindGroupLayouts = {debugLayoutInfos[0]};
 
 	if (!m_pipelineManager->createPipeline("debug", debugConfig))
 	{
 		spdlog::warn("Failed to create debug pipeline");
 	}
 
+	spdlog::info("Successfully created pipelines from ShaderRegistry");
 	return true;
 }
 
@@ -396,100 +312,32 @@ bool Renderer::setupDefaultRenderPasses()
 	return true;
 }
 
-bool Renderer::createFrameBindGroup()
-{
-	// Create frame bind group layout
-	auto frameLayout = m_context->bindGroupFactory().createCustomBindGroupLayout(
-		m_context->bindGroupFactory().createUniformBindGroupLayoutEntry<FrameUniforms>()
-	);
-
-	if (!frameLayout)
-	{
-		spdlog::error("Failed to create frame bind group layout");
-		return false;
-	}
-
-	// Create bind group with frame uniform buffer
-	wgpu::BindGroupEntry frameEntry = {};
-	frameEntry.binding = 0;
-	frameEntry.buffer = m_frameUniformBuffer;
-	frameEntry.offset = 0;
-	frameEntry.size = sizeof(FrameUniforms);
-
-	auto rawBindGroup = m_context->bindGroupFactory().createBindGroup(
-		frameLayout->getLayout(),
-		{frameEntry}
-	);
-
-	if (!rawBindGroup)
-	{
-		spdlog::error("Failed to create frame bind group");
-		return false;
-	}
-
-	m_frameBindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
-		rawBindGroup,
-		frameLayout,
-		std::vector<wgpu::Buffer>{}  // Empty - Renderer owns the buffer
-	);
-
-	spdlog::info("Frame bind group created successfully");
-	return true;
-}
-
-bool Renderer::createLightBindGroup()
-{
-	if (!m_lightBindGroupLayout)
-	{
-		spdlog::error("Light bind group layout not created yet!");
-		return false;
-	}
-
-	// Create bind group with lights buffer
-	wgpu::BindGroupEntry lightEntry = {};
-	lightEntry.binding = 0;
-	lightEntry.buffer = m_lightsBuffer;
-	lightEntry.offset = 0;
-	lightEntry.size = sizeof(LightsBuffer) + 16 * sizeof(LightStruct); // Max 16 lights
-
-	auto rawBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_lightBindGroupLayout->getLayout(),
-		{lightEntry}
-	);
-
-	if (!rawBindGroup)
-	{
-		spdlog::error("Failed to create light bind group");
-		return false;
-	}
-
-	m_lightBindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
-		rawBindGroup,
-		m_lightBindGroupLayout,
-		std::vector<wgpu::Buffer>{m_lightsBuffer}
-	);
-
-	spdlog::info("Light bind group created successfully");
-	return true;
-}
-
 void Renderer::updateLights(const std::vector<LightStruct> &lights)
 {
-	// Always write the header, even if there are no lights (count = 0)
-	LightsBuffer header;
-	header.count = static_cast<uint32_t>(lights.size());
-
-	m_context->getQueue().writeBuffer(m_lightsBuffer, 0, &header, sizeof(LightsBuffer));
-
-	// Write light data if any lights exist
-	if (!lights.empty())
+	// Write to the main shader's lights buffer (group 1, binding 0)
+	if (m_mainShader)
 	{
-		m_context->getQueue().writeBuffer(
-			m_lightsBuffer,
-			sizeof(LightsBuffer),
-			lights.data(),
-			lights.size() * sizeof(LightStruct)
-		);
+		// Set queue for convenience
+		m_mainShader->setQueue(m_context->getQueue());
+		
+		// Always write the header, even if there are no lights (count = 0)
+		LightsBuffer header;
+		header.count = static_cast<uint32_t>(lights.size());
+
+		// Write header at offset 0 using template version
+		m_mainShader->updateBindGroupBuffer(1, 0, header);
+
+		// Write light data if any lights exist at offset sizeof(LightsBuffer)
+		if (!lights.empty())
+		{
+			// Use raw pointer version with offset for the light array
+			m_mainShader->updateBindGroupBuffer(
+				1, 0,
+				lights.data(),
+				lights.size() * sizeof(LightStruct),
+				sizeof(LightsBuffer) // Offset after the header
+			);
+		}
 	}
 }
 

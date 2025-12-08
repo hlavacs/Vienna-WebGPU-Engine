@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/core/Handle.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/webgpu/BaseWebGPUFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -8,6 +9,7 @@
 namespace engine::rendering::webgpu
 {
 class WebGPUContext;
+class WebGPUPipeline;
 
 class WebGPUMaterialFactory : public BaseWebGPUFactory<engine::rendering::Material, WebGPUMaterial>
 {
@@ -24,7 +26,7 @@ class WebGPUMaterialFactory : public BaseWebGPUFactory<engine::rendering::Materi
 	std::shared_ptr<WebGPUMaterial> createFromHandle(const engine::rendering::Material::Handle &handle) override;
 
 	/**
-	 * @brief Create a WebGPUMaterial from a Material handle.
+	 * @brief Create a WebGPUMaterial from a Material handle with options.
 	 * @param handle Handle to the Material.
 	 * @param options Material options to apply.
 	 * @return Shared pointer to WebGPUMaterial.
@@ -32,6 +34,19 @@ class WebGPUMaterialFactory : public BaseWebGPUFactory<engine::rendering::Materi
 	std::shared_ptr<WebGPUMaterial> createFromHandle(
 		const engine::rendering::Material::Handle &handle,
 		const WebGPUMaterialOptions &options
+	);
+
+	/**
+	 * @brief Create a WebGPUMaterial from a Material handle with pipeline.
+	 * @param handle Handle to the Material.
+	 * @param pipelineHandle Handle to the pipeline to use for rendering.
+	 * @param options Material options to apply.
+	 * @return Shared pointer to WebGPUMaterial.
+	 */
+	std::shared_ptr<WebGPUMaterial> createFromHandle(
+		const engine::rendering::Material::Handle &handle,
+		const engine::core::Handle<WebGPUPipeline> &pipelineHandle,
+		const WebGPUMaterialOptions &options = {}
 	);
 
   private:

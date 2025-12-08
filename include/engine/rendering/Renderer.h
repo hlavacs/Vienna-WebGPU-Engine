@@ -78,14 +78,9 @@ class Renderer
 
 	// Cached resources
 	std::shared_ptr<webgpu::WebGPUDepthTexture> m_depthBuffer;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_frameBindGroup;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_objectUniformLayout;
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_lightBindGroupLayout;
 
-	wgpu::Buffer m_frameUniformBuffer = nullptr;
-	wgpu::Buffer m_lightsBuffer = nullptr;
-	wgpu::Buffer m_objectUniformBuffer = nullptr;
+	// Main shader (holds global buffers for frame, lights, object, material)
+	std::shared_ptr<webgpu::WebGPUShaderInfo> m_mainShader = nullptr;
 
 	// WebGPU model cache (CPU Model Handle -> GPU Model)
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
@@ -95,8 +90,6 @@ class Renderer
 
 	bool setupDefaultPipelines();
 	bool setupDefaultRenderPasses();
-	bool createFrameBindGroup();
-	bool createLightBindGroup();
 	void updateLights(const std::vector<LightStruct> &lights);
 	
 	std::shared_ptr<webgpu::WebGPUModel> getOrCreateWebGPUModel(

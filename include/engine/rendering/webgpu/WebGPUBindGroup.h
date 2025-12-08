@@ -5,6 +5,7 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
+#include "engine/rendering/webgpu/WebGPUBuffer.h"
 
 namespace engine::rendering::webgpu
 {
@@ -14,38 +15,42 @@ namespace engine::rendering::webgpu
  * @brief GPU-side bind group: wraps a WebGPU bind group with its layout and associated buffers.
  *
  * This class encapsulates a WebGPU bind group along with a reference to its layout info
- * and the buffers it uses. It provides accessors for all relevant properties and ensures
+ * and the WebGPUBuffer instances it uses. Provides accessors for all relevant properties and ensures
  * resource cleanup. Used for managing bind groups throughout the rendering pipeline.
  */
 class WebGPUBindGroup
 {
   public:
 	/**
-	 * @brief Constructs a WebGPUBindGroupInfo from bind group, layout, and buffers.
+	 * @brief Constructs a WebGPUBindGroup from bind group, layout, and buffers.
 	 *
-	 * @param bindGroup The GPU-side bind group.
+	 * @param bindGroup The GPU-side bind group (can be null for layout-only groups).
 	 * @param layoutInfo Shared pointer to the bind group layout info.
-	 * @param buffers The buffers used by this bind group.
+	 * @param buffers The WebGPUBuffer instances used by this bind group.
 	 *
-	 * @throws Assertion failure if bind group or layout info is invalid.
+	 * @throws Assertion failure if layout info is invalid.
 	 */
 	WebGPUBindGroup(
 		wgpu::BindGroup bindGroup,
 		std::shared_ptr<WebGPUBindGroupLayoutInfo> layoutInfo,
-		const std::vector<wgpu::Buffer> &buffers
+		std::vector<std::shared_ptr<WebGPUBuffer>> buffers
 	) : m_bindGroup(bindGroup),
 		m_layoutInfo(layoutInfo),
-		m_buffers(buffers)
+		m_buffers(std::move(buffers))
 	{
-		assert(m_bindGroup && "BindGroup must be valid");
+		// Note: bindGroup can be null for layout-only groups (e.g., texture groups managed by material system)
 		assert(m_layoutInfo && "BindGroupLayoutInfo must be valid");
-		assert(m_buffers.size() <= m_layoutInfo->getEntryCount() && "Too many buffers for layout");
 	}
+
+	/**
+	 * @brief Default constructor.
+	 */
+	WebGPUBindGroup() = default;
 
 	/**
 	 * @brief Destructor that cleans up WebGPU resources.
 	 *
-	 * Releases the bind group and associated buffers to prevent memory leaks.
+	 * Releases the bind group. Buffers are managed via shared_ptr.
 	 */
 	~WebGPUBindGroup()
 	{
@@ -53,17 +58,13 @@ class WebGPUBindGroup
 		{
 			m_bindGroup.release();
 		}
-
-		// Release all buffers
-		for (auto &buffer : m_buffers)
-		{
-			if (buffer)
-			{
-				buffer.destroy();
-				buffer.release();
-			}
-		}
 	}
+
+	// Delete copy, enable move
+	WebGPUBindGroup(const WebGPUBindGroup &) = delete;
+	WebGPUBindGroup &operator=(const WebGPUBindGroup &) = delete;
+	WebGPUBindGroup(WebGPUBindGroup &&) noexcept = default;
+	WebGPUBindGroup &operator=(WebGPUBindGroup &&) noexcept = default;
 
 	/**
 	 * @brief Gets the underlying WebGPU bind group.
@@ -79,17 +80,17 @@ class WebGPUBindGroup
 
 	/**
 	 * @brief Gets the buffers used by this bind group.
-	 * @return Vector of buffers.
+	 * @return Vector of shared pointers to WebGPUBuffer instances.
 	 */
-	const std::vector<wgpu::Buffer> &getBuffers() const { return m_buffers; }
+	const std::vector<std::shared_ptr<WebGPUBuffer>> &getBuffers() const { return m_buffers; }
 
 	/**
 	 * @brief Gets a specific buffer by index.
 	 * @param index Index of the buffer to retrieve.
-	 * @return The buffer at the specified index.
+	 * @return Shared pointer to the buffer at the specified index.
 	 * @throws Assertion failure if index is out of bounds.
 	 */
-	wgpu::Buffer getBuffer(size_t index) const
+	std::shared_ptr<WebGPUBuffer> getBuffer(size_t index) const
 	{
 		assert(index < m_buffers.size() && "Buffer index out of bounds");
 		return m_buffers[index];
@@ -98,13 +99,16 @@ class WebGPUBindGroup
 	/**
 	 * @brief Finds a buffer by binding number.
 	 * @param binding The binding number to search for.
-	 * @return The buffer if found, nullptr otherwise.
+	 * @return Shared pointer to the buffer if found, nullptr otherwise.
 	 */
-	wgpu::Buffer findBufferByBinding(uint32_t binding) const
+	std::shared_ptr<WebGPUBuffer> findBufferByBinding(uint32_t binding) const
 	{
-		if (binding < m_buffers.size())
+		for (const auto &buffer : m_buffers)
 		{
-			return m_buffers[binding];
+			if (buffer && buffer->getBinding() == binding)
+			{
+				return buffer;
+			}
 		}
 		return nullptr;
 	}
@@ -122,15 +126,52 @@ class WebGPUBindGroup
 	 * @param size Size of the data in bytes.
 	 * @param offset Offset within the buffer to start writing.
 	 * @param queue The WebGPU queue to use for the write operation.
+	 * @return True if the buffer was found and updated successfully, false otherwise.
 	 */
-	void updateBuffer(uint32_t binding, const void *data, size_t size, size_t offset, wgpu::Queue queue) const
+	bool updateBuffer(uint32_t binding, const void *data, size_t size, size_t offset, wgpu::Queue queue) const
 	{
-		wgpu::Buffer buffer = findBufferByBinding(binding);
-		assert(buffer && "Buffer not found for binding");
-		queue.writeBuffer(buffer, offset, data, size);
+		auto buffer = findBufferByBinding(binding);
+		if (!buffer || !buffer->isValid())
+		{
+			return false;
+		}
+		
+		queue.writeBuffer(buffer->getBuffer(), offset, data, size);
+		return true;
 	}
 
-  protected:
+	/**
+	 * @brief Checks if this bind group is valid.
+	 * @return True if bind group and layout are valid.
+	 */
+	bool isValid() const
+	{
+		return m_bindGroup != nullptr && m_layoutInfo != nullptr;
+	}
+
+	/**
+	 * @brief Sets the raw bind group (used by materials to populate layout-only bind groups).
+	 * @param bindGroup The WebGPU bind group to set.
+	 */
+	void setBindGroup(wgpu::BindGroup bindGroup)
+	{
+		if (m_bindGroup)
+		{
+			m_bindGroup.release();
+		}
+		m_bindGroup = bindGroup;
+	}
+
+	/**
+	 * @brief Adds a buffer to this bind group's buffer list.
+	 * @param buffer The buffer to add.
+	 */
+	void addBuffer(std::shared_ptr<WebGPUBuffer> buffer)
+	{
+		m_buffers.push_back(std::move(buffer));
+	}
+
+  private:
 	/**
 	 * @brief The underlying WebGPU bind group resource.
 	 */
@@ -142,9 +183,9 @@ class WebGPUBindGroup
 	std::shared_ptr<WebGPUBindGroupLayoutInfo> m_layoutInfo;
 
 	/**
-	 * @brief Buffers used by this bind group.
+	 * @brief WebGPUBuffer instances used by this bind group.
 	 */
-	std::vector<wgpu::Buffer> m_buffers;
+	std::vector<std::shared_ptr<WebGPUBuffer>> m_buffers;
 };
 
 } // namespace engine::rendering::webgpu

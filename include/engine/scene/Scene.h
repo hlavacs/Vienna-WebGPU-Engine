@@ -26,11 +26,11 @@ public:
     /** @brief Late update phase - order-dependent logic like camera following */
     void lateUpdate(float deltaTime);
     
-    /** @brief Pre-render phase - prepare for rendering */
-    void preRender();
+    /** @brief Collect render data from scene graph into RenderCollector and sort */
+    void collectRenderData();
     
-    /** @brief Render phase - render all objects */
-    void render();
+    /** @brief Pre-render phase - prepare nodes for rendering (GPU resource updates) */
+    void preRender();
     
     /** @brief Post-render phase - cleanup after rendering */
     void postRender();

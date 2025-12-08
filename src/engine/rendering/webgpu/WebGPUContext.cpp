@@ -26,6 +26,7 @@ void WebGPUContext::initialize(void *windowHandle)
 	m_modelFactory = std::make_unique<WebGPUModelFactory>(*this);
 	m_depthStencilStateFactory = std::make_unique<WebGPUDepthStencilStateFactory>();
 	m_renderPassFactory = std::make_unique<WebGPURenderPassFactory>(*this);
+	m_shaderFactory = std::make_unique<ShaderFactory>(*this);
 	m_lastWindowHandle = windowHandle;
 #ifdef __EMSCRIPTEN__
 	m_instance = wgpu::wgpuCreateInstance(nullptr);
@@ -35,6 +36,10 @@ void WebGPUContext::initialize(void *windowHandle)
 	assert(m_instance);
 	initSurface(windowHandle);
 	initDevice();
+
+	// Initialize ShaderRegistry after device is ready
+	m_shaderRegistry = std::make_unique<ShaderRegistry>(*this);
+	m_shaderRegistry->initializeDefaultShaders();
 
 	// ToDo: Move this to the surface manager
 	SDL_Window *sdlWindow = static_cast<SDL_Window *>(windowHandle);
@@ -255,6 +260,24 @@ WebGPUModelFactory &WebGPUContext::modelFactory()
 		throw std::runtime_error("WebGPUModelFactory not initialized!");
 	}
 	return *m_modelFactory;
+}
+
+ShaderFactory &WebGPUContext::shaderFactory()
+{
+	if (!m_shaderFactory)
+	{
+		throw std::runtime_error("ShaderFactory not initialized!");
+	}
+	return *m_shaderFactory;
+}
+
+ShaderRegistry &WebGPUContext::shaderRegistry()
+{
+	if (!m_shaderRegistry)
+	{
+		throw std::runtime_error("ShaderRegistry not initialized!");
+	}
+	return *m_shaderRegistry;
 }
 
 WebGPUDepthTextureFactory &WebGPUContext::depthTextureFactory()
