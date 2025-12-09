@@ -24,7 +24,7 @@ void WebGPUModel::render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder 
 	{
 		m_material->render(encoder, renderPass);
 	}
-	
+
 	// 2. Then render the mesh with the material bound
 	if (m_mesh)
 	{
@@ -39,7 +39,7 @@ void WebGPUModel::updateGPUResources()
 	{
 		m_mesh->update();
 	}
-	
+
 	// Update material if it has changed
 	// This will trigger WebGPUMaterial::updateGPUResources() only if dirty
 	if (m_material)

@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
+#include "engine/rendering/DebugCollector.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"
@@ -173,27 +174,20 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 	// Create debug visualization shader
 	// 
 	// debug.wgsl structure:
-	// @group(0) @binding(0) var<uniform> uViewProj: mat4x4<f32>;
-	// @group(0) @binding(1) var<storage, read> uTransforms: array<mat4x4<f32>>;
+	// @group(0) @binding(0) var<uniform> uFrameUniforms: FrameUniforms; (view-proj matrix)
+	// @group(1) @binding(0) var<storage, read> uDebugPrimitives: array<DebugPrimitive>;
 	
 	auto shaderInfo = m_context.shaderFactory()
 		.begin("debug", "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
-		.addCustomUniform(
-			"uViewProj",
-			sizeof(glm::mat4),
-			0,  // group
-			0,  // binding
-			true,  // global - shared view-projection matrix
-			WGPUShaderStage_Vertex
-		)
+		.addFrameUniforms(0, 0)  // View-projection matrix from frame uniforms
 		.addStorageBuffer(
-			"uTransforms",
-			sizeof(glm::mat4) * 64,  // Max 64 transforms (4096 bytes - at the limit)
-			0,  // group
-			1,  // binding
+			"uDebugPrimitives",
+			sizeof(DebugPrimitive) * 1024,  // Max 1024 debug primitives (80 KB)
+			1,  // group 1 (separate from frame uniforms)
+			0,  // binding 0
 			true,  // read-only
-			false,  // not global - per-frame transforms
-			WGPUShaderStage_Vertex
+			false,  // not global - per-frame primitives
+			WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
 		)
 		.build();
 

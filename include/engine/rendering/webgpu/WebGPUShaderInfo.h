@@ -117,12 +117,11 @@ class WebGPUShaderInfo
 	void setQueue(wgpu::Queue queue) { m_queue = queue; }
 
 	/**
-	 * @brief Starts the render pass by setting all bind groups automatically.
-	 * This acts like "startRenderPass" - it configures the render pass with all shader bind groups.
-	 * Does not store the render pass - use setBindGroup() to override individual groups if needed.
+	 * @brief Binds all shader bind groups to the render pass encoder.
+	 * Configures the render pass with all shader bind groups.
 	 * @param renderPass The render pass encoder.
 	 */
-	void startRenderPass(wgpu::RenderPassEncoder& renderPass) const
+	void bind(wgpu::RenderPassEncoder& renderPass) const
 	{
 		// Automatically set all bind groups for this shader
 		uint32_t setCount = 0;

@@ -7,22 +7,22 @@
 #include <SDL.h>
 
 #include "engine/GameEngine.h"
+#include "engine/rendering/Material.h"
+#include "engine/rendering/Model.h"
+#include "engine/rendering/webgpu/WebGPUMaterial.h"
+#include "engine/rendering/webgpu/WebGPUModel.h"
+#include "engine/rendering/webgpu/WebGPUModelFactory.h"
 #include "engine/scene/CameraNode.h"
 #include "engine/scene/entity/LightNode.h"
 #include "engine/scene/entity/ModelRenderNode.h"
 #include "engine/scene/entity/UpdateNode.h"
-#include "engine/rendering/webgpu/WebGPUModel.h"
-#include "engine/rendering/webgpu/WebGPUModelFactory.h"
-#include "engine/rendering/webgpu/WebGPUMaterial.h"
-#include "engine/rendering/Model.h"
-#include "engine/rendering/Material.h"
-#include <spdlog/spdlog.h>
-#include <imgui.h>
 #include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <imgui.h>
 #include <map>
+#include <spdlog/spdlog.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
@@ -37,38 +37,38 @@ struct OrbitCameraState
 	glm::vec2 startMouse = glm::vec2(0.0f);
 	glm::vec2 previousDelta = glm::vec2(0.0f);
 	glm::vec2 velocity = glm::vec2(0.0f);
-	
+
 	float azimuth = 0.0f;
 	float elevation = 0.3f;
 	float distance = 5.0f;
-	
+
 	glm::vec3 targetPoint = glm::vec3(0.0f);
-	
+
 	float sensitivity = 1.0f;
 	float scrollSensitivity = 0.5f;
 	float inertiaDecay = 0.92f;
 };
 
-void updateOrbitCamera(OrbitCameraState& drag, std::shared_ptr<engine::scene::CameraNode> camera)
+void updateOrbitCamera(OrbitCameraState &drag, std::shared_ptr<engine::scene::CameraNode> camera)
 {
 	// Normalize azimuth to [0, 2π]
 	drag.azimuth = fmod(drag.azimuth, 2.0f * PI);
 	if (drag.azimuth < 0)
 		drag.azimuth += 2.0f * PI;
-	
+
 	// Clamp elevation to avoid gimbal lock
 	drag.elevation = glm::clamp(drag.elevation, -PI / 2.0f + 0.01f, PI / 2.0f - 0.01f);
-	
+
 	// Clamp distance
 	drag.distance = glm::clamp(drag.distance, 0.5f, 20.0f);
-	
+
 	// Convert spherical coordinates to Cartesian
 	float x = cos(drag.elevation) * cos(drag.azimuth);
 	float y = sin(drag.elevation);
 	float z = cos(drag.elevation) * sin(drag.azimuth);
-	
+
 	glm::vec3 position = drag.targetPoint + glm::vec3(x, y, z) * drag.distance;
-	
+
 	// Update camera position and look-at
 	if (camera && camera->getTransform())
 	{
@@ -77,17 +77,17 @@ void updateOrbitCamera(OrbitCameraState& drag, std::shared_ptr<engine::scene::Ca
 	}
 }
 
-void updateDragInertia(OrbitCameraState& drag, std::shared_ptr<engine::scene::CameraNode> camera, float deltaTime)
+void updateDragInertia(OrbitCameraState &drag, std::shared_ptr<engine::scene::CameraNode> camera, float deltaTime)
 {
 	if (!drag.active && glm::length(drag.velocity) > 1e-4f)
 	{
 		// Apply inertia
 		drag.azimuth += drag.velocity.x * drag.sensitivity * deltaTime;
 		drag.elevation += drag.velocity.y * drag.sensitivity * deltaTime;
-		
+
 		// Decay velocity
 		drag.velocity *= drag.inertiaDecay;
-		
+
 		// Update camera position
 		updateOrbitCamera(drag, camera);
 	}
@@ -101,15 +101,15 @@ void updateDragInertia(OrbitCameraState& drag, std::shared_ptr<engine::scene::Ca
 // Custom UpdateNode for orbit camera control
 class OrbitCameraController : public engine::scene::entity::UpdateNode
 {
-public:
-	OrbitCameraController(OrbitCameraState& state, std::shared_ptr<engine::scene::CameraNode> camera)
-		: m_orbitState(state), m_camera(camera) {}
-	
+  public:
+	OrbitCameraController(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera) : m_orbitState(state), m_camera(camera) {}
+
 	void update(float deltaTime) override
 	{
 		auto input = engine()->input();
-		if (!input) return;
-		
+		if (!input)
+			return;
+
 		// Handle mouse drag for camera rotation
 		if (input->isMouseButtonPressed(SDL_BUTTON_LEFT))
 		{
@@ -135,7 +135,7 @@ public:
 			// Stop dragging
 			m_orbitState.active = false;
 		}
-		
+
 		// Handle mouse wheel for zoom
 		glm::vec2 wheel = input->getMouseWheel();
 		if (wheel.y != 0.0f)
@@ -143,13 +143,13 @@ public:
 			m_orbitState.distance -= wheel.y * m_orbitState.scrollSensitivity;
 			updateOrbitCamera(m_orbitState, m_camera);
 		}
-		
+
 		// Apply inertia when not dragging
 		updateDragInertia(m_orbitState, m_camera, deltaTime);
 	}
 
-private:
-	OrbitCameraState& m_orbitState;
+  private:
+	OrbitCameraState &m_orbitState;
 	std::shared_ptr<engine::scene::CameraNode> m_camera;
 };
 
@@ -160,7 +160,7 @@ int main(int argc, char **argv)
 
 	// Create and configure the engine
 	engine::GameEngine engine;
-	
+
 	engine::GameEngineOptions options;
 	options.windowWidth = 1280;
 	options.windowHeight = 720;
@@ -194,20 +194,20 @@ int main(int argc, char **argv)
 	orbitState.distance = 5.0f;
 	orbitState.azimuth = 0.0f;
 	orbitState.elevation = 0.3f;
-	
+
 	// Create directional light
 	auto lightNode = std::make_shared<engine::scene::entity::LightNode>();
 	lightNode->setLightType(1); // Directional
 	lightNode->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
 	lightNode->setIntensity(1.0f);
-	
+
 	// Set default direction angles (in degrees)
 	float pitchDegrees = 140.0f;
 	float yawDegrees = -30.0f;
 	float rollDegrees = 0.0f;
 	glm::quat rotation = glm::quat(glm::radians(glm::vec3(pitchDegrees, yawDegrees, rollDegrees)));
 	lightNode->getTransform()->setLocalRotation(rotation);
-	
+
 	rootNode->addChild(std::static_pointer_cast<engine::scene::entity::Node>(lightNode));
 
 	// Track all lights and their UI angles
@@ -225,7 +225,7 @@ int main(int argc, char **argv)
 		spdlog::info("Loaded fourareen.obj model");
 		modelHandle = maybeModel.value()->getHandle();
 		modelLoaded = true;
-		
+
 		// Create a ModelRenderNode and add it to the scene
 		// The renderer will create GPU resources when needed
 		auto modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandle);
@@ -242,19 +242,17 @@ int main(int argc, char **argv)
 		spdlog::error("Failed to initialize engine!");
 		return 1;
 	}
-	
+
 	// Create an UpdateNode to handle orbit camera input
 	auto orbitCameraController = std::make_shared<OrbitCameraController>(orbitState, cameraNode);
 	rootNode->addChild(orbitCameraController);
-	
-	// Flag to control debug rendering
-	bool enableDebugRendering = false;
 
 	// Get ImGui manager and add UI callbacks
 	auto imguiManager = engine.getImGuiManager();
-	
+
 	// Add UI callback for full scene controls
-	imguiManager->addFrame([&]() {
+	imguiManager->addFrame([&]()
+						   {
 		// FPS and Performance window
 		ImGui::Begin("Performance");
 		ImGui::Text("FPS: %.1f", engine.getFPS());
@@ -272,34 +270,41 @@ int main(int argc, char **argv)
 		ImGui::SameLine();
 		
 		// Debug rendering toggle
-		ImGui::Checkbox("Debug Rendering", &enableDebugRendering);
+		static bool showDebugRendering = false;
+		static bool prevDebugState = false;
+		ImGui::Checkbox("Debug Rendering", &showDebugRendering);
 		
-		// Add debug transforms to the scene's render collector
-		if (enableDebugRendering)
+		// Enable/disable debug on nodes when checkbox state changes
+		if (showDebugRendering != prevDebugState)
 		{
-			auto activeScene = sceneManager->getActiveScene();
-			if (activeScene)
+			// Toggle debug on all light nodes
+			for (auto &light : lightNodes)
 			{
-				auto& collector = const_cast<engine::rendering::RenderCollector&>(activeScene->getRenderCollector());
-				
-				// Add model transform if loaded
-				if (modelLoaded)
+				if (light)
 				{
-					glm::mat4 modelTransform = glm::mat4(1.0f); // Identity at origin
-					collector.addDebugTransform(modelTransform);
+					light->setDebugEnabled(showDebugRendering);
 				}
-				
-				// Add light transforms
-				for (const auto& light : lightNodes)
+			}
+			
+			// Toggle debug on model node if it exists
+			if (modelLoaded && rootNode)
+			{
+				// Find the model node in the scene graph
+				auto children = rootNode->getChildren();
+				for (auto &child : children)
 				{
-					if (light && light->getTransform())
+					// Check if it's a SpatialNode (ModelRenderNode inherits from SpatialNode)
+					auto spatialNode = std::dynamic_pointer_cast<engine::scene::SpatialNode>(child);
+					if (spatialNode)
 					{
-						glm::mat4 lightTransform = light->getTransform()->getWorldMatrix();
-						collector.addDebugTransform(lightTransform);
+						spatialNode->setDebugEnabled(showDebugRendering);
 					}
 				}
 			}
+			
+			prevDebugState = showDebugRendering;
 		}
+
 		ImGui::Separator();
 
 		// Material properties section  
@@ -459,13 +464,14 @@ int main(int argc, char **argv)
 						if (light->getLightType() == 3)
 						{
 							float spotAngle = light->getLightData().spot_angle;
-							if (ImGui::SliderFloat("Cone Angle", &spotAngle, 0.1f, 2.0f))
+							float spotAngleDegrees = glm::degrees(spotAngle);
+							if (ImGui::SliderFloat("Cone Angle (degrees)", &spotAngleDegrees, 1.0f, 120.0f))
 							{
-								light->setSpotAngle(spotAngle);
+								light->setSpotAngle(glm::radians(spotAngleDegrees));
 							}
 
 							float spotSoftness = light->getLightData().spot_softness;
-							if (ImGui::SliderFloat("Edge Softness", &spotSoftness, 0.0f, 0.95f, "%.2f"))
+							if (ImGui::SliderFloat("Edge Softness", &spotSoftness, 0.0f, 0.99f, "%.2f"))
 							{
 								light->setSpotSoftness(spotSoftness);
 							}
@@ -580,8 +586,7 @@ int main(int argc, char **argv)
 			}
 		}
 
-		ImGui::End();
-	});
+		ImGui::End(); });
 
 	// Run the engine (blocks until window closed)
 	engine.run();

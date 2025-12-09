@@ -24,6 +24,7 @@ struct VertexOutput {
 struct FrameUniforms {
 	viewMatrix: mat4x4f,
 	projectionMatrix: mat4x4f,
+	viewProjectionMatrix: mat4x4f,
 	cameraWorldPosition: vec3f,
 	time: f32,
 }
@@ -104,7 +105,7 @@ var normalTexture: texture_2d<f32>;
 fn vs_main(in: VertexInput) -> VertexOutput {
 	var out: VertexOutput;
 	let worldPosition = uObject.modelMatrix * vec4<f32>(in.position, 1.0);
-	out.position = uFrame.projectionMatrix * uFrame.viewMatrix * worldPosition;
+	out.position = uFrame.viewProjectionMatrix * worldPosition;
 	out.tangent = (uObject.modelMatrix * vec4f(in.tangent, 0.0)).xyz;
 	out.bitangent = (uObject.modelMatrix * vec4f(in.bitangent, 0.0)).xyz;
 	out.normal = (uObject.modelMatrix * vec4f(in.normal, 0.0)).xyz;

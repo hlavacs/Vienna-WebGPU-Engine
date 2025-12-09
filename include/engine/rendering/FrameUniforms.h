@@ -8,6 +8,7 @@ struct FrameUniforms
 {
 	glm::mat4 viewMatrix;
 	glm::mat4 projectionMatrix;
+	glm::mat4 viewProjectionMatrix;
 	glm::vec3 cameraWorldPosition;
 	float time;
 };
