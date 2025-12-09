@@ -177,10 +177,17 @@ void GameEngine::gameLoop()
 				ImGui_ImplSDL2_ProcessEvent(&event);
 			}
 
-			// Process input events
-			m_inputManager.processEvent(event);
+			// Check if ImGui wants to capture input
+			ImGuiIO &io = ImGui::GetIO();
+			bool imguiWantsInput = io.WantCaptureMouse || io.WantCaptureKeyboard;
 
-			// Handle window events
+			// Process input events only if ImGui doesn't want them
+			if (!imguiWantsInput)
+			{
+				m_inputManager.processEvent(event);
+			}
+
+			// Handle window events (always process these)
 			if (event.type == SDL_QUIT)
 			{
 				running = false;
@@ -226,11 +233,15 @@ void GameEngine::gameLoop()
 				engine::rendering::FrameUniforms frameUniforms;
 				frameUniforms.viewMatrix = cam->getViewMatrix();
 				frameUniforms.projectionMatrix = cam->getProjectionMatrix();
+				frameUniforms.viewProjectionMatrix = cam->getProjectionMatrix() * cam->getViewMatrix();
 				frameUniforms.cameraWorldPosition = cam->getPosition();
 				frameUniforms.time = static_cast<float>(SDL_GetTicks64() / 1000.0);
 
 				// Render the frame using the scene's render collector
 				m_renderer->updateFrameUniforms(frameUniforms);
+				
+				// Collect debug data from the scene
+				activeScene->collectDebugData();
 				
 				// Create UI render callback that delegates to ImGuiManager
 				std::function<void(wgpu::RenderPassEncoder)> uiRenderCallback = nullptr;
@@ -241,7 +252,11 @@ void GameEngine::gameLoop()
 					};
 				}
 				
-				m_renderer->renderFrame(activeScene->getRenderCollector(), uiRenderCallback);
+				m_renderer->renderFrame(
+					activeScene->getRenderCollector(),
+					&activeScene->getDebugCollector(),
+					uiRenderCallback
+				);
 			}
 
 			// Post-render cleanup

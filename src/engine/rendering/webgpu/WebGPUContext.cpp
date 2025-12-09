@@ -52,7 +52,6 @@ void WebGPUContext::initialize(void *windowHandle)
 	config.height = height;
 	config.presentMode = wgpu::PresentMode::Fifo;
 	m_surfaceManager->reconfigure(config);
-
 }
 
 void WebGPUContext::initSurface(void *windowHandle)
@@ -61,8 +60,8 @@ void WebGPUContext::initSurface(void *windowHandle)
 		return;
 
 	SDL_Window *sdlWindow = static_cast<SDL_Window *>(windowHandle);
-	m_surface = wgpu::Surface(SDL_GetWGPUSurface(m_instance, sdlWindow));	
-	
+	m_surface = wgpu::Surface(SDL_GetWGPUSurface(m_instance, sdlWindow));
+
 	assert(m_surface);
 }
 
@@ -98,6 +97,7 @@ void WebGPUContext::initDevice()
 #ifdef WEBGPU_BACKEND_WGPU
 	m_adapter.getLimits(&supportedLimits);
 #else
+	// Fallback for non-WGPU backends
 	supportedLimits.limits.minStorageBufferOffsetAlignment = 256;
 	supportedLimits.limits.minUniformBufferOffsetAlignment = 256;
 #endif
@@ -105,32 +105,30 @@ void WebGPUContext::initDevice()
 	// --------------- Set required limits ---------------
 	wgpu::RequiredLimits requiredLimits = wgpu::Default;
 
-	// Example overrides (adjust as needed for your engine):
-	requiredLimits.limits.maxVertexAttributes = 6;
-	requiredLimits.limits.maxVertexBuffers = 1;
-	requiredLimits.limits.maxBufferSize = 150000 * sizeof(engine::rendering::Vertex);
-	requiredLimits.limits.maxVertexBufferArrayStride = sizeof(engine::rendering::Vertex);
+	// Typical defaults: try to be practical but still safe
+	requiredLimits.limits.maxVertexAttributes = std::min(16u, supportedLimits.limits.maxVertexAttributes);
+	requiredLimits.limits.maxVertexBuffers = std::min(8u, supportedLimits.limits.maxVertexBuffers);
+	requiredLimits.limits.maxBufferSize = std::min(67108864ull, supportedLimits.limits.maxBufferSize); // 64 MB
+	requiredLimits.limits.maxVertexBufferArrayStride = 256;											   // safe stride
 	requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
 	requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
 #ifdef WEBGPU_BACKEND_WGPU
-	requiredLimits.limits.maxInterStageShaderComponents = 17;
-	//                                                    ^^ This was a 11
+	requiredLimits.limits.maxInterStageShaderComponents = std::min(60u, supportedLimits.limits.maxInterStageShaderComponents);
 #else
-	requiredLimits.limits.maxInterStageShaderComponents = 0xffffffffu; // undefined
+	requiredLimits.limits.maxInterStageShaderComponents = 0xffffffffu;
 #endif
-	requiredLimits.limits.maxBindGroups = 4;
-	requiredLimits.limits.maxUniformBuffersPerShaderStage = 2;
-	requiredLimits.limits.maxUniformBufferBindingSize = 16 * 4 * sizeof(float);
-	requiredLimits.limits.maxTextureDimension1D = 2048;
-	requiredLimits.limits.maxTextureDimension2D = 2048;
-	requiredLimits.limits.maxTextureArrayLayers = 1;
-	requiredLimits.limits.maxSampledTexturesPerShaderStage = 2;
-	requiredLimits.limits.maxSamplersPerShaderStage = 1;
-	requiredLimits.limits.maxBindGroupsPlusVertexBuffers = 2;
-	requiredLimits.limits.maxBindingsPerBindGroup = 5;
-	// Add required limits for storage buffers
-	requiredLimits.limits.maxStorageBuffersPerShaderStage = 1;
-	requiredLimits.limits.maxStorageBufferBindingSize = 4096; // Set to accommodate our lights buffer (at least 16 + num_lights*76 bytes)
+	requiredLimits.limits.maxBindGroups = std::min(8u, supportedLimits.limits.maxBindGroups);
+	requiredLimits.limits.maxUniformBuffersPerShaderStage = 8;	   // more flexible than 2
+	requiredLimits.limits.maxUniformBufferBindingSize = 64 * 1024; // 64 KB, safe default
+	requiredLimits.limits.maxTextureDimension1D = 8192;
+	requiredLimits.limits.maxTextureDimension2D = 8192;
+	requiredLimits.limits.maxTextureArrayLayers = 256;
+	requiredLimits.limits.maxSampledTexturesPerShaderStage = 16;
+	requiredLimits.limits.maxSamplersPerShaderStage = 16;
+	requiredLimits.limits.maxBindingsPerBindGroup = 16;
+	// Storage buffers
+	requiredLimits.limits.maxStorageBuffersPerShaderStage = 4;
+	requiredLimits.limits.maxStorageBufferBindingSize = 16 * 1024 * 1024; // 16 MB (WebGPU spec minimum guaranteed)
 
 	// --------------- Request device ---------------
 	wgpu::DeviceDescriptor deviceDesc{};
@@ -142,14 +140,12 @@ void WebGPUContext::initDevice()
 	assert(m_device);
 
 	// --------------- Add error callback for debug info ---------------
-	// In your Application or wherever you own m_device:
 	static std::unique_ptr<wgpu::ErrorCallback> m_errorCallback;
-
 	m_errorCallback = m_device.setUncapturedErrorCallback([](wgpu::ErrorType type, char const *message)
 														  {
-			std::cerr << "[WebGPU Error] Type " << static_cast<int>(type);
-			if (message) std::cerr << ": " << message;
-			std::cerr << std::endl; });
+        std::cerr << "[WebGPU Error] Type " << static_cast<int>(type);
+        if (message) std::cerr << ": " << message;
+        std::cerr << std::endl; });
 
 	// --------------- Get queue ---------------
 	m_queue = m_device.getQueue();
@@ -160,7 +156,6 @@ void WebGPUContext::initDevice()
 	m_swapChainFormat = m_surface.getPreferredFormat(m_adapter);
 #else
 	m_swapChainFormat = TextureFormat::BGRA8Unorm;
-
 #endif
 	assert(m_swapChainFormat != wgpu::TextureFormat::Undefined);
 
@@ -311,6 +306,19 @@ wgpu::Texture WebGPUContext::createTexture(const wgpu::TextureDescriptor &desc)
 {
 	// --------------- Create texture ---------------
 	return m_device.createTexture(desc);
+}
+
+void WebGPUContext::updateGlobalBuffer(const std::string &bufferName, const void *data, size_t size)
+{
+	// Get the global buffer from ShaderFactory's cache
+	auto buffer = m_shaderFactory->getGlobalBuffer(bufferName);
+	if (!buffer)
+	{
+		throw std::runtime_error("Global buffer '" + bufferName + "' not found in cache!");
+	}
+
+	// Write data to the buffer
+	m_queue.writeBuffer(buffer->getBuffer(), 0, data, size);
 }
 
 } // namespace engine::rendering::webgpu

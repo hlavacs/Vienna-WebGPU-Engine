@@ -9,6 +9,11 @@ namespace engine
 class EngineContext;
 }
 
+namespace engine::rendering
+{
+class DebugRenderCollector;
+}
+
 namespace engine::scene
 {
 class Scene;
@@ -79,6 +84,12 @@ public:
 	virtual void onDisable();
 	/** @brief Called when node is destroyed. */
 	virtual void onDestroy();
+	
+	/** @brief Called during debug rendering to add debug primitives.
+	 *  Override this in derived classes to visualize node-specific data.
+	 *  @param collector The debug collector to add primitives to.
+	 */
+	virtual void onDebugDraw(engine::rendering::DebugRenderCollector& collector);
 
 	/** @brief Enable the node. */
 	void enable();
@@ -86,6 +97,12 @@ public:
 	void disable();
 	/** @brief Is the node enabled? */
 	bool isEnabled() const;
+	
+	/** @brief Enable/disable debug rendering for this node. */
+	void setDebugEnabled(bool enabled) { m_debugEnabled = enabled; }
+	
+	/** @brief Check if debug rendering is enabled for this node. */
+	bool isDebugEnabled() const { return m_debugEnabled; }
 
 	/** @brief Add a child node. */
 	void addChild(Ptr child);
@@ -154,6 +171,7 @@ protected:
 
 	bool enabled = true;
 	bool started = false;
+	bool m_debugEnabled = false;
 	Node* parent = nullptr;
 	std::vector<Ptr> children;
 	NodeType m_nodeType = NodeType::Base;

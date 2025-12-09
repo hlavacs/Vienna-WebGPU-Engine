@@ -48,12 +48,6 @@ class RenderCollector
 	 * @param light Light data structure.
 	 */
 	void addLight(const LightStruct &light);
-	
-	/**
-	 * @brief Adds a debug transform for visualization (axes rendering).
-	 * @param transform World-space transform matrix.
-	 */
-	void addDebugTransform(const glm::mat4 &transform);
 
 	/**
 	 * @brief Sorts render items by layer, then by material for batching.
@@ -88,23 +82,10 @@ class RenderCollector
 	 * @return Light count.
 	 */
 	size_t getLightCount() const { return m_lights.size(); }
-	
-	/**
-	 * @brief Gets all collected debug transforms.
-	 * @return Const reference to debug transforms vector.
-	 */
-	const std::vector<glm::mat4> &getDebugTransforms() const { return m_debugTransforms; }
-	
-	/**
-	 * @brief Gets the number of collected debug transforms.
-	 * @return Debug transform count.
-	 */
-	size_t getDebugTransformCount() const { return m_debugTransforms.size(); }
 
   private:
 	std::vector<RenderItem> m_renderItems;
 	std::vector<LightStruct> m_lights;
-	std::vector<glm::mat4> m_debugTransforms;
 };
 
 } // namespace engine::rendering

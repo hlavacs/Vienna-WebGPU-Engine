@@ -21,10 +21,10 @@ namespace engine::rendering
 enum class ShaderType
 {
 	// Standard shaders
-	Lit,      // Full PBR lighting shader (shader.wgsl)
-	Unlit,    // Simple unlit shader (future)
-	Debug,    // Debug visualization shader (debug.wgsl)
-	
+	Lit,   // Full PBR lighting shader (shader.wgsl)
+	Unlit, // Simple unlit shader (future)
+	Debug, // Debug visualization shader (debug.wgsl)
+
 	// Custom shader slot
 	Custom
 };
@@ -32,14 +32,14 @@ enum class ShaderType
 /**
  * @class ShaderRegistry
  * @brief Central registry for managing shaders used throughout the engine.
- * 
+ *
  * Shaders are created once during initialization and can be retrieved by type.
  * Custom shaders can be registered dynamically at runtime.
  */
 class ShaderRegistry
 {
   public:
-	explicit ShaderRegistry(webgpu::WebGPUContext& context);
+	explicit ShaderRegistry(webgpu::WebGPUContext &context);
 	~ShaderRegistry() = default;
 
 	/**
@@ -60,7 +60,7 @@ class ShaderRegistry
 	 * @param name The name of the custom shader.
 	 * @return Shared pointer to shader info, or nullptr if not found.
 	 */
-	std::shared_ptr<webgpu::WebGPUShaderInfo> getCustomShader(const std::string& name) const;
+	std::shared_ptr<webgpu::WebGPUShaderInfo> getCustomShader(const std::string &name) const;
 
 	/**
 	 * @brief Register a custom shader.
@@ -68,7 +68,7 @@ class ShaderRegistry
 	 * @param shaderInfo The shader to register.
 	 * @return True if registered successfully, false if name already exists.
 	 */
-	bool registerCustomShader(const std::string& name, std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo);
+	bool registerCustomShader(const std::string &name, std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo);
 
 	/**
 	 * @brief Check if a shader type is registered.
@@ -82,14 +82,14 @@ class ShaderRegistry
 	 * @param name The custom shader name.
 	 * @return True if shader exists.
 	 */
-	bool hasCustomShader(const std::string& name) const;
+	bool hasCustomShader(const std::string &name) const;
 
   private:
-	webgpu::WebGPUContext& m_context;
-	
+	webgpu::WebGPUContext &m_context;
+
 	// Default shaders indexed by type
 	std::unordered_map<ShaderType, std::shared_ptr<webgpu::WebGPUShaderInfo>> m_defaultShaders;
-	
+
 	// Custom shaders indexed by name
 	std::unordered_map<std::string, std::shared_ptr<webgpu::WebGPUShaderInfo>> m_customShaders;
 

@@ -21,14 +21,14 @@ void Scene::onFrame(float deltaTime)
 {
 	// Clear render collector at the start of each frame
 	m_renderCollector.clear();
-	
+
 	// Complete frame lifecycle
 	update(deltaTime);
 	lateUpdate(deltaTime);
 	collectRenderData(); // Collect and sort render items
-	preRender();         // Prepare nodes for rendering
-	// Note: actual rendering happens in Application via Renderer
-	// postRender() is called by Application after rendering
+	preRender();		 // Prepare nodes for rendering
+						 // Note: actual rendering happens in Application via Renderer
+						 // postRender() is called by Application after rendering
 }
 
 void Scene::update(float deltaTime)
@@ -128,9 +128,38 @@ void Scene::collectRenderData()
 
 	// Start traversal from root
 	processRenderNodes(m_root);
-	
+
 	// Sort collected items for optimal rendering
 	m_renderCollector.sort();
+}
+
+void Scene::collectDebugData()
+{
+	if (!m_root)
+		return;
+
+	// Clear previous debug data
+	m_debugCollector.clear();
+
+	// Process all nodes with debug enabled
+	std::function<void(entity::Node::Ptr)> processDebugNodes;
+	processDebugNodes = [&processDebugNodes, this](entity::Node::Ptr node)
+	{
+		if (node->isEnabled() && node->isDebugEnabled())
+		{
+			// Call the node's debug draw method
+			node->onDebugDraw(m_debugCollector);
+		}
+
+		// Process children regardless of debug state (children may have debug enabled)
+		for (const auto &child : node->getChildren())
+		{
+			processDebugNodes(child);
+		}
+	};
+
+	// Start traversal from root
+	processDebugNodes(m_root);
 }
 
 void Scene::preRender()

@@ -17,7 +17,7 @@ namespace engine::rendering::webgpu
  * providing accessors for all relevant properties and ensuring resource cleanup.
  * Used for managing bind group layouts throughout the rendering pipeline.
  * 
- * Extended to support lazy buffer creation with isGlobal flag and material slot name mapping.
+ * Extended to support material slot name mapping for texture bindings.
  */
 class WebGPUBindGroupLayoutInfo
 {
@@ -27,17 +27,14 @@ class WebGPUBindGroupLayoutInfo
 	 *
 	 * @param layout The GPU-side bind group layout.
 	 * @param layoutDesc The bind group layout descriptor used to create the layout.
-	 * @param isGlobal Whether buffers in this bind group are engine-managed (shared/cached) or per-material.
 	 *
 	 * @throws Assertion failure if layout is invalid.
 	 */
 	WebGPUBindGroupLayoutInfo(
 		wgpu::BindGroupLayout layout,
-		const wgpu::BindGroupLayoutDescriptor &layoutDesc,
-		bool isGlobal = false
+		const wgpu::BindGroupLayoutDescriptor &layoutDesc
 	) : m_layout(layout),
-		m_layoutDesc(layoutDesc),
-		m_isGlobal(isGlobal)
+		m_layoutDesc(layoutDesc)
 	{
 		assert(m_layout && "BindGroupLayout must be valid");
 		assert(m_layoutDesc.entryCount > 0 && "BindGroupLayoutInfo must have at least one entry");
@@ -129,12 +126,6 @@ class WebGPUBindGroupLayoutInfo
 	}
 
 	/**
-	 * @brief Checks if buffers in this bind group are engine-managed (global/cached).
-	 * @return True if global (shared/cached buffers), false if per-material.
-	 */
-	bool isGlobal() const { return m_isGlobal; }
-
-	/**
 	 * @brief Sets the material slot name for a specific binding.
 	 * @param binding The binding index.
 	 * @param slotName The material slot name (e.g., "albedo", "normal").
@@ -173,11 +164,6 @@ class WebGPUBindGroupLayoutInfo
 	 * @brief Owned copy of layout entries to ensure lifetime.
 	 */
 	std::vector<wgpu::BindGroupLayoutEntry> m_entries;
-
-	/**
-	 * @brief Whether buffers in this bind group are engine-managed (global/cached) or per-material.
-	 */
-	bool m_isGlobal = false;
 
 	/**
 	 * @brief Maps binding index to material slot name for texture bindings.

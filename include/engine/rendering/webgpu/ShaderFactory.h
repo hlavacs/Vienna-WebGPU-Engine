@@ -7,9 +7,9 @@
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
-#include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
+#include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
 namespace engine::rendering::webgpu
 {
@@ -33,34 +33,34 @@ enum class BindingType
  */
 struct ShaderBinding
 {
-	std::string name;                    // Debug/shader variable name
-	std::string materialSlotName;        // Material texture slot name (for textures only, e.g., MaterialTextureSlots::ALBEDO)
+	std::string name;			  // Debug/shader variable name
+	std::string materialSlotName; // Material texture slot name (for textures only, e.g., MaterialTextureSlots::ALBEDO)
 	BindingType type = BindingType::UniformBuffer;
 	uint32_t binding = 0;
-	size_t size = 0;  // For buffers
-	WGPUBufferUsageFlags usage = 0;  // For buffers
+	size_t size = 0;				// For buffers
+	WGPUBufferUsageFlags usage = 0; // For buffers
 	bool isGlobal = false;
 	uint32_t visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-	bool readOnly = false;  // For storage buffers
-	
+	bool readOnly = false; // For storage buffers
+
 	// For textures
 	wgpu::TextureSampleType textureSampleType = wgpu::TextureSampleType::Float;
 	wgpu::TextureViewDimension textureViewDimension = wgpu::TextureViewDimension::_2D;
 	bool textureMultisampled = false;
-	
+
 	// For samplers
 	wgpu::SamplerBindingType samplerType = wgpu::SamplerBindingType::Filtering;
 };
 
 /**
  * @brief Builder pattern factory for creating shader metadata with manual reflection.
- * 
+ *
  * Since WebGPU provides no shader reflection API, ShaderFactory uses a builder
  * pattern to manually describe shader structure:
  * - Bind group organization
  * - Buffer bindings (global vs per-material)
  * - Texture/sampler bindings
- * 
+ *
  * Usage:
  * ```cpp
  * auto shaderInfo = ShaderFactory(context)
@@ -217,15 +217,22 @@ class ShaderFactory
 
 	/**
 	 * @brief Finalizes the shader and creates GPU resources.
-	 * 
+	 *
 	 * This method:
 	 * - Loads/validates the shader module (if not already set)
 	 * - Creates bind group layouts from the metadata
 	 * - Does NOT create per-material buffers (that's the material system's job)
-	 * 
+	 *
 	 * @return Complete WebGPUShaderInfo ready for pipeline creation.
 	 */
 	std::shared_ptr<WebGPUShaderInfo> build();
+
+	/**
+	 * @brief Gets a global buffer from the cache by name.
+	 * @param bufferName The name of the global buffer to retrieve.
+	 * @return Shared pointer to the buffer, or nullptr if not found.
+	 */
+	std::shared_ptr<WebGPUBuffer> getGlobalBuffer(const std::string &bufferName) const;
 
   private:
 	/**
@@ -261,10 +268,10 @@ class ShaderFactory
 	std::shared_ptr<WebGPUShaderInfo> m_shaderInfo;
 	std::filesystem::path m_shaderPath;
 	std::map<uint32_t, std::vector<ShaderBinding>> m_bindGroupsBuilder;
-	
+
 	// Temporary storage during build
 	std::map<uint32_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> m_tempLayouts;
-	
+
 	// Cache for global buffers (shared across shader instances)
 	std::map<std::string, std::shared_ptr<WebGPUBuffer>> m_globalBufferCache;
 };

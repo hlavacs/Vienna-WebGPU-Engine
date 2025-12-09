@@ -4,20 +4,20 @@
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
-#include "engine/rendering/webgpu/WebGPUSurfaceManager.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
 #include "engine/rendering/webgpu/WebGPUMeshFactory.h"
 #include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
 #include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
+#include "engine/rendering/webgpu/WebGPUSurfaceManager.h"
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 // #include "engine/rendering/webgpu/WebGPUSwapChainFactory.h"
-#include "engine/rendering/webgpu/WebGPUModelFactory.h"
-#include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
-#include "engine/rendering/webgpu/WebGPUDepthStencilStateFactory.h"
-#include "engine/rendering/webgpu/WebGPURenderPassFactory.h"
 #include "engine/rendering/webgpu/ShaderFactory.h"
+#include "engine/rendering/webgpu/WebGPUDepthStencilStateFactory.h"
+#include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
+#include "engine/rendering/webgpu/WebGPUModelFactory.h"
+#include "engine/rendering/webgpu/WebGPURenderPassFactory.h"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -62,7 +62,7 @@ class WebGPUContext
 
 	// === Texture Utility ===
 	wgpu::Texture createTexture(const wgpu::TextureDescriptor &desc);
-	
+
 	// === Surface Manager Accessor ===
 	WebGPUSurfaceManager &surfaceManager();
 
@@ -82,6 +82,25 @@ class WebGPUContext
 	ShaderFactory &shaderFactory();
 	ShaderRegistry &shaderRegistry();
 
+	// === Global Buffer Management ===
+	/**
+	 * @brief Updates a global buffer shared across all shaders by name.
+	 * Global buffers are cached in ShaderFactory and reused by all shaders that request them.
+	 * @param bufferName Name of the global buffer (e.g., "frameUniforms", "lightUniforms")
+	 * @param data Pointer to the data to write
+	 * @param size Size of the data in bytes
+	 */
+	void updateGlobalBuffer(const std::string &bufferName, const void *data, size_t size);
+
+	/**
+	 * @brief Template version for type-safe global buffer updates
+	 */
+	template <typename T>
+	void updateGlobalBuffer(const std::string &bufferName, const T &data)
+	{
+		updateGlobalBuffer(bufferName, &data, sizeof(T));
+	}
+
   private:
 	void initDevice();
 	void initSurface(void *windowHandle);
@@ -94,7 +113,7 @@ class WebGPUContext
 	wgpu::Queue m_queue = nullptr;
 	wgpu::TextureFormat m_swapChainFormat = wgpu::TextureFormat::Undefined;
 	wgpu::Sampler m_defaultSampler = nullptr;
-	
+
 	// Surface manager
 	std::unique_ptr<WebGPUSurfaceManager> m_surfaceManager;
 

@@ -2,6 +2,7 @@
 #include "engine/scene/entity/RenderNode.h"
 #include "engine/scene/entity/UpdateNode.h"
 #include "engine/scene/entity/PhysicsNode.h"
+#include "engine/rendering/DebugCollector.h"
 
 namespace engine::scene::entity
 {
@@ -46,6 +47,12 @@ void Node::onDestroy()
 			child->onDestroy();
 	}
 	children.clear();
+}
+
+void Node::onDebugDraw(engine::rendering::DebugRenderCollector& collector)
+{
+	// Default implementation: do nothing
+	// Derived classes can override to add debug visualization
 }
 
 void Node::enable()

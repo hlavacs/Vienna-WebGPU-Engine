@@ -8,6 +8,7 @@
 #include "engine/rendering/PipelineManager.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderPassManager.h"
+#include "engine/rendering/DebugCollector.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUModel.h"
@@ -45,10 +46,12 @@ class Renderer
 	/**
 	 * @brief Renders a frame using collected scene data.
 	 * @param collector Collected render items and lights.
+	 * @param debugCollector Optional debug primitives to render.
 	 * @param uiCallback Optional callback for rendering UI/debug overlays.
 	 */
 	void renderFrame(
 		const RenderCollector &collector,
+		const DebugRenderCollector *debugCollector = nullptr,
 		std::function<void(wgpu::RenderPassEncoder)> uiCallback = nullptr
 	);
 
@@ -81,8 +84,8 @@ class Renderer
 
 	// Main shader (holds global buffers for frame, lights, object, material)
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_mainShader = nullptr;
-	
-	// Debug shader for rendering axes/gizmos
+
+	// Debug shader (for debug visualization)
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_debugShader = nullptr;
 
 	// WebGPU model cache (CPU Model Handle -> GPU Model)
@@ -94,7 +97,10 @@ class Renderer
 	bool setupDefaultPipelines();
 	bool setupDefaultRenderPasses();
 	void updateLights(const std::vector<LightStruct> &lights);
-	void renderDebugTransforms(wgpu::RenderPassEncoder renderPass, const std::vector<glm::mat4> &transforms);
+	void renderDebugPrimitives(
+		wgpu::RenderPassEncoder renderPass,
+		const DebugRenderCollector &debugCollector
+	);
 	
 	std::shared_ptr<webgpu::WebGPUModel> getOrCreateWebGPUModel(
 		const engine::core::Handle<engine::rendering::Model> &modelHandle
