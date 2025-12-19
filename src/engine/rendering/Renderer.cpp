@@ -129,6 +129,7 @@ void Renderer::renderFrame(
 		// Set pipeline if it changed (avoid redundant pipeline switches)
 		if (pipelineName != currentPipelineName)
 		{
+			// ToDo: beginPass for different pipelines?
 			auto pipeline = m_pipelineManager->getPipeline(pipelineName);
 			if (pipeline && pipeline->isValid())
 			{
