@@ -220,6 +220,7 @@ int main(int argc, char **argv)
 	engine::rendering::Model::Handle modelHandle;
 	bool modelLoaded = false;
 	auto maybeModel = resourceManager->m_modelManager->createModel("fourareen.obj");
+	// ToDo: Optional Material path
 	if (maybeModel.has_value())
 	{
 		spdlog::info("Loaded fourareen.obj model");
