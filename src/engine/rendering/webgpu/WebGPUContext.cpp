@@ -11,7 +11,7 @@ namespace engine::rendering::webgpu
 WebGPUContext::WebGPUContext() :
 	m_surface(nullptr), m_lastWindowHandle(nullptr) {}
 
-void WebGPUContext::initialize(void *windowHandle)
+void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
 {
 	m_surfaceManager = std::make_unique<WebGPUSurfaceManager>(*this);
 	m_bufferFactory = std::make_unique<WebGPUBufferFactory>(*this);
@@ -50,8 +50,23 @@ void WebGPUContext::initialize(void *windowHandle)
 	config.format = getSwapChainFormat();
 	config.width = width;
 	config.height = height;
-	config.presentMode = wgpu::PresentMode::Fifo;
+	config.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
 	m_surfaceManager->reconfigure(config);
+}
+
+void WebGPUContext::updatePresentMode(bool enableVSync)
+{
+	if (!m_surfaceManager)
+	{
+		throw std::runtime_error("Cannot update present mode: WebGPUSurfaceManager not initialized!");
+	}
+	
+	// Get current config and update only the present mode
+	auto currentConfig = m_surfaceManager->currentConfig();
+	currentConfig.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
+	
+	// Reconfigure the surface with updated present mode
+	m_surfaceManager->reconfigure(currentConfig);
 }
 
 void WebGPUContext::initSurface(void *windowHandle)

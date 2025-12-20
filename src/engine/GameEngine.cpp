@@ -47,7 +47,69 @@ GameEngine::~GameEngine()
 
 void GameEngine::setOptions(const GameEngineOptions &opts)
 {
+	// Store previous states for comparison
+	bool vsyncChanged = (options.enableVSync != opts.enableVSync);
+	bool windowSizeChanged = (options.windowWidth != opts.windowWidth || options.windowHeight != opts.windowHeight);
+	bool resizableChanged = (options.resizableWindow != opts.resizableWindow);
+	bool fullscreenChanged = (options.fullscreen != opts.fullscreen);
+	
+	// Update options
 	options = opts;
+	
+	// Handle runtime changes if engine is already initialized
+	if (m_window)
+	{
+		// Update fullscreen mode
+		if (fullscreenChanged)
+		{
+			SDL_SetWindowFullscreen(m_window, options.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
+		}
+		
+		// Update window size (only if not in fullscreen)
+		if (windowSizeChanged && !options.fullscreen)
+		{
+			SDL_SetWindowSize(m_window, options.windowWidth, options.windowHeight);
+			// Center window after resize
+			SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+			
+			// Update internal tracking
+			m_currentWidth = options.windowWidth;
+			m_currentHeight = options.windowHeight;
+			
+			// Notify subsystems of resize
+			if (m_context)
+			{
+				m_context->surfaceManager().updateIfNeeded(m_currentWidth, m_currentHeight);
+			}
+			if (m_renderer)
+			{
+				m_renderer->onResize(m_currentWidth, m_currentHeight);
+			}
+			
+			// Update camera aspect ratio
+			auto activeScene = m_sceneManager->getActiveScene();
+			if (activeScene)
+			{
+				auto cam = activeScene->getActiveCamera();
+				if (cam)
+				{
+					cam->setAspect(static_cast<float>(m_currentWidth) / static_cast<float>(m_currentHeight));
+				}
+			}
+		}
+		
+		// Update resizable state
+		if (resizableChanged)
+		{
+			SDL_SetWindowResizable(m_window, options.resizableWindow ? SDL_TRUE : SDL_FALSE);
+		}
+	}
+	
+	// If VSync changed and context is initialized, reconfigure it
+	if (vsyncChanged && m_context)
+	{
+		m_context->updatePresentMode(options.enableVSync);
+	}
 }
 
 void GameEngine::stop()
@@ -57,8 +119,13 @@ void GameEngine::stop()
 		physicsThread.join();
 }
 
-bool GameEngine::initialize()
+bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 {
+	// Use provided options or keep existing ones
+	if (opts.has_value())
+	{
+		options = opts.value();
+	}
 	// Create SDL window
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
 	{
@@ -87,7 +154,7 @@ bool GameEngine::initialize()
 	}
 
 	// Initialize WebGPU context
-	m_context->initialize(m_window);
+	m_context->initialize(m_window, options.enableVSync);
 
 	// Create renderer
 	m_renderer = std::make_shared<engine::rendering::Renderer>(m_context);
@@ -196,6 +263,14 @@ void GameEngine::gameLoop()
 			{
 				m_currentWidth = event.window.data1;
 				m_currentHeight = event.window.data2;
+				
+				m_context->surfaceManager().updateIfNeeded(m_currentWidth, m_currentHeight);
+				// Notify renderer of resize
+				if (m_renderer)
+				{
+					m_renderer->onResize(m_currentWidth, m_currentHeight);
+				}
+				
 				// Update camera aspect ratio if needed
 				auto activeScene = m_sceneManager->getActiveScene();
 				if (activeScene)

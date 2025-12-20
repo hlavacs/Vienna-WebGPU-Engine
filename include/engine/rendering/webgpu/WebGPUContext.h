@@ -40,8 +40,15 @@ class WebGPUContext
 	/**
 	 * @brief Initialize the WebGPU context. Must be called once at startup.
 	 * @param windowHandle Platform-specific window handle (e.g., SDL_Window*)
+	 * @param enableVSync If true, use Fifo present mode (VSync), otherwise use Immediate
 	 */
-	void initialize(void *windowHandle);
+	void initialize(void *windowHandle, bool enableVSync = true);
+
+	/**
+	 * @brief Update the present mode (VSync setting) at runtime.
+	 * @param enableVSync If true, use Fifo present mode (VSync), otherwise use Immediate
+	 */
+	void updatePresentMode(bool enableVSync);
 
 	/**
 	 * @brief Releases and nulls the surface. Safe to call multiple times.
