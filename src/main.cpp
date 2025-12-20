@@ -158,15 +158,17 @@ int main(int argc, char **argv)
 	SDL_SetMainReady(); // Tell SDL we're handling main ourselves
 	spdlog::info("Vienna WebGPU Engine Starting...");
 
-	// Create and configure the engine
-	engine::GameEngine engine;
-
 	engine::GameEngineOptions options;
 	options.windowWidth = 1280;
 	options.windowHeight = 720;
-	options.enableVSync = true;
+	options.enableVSync = false;
 	options.showFrameStats = false; // FPS now shown in UI instead of console
-	engine.setOptions(options);
+	options.limitFrameRate = true;
+	options.targetFrameRate = 120.0f;
+
+	// Create and configure the engine
+	engine::GameEngine engine;
+	engine.initialize(options);
 
 	// Get managers for setup
 	auto sceneManager = engine.getSceneManager();
@@ -236,13 +238,6 @@ int main(int argc, char **argv)
 
 	// Load the scene (makes it active)
 	sceneManager->loadScene("Main");
-
-	// Initialize engine early to access ImGuiManager and InputManager
-	if (!engine.initialize())
-	{
-		spdlog::error("Failed to initialize engine!");
-		return 1;
-	}
 
 	// Create an UpdateNode to handle orbit camera input
 	auto orbitCameraController = std::make_shared<OrbitCameraController>(orbitState, cameraNode);

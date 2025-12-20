@@ -46,11 +46,13 @@ class GameEngine
 	~GameEngine();
 
 	// Setup API - call before run()
+	// Can also be called at runtime to update options (VSync, window size, etc.)
 	void setOptions(const GameEngineOptions &options);
 	
 	// Initialize the engine (creates window, WebGPU context, renderer, ImGui)
 	// Call this before run() if you need to access ImGuiManager or other subsystems
-	bool initialize();
+	// @param opts Optional engine options. If not provided, uses previously set options via setOptions()
+	bool initialize(std::optional<GameEngineOptions> opts = std::nullopt);
 
 	// Access the scene manager to create and load scenes
 	std::shared_ptr<engine::scene::SceneManager> getSceneManager() { return m_sceneManager; }
