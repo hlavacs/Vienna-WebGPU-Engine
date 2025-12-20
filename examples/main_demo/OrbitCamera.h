@@ -1,8 +1,7 @@
 #pragma once
 
-#include "engine/scene/CameraNode.h"
-#include "engine/scene/entity/UpdateNode.h"
-#include <glm/glm.hpp>
+#include "engine/NodeSystem.h"
+
 #include <memory>
 
 namespace demo
