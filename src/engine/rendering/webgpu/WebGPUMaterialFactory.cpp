@@ -136,34 +136,7 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
 		textureMap,
 		options
 	);
-
-	// Determine pipeline name based on material's shader type
-	std::string pipelineName = "main"; // Default to main (Lit shader)
-	ShaderType shaderType = material.getShaderType();
 	
-	switch (shaderType)
-	{
-		case ShaderType::Lit:
-			pipelineName = "main";
-			break;
-		case ShaderType::Debug:
-			pipelineName = "debug";
-			break;
-		case ShaderType::Unlit:
-			// Future: when unlit shader is implemented
-			pipelineName = "unlit";
-			break;
-		case ShaderType::Custom:
-			// Future: custom shader pipeline lookup
-			pipelineName = "main"; // Fallback to main for now
-			break;
-	}
-	
-	webgpuMaterial->setPipelineName(pipelineName);
-
-	// NOTE: Pipeline handle must be set externally before calling updateGPUResources()
-	// This is for backwards compatibility - prefer using createFromHandle with pipeline handle
-
 	return webgpuMaterial;
 }
 

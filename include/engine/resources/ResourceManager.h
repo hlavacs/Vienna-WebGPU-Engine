@@ -34,17 +34,6 @@ class ResourceManager
 
 	// Load a shader from a WGSL file into a new shader module
 	static wgpu::ShaderModule loadShaderModule(const path &path, wgpu::Device device);
-
-	// Load an 3D mesh from a standard .obj file into a vertex data buffer
-	bool loadGeometryFromObj(const path &path, engine::rendering::Mesh &mesh, bool populateTextureFrame = true);
-
-	// Load an image from a standard image file into a new texture object
-	// NB: The texture must be destroyed after use
-	wgpu::Texture loadTexture(const path &path, engine::rendering::webgpu::WebGPUContext &context, wgpu::TextureView *pTextureView = nullptr);
-
-	// Load a model using the ModelManager and apply its properties for WebGPU usage
-	bool loadModel(const path &modelPath, engine::rendering::webgpu::WebGPUContext &context);
-
   public:
 	std::shared_ptr<engine::resources::loaders::ObjLoader> m_objLoader;
 	std::shared_ptr<engine::resources::loaders::GltfLoader> m_gltfLoader;

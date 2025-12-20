@@ -3,6 +3,7 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/Mesh.h"
+#include "engine/rendering/webgpu/WebGPUMaterial.h"
 #include "engine/rendering/webgpu/WebGPURenderObject.h"
 
 namespace engine::rendering::webgpu
@@ -21,6 +22,13 @@ struct WebGPUMeshOptions
 class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 {
   public:
+	struct WebGPUSubmesh
+	{
+		uint32_t indexOffset;
+		uint32_t indexCount;
+		std::shared_ptr<WebGPUMaterial> material; // Can be null if no material
+	};
+
 	/**
 	 * @brief Construct a WebGPUMesh from a Mesh handle and GPU buffers.
 	 * @param context The WebGPU context.
@@ -29,6 +37,7 @@ class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 	 * @param indexBuffer The GPU-side index buffer (may be null for non-indexed meshes).
 	 * @param vertexCount Number of vertices.
 	 * @param indexCount Number of indices (0 for non-indexed meshes).
+	 * @param submeshes List of submeshes.
 	 * @param options Optional mesh options.
 	 */
 	WebGPUMesh(
@@ -38,8 +47,18 @@ class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 		wgpu::Buffer indexBuffer,
 		uint32_t vertexCount,
 		uint32_t indexCount = 0,
+		std::vector<WebGPUSubmesh> submeshes = {},
 		WebGPUMeshOptions options = {}
-	);
+	) :
+		WebGPURenderObject<engine::rendering::Mesh>(context, meshHandle, Type::Mesh),
+		m_vertexBuffer(vertexBuffer),
+		m_indexBuffer(indexBuffer),
+		m_vertexCount(vertexCount),
+		m_indexCount(indexCount),
+		m_submeshes(std::move(submeshes)),
+		m_options(std::move(options))
+	{
+	}
 
 	/**
 	 * @brief Render the mesh.
@@ -79,6 +98,20 @@ class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 	bool isIndexed() const { return m_indexCount > 0; }
 
 	/**
+	 * @brief Get the submeshes.
+	 * @return The list of submeshes.
+	 */
+	const std::vector<WebGPUSubmesh> &getSubmeshes() const { return m_submeshes; }
+
+	/**
+	 * @brief Set the submeshes.
+	 * @param submeshes The list of submeshes.
+	 */
+	void setSubmeshes(std::vector<WebGPUSubmesh> submeshes) { 
+		m_submeshes = std::move(submeshes); 
+	}
+
+	/**
 	 * @brief Get the mesh options.
 	 * @return The mesh options.
 	 */
@@ -95,6 +128,7 @@ class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 	wgpu::Buffer m_indexBuffer;
 	uint32_t m_vertexCount;
 	uint32_t m_indexCount;
+	std::vector<WebGPUSubmesh> m_submeshes;
 	WebGPUMeshOptions m_options;
 };
 

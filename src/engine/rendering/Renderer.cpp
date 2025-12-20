@@ -9,7 +9,6 @@
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
-#include "engine/resources/ResourceManager.h"
 
 namespace engine::rendering
 {
@@ -120,11 +119,7 @@ void Renderer::renderFrame(
 
 		// Determine which pipeline to use based on material
 		std::string pipelineName = "main"; // Default
-		auto material = webgpuModel->getMaterial();
-		if (material)
-		{
-			pipelineName = material->getPipelineName();
-		}
+		// ToDo: RenderObjects with render collect and better rendering
 
 		// Set pipeline if it changed (avoid redundant pipeline switches)
 		if (pipelineName != currentPipelineName)
@@ -138,12 +133,6 @@ void Renderer::renderFrame(
 
 				// Get the shader info for this pipeline
 				currentShader = m_pipelineManager->getShaderInfo(pipelineName);
-
-				// Set the pipeline handle on the material immediately when pipeline changes
-				if (material)
-				{
-					material->setPipelineHandle(pipeline->getHandle());
-				}
 			}
 			else
 			{
@@ -175,6 +164,16 @@ void Renderer::renderFrame(
 		// Update and render the model
 		// update() triggers dirty-flag-based updates for mesh data
 		webgpuModel->update();
+		// ToDo: RenderCollector should do that update stuff 
+		webgpuModel->getMesh()->update();
+		for(auto &submesh : webgpuModel->getMesh()->getSubmeshes()) {
+			// Set material bind groups
+			auto material = submesh.material;
+			if (material)
+			{
+				material->update();
+			}
+		}
 		currentShader->bind(renderPass);
 		webgpuModel->render(encoder, renderPass);
 	}
@@ -425,7 +424,7 @@ void Renderer::renderDebugPrimitives(
 	// Draw primitives with correct vertex counts per type
 	for (uint32_t i = 0; i < primitiveCount; ++i)
 	{
-		const auto& primitive = debugCollector.getPrimitives()[i];
+		const auto &primitive = debugCollector.getPrimitives()[i];
 		uint32_t vertexCount = 2; // Default for lines
 
 		switch (static_cast<DebugPrimitiveType>(primitive.type))

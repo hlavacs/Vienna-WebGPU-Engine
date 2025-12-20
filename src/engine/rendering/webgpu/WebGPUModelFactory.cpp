@@ -26,28 +26,30 @@ std::shared_ptr<WebGPUModel> WebGPUModelFactory::createFromHandle(
 
 	// Use mesh and material factories to create GPU resources from handles
 	auto meshHandle = model.getMesh();
-	auto materialHandle = model.getMaterial();
 
 	std::shared_ptr<WebGPUMesh> mesh = nullptr;
-	std::shared_ptr<WebGPUMaterial> material = nullptr;
 
 	// Create mesh if available
 	if (meshHandle.valid())
 	{
 		mesh = m_context.meshFactory().createFromHandle(meshHandle);
-	}
 
-	// Create material if available
-	if (materialHandle.valid())
-	{
-		material = m_context.materialFactory().createFromHandle(materialHandle);
+		std::vector<WebGPUMesh::WebGPUSubmesh> submeshes;
+		for (const auto &submesh : model.getSubmeshes())
+		{
+			WebGPUMesh::WebGPUSubmesh webgpuSubmesh;
+			webgpuSubmesh.indexOffset = submesh.indexOffset;
+			webgpuSubmesh.indexCount = submesh.indexCount;
+			webgpuSubmesh.material = m_context.materialFactory().createFromHandle(submesh.material);
+			submeshes.push_back(std::move(webgpuSubmesh));
+		}
+		mesh->setSubmeshes(std::move(submeshes));
 	}
 
 	return std::make_shared<WebGPUModel>(
 		m_context,
 		modelHandle,
 		mesh,
-		material,
 		options
 	);
 }

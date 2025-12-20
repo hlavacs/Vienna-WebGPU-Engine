@@ -28,14 +28,12 @@ class WebGPUModel : public WebGPURenderObject<engine::rendering::Model>
 	 * @param context The WebGPU context.
 	 * @param modelHandle Handle to the CPU-side Model.
 	 * @param mesh The GPU-side mesh.
-	 * @param material The GPU-side material.
 	 * @param options Optional model options.
 	 */
 	WebGPUModel(
 		WebGPUContext &context,
 		const engine::rendering::Model::Handle &modelHandle,
 		std::shared_ptr<WebGPUMesh> mesh,
-		std::shared_ptr<WebGPUMaterial> material,
 		WebGPUModelOptions options = {}
 	);
 
@@ -53,12 +51,6 @@ class WebGPUModel : public WebGPURenderObject<engine::rendering::Model>
 	std::shared_ptr<WebGPUMesh> getMesh() const { return m_mesh; }
 
 	/**
-	 * @brief Get the GPU-side material.
-	 * @return Shared pointer to WebGPUMaterial.
-	 */
-	std::shared_ptr<WebGPUMaterial> getMaterial() const { return m_material; }
-
-	/**
 	 * @brief Get the model options.
 	 * @return The model options.
 	 */
@@ -72,7 +64,6 @@ class WebGPUModel : public WebGPURenderObject<engine::rendering::Model>
 
   private:
 	std::shared_ptr<WebGPUMesh> m_mesh;
-	std::shared_ptr<WebGPUMaterial> m_material;
 	WebGPUModelOptions m_options;
 };
 
