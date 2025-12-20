@@ -3,159 +3,11 @@
  * Using GameEngine with SceneManager for declarative scene setup
  */
 
-#define SDL_MAIN_HANDLED
-#include <SDL.h>
-
-#include "engine/GameEngine.h"
-#include "engine/rendering/Material.h"
-#include "engine/rendering/Model.h"
-#include "engine/rendering/webgpu/WebGPUMaterial.h"
-#include "engine/rendering/webgpu/WebGPUModel.h"
-#include "engine/rendering/webgpu/WebGPUModelFactory.h"
-#include "engine/scene/CameraNode.h"
-#include "engine/scene/entity/LightNode.h"
-#include "engine/scene/entity/ModelRenderNode.h"
-#include "engine/scene/entity/UpdateNode.h"
-#include <glm/glm.hpp>
-#include <glm/gtc/quaternion.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtx/quaternion.hpp>
-#include <imgui.h>
-#include <map>
-#include <spdlog/spdlog.h>
-
-#ifdef __EMSCRIPTEN__
-#include <emscripten/html5.h>
-#endif
-
-constexpr float PI = 3.14159265358979323846f;
-
-// Camera orbit state
-struct OrbitCameraState
-{
-	bool active = false;
-	glm::vec2 startMouse = glm::vec2(0.0f);
-	glm::vec2 previousDelta = glm::vec2(0.0f);
-	glm::vec2 velocity = glm::vec2(0.0f);
-
-	float azimuth = 0.0f;
-	float elevation = 0.3f;
-	float distance = 5.0f;
-
-	glm::vec3 targetPoint = glm::vec3(0.0f);
-
-	float sensitivity = 1.0f;
-	float scrollSensitivity = 0.5f;
-	float inertiaDecay = 0.92f;
-};
-
-void updateOrbitCamera(OrbitCameraState &drag, std::shared_ptr<engine::scene::CameraNode> camera)
-{
-	// Normalize azimuth to [0, 2π]
-	drag.azimuth = fmod(drag.azimuth, 2.0f * PI);
-	if (drag.azimuth < 0)
-		drag.azimuth += 2.0f * PI;
-
-	// Clamp elevation to avoid gimbal lock
-	drag.elevation = glm::clamp(drag.elevation, -PI / 2.0f + 0.01f, PI / 2.0f - 0.01f);
-
-	// Clamp distance
-	drag.distance = glm::clamp(drag.distance, 0.5f, 20.0f);
-
-	// Convert spherical coordinates to Cartesian
-	float x = cos(drag.elevation) * cos(drag.azimuth);
-	float y = sin(drag.elevation);
-	float z = cos(drag.elevation) * sin(drag.azimuth);
-
-	glm::vec3 position = drag.targetPoint + glm::vec3(x, y, z) * drag.distance;
-
-	// Update camera position and look-at
-	if (camera && camera->getTransform())
-	{
-		camera->getTransform()->setLocalPosition(position);
-		camera->lookAt(drag.targetPoint, glm::vec3(0.0f, 1.0f, 0.0f));
-	}
-}
-
-void updateDragInertia(OrbitCameraState &drag, std::shared_ptr<engine::scene::CameraNode> camera, float deltaTime)
-{
-	if (!drag.active && glm::length(drag.velocity) > 1e-4f)
-	{
-		// Apply inertia
-		drag.azimuth += drag.velocity.x * drag.sensitivity * deltaTime;
-		drag.elevation += drag.velocity.y * drag.sensitivity * deltaTime;
-
-		// Decay velocity
-		drag.velocity *= drag.inertiaDecay;
-
-		// Update camera position
-		updateOrbitCamera(drag, camera);
-	}
-	else if (!drag.active)
-	{
-		// Stop completely when velocity is negligible
-		drag.velocity = glm::vec2(0.0f);
-	}
-}
-
-// Custom UpdateNode for orbit camera control
-class OrbitCameraController : public engine::scene::entity::UpdateNode
-{
-  public:
-	OrbitCameraController(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera) : m_orbitState(state), m_camera(camera) {}
-
-	void update(float deltaTime) override
-	{
-		auto input = engine()->input();
-		if (!input)
-			return;
-
-		// Handle mouse drag for camera rotation
-		if (input->isMouseButtonPressed(SDL_BUTTON_LEFT))
-		{
-			if (!m_orbitState.active)
-			{
-				// Start dragging
-				m_orbitState.active = true;
-				m_orbitState.startMouse = input->getMousePosition();
-				m_orbitState.velocity = glm::vec2(0.0f);
-			}
-			else
-			{
-				// Continue dragging
-				glm::vec2 delta = input->getMouseDelta();
-				m_orbitState.azimuth -= delta.x * 0.005f;
-				m_orbitState.elevation += delta.y * 0.005f;
-				m_orbitState.velocity = delta * 0.005f;
-				updateOrbitCamera(m_orbitState, m_camera);
-			}
-		}
-		else if (m_orbitState.active)
-		{
-			// Stop dragging
-			m_orbitState.active = false;
-		}
-
-		// Handle mouse wheel for zoom
-		glm::vec2 wheel = input->getMouseWheel();
-		if (wheel.y != 0.0f)
-		{
-			m_orbitState.distance -= wheel.y * m_orbitState.scrollSensitivity;
-			updateOrbitCamera(m_orbitState, m_camera);
-		}
-
-		// Apply inertia when not dragging
-		updateDragInertia(m_orbitState, m_camera, deltaTime);
-	}
-
-  private:
-	OrbitCameraState &m_orbitState;
-	std::shared_ptr<engine::scene::CameraNode> m_camera;
-};
+#include "engine/EngineMain.h"
+#include "OrbitCamera.h"
 
 int main(int argc, char **argv)
 {
-	SDL_SetMainReady(); // Tell SDL we're handling main ourselves
 	spdlog::info("Vienna WebGPU Engine Starting...");
 
 	engine::GameEngineOptions options;
@@ -192,7 +44,7 @@ int main(int argc, char **argv)
 	}
 
 	// Initialize orbit camera state
-	OrbitCameraState orbitState;
+	demo::OrbitCameraState orbitState;
 	orbitState.distance = 5.0f;
 	orbitState.azimuth = 0.0f;
 	orbitState.elevation = 0.3f;
@@ -240,7 +92,7 @@ int main(int argc, char **argv)
 	sceneManager->loadScene("Main");
 
 	// Create an UpdateNode to handle orbit camera input
-	auto orbitCameraController = std::make_shared<OrbitCameraController>(orbitState, cameraNode);
+	auto orbitCameraController = std::make_shared<demo::OrbitCameraController>(orbitState, cameraNode);
 	rootNode->addChild(orbitCameraController);
 
 	// Get ImGui manager and add UI callbacks
@@ -553,7 +405,7 @@ int main(int argc, char **argv)
 			{
 				float newDistance = (zoomPercentage / 100.0f) * 8.0f + 2.0f;
 				orbitState.distance = newDistance;
-				updateOrbitCamera(orbitState, cameraNode);
+				demo::updateOrbitCamera(orbitState, cameraNode);
 			}
 
 			// Camera reset controls

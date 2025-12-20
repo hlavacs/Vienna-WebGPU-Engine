@@ -4,13 +4,14 @@
             "name": "Win64 MSVC (Debug)",
             "includePath": [
                 "${workspaceFolder}/external/glm",
+                "${workspaceFolder}/external/SDL/include",
                 "${workspaceFolder}/include"
             ],
             "cStandard": "c17",
             "cppStandard": "c++17",
             "intelliSenseMode": "windows-msvc-x64",
             "compileCommands": [
-                "${workspaceFolder}/build/Windows/Debug/compile_commands.json"
+                "${workspaceFolder}/examples/build/Windows/Debug/compile_commands.json"
             ]
         },
         {
@@ -18,14 +19,15 @@
             "includePath": [
                 "${workspaceFolder}/external/glm",
                 "${workspaceFolder}/include",
-                "${env:EMSDK}/upstream/emscripten/cache/sysroot/include"
+                "${env:EMSDK}/upstream/emscripten/cache/sysroot/include",
+                "${env:EMSDK}/upstream/emscripten/cache/sysroot/include/SDL2"
             ],
             "cStandard": "c17",
             "cppStandard": "c++17",
             "compilerPath": "${env:EMSDK}/upstream/emscripten/em++",
             "intelliSenseMode": "windows-clang-x64",
             "compileCommands": [
-                "${workspaceFolder}/build/Emscripten/Debug/compile_commands.json"
+                "${workspaceFolder}/examples/build/Emscripten/Debug/compile_commands.json"
             ]
         }
     ],

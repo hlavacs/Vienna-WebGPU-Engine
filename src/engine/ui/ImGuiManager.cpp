@@ -72,6 +72,7 @@ void ImGuiManager::shutdown()
 
 	m_initialized = false;
 	spdlog::info("ImGuiManager shut down");
+	spdlog::info("This is a Test if the new build system works and updates works as expected.");
 }
 
 void ImGuiManager::addFrame(UIFrameCallback callback)

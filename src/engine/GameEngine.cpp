@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 
+#define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <sdl2webgpu.h>
 #include <spdlog/spdlog.h>
@@ -126,6 +127,10 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 	{
 		options = opts.value();
 	}
+	
+	// Tell SDL we're handling main ourselves
+	SDL_SetMainReady();
+	
 	// Create SDL window
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
 	{
