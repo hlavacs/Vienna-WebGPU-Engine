@@ -4,7 +4,6 @@
 #include "engine/physics/PhysicsEngine.h"
 #include "engine/rendering/Renderer.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
-#include "engine/resources/ResourceManager.h"
 #include "engine/scene/SceneManager.h"
 #include "engine/ui/ImGuiManager.h"
 #include <atomic>

@@ -2,6 +2,7 @@
 
 #include "engine/io/tiny_obj_loader.h"
 #include "engine/rendering/Vertex.h"
+#include "engine/rendering/Submesh.h"
 #include "engine/resources/loaders/GeometryLoader.h"
 #include <optional>
 #include <string>
@@ -15,11 +16,20 @@ namespace engine::resources::loaders
  */
 struct ObjGeometryData
 {
-	std::vector<engine::rendering::Vertex> vertices;
-	std::vector<uint32_t> indices;
-	std::vector<tinyobj::material_t> materials;
-	std::string filePath;
-	std::string name;
+    std::string filePath;
+    std::string name;
+    std::vector<engine::rendering::Vertex> vertices;
+    std::vector<uint32_t> indices;
+
+    struct MaterialRange
+    {
+        int materialId = -1;          // Index in tinyobj::material_t array
+        uint32_t indexOffset = 0;    // Start in the global indices array
+        uint32_t indexCount = 0;     // Number of indices for this material
+    };
+
+    std::vector<MaterialRange> materialRanges;
+    std::vector<tinyobj::material_t> materials;
 };
 
 /**
@@ -47,22 +57,13 @@ class ObjLoader : public GeometryLoader
 	/**
 	 * @brief Parses an OBJ file and returns geometry and material data.
 	 * @param file The relative or absolute file path to load the geometry from.
-	 * @param indexed If true, parses the mesh with indexing (unique vertices + indices).
-	 *                If false, parses the mesh as non-indexed (expanded vertices, no indices).
-	 *                Default is true.
 	 * @param srcCoordSys Optional: source coordinate system for this load (overrides loader default if set)
 	 * @param dstCoordSys Optional: destination coordinate system (defaults to CoordinateSystem::DEFAULT)
 	 * @return An optional ObjGeometryData object containing the parsed geometry and materials.
 	 *         Returns std::nullopt on failure.
 	 */
 	[[nodiscard]]
-	std::optional<ObjGeometryData> load(const std::filesystem::path &file, bool indexed = true, std::optional<engine::math::CoordinateSystem::Cartesian> srcCoordSys = std::nullopt, std::optional<engine::math::CoordinateSystem::Cartesian> dstCoordSys = std::nullopt);
-
-  protected:
-	[[nodiscard]]
-	std::pair<std::vector<engine::rendering::Vertex>, std::vector<uint32_t>> buildVerticesIndexed(const std::vector<tinyobj::shape_t> &shapes, const tinyobj::attrib_t &attrib, engine::math::CoordinateSystem::Cartesian srcCoordSys, engine::math::CoordinateSystem::Cartesian dstCoordSys);
-	[[nodiscard]]
-	std::vector<engine::rendering::Vertex> buildVerticesNonIndexed(const std::vector<tinyobj::shape_t> &shapes, const tinyobj::attrib_t &attrib, engine::math::CoordinateSystem::Cartesian srcCoordSys, engine::math::CoordinateSystem::Cartesian dstCoordSys);
+	std::optional<ObjGeometryData> load(const std::filesystem::path &file, std::optional<engine::math::CoordinateSystem::Cartesian> srcCoordSys = std::nullopt, std::optional<engine::math::CoordinateSystem::Cartesian> dstCoordSys = std::nullopt);
 };
 
 } // namespace engine::resources::loaders

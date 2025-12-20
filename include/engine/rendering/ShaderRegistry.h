@@ -56,6 +56,14 @@ class ShaderRegistry
 	std::shared_ptr<webgpu::WebGPUShaderInfo> getShader(ShaderType type) const;
 
 	/**
+	 * @brief Get a shader by its type.
+	 * @param type The shader type to retrieve.
+	 * @param name The custom shader name (if type is Custom).
+	 * @return Shared pointer to shader info, or nullptr if not found.
+	 */
+	std::shared_ptr<webgpu::WebGPUShaderInfo> getShader(ShaderType type, const std::string &customName) const;
+
+	/**
 	 * @brief Get a custom shader by name.
 	 * @param name The name of the custom shader.
 	 * @return Shared pointer to shader info, or nullptr if not found.

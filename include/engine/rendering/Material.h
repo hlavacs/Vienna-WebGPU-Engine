@@ -3,8 +3,8 @@
 #include "engine/core/Handle.h"
 #include "engine/core/Identifiable.h"
 #include "engine/core/Versioned.h"
-#include "engine/rendering/Texture.h"
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/Texture.h"
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
@@ -20,16 +20,16 @@ using TextureHandle = Texture::Handle;
  */
 namespace MaterialTextureSlots
 {
-	inline constexpr const char* ALBEDO = "albedo";           // Base color / diffuse
-	inline constexpr const char* NORMAL = "normal";           // Normal map
-	inline constexpr const char* METALLIC = "metallic";       // Metalness map
-	inline constexpr const char* ROUGHNESS = "roughness";     // Roughness map
-	inline constexpr const char* AO = "ao";                   // Ambient occlusion
-	inline constexpr const char* EMISSIVE = "emissive";       // Emissive/glow map
-	inline constexpr const char* OPACITY = "opacity";         // Alpha/opacity map
-	inline constexpr const char* SPECULAR = "specular";       // Specular map
-	inline constexpr const char* HEIGHT = "height";           // Height/displacement map
-	inline constexpr const char* REFLECTION = "reflection";   // Reflection map
+inline constexpr const char *ALBEDO = "albedo";			// Base color / diffuse
+inline constexpr const char *NORMAL = "normal";			// Normal map
+inline constexpr const char *METALLIC = "metallic";		// Metalness map
+inline constexpr const char *ROUGHNESS = "roughness";	// Roughness map
+inline constexpr const char *AO = "ao";					// Ambient occlusion
+inline constexpr const char *EMISSIVE = "emissive";		// Emissive/glow map
+inline constexpr const char *OPACITY = "opacity";		// Alpha/opacity map
+inline constexpr const char *SPECULAR = "specular";		// Specular map
+inline constexpr const char *HEIGHT = "height";			// Height/displacement map
+inline constexpr const char *REFLECTION = "reflection"; // Reflection map
 } // namespace MaterialTextureSlots
 
 struct Material : public engine::core::Identifiable<Material>,
@@ -69,25 +69,48 @@ struct Material : public engine::core::Identifiable<Material>,
 	Material(const Material &) = delete;
 	Material &operator=(const Material &) = delete;
 
-	// Getters for properties
+	/**
+	 * @brief Get the material properties.
+	 * @return The material properties struct.
+	 */
 	const MaterialProperties &getProperties() const { return properties; }
+	
+	/**
+	 * @brief Set the material properties.
+	 * @param p The new material properties.
+	 */
 	void setProperties(const MaterialProperties &p)
 	{
 		properties = p;
 		incrementVersion();
 	}
-	
-	// Shader type getter/setter
+
+	/**
+	 * @brief Get the shader type used by this material.
+	 * @return ShaderType enum value.
+	 */
 	ShaderType getShaderType() const { return shaderType; }
-	void setShaderType(ShaderType type) 
-	{ 
+
+	/**
+	 * @brief Set the shader type for this material.
+	 * @param type ShaderType enum value.
+	 */
+	void setShaderType(ShaderType type)
+	{
 		shaderType = type;
 		incrementVersion();
 	}
-	
-	// Custom shader name (only used if shaderType == ShaderType::Custom)
-	const std::string& getCustomShaderName() const { return customShaderName; }
-	void setCustomShaderName(const std::string& name)
+
+	/**
+	 * @brief Get the custom shader name (only valid if shaderType == ShaderType::Custom).
+	 */
+	const std::string &getCustomShaderName() const { return customShaderName; }
+
+	/**
+	 * @brief Set the custom shader name and switch to Custom shader type.
+	 * @param name Name of the custom shader.
+	 */
+	void setCustomShaderName(const std::string &name)
 	{
 		customShaderName = name;
 		shaderType = ShaderType::Custom;
@@ -95,13 +118,13 @@ struct Material : public engine::core::Identifiable<Material>,
 	}
 
 	// === Texture Dictionary API ===
-	
+
 	/**
 	 * @brief Set a texture by slot name.
 	 * @param slotName Name of the texture slot (e.g., MaterialTextureSlots::ALBEDO).
 	 * @param texture Handle to the texture.
 	 */
-	void setTexture(const std::string& slotName, TextureHandle texture)
+	void setTexture(const std::string &slotName, TextureHandle texture)
 	{
 		if (texture.valid())
 			textures[slotName] = texture;
@@ -109,40 +132,40 @@ struct Material : public engine::core::Identifiable<Material>,
 			textures.erase(slotName);
 		incrementVersion();
 	}
-	
+
 	/**
 	 * @brief Get a texture by slot name.
 	 * @param slotName Name of the texture slot.
 	 * @return Texture handle, or invalid handle if not found.
 	 */
-	TextureHandle getTexture(const std::string& slotName) const
+	TextureHandle getTexture(const std::string &slotName) const
 	{
 		auto it = textures.find(slotName);
 		return it != textures.end() ? it->second : TextureHandle{};
 	}
-	
+
 	/**
 	 * @brief Check if a texture slot has a valid texture.
 	 * @param slotName Name of the texture slot.
 	 * @return True if texture exists and is valid.
 	 */
-	bool hasTexture(const std::string& slotName) const
+	bool hasTexture(const std::string &slotName) const
 	{
 		auto it = textures.find(slotName);
 		return it != textures.end() && it->second.valid();
 	}
-	
+
 	/**
 	 * @brief Get all textures.
 	 * @return Map of texture slot names to texture handles.
 	 */
-	const std::unordered_map<std::string, TextureHandle>& getTextures() const { return textures; }
-	
+	const std::unordered_map<std::string, TextureHandle> &getTextures() const { return textures; }
+
 	/**
 	 * @brief Remove a texture from a slot.
 	 * @param slotName Name of the texture slot to clear.
 	 */
-	void removeTexture(const std::string& slotName)
+	void removeTexture(const std::string &slotName)
 	{
 		textures.erase(slotName);
 		incrementVersion();
@@ -150,7 +173,7 @@ struct Material : public engine::core::Identifiable<Material>,
 
 	// === Legacy API (for backward compatibility) ===
 	// These use the dictionary internally with standard slot names
-	
+	// ToDo: Get rid of this legacy API in the future
 	TextureHandle getAlbedoTexture() const { return getTexture(MaterialTextureSlots::ALBEDO); }
 	TextureHandle getNormalTexture() const { return getTexture(MaterialTextureSlots::NORMAL); }
 	TextureHandle getMetallicTexture() const { return getTexture(MaterialTextureSlots::METALLIC); }
@@ -179,13 +202,24 @@ struct Material : public engine::core::Identifiable<Material>,
 	bool hasSpecularTexture() const { return hasTexture(MaterialTextureSlots::SPECULAR); }
 
   private:
+	/**
+	 * @brief Material properties stored in a struct.
+	 */
 	MaterialProperties properties{};
-	
-	// Shader configuration
-	ShaderType shaderType = ShaderType::Lit; // Default to standard lit shader
-	std::string customShaderName; // Only used if shaderType == Custom
-	
-	// Texture dictionary - maps slot names to texture handles
+
+	/**
+	 * @brief The shader type used by this material.
+	 */
+	ShaderType shaderType = ShaderType::Lit;
+
+	/**
+	 * @brief Custom shader name. Only used if shaderType == ShaderType::Custom.
+	 */
+	std::string customShaderName;
+
+	/**
+	 * @brief Texture dictionary mapping slot names to texture handles.
+	 */
 	std::unordered_map<std::string, TextureHandle> textures;
 };
 

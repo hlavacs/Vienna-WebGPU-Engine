@@ -11,12 +11,9 @@ int main(int argc, char **argv)
 	spdlog::info("Vienna WebGPU Engine Starting...");
 
 	engine::GameEngineOptions options;
-	options.windowWidth = 1280;
-	options.windowHeight = 720;
+	options.windowWidth = 1152;
+	options.windowHeight = 648;
 	options.enableVSync = false;
-	options.showFrameStats = false; // FPS now shown in UI instead of console
-	options.limitFrameRate = true;
-	options.targetFrameRate = 120.0f;
 
 	// Create and configure the engine
 	engine::GameEngine engine;
@@ -106,7 +103,7 @@ int main(int argc, char **argv)
 		ImGui::Text("FPS: %.1f", engine.getFPS());
 		ImGui::Text("Frame Time: %.2f ms", engine.getFrameTime());
 		ImGui::End();
-		
+
 		ImGui::Begin("Lighting & Camera Controls");
 
 		// Shader reload button
@@ -116,12 +113,12 @@ int main(int argc, char **argv)
 		}
 
 		ImGui::SameLine();
-		
+
 		// Debug rendering toggle
 		static bool showDebugRendering = false;
 		static bool prevDebugState = false;
 		ImGui::Checkbox("Debug Rendering", &showDebugRendering);
-		
+
 		// Enable/disable debug on nodes when checkbox state changes
 		if (showDebugRendering != prevDebugState)
 		{
@@ -133,7 +130,7 @@ int main(int argc, char **argv)
 					light->setDebugEnabled(showDebugRendering);
 				}
 			}
-			
+
 			// Toggle debug on model node if it exists
 			if (modelLoaded && rootNode)
 			{
@@ -149,13 +146,13 @@ int main(int argc, char **argv)
 					}
 				}
 			}
-			
+
 			prevDebugState = showDebugRendering;
 		}
 
 		ImGui::Separator();
 
-		// Material properties section  
+		// Material properties section
 		if (ImGui::CollapsingHeader("Material Properties"))
 		{
 			// Try to get the first model's material
@@ -173,265 +170,270 @@ int main(int argc, char **argv)
 				else
 				{
 					engine::rendering::Model::Ptr firstModel = firstModelOpt.value();
-					auto materialHandle = firstModel->getMaterial();
-					auto materialOpt = resourceManager->m_materialManager->get(materialHandle);
-					
-					if (!materialOpt.has_value())
+					auto submesh = firstModel->getSubmeshes();
+					for (auto const &sm : submesh)
 					{
-						ImGui::Text("Material not found in manager");
-					}
-					else
-					{
-						engine::rendering::Material::Ptr material = materialOpt.value();
-						engine::rendering::Material::MaterialProperties materialProperties = material->getProperties();
-						bool materialsChanged = false;
+						auto materialHandle = sm.material;
+						auto materialOpt = resourceManager->m_materialManager->get(materialHandle);
 
-						materialsChanged |= ImGui::ColorEdit3("Diffuse (Kd)", materialProperties.diffuse);
-						materialsChanged |= ImGui::ColorEdit3("Specular (Ks)", materialProperties.specular);
-						materialsChanged |= ImGui::SliderFloat("Roughness", &materialProperties.roughness, 0.0f, 1.0f);
-						materialsChanged |= ImGui::SliderFloat("Metallic", &materialProperties.metallic, 0.0f, 1.0f);
-
-						if (materialsChanged)
+						ImGui::Separator();
+						if (!materialOpt.has_value())
 						{
-							material->setProperties(materialProperties);
+							ImGui::Text("Material not found in manager");
+						}
+						else
+						{
+							engine::rendering::Material::Ptr material = materialOpt.value();
+							ImGui::Text("Material Handle: %s", material->getName().value_or("Unnamed").c_str());
+							engine::rendering::Material::MaterialProperties materialProperties = material->getProperties();
+							bool materialsChanged = false;
+
+							materialsChanged |= ImGui::ColorEdit3("Diffuse (Kd)", materialProperties.diffuse);
+							materialsChanged |= ImGui::ColorEdit3("Specular (Ks)", materialProperties.specular);
+							materialsChanged |= ImGui::SliderFloat("Roughness", &materialProperties.roughness, 0.0f, 1.0f);
+							materialsChanged |= ImGui::SliderFloat("Metallic", &materialProperties.metallic, 0.0f, 1.0f);
+
+							if (materialsChanged)
+							{
+								material->setProperties(materialProperties);
+							}
 						}
 					}
 				}
 			}
 		}
-
 		// Lights section
 		if (ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen))
 		{
-			// Add light button
-			if (ImGui::Button("Add Light"))
+		// Add light button
+		if (ImGui::Button("Add Light"))
+		{
+			// Create a new LightNode
+			auto newLight = std::make_shared<engine::scene::entity::LightNode>();
+			uint32_t lightType = lightNodes.empty() ? 1 : 2; // 1=directional, 2=point
+			newLight->setLightType(lightType);
+			newLight->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
+			newLight->setIntensity(1.0f);
+
+			if (lightType == 1) // Directional
 			{
-				// Create a new LightNode
-				auto newLight = std::make_shared<engine::scene::entity::LightNode>();
-				uint32_t lightType = lightNodes.empty() ? 1 : 2; // 1=directional, 2=point
-				newLight->setLightType(lightType);
-				newLight->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
-				newLight->setIntensity(1.0f);
-				
-				if (lightType == 1) // Directional
-				{
-					float pitch = 140.0f, yaw = -30.0f, roll = 0.0f;
-					glm::quat rot = glm::quat(glm::radians(glm::vec3(pitch, yaw, roll)));
-					newLight->getTransform()->setLocalRotation(rot);
-					lightDirectionsUI[lightNodes.size()] = glm::vec3(pitch, yaw, roll);
-				}
-				else // Point
-				{
-					newLight->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 0.0f));
-				}
-				
-				rootNode->addChild(newLight);
-				lightNodes.push_back(newLight);
-				spdlog::info("Added light node");
+				float pitch = 140.0f, yaw = -30.0f, roll = 0.0f;
+				glm::quat rot = glm::quat(glm::radians(glm::vec3(pitch, yaw, roll)));
+				newLight->getTransform()->setLocalRotation(rot);
+				lightDirectionsUI[lightNodes.size()] = glm::vec3(pitch, yaw, roll);
+			}
+			else // Point
+			{
+				newLight->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 0.0f));
 			}
 
-			// Light list
-			for (size_t i = 0; i < lightNodes.size(); ++i)
+			rootNode->addChild(newLight);
+			lightNodes.push_back(newLight);
+			spdlog::info("Added light node");
+		}
+
+		// Light list
+		for (size_t i = 0; i < lightNodes.size(); ++i)
+		{
+			ImGui::PushID(static_cast<int>(i));
+
+			auto &light = lightNodes[i];
+			if (!light)
 			{
-				ImGui::PushID(static_cast<int>(i));
-
-				auto &light = lightNodes[i];
-				if (!light)
-				{
-					ImGui::PopID();
-					continue;
-				}
-
-				const char *lightTypeNames[] = {"Ambient", "Directional", "Point", "Spot"};
-
-				bool open = ImGui::TreeNodeEx(("Light " + std::to_string(i)).c_str(), ImGuiTreeNodeFlags_DefaultOpen);
-
-				ImGui::SameLine(ImGui::GetWindowWidth() - 70);
-				bool shouldRemove = false;
-				if (ImGui::SmallButton("Remove"))
-				{
-					shouldRemove = true;
-				}
-
-				if (open)
-				{
-					// Light type
-					int currentType = static_cast<int>(light->getLightType());
-					if (ImGui::Combo("Type", &currentType, lightTypeNames, 4))
-					{
-						light->setLightType(static_cast<uint32_t>(currentType));
-					}
-
-					glm::vec3 color = light->getColor();
-					if (ImGui::ColorEdit3("Color", glm::value_ptr(color)))
-					{
-						light->setColor(color);
-					}
-
-					float intensity = light->getIntensity();
-					if (ImGui::SliderFloat("Intensity", &intensity, 0.0f, 5.0f))
-					{
-						light->setIntensity(intensity);
-					}
-
-					auto transform = light->getTransform();
-					if (transform)
-					{
-						glm::vec3 position = transform->getLocalPosition();
-
-						// Initialize UI angles if not present
-						if (lightDirectionsUI.find(i) == lightDirectionsUI.end())
-						{
-							glm::quat rotation = transform->getRotation();
-							glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
-							lightDirectionsUI[i] = eulerAngles;
-						}
-
-						glm::vec3 &angles = lightDirectionsUI[i];
-
-						// Position control for point and spot lights
-						if (light->getLightType() > 1)
-						{
-							if (ImGui::DragFloat3("Position", glm::value_ptr(position), 0.1f))
-							{
-								transform->setLocalPosition(position);
-							}
-						}
-
-						// Direction control for directional and spot lights
-						if (light->getLightType() == 1 || light->getLightType() == 3)
-						{
-							if (ImGui::DragFloat3("Direction (degrees)", glm::value_ptr(angles), 0.5f))
-							{
-								glm::quat rot = glm::quat(glm::radians(angles));
-								transform->setLocalRotation(rot);
-							}
-						}
-
-						// Spot angle for spot lights
-						if (light->getLightType() == 3)
-						{
-							float spotAngle = light->getLightData().spot_angle;
-							float spotAngleDegrees = glm::degrees(spotAngle);
-							if (ImGui::SliderFloat("Cone Angle (degrees)", &spotAngleDegrees, 1.0f, 120.0f))
-							{
-								light->setSpotAngle(glm::radians(spotAngleDegrees));
-							}
-
-							float spotSoftness = light->getLightData().spot_softness;
-							if (ImGui::SliderFloat("Edge Softness", &spotSoftness, 0.0f, 0.99f, "%.2f"))
-							{
-								light->setSpotSoftness(spotSoftness);
-							}
-						}
-					}
-
-					ImGui::TreePop();
-				}
-
 				ImGui::PopID();
-
-				// Handle removal
-				if (shouldRemove)
-				{
-					if (light->getParent())
-						light->getParent()->removeChild(light);
-					
-					lightNodes.erase(lightNodes.begin() + i);
-					lightDirectionsUI.erase(i);
-					
-					// Re-index remaining lights
-					std::map<size_t, glm::vec3> newDirectionsUI;
-					for (const auto &[idx, ang] : lightDirectionsUI)
-					{
-						if (idx > i)
-							newDirectionsUI[idx - 1] = ang;
-						else
-							newDirectionsUI[idx] = ang;
-					}
-					lightDirectionsUI = newDirectionsUI;
-					break;
-				}
+				continue;
 			}
+
+			const char *lightTypeNames[] = {"Ambient", "Directional", "Point", "Spot"};
+
+			bool open = ImGui::TreeNodeEx(("Light " + std::to_string(i)).c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+
+			ImGui::SameLine(ImGui::GetWindowWidth() - 70);
+			bool shouldRemove = false;
+			if (ImGui::SmallButton("Remove"))
+			{
+				shouldRemove = true;
+			}
+
+			if (open)
+			{
+				// Light type
+				int currentType = static_cast<int>(light->getLightType());
+				if (ImGui::Combo("Type", &currentType, lightTypeNames, 4))
+				{
+					light->setLightType(static_cast<uint32_t>(currentType));
+				}
+
+				glm::vec3 color = light->getColor();
+				if (ImGui::ColorEdit3("Color", glm::value_ptr(color)))
+				{
+					light->setColor(color);
+				}
+
+				float intensity = light->getIntensity();
+				if (ImGui::SliderFloat("Intensity", &intensity, 0.0f, 5.0f))
+				{
+					light->setIntensity(intensity);
+				}
+
+				auto transform = light->getTransform();
+				if (transform)
+				{
+					glm::vec3 position = transform->getLocalPosition();
+
+					// Initialize UI angles if not present
+					if (lightDirectionsUI.find(i) == lightDirectionsUI.end())
+					{
+						glm::quat rotation = transform->getRotation();
+						glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
+						lightDirectionsUI[i] = eulerAngles;
+					}
+
+					glm::vec3 &angles = lightDirectionsUI[i];
+
+					// Position control for point and spot lights
+					if (light->getLightType() > 1)
+					{
+						if (ImGui::DragFloat3("Position", glm::value_ptr(position), 0.1f))
+						{
+							transform->setLocalPosition(position);
+						}
+					}
+
+					// Direction control for directional and spot lights
+					if (light->getLightType() == 1 || light->getLightType() == 3)
+					{
+						if (ImGui::DragFloat3("Direction (degrees)", glm::value_ptr(angles), 0.5f))
+						{
+							glm::quat rot = glm::quat(glm::radians(angles));
+							transform->setLocalRotation(rot);
+						}
+					}
+
+					// Spot angle for spot lights
+					if (light->getLightType() == 3)
+					{
+						float spotAngle = light->getLightData().spot_angle;
+						float spotAngleDegrees = glm::degrees(spotAngle);
+						if (ImGui::SliderFloat("Cone Angle (degrees)", &spotAngleDegrees, 1.0f, 120.0f))
+						{
+							light->setSpotAngle(glm::radians(spotAngleDegrees));
+						}
+
+						float spotSoftness = light->getLightData().spot_softness;
+						if (ImGui::SliderFloat("Edge Softness", &spotSoftness, 0.0f, 0.99f, "%.2f"))
+						{
+							light->setSpotSoftness(spotSoftness);
+						}
+					}
+				}
+
+				ImGui::TreePop();
+			}
+
+			ImGui::PopID();
+
+			// Handle removal
+			if (shouldRemove)
+			{
+				if (light->getParent())
+					light->getParent()->removeChild(light);
+
+				lightNodes.erase(lightNodes.begin() + i);
+				lightDirectionsUI.erase(i);
+
+				// Re-index remaining lights
+				std::map<size_t, glm::vec3> newDirectionsUI;
+				for (const auto &[idx, ang] : lightDirectionsUI)
+				{
+					if (idx > i)
+						newDirectionsUI[idx - 1] = ang;
+					else
+						newDirectionsUI[idx] = ang;
+				}
+				lightDirectionsUI = newDirectionsUI;
+				break;
+			}
+		}
 		}
 
 		// Camera controls section
 		if (ImGui::CollapsingHeader("Camera Controls", ImGuiTreeNodeFlags_DefaultOpen) && cameraNode)
 		{
-			// Get current camera position
-			glm::vec3 cameraPos = cameraNode->getTransform() ? cameraNode->getTransform()->getLocalPosition() : glm::vec3(0.0f);
-			ImGui::Text("Position: (%.2f, %.2f, %.2f)", cameraPos.x, cameraPos.y, cameraPos.z);
+		// Get current camera position
+		glm::vec3 cameraPos = cameraNode->getTransform() ? cameraNode->getTransform()->getLocalPosition() : glm::vec3(0.0f);
+		ImGui::Text("Position: (%.2f, %.2f, %.2f)", cameraPos.x, cameraPos.y, cameraPos.z);
 
-			// Display distance from origin
-			float camDistance = glm::length(cameraPos);
-			ImGui::Text("Distance from origin: %.2f", camDistance);
+		// Display distance from origin
+		float camDistance = glm::length(cameraPos);
+		ImGui::Text("Distance from origin: %.2f", camDistance);
 
-			// Camera orientation vectors
-			if (auto transform = cameraNode->getTransform())
-			{
-				glm::vec3 forward = transform->forward();
-				glm::vec3 up = transform->up();
-				glm::vec3 right = transform->right();
-
-				ImGui::Separator();
-				ImGui::Text("Orientation Vectors:");
-				ImGui::Text("Forward: (%.2f, %.2f, %.2f)", forward.x, forward.y, forward.z);
-				ImGui::Text("Up: (%.2f, %.2f, %.2f)", up.x, up.y, up.z);
-				ImGui::Text("Right: (%.2f, %.2f, %.2f)", right.x, right.y, right.z);
-				ImGui::Text("Azimuth/Elevation: (%.2f / %.2f)", orbitState.azimuth, orbitState.elevation);
-
-				// Extract rotation as euler angles
-				glm::quat rotation = transform->getRotation();
-				glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
-
-				// Fix discontinuities in euler angle representation
-				if (eulerAngles.x > 90.0f)
-					eulerAngles.x -= 360.0f;
-				if (eulerAngles.y > 180.0f)
-					eulerAngles.y -= 360.0f;
-				if (eulerAngles.z > 180.0f)
-					eulerAngles.z -= 360.0f;
-
-				ImGui::Text("Rotation (degrees): (%.1f, %.1f, %.1f)", eulerAngles.x, eulerAngles.y, eulerAngles.z);
-			}
+		// Camera orientation vectors
+		if (auto transform = cameraNode->getTransform())
+		{
+			glm::vec3 forward = transform->forward();
+			glm::vec3 up = transform->up();
+			glm::vec3 right = transform->right();
 
 			ImGui::Separator();
+			ImGui::Text("Orientation Vectors:");
+			ImGui::Text("Forward: (%.2f, %.2f, %.2f)", forward.x, forward.y, forward.z);
+			ImGui::Text("Up: (%.2f, %.2f, %.2f)", up.x, up.y, up.z);
+			ImGui::Text("Right: (%.2f, %.2f, %.2f)", right.x, right.y, right.z);
+			ImGui::Text("Azimuth/Elevation: (%.2f / %.2f)", orbitState.azimuth, orbitState.elevation);
 
-			// Camera distance slider
-			float zoomPercentage = (camDistance - 2.0f) / 8.0f * 100.0f;
-			zoomPercentage = glm::clamp(zoomPercentage, 0.0f, 100.0f);
+			// Extract rotation as euler angles
+			glm::quat rotation = transform->getRotation();
+			glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
 
-			if (ImGui::SliderFloat("Camera Distance", &zoomPercentage, 0.0f, 100.0f, "%.0f%%"))
+			// Fix discontinuities in euler angle representation
+			if (eulerAngles.x > 90.0f)
+				eulerAngles.x -= 360.0f;
+			if (eulerAngles.y > 180.0f)
+				eulerAngles.y -= 360.0f;
+			if (eulerAngles.z > 180.0f)
+				eulerAngles.z -= 360.0f;
+
+			ImGui::Text("Rotation (degrees): (%.1f, %.1f, %.1f)", eulerAngles.x, eulerAngles.y, eulerAngles.z);
+		}
+
+		ImGui::Separator();
+
+		// Camera distance slider
+		float zoomPercentage = (camDistance - 2.0f) / 8.0f * 100.0f;
+		zoomPercentage = glm::clamp(zoomPercentage, 0.0f, 100.0f);
+
+		if (ImGui::SliderFloat("Camera Distance", &zoomPercentage, 0.0f, 100.0f, "%.0f%%"))
+		{
+			float newDistance = (zoomPercentage / 100.0f) * 8.0f + 2.0f;
+			orbitState.distance = newDistance;
+			demo::updateOrbitCamera(orbitState, cameraNode);
+		}
+
+		// Camera reset controls
+		if (ImGui::Button("Look At Origin"))
+		{
+			cameraNode->lookAt(glm::vec3(0.0f));
+		}
+
+		ImGui::SameLine();
+
+		if (ImGui::Button("Reset Camera"))
+		{
+			cameraNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
+			cameraNode->lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+			// Reset orbit state
+			glm::vec3 camPos = cameraNode->getTransform()->getLocalPosition();
+			glm::vec3 toCam = camPos - orbitState.targetPoint;
+			orbitState.distance = glm::length(toCam);
+			if (orbitState.distance > 1e-5f)
 			{
-				float newDistance = (zoomPercentage / 100.0f) * 8.0f + 2.0f;
-				orbitState.distance = newDistance;
-				demo::updateOrbitCamera(orbitState, cameraNode);
+				glm::vec3 dir = toCam / orbitState.distance;
+				orbitState.elevation = std::asin(dir.y);
+				orbitState.azimuth = std::atan2(dir.z, dir.x);
 			}
-
-			// Camera reset controls
-			if (ImGui::Button("Look At Origin"))
-			{
-				cameraNode->lookAt(glm::vec3(0.0f));
-			}
-
-			ImGui::SameLine();
-
-			if (ImGui::Button("Reset Camera"))
-			{
-				cameraNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
-				cameraNode->lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-				
-				// Reset orbit state
-				glm::vec3 camPos = cameraNode->getTransform()->getLocalPosition();
-				glm::vec3 toCam = camPos - orbitState.targetPoint;
-				orbitState.distance = glm::length(toCam);
-				if (orbitState.distance > 1e-5f)
-				{
-					glm::vec3 dir = toCam / orbitState.distance;
-					orbitState.elevation = std::asin(dir.y);
-					orbitState.azimuth = std::atan2(dir.z, dir.x);
-				}
-			}
+		}
 		}
 
 		ImGui::End(); });

@@ -1,10 +1,10 @@
 #include "engine/GameEngine.h"
+#include "engine/resources/ResourceManager.h"
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/FrameUniforms.h"
 #include <chrono>
 #include <iostream>
 
-#define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <sdl2webgpu.h>
 #include <spdlog/spdlog.h>

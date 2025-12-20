@@ -13,17 +13,21 @@ ModelManager::ModelManager(
 
 std::optional<ModelManager::ModelPtr> ModelManager::createModel(const std::string &filePath, const std::string &name)
 {
+	std::string modelName = filePath;
+	auto optModel = getByName(modelName);
+	if(optModel.has_value())
+		return *optModel;
+
 	if (!m_objLoader || !m_meshManager)
 		return std::nullopt;
 
-	auto objDataOpt = m_objLoader->load(filePath, true, engine::math::CoordinateSystem::Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD, engine::math::CoordinateSystem::DEFAULT);
+	auto objDataOpt = m_objLoader->load(filePath, engine::math::CoordinateSystem::Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD, engine::math::CoordinateSystem::DEFAULT);
 	if (!objDataOpt)
 		return std::nullopt;
 	const auto &objData = *objDataOpt;
 
 	// Build Mesh from parsed geometry using the MeshManager
-	std::string meshName = name.empty() ? objData.name : name;
-	auto meshOpt = m_meshManager->createMesh(std::move(objData.vertices), std::move(objData.indices), meshName);
+	auto meshOpt = m_meshManager->createMesh(std::move(objData.vertices), std::move(objData.indices), modelName);
 	if (!meshOpt || !(*meshOpt))
 		return std::nullopt;
 
@@ -33,22 +37,39 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(const std::strin
 	// Get the mesh handle
 	engine::rendering::MeshHandle meshHandle = mesh->getHandle();
 
-	// Try to create a material from the first parsed material, if any
-	engine::rendering::MaterialHandle matHandle;
-	if (m_materialManager && !objData.materials.empty())
-	{
-		auto matOpt = m_materialManager->createMaterial(objData.materials[0]);
-		if (matOpt && *matOpt)
-			matHandle = (*matOpt)->getHandle();
-	}
-	// TODO: Multiple materials support
+	auto model = std::make_shared<engine::rendering::Model>(
+		meshHandle,
+		filePath,
+		modelName
+	);
 
-	// Use parsed name if no name provided
-	std::string modelName = name.empty() ? objData.name : name;
-	auto model = std::make_shared<engine::rendering::Model>(meshHandle, matHandle, filePath, modelName);
+	if (m_materialManager && !objData.materialRanges.empty())
+	{
+		for (const auto &range : objData.materialRanges)
+		{
+			if (range.indexCount == 0)
+				continue;
+
+			engine::rendering::Submesh submesh;
+			submesh.indexOffset = range.indexOffset;
+			submesh.indexCount = range.indexCount;
+
+			int matId = range.materialId;
+			if (matId >= 0 && matId < static_cast<int>(objData.materials.size()))
+			{
+				auto matOpt = m_materialManager->createMaterial(objData.materials[matId]);
+				if (matOpt && *matOpt)
+					submesh.material = (*matOpt)->getHandle();
+			}
+
+			model->addSubmesh(submesh);
+		}
+	}
+
 	auto handleOpt = add(model);
 	if (!handleOpt)
 		return std::nullopt;
+
 	return model;
 }
 

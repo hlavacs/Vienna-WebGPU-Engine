@@ -61,6 +61,15 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getShader(ShaderType t
 	return nullptr;
 }
 
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getShader(ShaderType type, const std::string &customName) const
+{
+	if (type == ShaderType::Custom)
+	{
+		return getCustomShader(customName);
+	}
+	return getShader(type);
+}
+
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getCustomShader(const std::string& name) const
 {
 	auto it = m_customShaders.find(name);
