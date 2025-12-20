@@ -2,16 +2,28 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Windows (Debug)",
+            "name": "Main Demo (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/Windows/Debug/WebGPU_Engine.exe",
-            "symbolSearchPath": "${workspaceFolder}/build/Windows/Debug",
+            "program": "${workspaceFolder}/examples/build/Windows/Debug/MainDemo.exe",
+            "symbolSearchPath": "${workspaceFolder}/examples/build/Windows/Debug",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "preLaunchTask": "Build Windows (Debug)"
+            "preLaunchTask": "Build Example: Main Demo (Debug)"
+        },
+        {
+            "name": "Scene Editor (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/examples/build/Windows/Debug/SceneEditor.exe",
+            "symbolSearchPath": "${workspaceFolder}/examples/build/Windows/Debug",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Example: Scene Editor (Debug)"
         },
         {
             "name": "Emscripten (Debug) [Host Windows]",

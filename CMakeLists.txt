@@ -29,25 +29,31 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/spdlog")
 
 # Add include dir so #include "engine/core/..." works everywhere
-include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-file(GLOB_RECURSE SOURCE_FILES
-    "${CMAKE_SOURCE_DIR}/src/*.cpp"
+# Collect only engine source files (exclude main.cpp)
+file(GLOB_RECURSE ENGINE_SOURCE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/*.cpp"
 )
 
-# Main executable
-add_executable(WebGPU_Engine
-    ${SOURCE_FILES}
+# Build engine as a static library
+add_library(WebGPU_Engine_Lib STATIC
+    ${ENGINE_SOURCE_FILES}
+)
+
+# Make include directories public for library consumers
+target_include_directories(WebGPU_Engine_Lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # glm is header-only — no build needed
-target_include_directories(WebGPU_Engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/external/glm")
+target_include_directories(WebGPU_Engine_Lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/glm")
 
 # tinygltf is header-only — no build needed
-target_include_directories(WebGPU_Engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/external/tinygltf")
+target_include_directories(WebGPU_Engine_Lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/tinygltf")
 
-# Link libraries
-target_link_libraries(WebGPU_Engine PRIVATE
+# Link libraries publicly so examples can use them
+target_link_libraries(WebGPU_Engine_Lib PUBLIC
     SDL2::SDL2
     imgui
     sdl2webgpu
@@ -64,48 +70,33 @@ else()
     target_compile_options(imgui PRIVATE -Wno-nontrivial-memcall)
 endif()
 
-# Build type options
+# Build type options for library
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     message(STATUS "Configuring Debug build")
     if(MSVC)
-        target_compile_options(WebGPU_Engine PRIVATE /Zi /Od "/diagnostics:caret")
-        target_link_options(WebGPU_Engine PRIVATE /DEBUG)
+        target_compile_options(WebGPU_Engine_Lib PUBLIC /Zi /Od "/diagnostics:caret")
     else()
-        target_compile_options(WebGPU_Engine PRIVATE -g -O0 -ferror-limit=0)
+        target_compile_options(WebGPU_Engine_Lib PUBLIC -g -O0 -ferror-limit=0)
     endif()
-    target_compile_definitions(WebGPU_Engine PRIVATE DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_definitions(WebGPU_Engine PRIVATE ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(WebGPU_Engine_Lib PUBLIC DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(WebGPU_Engine_Lib PUBLIC ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 else()
     message(STATUS "Configuring Release build")
     if(MSVC)
-        target_compile_options(WebGPU_Engine PRIVATE /O2)
+        target_compile_options(WebGPU_Engine_Lib PUBLIC /O2)
     else()
-        target_compile_options(WebGPU_Engine PRIVATE -O3)
+        target_compile_options(WebGPU_Engine_Lib PUBLIC -O3)
     endif()
-	add_custom_command(TARGET WebGPU_Engine POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_SOURCE_DIR}/resources"
-                "${CMAKE_CURRENT_BINARY_DIR}/resources")
 endif()
 
-
-# General target properties
-set_target_properties(WebGPU_Engine PROPERTIES
+# General library properties
+set_target_properties(WebGPU_Engine_Lib PROPERTIES
     COMPILE_WARNING_AS_ERROR ON
-    VS_DEBUGGER_ENVIRONMENT "DAWN_DEBUG_BREAK_ON_ERROR=1"
 )
-
-# Xcode scheme for Metal capture
-if(XCODE)
-    set_target_properties(WebGPU_Engine PROPERTIES
-        XCODE_GENERATE_SCHEME ON
-        XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE "Metal"
-    )
-endif()
 
 # MSVC-specific warnings to suppress
 if(MSVC)
-    target_compile_options(WebGPU_Engine PRIVATE /wd4201 /wd4305 /wd4244)
+    target_compile_options(WebGPU_Engine_Lib PUBLIC /wd4201 /wd4305 /wd4244)
 endif()
 
 # imgui backend definition (if WGPU backend is used)
@@ -113,60 +104,104 @@ if(WEBGPU_BACKEND_WGPU)
     target_compile_definitions(imgui PRIVATE IMGUI_IMPL_WEBGPU_BACKEND_WGPU)
 endif()
 
-# Emscripten-specific configuration
+# Emscripten-specific configuration for library
 if(EMSCRIPTEN)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s WASM=1 -s USE_WEBGPU=1")
-    set_target_properties(WebGPU_Engine PROPERTIES SUFFIX ".html")
-	set(SHELL_FILE shell_minimal.html)
-
+    # Set compile options for library (propagates to consumers)
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        message(STATUS "Configuring Debug Emscripten options")
-        target_link_options(WebGPU_Engine PRIVATE
-            -sUSE_WEBGPU
-            -sASYNCIFY
-            -sALLOW_MEMORY_GROWTH
-			-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
-            --preload-file "${CMAKE_CURRENT_SOURCE_DIR}/resources"
-    		--shell-file "${CMAKE_CURRENT_SOURCE_DIR}/src/${SHELL_FILE}"
-            -gsource-map
-            --source-map-base "http://localhost:8080/build/Emscripten/Debug/"
-        )
-		target_compile_options(WebGPU_Engine PRIVATE -g -gsource-map -gno-column-info)
+        target_compile_options(WebGPU_Engine_Lib PUBLIC -g -gsource-map -gno-column-info)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWGPU_LOG=trace")
-
-        add_custom_command(TARGET WebGPU_Engine POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src" "${CMAKE_CURRENT_BINARY_DIR}/src")
-        add_custom_command(TARGET WebGPU_Engine POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/external" "${CMAKE_CURRENT_BINARY_DIR}/external")
-    else()
-        message(STATUS "Configuring Release Emscripten options")
-        target_link_options(WebGPU_Engine PRIVATE
-            -sUSE_WEBGPU
-            -sASYNCIFY
-            -sALLOW_MEMORY_GROWTH
-			-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
-    		--shell-file "${CMAKE_CURRENT_SOURCE_DIR}/src/${SHELL_FILE}"
-        )
     endif()
-	set_property(
-		TARGET WebGPU_Engine
-		PROPERTY LINK_DEPENDS
-		"${CMAKE_CURRENT_SOURCE_DIR}/src/${SHELL_FILE}"
-	)
-else()
-    # Post-build: copy external DLLs
-    file(GLOB_RECURSE EXTERNAL_DLLS
-        "${CMAKE_CURRENT_BINARY_DIR}/external/*.dll"
+    
+    # Base Emscripten link options that all consumers will need
+    target_link_options(WebGPU_Engine_Lib INTERFACE
+        -sUSE_WEBGPU
+        -sASYNCIFY
+        -sALLOW_MEMORY_GROWTH
+        -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
     )
-    foreach(DLL_FILE ${EXTERNAL_DLLS})
-        get_filename_component(DLL_NAME ${DLL_FILE} NAME)
-        add_custom_command(TARGET WebGPU_Engine POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${DLL_FILE}"
-                $<TARGET_FILE_DIR:WebGPU_Engine>/${DLL_NAME}
-        )
-    endforeach()
 endif()
 
-# Post-build: copy WebGPU binaries (defined in utils.cmake)
-target_copy_webgpu_binaries(WebGPU_Engine)
+# Helper function to configure an executable that uses the engine
+function(configure_engine_executable TARGET_NAME)
+    # Parse optional arguments
+    set(options "")
+    set(oneValueArgs SHELL_FILE)
+    set(multiValueArgs "")
+    cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+    
+    # Set default shell file if not provided
+    if(NOT ARG_SHELL_FILE)
+        set(ARG_SHELL_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/shell_minimal.html")
+    endif()
+    
+    if(EMSCRIPTEN)
+        # Set HTML output
+        set_target_properties(${TARGET_NAME} PROPERTIES SUFFIX ".html")
+        
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            target_link_options(${TARGET_NAME} PRIVATE
+                --preload-file "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+                --shell-file "${ARG_SHELL_FILE}"
+                -gsource-map
+                --source-map-base "http://localhost:8080/build/Emscripten/Debug/"
+            )
+            
+            # Copy source files for debugging
+            add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory 
+                    "${CMAKE_CURRENT_SOURCE_DIR}/src" 
+                    "$<TARGET_FILE_DIR:${TARGET_NAME}>/src")
+            add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory 
+                    "${CMAKE_CURRENT_SOURCE_DIR}/external" 
+                    "$<TARGET_FILE_DIR:${TARGET_NAME}>/external")
+        else()
+            target_link_options(${TARGET_NAME} PRIVATE
+                --shell-file "${ARG_SHELL_FILE}"
+            )
+        endif()
+        
+        # Set shell file dependency
+        set_property(TARGET ${TARGET_NAME}
+            PROPERTY LINK_DEPENDS "${ARG_SHELL_FILE}"
+        )
+    else()
+        # Native build: Copy DLLs and WebGPU binaries
+        # Post-build: copy external DLLs
+        file(GLOB_RECURSE EXTERNAL_DLLS
+            "${CMAKE_CURRENT_BINARY_DIR}/external/*.dll"
+        )
+        foreach(DLL_FILE ${EXTERNAL_DLLS})
+            get_filename_component(DLL_NAME ${DLL_FILE} NAME)
+            add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${DLL_FILE}"
+                    $<TARGET_FILE_DIR:${TARGET_NAME}>/${DLL_NAME}
+            )
+        endforeach()
+        
+        # Copy WebGPU binaries
+        target_copy_webgpu_binaries(${TARGET_NAME})
+        
+        # Set debugger environment
+        set_target_properties(${TARGET_NAME} PROPERTIES
+            VS_DEBUGGER_ENVIRONMENT "DAWN_DEBUG_BREAK_ON_ERROR=1"
+        )
+        
+        # Xcode scheme for Metal capture
+        if(XCODE)
+            set_target_properties(${TARGET_NAME} PROPERTIES
+                XCODE_GENERATE_SCHEME ON
+                XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE "Metal"
+            )
+        endif()
+    endif()
+    
+    # Copy resources in release builds
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+                $<TARGET_FILE_DIR:${TARGET_NAME}>/resources)
+    endif()
+endfunction()
