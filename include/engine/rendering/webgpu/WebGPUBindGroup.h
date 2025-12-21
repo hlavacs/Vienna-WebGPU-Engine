@@ -150,19 +150,6 @@ class WebGPUBindGroup
 	}
 
 	/**
-	 * @brief Sets the raw bind group (used by materials to populate layout-only bind groups).
-	 * @param bindGroup The WebGPU bind group to set.
-	 */
-	void setBindGroup(wgpu::BindGroup bindGroup)
-	{
-		if (m_bindGroup)
-		{
-			m_bindGroup.release();
-		}
-		m_bindGroup = bindGroup;
-	}
-
-	/**
 	 * @brief Adds a buffer to this bind group's buffer list.
 	 * @param buffer The buffer to add.
 	 */

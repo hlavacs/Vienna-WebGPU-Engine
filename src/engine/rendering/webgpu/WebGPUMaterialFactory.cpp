@@ -50,7 +50,7 @@ static std::shared_ptr<WebGPUTexture> getTextureView(
 	return texFactory.getWhiteTexture();
 }
 
-std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
+std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandleUncached(
 	const engine::rendering::Material::Handle &materialHandle,
 	const WebGPUMaterialOptions &options
 )
@@ -58,7 +58,7 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
 	auto materialOpt = materialHandle.get();
 	if (!materialOpt || !materialOpt.value())
 	{
-		throw std::runtime_error("Invalid material handle in WebGPUMaterialFactory::createFromHandle");
+		throw std::runtime_error("Invalid material handle in WebGPUMaterialFactory::getOrCreateFromHandle");
 	}
 
 	const auto &material = *materialOpt.value();
@@ -107,20 +107,6 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
 		std::optional<glm::vec3>(glm::vec3(materialProps.emission[0], materialProps.emission[1], materialProps.emission[2]))
 	);
 
-	wgpu::Sampler sampler = m_context.getDefaultSampler();
-	if (m_bindGroupLayoutInfo == nullptr)
-	{
-		m_bindGroupLayoutInfo = m_context.bindGroupFactory().createDefaultMaterialBindGroupLayout();
-	}
-
-	wgpu::BindGroup bindGroup = m_context.bindGroupFactory().createMaterialBindGroup(
-		m_bindGroupLayoutInfo->getLayout(),
-		materialPropertiesBuffer,
-		albedoView->getTextureView(),
-		normalView->getTextureView(),
-		sampler
-	);
-
 	// Construct the texture dictionary with all loaded textures
 	std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> textureMap;
 	textureMap[MaterialTextureSlots::ALBEDO] = albedoView;
@@ -140,11 +126,11 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
 	return webgpuMaterial;
 }
 
-std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandle(
+std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandleUncached(
 	const engine::rendering::Material::Handle &handle
 )
 {
-	return createFromHandle(handle, WebGPUMaterialOptions{});
+	return createFromHandleUncached(handle, WebGPUMaterialOptions{});
 }
 
 } // namespace engine::rendering::webgpu

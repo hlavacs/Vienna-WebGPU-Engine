@@ -125,16 +125,15 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
 	auto shaderInfo = m_context.shaderFactory()
 		.begin("lit", "vs_main", "fs_main", engine::core::PathProvider::getResource("shader.wgsl"))
 		// Group 0: Frame uniforms (camera, time)
-		.addFrameUniforms(0, 0)
+		.addFrameUniforms(0)
 		// Group 1: Lighting data (storage buffer with max 16 lights)
-		.addLightUniforms(1, 0, 16)
+		.addLightUniforms(1, 16)
 		// Group 2: Object uniforms (model matrix, normal matrix)
 		.addCustomUniform(
 			"objectUniforms",
 			sizeof(ObjectUniforms),
 			2,  // group
 			0,  // binding
-			false,  // global - reusable buffer with dynamic writes
 			WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
 		)
 		// Group 3: Material data (properties + textures)
@@ -143,7 +142,6 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
 			sizeof(Material::MaterialProperties),
 			3,  // group
 			0,  // binding
-			false,  // global - reusable buffer with dynamic writes (like object uniforms)
 			WGPUShaderStage_Fragment
 		)
 		.addSampler(
@@ -188,14 +186,13 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 	
 	auto shaderInfo = m_context.shaderFactory()
 		.begin("debug", "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
-		.addFrameUniforms(0, 0)  // View-projection matrix from frame uniforms
+		.addFrameUniforms(0)  // View-projection matrix from frame uniforms
 		.addStorageBuffer(
 			"uDebugPrimitives",
 			sizeof(DebugPrimitive) * 1024,  // Max 1024 debug primitives (80 KB)
 			1,  // group 1 (separate from frame uniforms)
 			0,  // binding 0
 			true,  // read-only
-			false,  // not global - per-frame primitives
 			WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
 		)
 		.build();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -16,8 +17,8 @@ namespace engine::rendering::webgpu
  * This class encapsulates a WebGPU bind group layout and its associated descriptor,
  * providing accessors for all relevant properties and ensuring resource cleanup.
  * Used for managing bind group layouts throughout the rendering pipeline.
- * 
- * Extended to support material slot name mapping for texture bindings.
+ *
+ * Extended to support material slot name mapping for texture bindings and unique keys for global buffers.
  */
 class WebGPUBindGroupLayoutInfo
 {
@@ -47,9 +48,19 @@ class WebGPUBindGroupLayoutInfo
 	}
 
 	/**
+	 * @brief Sets a unique key for this bind group layout, used to retrieve global buffers.
+	 * @param key Unique key (e.g., "frameUniforms", "lightUniforms")
+	 */
+	void setKey(const std::optional<std::string> &key) { m_key = key; }
+
+	/**
+	 * @brief Gets the unique key for this bind group layout.
+	 * @return Optional unique key string.
+	 */
+	const std::optional<std::string> &getKey() const { return m_key; }
+
+	/**
 	 * @brief Destructor that cleans up WebGPU resources.
-	 *
-	 * Releases the bind group layout to prevent memory leaks.
 	 */
 	~WebGPUBindGroupLayoutInfo()
 	{
@@ -57,16 +68,6 @@ class WebGPUBindGroupLayoutInfo
 		{
 			m_layout.release();
 		}
-	}
-
-	/**
-	 * @brief Checks if the layout matches the given entry count.
-	 * @param entryCount Number of entries to check.
-	 * @return True if entry count matches, false otherwise.
-	 */
-	bool matches(uint32_t entryCount) const
-	{
-		return getEntryCount() == entryCount;
 	}
 
 	/**
@@ -149,26 +150,20 @@ class WebGPUBindGroupLayoutInfo
 		return (it != m_materialSlotNames.end()) ? it->second : "";
 	}
 
-  protected:
-	/**
-	 * @brief The underlying WebGPU bind group layout resource.
-	 */
+  private:
+	/** Unique key for global bind group retrieval (frameUniforms, lightUniforms, objectUniforms, etc.) */
+	std::optional<std::string> m_key;
+
+	/** Underlying WebGPU bind group layout */
 	wgpu::BindGroupLayout m_layout;
 
-	/**
-	 * @brief Descriptor used to create the bind group layout.
-	 */
+	/** Descriptor used to create the bind group layout */
 	wgpu::BindGroupLayoutDescriptor m_layoutDesc;
 
-	/**
-	 * @brief Owned copy of layout entries to ensure lifetime.
-	 */
+	/** Owned copy of layout entries to ensure lifetime */
 	std::vector<wgpu::BindGroupLayoutEntry> m_entries;
 
-	/**
-	 * @brief Maps binding index to material slot name for texture bindings.
-	 * Used to map shader bindings to material texture dictionary keys.
-	 */
+	/** Maps binding index to material slot name for texture bindings */
 	std::unordered_map<uint32_t, std::string> m_materialSlotNames;
 };
 

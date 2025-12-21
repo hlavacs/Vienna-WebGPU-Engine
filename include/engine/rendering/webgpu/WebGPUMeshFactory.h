@@ -15,12 +15,13 @@ class WebGPUMeshFactory : public BaseWebGPUFactory<engine::rendering::Mesh, WebG
 
 	explicit WebGPUMeshFactory(WebGPUContext &context);
 
+  protected:
 	/**
 	 * @brief Create a WebGPUMesh from a Mesh handle.
 	 * @param handle Handle to the Mesh.
 	 * @return Shared pointer to WebGPUMesh.
 	 */
-	std::shared_ptr<WebGPUMesh> createFromHandle(
+	std::shared_ptr<WebGPUMesh> createFromHandleUncached(
 		const engine::rendering::Mesh::Handle &handle
 	) override;
 };

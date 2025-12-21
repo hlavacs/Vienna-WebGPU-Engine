@@ -18,20 +18,14 @@ class WebGPUMaterialFactory : public BaseWebGPUFactory<engine::rendering::Materi
 
 	explicit WebGPUMaterialFactory(WebGPUContext &context);
 
-	/**
-	 * @brief Create a WebGPUMaterial from a Material handle.
-	 * @param handle Handle to the Material.
-	 * @return Shared pointer to WebGPUMaterial.
-	 */
-	std::shared_ptr<WebGPUMaterial> createFromHandle(const engine::rendering::Material::Handle &handle) override;
-
+  protected:
 	/**
 	 * @brief Create a WebGPUMaterial from a Material handle with options.
 	 * @param handle Handle to the Material.
 	 * @param options Material options to apply.
 	 * @return Shared pointer to WebGPUMaterial.
 	 */
-	std::shared_ptr<WebGPUMaterial> createFromHandle(
+	std::shared_ptr<WebGPUMaterial> createFromHandleUncached(
 		const engine::rendering::Material::Handle &handle,
 		const WebGPUMaterialOptions &options
 	);
@@ -43,11 +37,18 @@ class WebGPUMaterialFactory : public BaseWebGPUFactory<engine::rendering::Materi
 	 * @param options Material options to apply.
 	 * @return Shared pointer to WebGPUMaterial.
 	 */
-	std::shared_ptr<WebGPUMaterial> createFromHandle(
+	std::shared_ptr<WebGPUMaterial> createFromHandleUncached(
 		const engine::rendering::Material::Handle &handle,
 		const engine::core::Handle<WebGPUPipeline> &pipelineHandle,
 		const WebGPUMaterialOptions &options = {}
 	);
+
+	/**
+	 * @brief Create a WebGPUMaterial from a Material handle.
+	 * @param handle Handle to the Material.
+	 * @return Shared pointer to WebGPUMaterial.
+	 */
+	std::shared_ptr<WebGPUMaterial> createFromHandleUncached(const engine::rendering::Material::Handle &handle) override;
 
   private:
 	std::shared_ptr<WebGPUBindGroupLayoutInfo> m_bindGroupLayoutInfo = nullptr;

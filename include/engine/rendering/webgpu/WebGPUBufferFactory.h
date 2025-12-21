@@ -51,7 +51,6 @@ class WebGPUBufferFactory
 	 * @param layoutInfo The bind group layout info containing the entry.
 	 * @param binding The binding number to create buffer for.
 	 * @param name Debug name for the buffer.
-	 * @param isGlobal Whether this is a global (engine-managed) buffer.
 	 * @param size The size in bytes (if 0, uses minBindingSize from entry).
 	 * @return Shared pointer to WebGPUBuffer configured according to the layout entry.
 	 */
@@ -59,7 +58,6 @@ class WebGPUBufferFactory
 		const WebGPUBindGroupLayoutInfo &layoutInfo,
 		uint32_t binding,
 		const std::string &name,
-		bool isGlobal = false,
 		size_t size = 0
 	);
 
@@ -70,13 +68,11 @@ class WebGPUBufferFactory
 	 * @param name Debug name for the buffer.
 	 * @param binding Binding index in the shader.
 	 * @param size Size in bytes.
-	 * @param isGlobal Whether this is a global (engine-managed) buffer.
 	 */
 	std::shared_ptr<WebGPUBuffer> createUniformBufferWrapped(
 		const std::string &name,
 		uint32_t binding,
-		std::size_t size,
-		bool isGlobal = false
+		std::size_t size
 	);
 
 	/**
@@ -87,8 +83,7 @@ class WebGPUBufferFactory
 		const std::string &name,
 		uint32_t binding,
 		const T *data,
-		std::size_t count,
-		bool isGlobal = false
+		std::size_t count
 	);
 
 	/**
@@ -98,8 +93,7 @@ class WebGPUBufferFactory
 	std::shared_ptr<WebGPUBuffer> createUniformBufferWrapped(
 		const std::string &name,
 		uint32_t binding,
-		const std::vector<T> &data,
-		bool isGlobal = false
+		const std::vector<T> &data
 	);
 
 	/**
@@ -108,8 +102,7 @@ class WebGPUBufferFactory
 	std::shared_ptr<WebGPUBuffer> createStorageBufferWrapped(
 		const std::string &name,
 		uint32_t binding,
-		std::size_t size,
-		bool isGlobal = false
+		std::size_t size
 	);
 
 	/**
@@ -120,8 +113,7 @@ class WebGPUBufferFactory
 		const std::string &name,
 		uint32_t binding,
 		const T *data,
-		std::size_t count,
-		bool isGlobal = false
+		std::size_t count
 	);
 
 	/**
@@ -131,8 +123,7 @@ class WebGPUBufferFactory
 	std::shared_ptr<WebGPUBuffer> createStorageBufferWrapped(
 		const std::string &name,
 		uint32_t binding,
-		const std::vector<T> &data,
-		bool isGlobal = false
+		const std::vector<T> &data
 	);
 
 	// === Legacy Raw Buffer Creation Methods (deprecated, kept for compatibility) ===

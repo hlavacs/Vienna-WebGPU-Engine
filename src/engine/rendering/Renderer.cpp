@@ -8,6 +8,7 @@
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/webgpu/WebGPUBuffer.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
 
 namespace engine::rendering
@@ -50,15 +51,53 @@ bool Renderer::initialize()
 		return false;
 	}
 
+	auto frameUniformsLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("frameUniforms");
+	if(frameUniformsLayout == nullptr)
+	{
+		spdlog::error("Failed to get global bind group layout for frameUniforms");
+		return false;
+	}
+	auto lightUniformsLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("lightUniforms");
+	if(lightUniformsLayout == nullptr)
+	{
+		spdlog::error("Failed to get global bind group layout for lightUniforms");
+		return false;
+	}
+	m_frameBindGroup = m_context->bindGroupFactory().createBindGroup(frameUniformsLayout);
+	m_lightBindGroup = m_context->bindGroupFactory().createBindGroup(lightUniformsLayout);
+
 	spdlog::info("Renderer initialized successfully");
 	return true;
 }
 
 void Renderer::updateFrameUniforms(const FrameUniforms &frameUniforms)
 {
-	// Update the global frame uniforms buffer shared by all shaders
-	// Both main and debug shaders reference this via ShaderFactory's global buffer cache
-	m_context->updateGlobalBuffer("frameUniforms", frameUniforms);
+	m_frameBindGroup->updateBuffer(0, &frameUniforms, sizeof(FrameUniforms), 0, m_context->getQueue());
+}
+void Renderer::updateLights(const std::vector<LightStruct> &lights)
+{
+	// Always write the header, even if there are no lights (count = 0)
+	LightsBuffer header;
+	header.count = static_cast<uint32_t>(lights.size());
+
+	// Write header to the global lights buffer at offset 0
+	m_lightBindGroup->updateBuffer(0, &header, sizeof(LightsBuffer), 0, m_context->getQueue());
+
+	// Write light data if any lights exist at offset sizeof(LightsBuffer)
+	if (!lights.empty())
+	{
+		m_lightBindGroup->updateBuffer(0, lights.data(), lights.size() * sizeof(LightStruct), sizeof(LightsBuffer), m_context->getQueue());
+	}
+}
+
+void Renderer::bindFrameUniforms(wgpu::RenderPassEncoder renderPass)
+{
+	renderPass.setBindGroup(0, m_frameBindGroup->getBindGroup(), 0, nullptr);
+}
+
+void Renderer::bindLightUniforms(wgpu::RenderPassEncoder renderPass)
+{
+	renderPass.setBindGroup(1, m_lightBindGroup->getBindGroup(), 0, nullptr);
 }
 
 void Renderer::renderFrame(
@@ -78,7 +117,7 @@ void Renderer::renderFrame(
 	encoderDesc.label = "Frame Command Encoder";
 	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
 
-	// 43. Create or update render pass
+	// 4. Create or update render pass
 	if (m_mainPassId == 0)
 	{
 		// First frame - create the render pass with the acquired surface texture
@@ -102,11 +141,15 @@ void Renderer::renderFrame(
 
 	// 5. Begin main render pass
 	wgpu::RenderPassEncoder renderPass = m_renderPassManager->beginPass(m_mainPassId, encoder);
+	bindFrameUniforms(renderPass);
+	bindLightUniforms(renderPass);
 
 	// 7. Render all collected items
 	std::string currentPipelineName = ""; // Track current pipeline to avoid redundant switches
 	std::shared_ptr<webgpu::WebGPUShaderInfo> currentShader = nullptr;
 
+	std::vector<std::shared_ptr<webgpu::WebGPUBindGroup>> bindGroups;
+	std::vector<std::shared_ptr<webgpu::WebGPUBuffer>> buffers;
 	for (const auto &item : collector.getRenderItems())
 	{
 		// Get or create WebGPUModel for this handle
@@ -153,20 +196,19 @@ void Renderer::renderFrame(
 		ObjectUniforms objectUniforms;
 		objectUniforms.modelMatrix = item.worldTransform;
 		objectUniforms.normalMatrix = glm::transpose(glm::inverse(item.worldTransform));
+		auto uniformBindGroup = m_context->bindGroupFactory().createBindGroup(
+			currentShader->getBindGroupLayout(2)
+		);
+		uniformBindGroup->updateBuffer(0, &objectUniforms, sizeof(ObjectUniforms), 0, m_context->getQueue());
+		renderPass.setBindGroup(2, uniformBindGroup->getBindGroup(), 0, nullptr);
+		bindGroups.push_back(uniformBindGroup);
+		// ToDo: Cache uniform bind groups per object in RenderItem
 
-		// Set queue and render pass for current shader
-		currentShader->setQueue(m_context->getQueue());
-
-		// Write to shader's bind group 2, binding 0 (object uniforms)
-		// Use template version for implicit size
-		currentShader->updateBindGroupBuffer(2, 0, objectUniforms);
-
-		// Update and render the model
-		// update() triggers dirty-flag-based updates for mesh data
+		// ToDo: RenderCollector should do that update stuff
 		webgpuModel->update();
-		// ToDo: RenderCollector should do that update stuff 
 		webgpuModel->getMesh()->update();
-		for(auto &submesh : webgpuModel->getMesh()->getSubmeshes()) {
+		for (auto &submesh : webgpuModel->getMesh()->getSubmeshes())
+		{
 			// Set material bind groups
 			auto material = submesh.material;
 			if (material)
@@ -174,7 +216,6 @@ void Renderer::renderFrame(
 				material->update();
 			}
 		}
-		currentShader->bind(renderPass);
 		webgpuModel->render(encoder, renderPass);
 	}
 
@@ -237,10 +278,10 @@ bool Renderer::setupDefaultPipelines()
 	}
 
 	// Extract the created bind group layout infos from the shader
-	const auto &layoutInfos = m_mainShader->getBindGroupLayoutInfos();
+	const auto &layoutInfos = m_mainShader->getBindGroupLayoutVector();
 	if (layoutInfos.size() < 4)
 	{
-		spdlog::error("ShaderFactory didn't create expected bind group layouts (got {}, expected 4)", layoutInfos.size());
+		spdlog::error("WebGPUShaderFactory didn't create expected bind group layouts (got {}, expected 4)", layoutInfos.size());
 		return false;
 	}
 
@@ -278,8 +319,8 @@ bool Renderer::setupDefaultPipelines()
 	debugConfig.vertexBufferCount = 0;
 	debugConfig.enableDepth = true;
 
-	// Use ShaderFactory-generated layout
-	auto debugLayoutInfos = m_debugShader->getBindGroupLayoutInfos();
+	// Use WebGPUShaderFactory-generated layout
+	auto debugLayoutInfos = m_debugShader->getBindGroupLayoutVector();
 	if (debugLayoutInfos.empty())
 	{
 		spdlog::error("Debug shader has no bind group layouts");
@@ -297,7 +338,6 @@ bool Renderer::setupDefaultPipelines()
 	}
 
 	spdlog::info("Successfully created debug pipeline");
-	spdlog::info("Successfully created pipelines from ShaderRegistry");
 	return true;
 }
 
@@ -307,32 +347,6 @@ bool Renderer::setupDefaultRenderPasses()
 	// when we have a valid surface texture to work with.
 	// This avoids acquiring a surface texture during initialization that never gets released.
 	return true;
-}
-
-void Renderer::updateLights(const std::vector<LightStruct> &lights)
-{
-	// Always write the header, even if there are no lights (count = 0)
-	LightsBuffer header;
-	header.count = static_cast<uint32_t>(lights.size());
-
-	// Write header to the global lights buffer at offset 0
-	m_context->updateGlobalBuffer("lightUniforms", &header, sizeof(LightsBuffer));
-
-	// Write light data if any lights exist at offset sizeof(LightsBuffer)
-	if (!lights.empty())
-	{
-		// Get the global buffer and write light array at the correct offset
-		auto buffer = m_context->shaderFactory().getGlobalBuffer("lightUniforms");
-		if (buffer)
-		{
-			m_context->getQueue().writeBuffer(
-				buffer->getBuffer(),
-				sizeof(LightsBuffer), // Offset after the header
-				lights.data(),
-				lights.size() * sizeof(LightStruct)
-			);
-		}
-	}
 }
 
 std::shared_ptr<webgpu::WebGPUModel> Renderer::getOrCreateWebGPUModel(
@@ -402,24 +416,21 @@ void Renderer::renderDebugPrimitives(
 
 	spdlog::debug("Rendering {} debug primitives", primitiveCount);
 
-	// Set queue for buffer updates
-	m_debugShader->setQueue(m_context->getQueue());
-
 	// Update the debug primitive storage buffer (group 1, binding 0)
 	// This writes the primitive data directly to the shader's existing storage buffer
-	m_debugShader->updateBindGroupBuffer(
-		1, // group 1 (separate from frame uniforms in group 0)
+	auto bindGroup = m_context->bindGroupFactory().createBindGroup(
+		m_debugShader->getBindGroupLayout(1)
+	);
+	bindGroup->updateBuffer(
 		0, // binding 0
 		debugCollector.getPrimitives().data(),
 		debugCollector.getPrimitives().size() * sizeof(DebugPrimitive),
-		0
+		0,
+		m_context->getQueue()
 	);
 
 	// Set the debug pipeline
 	renderPass.setPipeline(debugPipeline->getPipeline());
-
-	// Bind all shader bind groups (frame uniforms + primitive buffer) to the render pass
-	m_debugShader->bind(renderPass);
 
 	// Draw primitives with correct vertex counts per type
 	for (uint32_t i = 0; i < primitiveCount; ++i)

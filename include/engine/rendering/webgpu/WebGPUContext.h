@@ -13,7 +13,7 @@
 #include "engine/rendering/webgpu/WebGPUSurfaceManager.h"
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 // #include "engine/rendering/webgpu/WebGPUSwapChainFactory.h"
-#include "engine/rendering/webgpu/ShaderFactory.h"
+#include "engine/rendering/webgpu/WebGPUShaderFactory.h"
 #include "engine/rendering/webgpu/WebGPUDepthStencilStateFactory.h"
 #include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
@@ -86,27 +86,8 @@ class WebGPUContext
 	WebGPUDepthStencilStateFactory &depthStencilStateFactory();
 	WebGPURenderPassFactory &renderPassFactory();
 	WebGPUModelFactory &modelFactory();
-	ShaderFactory &shaderFactory();
+	WebGPUShaderFactory &shaderFactory();
 	ShaderRegistry &shaderRegistry();
-
-	// === Global Buffer Management ===
-	/**
-	 * @brief Updates a global buffer shared across all shaders by name.
-	 * Global buffers are cached in ShaderFactory and reused by all shaders that request them.
-	 * @param bufferName Name of the global buffer (e.g., "frameUniforms", "lightUniforms")
-	 * @param data Pointer to the data to write
-	 * @param size Size of the data in bytes
-	 */
-	void updateGlobalBuffer(const std::string &bufferName, const void *data, size_t size);
-
-	/**
-	 * @brief Template version for type-safe global buffer updates
-	 */
-	template <typename T>
-	void updateGlobalBuffer(const std::string &bufferName, const T &data)
-	{
-		updateGlobalBuffer(bufferName, &data, sizeof(T));
-	}
 
   private:
 	void initDevice();
@@ -137,7 +118,7 @@ class WebGPUContext
 	std::unique_ptr<WebGPUDepthStencilStateFactory> m_depthStencilStateFactory;
 	std::unique_ptr<WebGPURenderPassFactory> m_renderPassFactory;
 	std::unique_ptr<WebGPUModelFactory> m_modelFactory;
-	std::unique_ptr<ShaderFactory> m_shaderFactory;
+	std::unique_ptr<WebGPUShaderFactory> m_shaderFactory;
 	std::unique_ptr<ShaderRegistry> m_shaderRegistry;
 };
 

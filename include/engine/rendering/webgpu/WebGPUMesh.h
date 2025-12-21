@@ -65,7 +65,12 @@ class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 	 * @param encoder The command encoder.
 	 * @param renderPass The render pass.
 	 */
-	void render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass) override;
+	void render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass);
+
+	void bind(wgpu::RenderPassEncoder &renderPass) const override
+	{
+		// Meshes typically don't bind directly; their materials handle binding.
+	}
 
 	/**
 	 * @brief Get the vertex buffer.
@@ -107,8 +112,9 @@ class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 	 * @brief Set the submeshes.
 	 * @param submeshes The list of submeshes.
 	 */
-	void setSubmeshes(std::vector<WebGPUSubmesh> submeshes) { 
-		m_submeshes = std::move(submeshes); 
+	void setSubmeshes(std::vector<WebGPUSubmesh> submeshes)
+	{
+		m_submeshes = std::move(submeshes);
 	}
 
 	/**

@@ -28,7 +28,10 @@ class BaseWebGPUFactory
 		// Static assert that SourceT is derived from Identifiable<SourceT>
 		static_assert(std::is_base_of_v<engine::core::Identifiable<SourceT>, SourceT>, "SourceT must derive from engine::core::Identifiable<SourceT>");
 	}
-	virtual ~BaseWebGPUFactory() = default;
+	virtual ~BaseWebGPUFactory()
+	{
+		cleanup();
+	};
 
 	/**
 	 * @brief Create a GPU resource from a source object.
@@ -53,17 +56,47 @@ class BaseWebGPUFactory
 	}
 
 	/**
+	 * @brief Get or create a GPU resource from a source handle.
+	 * @param handle Handle to the source object.
+	 * @return Shared pointer to the GPU resource.
+	 * @note This uses an internal cache to avoid duplicate creations.
+	 */
+	std::shared_ptr<ProductT> createFromHandle(const typename SourceT::Handle &handle)
+	{
+		auto it = m_cache.find(handle);
+		if (it != m_cache.end())
+		{
+			return it->second;
+		}
+		return createFromHandleUncached(handle);
+	}
+
+  protected:
+	/**
 	 * @brief Create a GPU resource from a handle to a source object.
 	 * @param handle Handle to the source object.
 	 * @return Shared pointer to the created GPU resource.
 	 */
-	virtual std::shared_ptr<ProductT> createFromHandle(const typename SourceT::Handle &handle) = 0;
+	virtual std::shared_ptr<ProductT> createFromHandleUncached(const typename SourceT::Handle &handle) = 0;
+
+	/**
+	 * @brief Clear the internal cache of created resources.
+	 */
+	void cleanup()
+	{
+		m_cache.clear();
+	}
 
   protected:
 	/**
 	 * @brief Reference to the WebGPU context for resource creation.
 	 */
 	WebGPUContext &m_context;
+
+	/**
+	 * @brief Cache mapping source handles to created GPU resources.
+	 */
+	std::unordered_map<typename SourceT::Handle, std::shared_ptr<ProductT>> m_cache;
 };
 
 } // namespace engine::rendering::webgpu
