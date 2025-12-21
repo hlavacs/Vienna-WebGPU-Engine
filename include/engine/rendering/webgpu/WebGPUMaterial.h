@@ -8,6 +8,7 @@
 #include "engine/core/Handle.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
+#include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPURenderObject.h"
 
 namespace engine::rendering::webgpu
@@ -28,7 +29,7 @@ struct WebGPUMaterialOptions
  * Uses a dictionary-based texture system that matches texture slot names from the CPU Material
  * to GPU WebGPUTexture instances. This allows flexible, modular material definitions.
  */
-class WebGPUMaterial : public WebGPURenderObject<engine::rendering::Material>
+class WebGPUMaterial : public WebGPURenderObject<engine::rendering::Material>, public std::enable_shared_from_this<WebGPUMaterial>
 {
   public:
 	/**
@@ -48,11 +49,10 @@ class WebGPUMaterial : public WebGPURenderObject<engine::rendering::Material>
 	~WebGPUMaterial() override = default;
 
 	/**
-	 * @brief Set up material state for rendering.
-	 * @param encoder The command encoder for recording commands.
-	 * @param renderPass The render pass for drawing.
+	 * @brief Bind the material for rendering.
+	 * @param renderPass The render pass encoder.
 	 */
-	void render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass) override;
+    void bind(wgpu::RenderPassEncoder &renderPass) const override;
 
 	/**
 	 * @brief Get the material textures dictionary.
@@ -124,6 +124,11 @@ class WebGPUMaterial : public WebGPURenderObject<engine::rendering::Material>
 	 * @brief Custom shader name. Only used if shaderType == ShaderType::Custom.
 	 */
 	std::string m_customShaderName;
+
+	/**
+	 * @brief The material bind group.
+	 */
+    std::shared_ptr<WebGPUBindGroup> m_materialBindGroup;
 };
 
 } // namespace engine::rendering::webgpu

@@ -23,21 +23,18 @@ class WebGPUBuffer
 	 * @param binding Binding index within its bind group.
 	 * @param size Size of the buffer in bytes.
 	 * @param usage Buffer usage flags (raw flags).
-	 * @param isGlobal Whether this is a global (engine-managed) buffer.
 	 */
 	WebGPUBuffer(
 		wgpu::Buffer buffer,
 		std::string name,
 		uint32_t binding,
 		size_t size,
-		WGPUBufferUsageFlags usage,
-		bool isGlobal
+		WGPUBufferUsageFlags usage
 	) : m_buffer(buffer),
 		m_name(std::move(name)),
 		m_binding(binding),
 		m_size(size),
-		m_usage(usage),
-		m_isGlobal(isGlobal)
+		m_usage(usage)
 	{
 	}
 
@@ -68,8 +65,7 @@ class WebGPUBuffer
 		  m_name(std::move(other.m_name)),
 		  m_binding(other.m_binding),
 		  m_size(other.m_size),
-		  m_usage(other.m_usage),
-		  m_isGlobal(other.m_isGlobal)
+		  m_usage(other.m_usage)
 	{
 		other.m_buffer = nullptr;
 	}
@@ -91,7 +87,6 @@ class WebGPUBuffer
 			m_binding = other.m_binding;
 			m_size = other.m_size;
 			m_usage = other.m_usage;
-			m_isGlobal = other.m_isGlobal;
 
 			other.m_buffer = nullptr;
 		}
@@ -105,7 +100,6 @@ class WebGPUBuffer
 	uint32_t getBinding() const { return m_binding; }
 	size_t getSize() const { return m_size; }
 	WGPUBufferUsageFlags getUsage() const { return m_usage; }
-	bool isGlobal() const { return m_isGlobal; }
 	bool isValid() const { return m_buffer != nullptr; }
 
   private:
@@ -114,7 +108,6 @@ class WebGPUBuffer
 	uint32_t m_binding = 0;
 	size_t m_size = 0;
 	WGPUBufferUsageFlags m_usage = 0;
-	bool m_isGlobal = false;
 };
 
 } // namespace engine::rendering::webgpu

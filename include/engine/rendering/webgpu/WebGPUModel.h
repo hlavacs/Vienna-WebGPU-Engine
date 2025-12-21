@@ -42,7 +42,13 @@ class WebGPUModel : public WebGPURenderObject<engine::rendering::Model>
 	 * @param encoder The command encoder.
 	 * @param renderPass The render pass.
 	 */
-	void render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass) override;
+	void render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass);
+
+
+	void bind(wgpu::RenderPassEncoder &renderPass) const override
+	{
+		// Models typically don't bind directly; their meshes and materials handle binding.
+	}
 
 	/**
 	 * @brief Get the GPU-side mesh.

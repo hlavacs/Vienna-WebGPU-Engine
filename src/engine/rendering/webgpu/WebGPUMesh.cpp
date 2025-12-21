@@ -15,7 +15,7 @@ void WebGPUMesh::render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &
 	for (auto &sub : m_submeshes)
 	{
 		if (sub.material)
-			sub.material->render(encoder, renderPass);
+			sub.material->bind(renderPass);
 
 		if (isIndexed())
 			renderPass.drawIndexed(sub.indexCount, 1, sub.indexOffset, 0, 0);

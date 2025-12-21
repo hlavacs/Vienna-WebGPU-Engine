@@ -11,7 +11,7 @@ namespace engine::rendering::webgpu
 WebGPUModelFactory::WebGPUModelFactory(WebGPUContext &context) :
 	BaseWebGPUFactory(context) {}
 
-std::shared_ptr<WebGPUModel> WebGPUModelFactory::createFromHandle(
+std::shared_ptr<WebGPUModel> WebGPUModelFactory::createFromHandleUncached(
 	const engine::rendering::Model::Handle &modelHandle,
 	const WebGPUModelOptions &options
 )
@@ -19,7 +19,7 @@ std::shared_ptr<WebGPUModel> WebGPUModelFactory::createFromHandle(
 	auto modelOpt = modelHandle.get();
 	if (!modelOpt || !modelOpt.value())
 	{
-		throw std::runtime_error("Invalid model handle in WebGPUModelFactory::createFromHandle");
+		throw std::runtime_error("Invalid model handle in WebGPUModelFactory::createFromHandleUncached");
 	}
 
 	const auto &model = *modelOpt.value();
@@ -54,11 +54,11 @@ std::shared_ptr<WebGPUModel> WebGPUModelFactory::createFromHandle(
 	);
 }
 
-std::shared_ptr<WebGPUModel> WebGPUModelFactory::createFromHandle(
+std::shared_ptr<WebGPUModel> WebGPUModelFactory::createFromHandleUncached(
 	const engine::rendering::Model::Handle &handle
 )
 {
-	return createFromHandle(handle, WebGPUModelOptions{});
+	return createFromHandleUncached(handle, WebGPUModelOptions{});
 }
 
 } // namespace engine::rendering::webgpu

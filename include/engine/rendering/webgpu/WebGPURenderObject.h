@@ -117,11 +117,10 @@ class WebGPURenderObject : public engine::core::Identifiable<WebGPURenderObject<
 	}
 
 	/**
-	 * @brief Render the object using the provided command encoder.
-	 * @param encoder The command encoder to record rendering commands.
-	 * @param renderPass The active render pass to issue draw calls.
+	 * @brief Bind the render object for rendering.
+	 * @param renderPass The render pass encoder.
 	 */
-	virtual void render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass) = 0;
+    virtual void bind(wgpu::RenderPassEncoder &renderPass) const = 0;
 
 	/** @brief Get the WebGPU context. */
 	WebGPUContext &getContext() { return m_context; }

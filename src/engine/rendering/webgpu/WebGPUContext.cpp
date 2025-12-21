@@ -26,7 +26,7 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
 	m_modelFactory = std::make_unique<WebGPUModelFactory>(*this);
 	m_depthStencilStateFactory = std::make_unique<WebGPUDepthStencilStateFactory>();
 	m_renderPassFactory = std::make_unique<WebGPURenderPassFactory>(*this);
-	m_shaderFactory = std::make_unique<ShaderFactory>(*this);
+	m_shaderFactory = std::make_unique<WebGPUShaderFactory>(*this);
 	m_lastWindowHandle = windowHandle;
 #ifdef __EMSCRIPTEN__
 	m_instance = wgpu::wgpuCreateInstance(nullptr);
@@ -272,11 +272,11 @@ WebGPUModelFactory &WebGPUContext::modelFactory()
 	return *m_modelFactory;
 }
 
-ShaderFactory &WebGPUContext::shaderFactory()
+WebGPUShaderFactory &WebGPUContext::shaderFactory()
 {
 	if (!m_shaderFactory)
 	{
-		throw std::runtime_error("ShaderFactory not initialized!");
+		throw std::runtime_error("WebGPUShaderFactory not initialized!");
 	}
 	return *m_shaderFactory;
 }
@@ -321,19 +321,6 @@ wgpu::Texture WebGPUContext::createTexture(const wgpu::TextureDescriptor &desc)
 {
 	// --------------- Create texture ---------------
 	return m_device.createTexture(desc);
-}
-
-void WebGPUContext::updateGlobalBuffer(const std::string &bufferName, const void *data, size_t size)
-{
-	// Get the global buffer from ShaderFactory's cache
-	auto buffer = m_shaderFactory->getGlobalBuffer(bufferName);
-	if (!buffer)
-	{
-		throw std::runtime_error("Global buffer '" + bufferName + "' not found in cache!");
-	}
-
-	// Write data to the buffer
-	m_queue.writeBuffer(buffer->getBuffer(), 0, data, size);
 }
 
 } // namespace engine::rendering::webgpu

@@ -9,7 +9,7 @@ namespace engine::rendering::webgpu
 WebGPUTextureFactory::WebGPUTextureFactory(WebGPUContext &context) :
 	BaseWebGPUFactory(context) {}
 
-std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandle(
+std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 	const engine::rendering::TextureHandle &textureHandle
 )
 {
@@ -22,7 +22,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandle(
 	std::string textureName = texture.getName().value_or(std::to_string(textureHandle.id()));
 	// Prepare texture descriptor
 	wgpu::TextureDescriptor desc{};
-	desc.label = ("Texture" + textureName).c_str();
+	desc.label = ("Texture_" + textureName).c_str();
 	desc.dimension = wgpu::TextureDimension::_2D;
 	desc.size.width = texture.getWidth();
 	desc.size.height = texture.getHeight();

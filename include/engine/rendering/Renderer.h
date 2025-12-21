@@ -78,6 +78,9 @@ class Renderer
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
 	std::unique_ptr<PipelineManager> m_pipelineManager;
 	std::unique_ptr<RenderPassManager> m_renderPassManager;
+	
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_frameBindGroup;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
 
 	// Cached resources
 	std::shared_ptr<webgpu::WebGPUDepthTexture> m_depthBuffer;
@@ -97,6 +100,10 @@ class Renderer
 	bool setupDefaultPipelines();
 	bool setupDefaultRenderPasses();
 	void updateLights(const std::vector<LightStruct> &lights);
+
+	void bindFrameUniforms(wgpu::RenderPassEncoder renderPass);
+	void bindLightUniforms(wgpu::RenderPassEncoder renderPass);
+
 	void renderDebugPrimitives(
 		wgpu::RenderPassEncoder renderPass,
 		const DebugRenderCollector &debugCollector

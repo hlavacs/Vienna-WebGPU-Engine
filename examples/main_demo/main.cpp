@@ -4,6 +4,7 @@
  */
 
 #include "engine/EngineMain.h"
+// ^ This has to be on top to define SDL_MAIN_HANDLED ^
 #include "OrbitCamera.h"
 
 int main(int argc, char **argv)
@@ -71,7 +72,7 @@ int main(int argc, char **argv)
 	engine::rendering::Model::Handle modelHandle;
 	bool modelLoaded = false;
 	auto maybeModel = resourceManager->m_modelManager->createModel("fourareen.obj");
-	// ToDo: Optional Material path
+
 	if (maybeModel.has_value())
 	{
 		spdlog::info("Loaded fourareen.obj model");
@@ -80,8 +81,12 @@ int main(int argc, char **argv)
 
 		// Create a ModelRenderNode and add it to the scene
 		// The renderer will create GPU resources when needed
-		auto modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandle);
-		rootNode->addChild(modelNode);
+		for (int i = 0; i < 30; i++)
+		{
+			auto modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandle);
+			modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, static_cast<float>(i) * 2.0f - 3.0f));
+			rootNode->addChild(modelNode);
+		}
 		spdlog::info("Added model to scene");
 	}
 

@@ -6,6 +6,7 @@
 
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
+#include "engine/rendering/webgpu/WebGPUMaterial.h"
 
 namespace engine::rendering::webgpu
 {
@@ -32,8 +33,6 @@ class WebGPUBindGroupFactory
 	 * @brief Destructor. Cleans up created bind groups and layouts.
 	 */
 	~WebGPUBindGroupFactory();
-
-	// === Utility: Bind Group Layout Entry Creation ===
 
 	/**
 	 * @brief Helper to create a uniform buffer BindGroupLayoutEntry for type T.
@@ -103,16 +102,11 @@ class WebGPUBindGroupFactory
 
 	/**
 	 * @brief Helper to create a vector of BindGroupLayoutEntries with auto binding assignment.
-	 * @tparam Entries Variadic BindGroupLayoutEntry arguments.
 	 * @param rawEntries BindGroupLayoutEntry objects (with binding=-1 for auto).
 	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
 	 */
-	template <typename... Entries>
-	std::shared_ptr<WebGPUBindGroupLayoutInfo> createCustomBindGroupLayout(Entries &&...rawEntries)
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> createBindGroupLayoutInfo(std::vector<wgpu::BindGroupLayoutEntry> entries)
 	{
-		static_assert((std::is_convertible_v<Entries, wgpu::BindGroupLayoutEntry> && ...), "All arguments must be convertible to wgpu::BindGroupLayoutEntry");
-
-		std::vector<wgpu::BindGroupLayoutEntry> entries = {std::forward<Entries>(rawEntries)...};
 		uint32_t nextBinding = 0;
 
 		for (auto &entry : entries)
@@ -131,8 +125,120 @@ class WebGPUBindGroupFactory
 		return std::make_shared<WebGPUBindGroupLayoutInfo>(layout, desc);
 	}
 
-	// === Descriptor creation ===
+	/**
+	 * @brief Helper to create a vector of BindGroupLayoutEntries with auto binding assignment.
+	 * @tparam Entries Variadic BindGroupLayoutEntry arguments.
+	 * @param rawEntries BindGroupLayoutEntry objects (with binding=-1 for auto).
+	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
+	 */
+	template <typename... Entries>
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> createBindGroupLayoutInfo(Entries &&...rawEntries)
+	{
+		static_assert((std::is_convertible_v<Entries, wgpu::BindGroupLayoutEntry> && ...), "All arguments must be convertible to wgpu::BindGroupLayoutEntry");
 
+		std::vector<wgpu::BindGroupLayoutEntry> entries = {std::forward<Entries>(rawEntries)...};
+		return createBindGroupLayoutInfo(entries);
+	}
+
+	/**
+	 * @brief Generic bind group creation from entries.
+	 */
+	wgpu::BindGroup createBindGroup(
+		const wgpu::BindGroupLayout &layout,
+		const std::vector<wgpu::BindGroupEntry> &entries
+	);
+
+	/**
+	 * @brief Create a WebGPUBindGroup from layout info and optional material.
+	 * @param layoutInfo The bind group layout info.
+	 * @param material Optional material for per-material resources.
+	 * @return Shared pointer to the created WebGPUBindGroup, or nullptr if not ready.
+	 */
+	std::shared_ptr<WebGPUBindGroup> createBindGroup(
+		const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo,
+		const std::shared_ptr<WebGPUMaterial> &material = nullptr
+	);
+
+	/**
+	 * @brief Release all created bind groups and layouts.
+	 */
+	void cleanup()
+	{
+		m_globalBindGroups.clear();
+		m_globalBindGroupLayouts.clear();
+	}
+
+	/**
+	 * @brief Get global bind group by key.
+	 * @param key Unique key for the bind group.
+	 * @return Shared pointer to the WebGPUBindGroup, or nullptr if not found.
+	 */
+	std::shared_ptr<WebGPUBindGroup> getGlobalBindGroup(const std::string &key)
+	{
+		auto it = m_globalBindGroups.find(key);
+		if (it == m_globalBindGroups.end())
+		{
+			return nullptr;
+		}
+		return it->second;
+	}
+
+	/**
+	 * @brief Get global bind group layout by key.
+	 * @param key Unique key for the bind group layout.
+	 * @return Shared pointer to the WebGPUBindGroupLayoutInfo, or nullptr if not found.
+	 */
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> getGlobalBindGroupLayout(
+		const std::string &key
+	)
+	{
+		auto it = m_globalBindGroupLayouts.find(key);
+		if (it == m_globalBindGroupLayouts.end())
+		{
+			return nullptr;
+		}
+		return it->second;
+	}
+
+	/**
+	 * @brief Store a global bind group with a unique key.
+	 * @param key Unique key for the bind group.
+	 * @param bindGroup Shared pointer to the WebGPUBindGroup.
+	 * @return True if stored successfully, false if key already exists.
+	 */
+	bool storeGlobalBindGroup(
+		const std::string &key,
+		const std::shared_ptr<WebGPUBindGroup> &bindGroup
+	)
+	{
+		if (m_globalBindGroups.find(key) != m_globalBindGroups.end())
+		{
+			return false; // Key already exists
+		}
+		m_globalBindGroups[key] = bindGroup;
+		return true;
+	}
+
+	/**
+	 * @brief Store a global bind group layout with a unique key.
+	 * @param key Unique key for the bind group layout.
+	 * @param layoutInfo Shared pointer to the WebGPUBindGroupLayoutInfo.
+	 * @return True if stored successfully, false if key already exists.
+	 */
+	bool storeGlobalBindGroupLayout(
+		const std::string &key,
+		const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo
+	)
+	{
+		if (m_globalBindGroupLayouts.find(key) != m_globalBindGroupLayouts.end())
+		{
+			return false; // Key already exists
+		}
+		m_globalBindGroupLayouts[key] = layoutInfo;
+		return true;
+	}
+
+  protected:
 	/**
 	 * @brief Create a BindGroupLayoutDescriptor from entries.
 	 */
@@ -142,8 +248,6 @@ class WebGPUBindGroupFactory
 	 * @brief Create a BindGroupDescriptor from layout and entries.
 	 */
 	wgpu::BindGroupDescriptor createBindGroupDescriptor(const wgpu::BindGroupLayout &layout, const std::vector<wgpu::BindGroupEntry> &entries);
-
-	// === Creation from descriptors ===
 
 	/**
 	 * @brief Create a BindGroupLayout from a descriptor.
@@ -155,94 +259,11 @@ class WebGPUBindGroupFactory
 	 */
 	wgpu::BindGroup createBindGroupFromDescriptor(const wgpu::BindGroupDescriptor &desc);
 
-	// === Bind Group Layouts ===
-
-	/**
-	 * @brief Create a default material BindGroupLayout (albedo, normal, sampler).
-	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
-	 */
-	std::shared_ptr<WebGPUBindGroupLayoutInfo> createDefaultMaterialBindGroupLayout();
-
-	/**
-	 * @brief Create a default lighting BindGroupLayout (uniform buffer).
-	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
-	 */
-	std::shared_ptr<WebGPUBindGroupLayoutInfo> createDefaultLightingBindGroupLayout();
-
-	// === Bind Groups ===
-
-	/**
-	 * @brief Create a bind group for materials (baseColor, normal, sampler).
-	 */
-	wgpu::BindGroup createMaterialBindGroup(
-		const wgpu::BindGroupLayout &layout,
-		const wgpu::Buffer &materialPropertiesBuffer,
-		const wgpu::TextureView &baseColor,
-		const wgpu::TextureView &normal,
-		const wgpu::Sampler &sampler
-	);
-
-	/**
-	 * @brief Create a bind group for lighting using a uniform buffer.
-	 */
-	wgpu::BindGroup createLightingBindGroup(
-		const wgpu::BindGroupLayout &layout,
-		const wgpu::Buffer &lightingBuffer
-	);
-
-	/**
-	 * @brief Generic bind group creation from entries.
-	 */
-	wgpu::BindGroup createBindGroup(
-		const wgpu::BindGroupLayout &layout,
-		const std::vector<wgpu::BindGroupEntry> &entries
-	);
-
-	/**
-	 * @brief Creates a bind group from layout info and buffers.
-	 * Automatically constructs bind group entries based on the layout.
-	 * @param layoutInfo The bind group layout info containing entry metadata.
-	 * @param buffers Buffers to bind, in order of binding indices.
-	 * @return The created bind group.
-	 */
-	wgpu::BindGroup createBindGroupFromLayout(
-		const WebGPUBindGroupLayoutInfo &layoutInfo,
-		const std::vector<wgpu::Buffer> &buffers
-	);
-
-	/**
-	 * @brief Creates a bind group from layout info with explicit buffer sizes.
-	 * Useful when you need to specify exact buffer ranges.
-	 * @param layoutInfo The bind group layout info containing entry metadata.
-	 * @param bufferSizes Pairs of buffer and size for each binding.
-	 * @return The created bind group.
-	 */
-	wgpu::BindGroup createBindGroupFromLayout(
-		const WebGPUBindGroupLayoutInfo &layoutInfo,
-		const std::vector<std::pair<wgpu::Buffer, size_t>> &bufferSizes
-	);
-
-	/**
-	 * @brief Release all created bind groups and layouts.
-	 */
-	void cleanup();
-
-	/**
-	 * @brief Creates a complete bind group with buffers from layout info.
-	 * Automatically creates all buffers and the bind group based on the layout.
-	 * @param layoutInfo The bind group layout info containing entry metadata.
-	 * @param bufferSizes Optional sizes for each buffer. If empty, uses minBindingSize from layout.
-	 * @return Shared pointer to the created bind group.
-	 */
-	std::shared_ptr<WebGPUBindGroup> createBindGroupWithBuffers(
-		std::shared_ptr<WebGPUBindGroupLayoutInfo> layoutInfo,
-		const std::vector<size_t> &bufferSizes = {}
-	);
-
   private:
 	WebGPUContext &m_context;
-	std::vector<wgpu::BindGroup> m_createdBindGroups;
-	std::vector<wgpu::BindGroupLayout> m_createdBindGroupLayouts;
+
+	std::unordered_map<std::string, std::shared_ptr<WebGPUBindGroup>> m_globalBindGroups;
+	std::unordered_map<std::string, std::shared_ptr<WebGPUBindGroupLayoutInfo>> m_globalBindGroupLayouts;
 };
 
 } // namespace engine::rendering::webgpu

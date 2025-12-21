@@ -227,7 +227,7 @@ Most factories inherit from this template base class:
    - `getDefaultRenderPipeline()` - Returns cached default pipeline
    - `createPipelineLayout(layouts, count)` - Create pipeline layout
 
-8. **ShaderFactory** (`include/engine/rendering/webgpu/ShaderFactory.h`)
+8. **ShaderFactory** (`include/engine/rendering/webgpu/WebGPUShaderFactory.h`)
    - `createShader(path, entryPoint, stage)` - Load and create shader module
    - `createShaderWithBindGroups(...)` - Create shader with automatic bind group layout generation
    - Supports uniform buffers, storage buffers, textures, and samplers
