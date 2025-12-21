@@ -38,20 +38,15 @@ struct Material : public engine::core::Identifiable<Material>,
 
 	struct MaterialProperties
 	{
-		float diffuse[3] = {1.0f, 1.0f, 1.0f};
-		float _pad0;
-		float specular[3] = {0.0f, 0.0f, 0.0f};
-		float _pad1;
-		float transmittance[3] = {0.0f, 0.0f, 0.0f};
-		float _pad2;
-		float emission[3] = {0.0f, 0.0f, 0.0f};
-		float _pad3;
+		float diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // RGBA
+		float specular[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // RGB + Specular intensity in A
+		float emission[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+		float transmittance[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
 		float shininess = 32.0f;
-		float ior = 1.5f;
-		float opacity = 1.0f;
 		float roughness = 0.5f;
 		float metallic = 0.0f;
-		float _pad[3] = {0.0f, 0.0f, 0.0f}; // padding to ensure 16-byte alignment
+		float ior = 1.5f;
 	};
 	static_assert(sizeof(MaterialProperties) % 16 == 0, "MaterialProperties must be 16-byte aligned");
 
@@ -74,7 +69,7 @@ struct Material : public engine::core::Identifiable<Material>,
 	 * @return The material properties struct.
 	 */
 	const MaterialProperties &getProperties() const { return properties; }
-	
+
 	/**
 	 * @brief Set the material properties.
 	 * @param p The new material properties.

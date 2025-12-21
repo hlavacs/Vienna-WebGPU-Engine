@@ -66,55 +66,16 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandleUncached(
 	// Get the material properties
 	const auto &materialProps = material.getProperties();
 
-	// Create diffuse color from properties
-	glm::vec3 diffuseColor(materialProps.diffuse[0], materialProps.diffuse[1], materialProps.diffuse[2]);
-
-	// Get texture views using the helper method
-	std::shared_ptr<WebGPUTexture> albedoView = getTextureView(
-		m_context,
-		material.getAlbedoTexture(),
-		std::optional<glm::vec3>(diffuseColor)
-	);
-
-	std::shared_ptr<WebGPUTexture> normalView = getTextureView(
-		m_context,
-		material.getNormalTexture(),
-		std::nullopt // No color fallback for normal maps
-	);
-
-	wgpu::Buffer materialPropertiesBuffer =
-		m_context.bufferFactory().createUniformBuffer<Material::MaterialProperties>(&materialProps, 1u);
-
-	// Get additional texture views
-	std::shared_ptr<WebGPUTexture> metallicView = getTextureView(
-		m_context,
-		material.getMetallicTexture(),
-		std::nullopt
-	);
-	std::shared_ptr<WebGPUTexture> roughnessView = getTextureView(
-		m_context,
-		material.getRoughnessTexture(),
-		std::nullopt
-	);
-	std::shared_ptr<WebGPUTexture> aoView = getTextureView(
-		m_context,
-		material.getAOTexture(),
-		std::nullopt
-	);
-	std::shared_ptr<WebGPUTexture> emissiveView = getTextureView(
-		m_context,
-		material.getEmissiveTexture(),
-		std::optional<glm::vec3>(glm::vec3(materialProps.emission[0], materialProps.emission[1], materialProps.emission[2]))
-	);
-
-	// Construct the texture dictionary with all loaded textures
+	auto textures = material.getTextures();
 	std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> textureMap;
-	textureMap[MaterialTextureSlots::ALBEDO] = albedoView;
-	textureMap[MaterialTextureSlots::NORMAL] = normalView;
-	textureMap[MaterialTextureSlots::METALLIC] = metallicView;
-	textureMap[MaterialTextureSlots::ROUGHNESS] = roughnessView;
-	textureMap[MaterialTextureSlots::AO] = aoView;
-	textureMap[MaterialTextureSlots::EMISSIVE] = emissiveView;
+	for(const auto& [slot, texHandle] : textures)
+	{
+		if (!texHandle.valid())
+		{
+			throw std::runtime_error("Invalid texture handle for slot " + slot + " in material ID " + std::to_string(material.getId()));
+		}
+		textureMap[slot] = getTextureView(m_context, texHandle, std::nullopt);
+	}
 
 	auto webgpuMaterial = std::make_shared<WebGPUMaterial>(
 		m_context,

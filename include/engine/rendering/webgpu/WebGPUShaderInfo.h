@@ -24,14 +24,26 @@ class WebGPUShaderInfo
 {
   public:
 	// Constructors
-	WebGPUShaderInfo() = default;
+	WebGPUShaderInfo(
+		std::string name,
+		std::string path,
+		std::string vertexEntry,
+		std::string fragmentEntry
+	): m_name(std::move(name)),
+		m_path(std::move(path)),
+		m_vertexEntryPoint(std::move(vertexEntry)),
+		m_fragmentEntryPoint(std::move(fragmentEntry))
+	{
+	}
 
 	WebGPUShaderInfo(
 		std::string name,
+		std::string path,
 		wgpu::ShaderModule mod,
 		std::string vertexEntry,
 		std::string fragmentEntry
 	) : m_name(std::move(name)),
+		m_path(std::move(path)),
 		m_module(mod),
 		m_vertexEntryPoint(std::move(vertexEntry)),
 		m_fragmentEntryPoint(std::move(fragmentEntry))
@@ -40,6 +52,7 @@ class WebGPUShaderInfo
 
 	// === Getters ===
 	const std::string &getName() const { return m_name; }
+	const std::string &getPath() const { return m_path; }
 	wgpu::ShaderModule getModule() const { return m_module; }
 	const std::string &getVertexEntryPoint() const { return m_vertexEntryPoint; }
 	const std::string &getFragmentEntryPoint() const { return m_fragmentEntryPoint; }
@@ -122,6 +135,7 @@ class WebGPUShaderInfo
 
   private:
 	std::string m_name;
+	std::string m_path;
 	wgpu::ShaderModule m_module = nullptr;
 	std::string m_vertexEntryPoint;
 	std::string m_fragmentEntryPoint;

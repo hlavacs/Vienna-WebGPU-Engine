@@ -67,9 +67,6 @@ class WebGPUContext
 	wgpu::TextureFormat getSwapChainFormat() const { return m_swapChainFormat; }
 	wgpu::Sampler getDefaultSampler() const { return m_defaultSampler; }
 
-	// === Texture Utility ===
-	wgpu::Texture createTexture(const wgpu::TextureDescriptor &desc);
-
 	// === Surface Manager Accessor ===
 	WebGPUSurfaceManager &surfaceManager();
 

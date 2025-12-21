@@ -49,6 +49,12 @@ class ShaderRegistry
 	bool initializeDefaultShaders();
 
 	/**
+	 * @brief Reload all shaders in the registry.
+	 * This is useful for hot-reloading during development.
+	 */
+	void reloadAllShaders();
+
+	/**
 	 * @brief Get a shader by its type.
 	 * @param type The shader type to retrieve.
 	 * @return Shared pointer to shader info, or nullptr if not found.

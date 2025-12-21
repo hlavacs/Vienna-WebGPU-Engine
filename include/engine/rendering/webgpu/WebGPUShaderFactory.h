@@ -48,6 +48,7 @@ struct ShaderBinding
 	wgpu::TextureSampleType textureSampleType = wgpu::TextureSampleType::Float;
 	wgpu::TextureViewDimension textureViewDimension = wgpu::TextureViewDimension::_2D;
 	bool textureMultisampled = false;
+	std::optional<glm::vec3> fallbackColor = std::nullopt;
 
 	// Sampler
 	wgpu::SamplerBindingType samplerType = wgpu::SamplerBindingType::Filtering;
@@ -192,7 +193,8 @@ class WebGPUShaderFactory
 		wgpu::TextureSampleType sampleType = wgpu::TextureSampleType::Float,
 		wgpu::TextureViewDimension viewDimension = wgpu::TextureViewDimension::_2D,
 		bool multisampled = false,
-		uint32_t visibility = static_cast<uint32_t>(wgpu::ShaderStage::Fragment)
+		uint32_t visibility = static_cast<uint32_t>(wgpu::ShaderStage::Fragment),
+		std::optional<glm::vec3> fallbackColor = std::nullopt
 	);
 
 	/**
@@ -223,6 +225,12 @@ class WebGPUShaderFactory
 	 * @return Complete WebGPUShaderInfo ready for pipeline creation.
 	 */
 	std::shared_ptr<WebGPUShaderInfo> build();
+
+	/**
+	 * @brief Reloads the shader module from file and updates the shader info.
+	 * @param shaderInfo Shared pointer to existing shader info to reload.
+	 */
+	void reloadShader(const std::shared_ptr<WebGPUShaderInfo> &shaderInfo);
 
   private:
 	/**

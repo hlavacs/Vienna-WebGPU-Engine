@@ -34,7 +34,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 	desc.viewFormatCount = 0;
 	desc.viewFormats = nullptr;
 
-	wgpu::Texture gpuTexture = m_context.createTexture(desc);
+	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(desc);
 
 	// Upload data (assume RGBA8)
 	wgpu::ImageCopyTexture dst{};
@@ -79,6 +79,19 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	uint32_t height
 )
 {
+	// Check cache first
+	auto it = m_colorTextureCache.find(std::make_tuple(
+		static_cast<uint8_t>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f),
+		static_cast<uint8_t>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f),
+		static_cast<uint8_t>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f),
+		255,
+		width,
+		height
+	));
+	if (it != m_colorTextureCache.end())
+	{
+		return it->second;
+	}
 	// Create a width x height RGBA8 texture with the given color
 	std::vector<uint8_t> rgba(width * height * 4);
 	uint8_t r = static_cast<uint8_t>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
@@ -105,7 +118,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	desc.viewFormatCount = 0;
 	desc.viewFormats = nullptr;
 
-	wgpu::Texture gpuTexture = m_context.createTexture(desc);
+	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(desc);
 
 	wgpu::ImageCopyTexture dst{};
 	dst.texture = gpuTexture;
@@ -130,14 +143,15 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	viewDesc.arrayLayerCount = 1;
 	viewDesc.aspect = wgpu::TextureAspect::All;
 
-	auto texture = engine::rendering::Texture(width, height, 4, std::move(rgba));
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
-	return std::make_shared<WebGPUTexture>(
+	auto texturePtr = std::make_shared<WebGPUTexture>(
 		gpuTexture,
 		view,
 		desc,
 		viewDesc
 	);
+	m_colorTextureCache[std::make_tuple(r, g, b, a, width, height)] = texturePtr;
+	return texturePtr;
 }
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
@@ -152,7 +166,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
 	// Optionally check dimension compatibility
 	assert(viewDesc.dimension == wgpu::TextureViewDimension::_2D && textureDesc.dimension == wgpu::TextureDimension::_2D && "Only 2D textures/views supported");
 
-	wgpu::Texture gpuTexture = m_context.createTexture(textureDesc);
+	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(textureDesc);
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
 	return std::make_shared<WebGPUTexture>(
 		gpuTexture,

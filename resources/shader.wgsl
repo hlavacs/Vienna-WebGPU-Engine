@@ -20,7 +20,7 @@ struct VertexOutput {
 }
 
 ;
-// ToDo: Split in Camera on binding 0 and time (or other stuff) on other bindings
+
 struct FrameUniforms {
 	viewMatrix: mat4x4f,
 	projectionMatrix: mat4x4f,
@@ -60,25 +60,24 @@ struct LightsBuffer {
 struct ObjectUniforms {
 	modelMatrix: mat4x4f,
 	normalMatrix: mat4x4f,
-	// For correct normal transformation
 }
 
 ;
 
 struct MaterialUniforms {
-	diffuse: vec3f,
-	_pad1: f32,
-	specular: vec3f,
-	_pad2: f32,
-	transmittance: vec3f,
-	_pad3: f32,
-	emission: vec3f,
-	_pad4: f32,
+	// xyz = baseColor, w = opacity
+	diffuse: vec4f,
+	// xyz = specularColor, w = specularStrength
+	specular: vec4f,
+	// xyz = emissiveColor, w = emissionIntensity
+	emission: vec4f,
+	// xyz = transmittanceColor, w = transmittanceIntensity
+	transmittance: vec4f,
+
 	shininess: f32,
-	ior: f32,
-	opacity: f32,
 	roughness: f32,
-	metallic: f32
+	metallic: f32,
+	ior: f32,
 }
 
 ;
@@ -100,6 +99,17 @@ var textureSampler: sampler;
 var baseColorTexture: texture_2d<f32>;
 @group(3) @binding(3)
 var normalTexture: texture_2d<f32>;
+@group(3) @binding(4)
+var aoTexture: texture_2d<f32>;
+@group(3) @binding(5)
+var roughnessTexture: texture_2d<f32>;
+@group(3) @binding(6)
+var metallicTexture: texture_2d<f32>;
+@group(3) @binding(7)
+var emissionTexture: texture_2d<f32>;
+
+const PI: f32 = 3.141592653589793;
+const AMBIENT_INTENSITY: f32 = 0.03;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
@@ -148,7 +158,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 	// Get material properties from the buffer
 	let kd = 1.0;
 	// Diffuse coefficient (using material diffuse color below)
-	let ks = length(uMaterial.specular) / 1.732;
+	let ks = length(uMaterial.specular.rgb) / 1.732;
 	// Specular coefficient (normalize from vec3 to scalar)
 	let hardness = uMaterial.shininess;
 
@@ -157,7 +167,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
 		if (light.light_type == 0u) {
 			// Ambient light: just add its color * intensity
-			color += baseColor * uMaterial.diffuse * light.color * light.intensity;
+			color += baseColor * uMaterial.diffuse.rgb * light.color * light.intensity;
 			continue;
 		}
 
@@ -212,10 +222,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 		let specular = pow(max(0.0, dot(R, V)), hardness) * ks * light.intensity * attenuation;
 
 		// Combine texture color with material diffuse color and apply lighting
-		color += baseColor * uMaterial.diffuse * diffuse + uMaterial.specular * specular;
+		color += baseColor * uMaterial.diffuse.rgb * diffuse + uMaterial.specular.rgb * specular;
 	}
 
 	// Gamma-correction
 	let corrected_color = pow(color, vec3f(2.2));
-	return vec4f(corrected_color, uMaterial.opacity);
+	return vec4f(corrected_color, uMaterial.diffuse.w);
 }

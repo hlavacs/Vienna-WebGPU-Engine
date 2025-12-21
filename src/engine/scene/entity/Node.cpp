@@ -1,8 +1,8 @@
 #include "engine/scene/entity/Node.h"
+#include "engine/rendering/DebugCollector.h"
+#include "engine/scene/entity/PhysicsNode.h"
 #include "engine/scene/entity/RenderNode.h"
 #include "engine/scene/entity/UpdateNode.h"
-#include "engine/scene/entity/PhysicsNode.h"
-#include "engine/rendering/DebugCollector.h"
 
 namespace engine::scene::entity
 {
@@ -49,7 +49,7 @@ void Node::onDestroy()
 	children.clear();
 }
 
-void Node::onDebugDraw(engine::rendering::DebugRenderCollector& collector)
+void Node::onDebugDraw(engine::rendering::DebugRenderCollector &collector)
 {
 	// Default implementation: do nothing
 	// Derived classes can override to add debug visualization
@@ -97,11 +97,11 @@ void Node::removeChild(Ptr child)
 	child->setEngineContext(nullptr); // Clear context when removed
 }
 
-void Node::setEngineContext(engine::EngineContext* context)
+void Node::setEngineContext(engine::EngineContext *context)
 {
 	m_engineContext = context;
 	// Propagate to all children
-	for (auto& child : children)
+	for (auto &child : children)
 	{
 		if (child)
 			child->setEngineContext(context);
@@ -109,7 +109,22 @@ void Node::setEngineContext(engine::EngineContext* context)
 }
 
 Node *Node::getParent() const { return parent; }
-const std::vector<Node::Ptr> &Node::getChildren() const { return children; }
+std::vector<Node::Ptr> Node::getChildren(std::optional<std::string> name) const
+{
+	if (!name.has_value())
+	{
+		return children;
+	}
+	std::vector<Node::Ptr> filteredChildren;
+	for (const auto &child : children)
+	{
+		if (child && child->getName().has_value() && child->getName().value() == name)
+		{
+			filteredChildren.push_back(child);
+		}
+	}
+	return filteredChildren;
+}
 
 std::shared_ptr<RenderNode> Node::asRenderNode()
 {

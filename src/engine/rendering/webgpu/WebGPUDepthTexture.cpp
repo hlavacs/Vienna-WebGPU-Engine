@@ -19,7 +19,7 @@ bool WebGPUDepthTexture::resize(WebGPUContext &context, uint32_t newWidth, uint3
     }
 
     // Create new texture
-    wgpu::Texture newTexture = context.createTexture(newTexDesc);
+    wgpu::Texture newTexture = context.getDevice().createTexture(newTexDesc);
     if (!newTexture)
     {
         return false;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/glm.hpp>
 #include <memory>
 #include <optional>
 #include <string>
@@ -140,6 +141,19 @@ class WebGPUBindGroupLayoutInfo
 	}
 
 	/**
+	 * @brief Sets the fallback color for a specific binding.
+	 * @param binding The binding index.
+	 * @param color The fallback color as glm::vec3 (optional).
+	 */
+	void setFallbackColor(uint32_t binding, const std::optional<glm::vec3> &color)
+	{
+		if (color.has_value())
+		{
+			m_fallbackColors[binding] = color.value();
+		}
+	}
+
+	/**
 	 * @brief Gets the material slot name for a specific binding.
 	 * @param binding The binding index.
 	 * @return The material slot name, or empty string if not set.
@@ -148,6 +162,21 @@ class WebGPUBindGroupLayoutInfo
 	{
 		auto it = m_materialSlotNames.find(binding);
 		return (it != m_materialSlotNames.end()) ? it->second : "";
+	}
+
+	/**
+	 * @brief Gets the fallback color for a specific binding.
+	 * @param binding The binding index.
+	 * @return The fallback color as glm::vec3, or std::nullopt if not set.
+	 */
+	std::optional<glm::vec3> getFallbackColor(uint32_t binding) const
+	{
+		auto it = m_fallbackColors.find(binding);
+		if (it != m_fallbackColors.end())
+		{
+			return it->second;
+		}
+		return std::nullopt;
 	}
 
   private:
@@ -165,6 +194,9 @@ class WebGPUBindGroupLayoutInfo
 
 	/** Maps binding index to material slot name for texture bindings */
 	std::unordered_map<uint32_t, std::string> m_materialSlotNames;
+
+	/** Maps binding index to fallback color for texture bindings */
+	std::unordered_map<uint32_t, glm::vec3> m_fallbackColors;
 };
 
 } // namespace engine::rendering::webgpu

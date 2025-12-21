@@ -27,10 +27,12 @@ WebGPUShaderFactory &WebGPUShaderFactory::begin(
 )
 {
 	// Reset state for new shader
-	m_shaderInfo = std::make_shared<WebGPUShaderInfo>();
-	m_shaderInfo->setName(name);
-	m_shaderInfo->setVertexEntryPoint(vertexEntry);
-	m_shaderInfo->setFragmentEntryPoint(fragmentEntry);
+	m_shaderInfo = std::make_shared<WebGPUShaderInfo>(
+		name,
+		shaderPath.string(),
+		vertexEntry,
+		fragmentEntry
+	);
 	m_shaderPath = shaderPath;
 	m_bindGroupsBuilder.clear();
 
@@ -144,7 +146,8 @@ WebGPUShaderFactory &WebGPUShaderFactory::addTexture(
 	wgpu::TextureSampleType sampleType,
 	wgpu::TextureViewDimension viewDimension,
 	bool multisampled,
-	uint32_t visibility
+	uint32_t visibility,
+	std::optional<glm::vec3> fallbackColor
 )
 {
 	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);
@@ -158,6 +161,7 @@ WebGPUShaderFactory &WebGPUShaderFactory::addTexture(
 	textureBinding.textureSampleType = sampleType;
 	textureBinding.textureViewDimension = viewDimension;
 	textureBinding.textureMultisampled = multisampled;
+	textureBinding.fallbackColor = fallbackColor;
 
 	bindGroupBuilder.bindings.push_back(textureBinding);
 	return *this;
@@ -184,6 +188,50 @@ WebGPUShaderFactory &WebGPUShaderFactory::addSampler(
 	return *this;
 }
 
+void WebGPUShaderFactory::reloadShader(const std::shared_ptr<WebGPUShaderInfo> &shaderInfo)
+{
+	std::string shaderPath = shaderInfo->getPath();
+
+	std::ifstream file(shaderPath);
+	if (!file.is_open())
+	{
+		spdlog::error("WebGPUShaderFactory::reloadShader() - Failed to open shader file '{}'", shaderPath);
+		return;
+	}
+	file.seekg(0, std::ios::end);
+	size_t size = file.tellg();
+	std::string shaderSource(size, ' ');
+	file.seekg(0);
+	file.read(shaderSource.data(), size);
+
+	wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc;
+	shaderCodeDesc.chain.next = nullptr;
+	shaderCodeDesc.chain.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+	shaderCodeDesc.code = shaderSource.c_str();
+	wgpu::ShaderModuleDescriptor shaderDesc;
+	shaderDesc.nextInChain = &shaderCodeDesc.chain;
+#ifdef WEBGPU_BACKEND_WGPU
+	shaderDesc.hintCount = 0;
+	shaderDesc.hints = nullptr;
+#endif
+
+	auto shaderModule = m_context.getDevice().createShaderModule(shaderDesc);
+
+	if (!shaderModule)
+	{
+		spdlog::error("WebGPUShaderFactory::loadShaderModule() - Failed to load shader from '{}'", m_shaderPath.string());
+		return;
+	}
+
+	m_shaderInfo->setModule(shaderModule);
+	spdlog::debug("Loaded shader module from '{}'", m_shaderPath.string());
+}
+
+WebGPUShaderFactory::BindGroupBuilder &WebGPUShaderFactory::getOrCreateBindGroup(uint32_t groupIndex)
+{
+	return m_bindGroupsBuilder[groupIndex];
+}
+
 std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::build()
 {
 	// Load shader module if not already set and path provided
@@ -204,11 +252,6 @@ std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::build()
 	spdlog::info("WebGPUShaderFactory: Built shader '{}' with {} bind groups", m_shaderInfo->getName(), m_shaderInfo->getBindGroupLayouts().size());
 
 	return m_shaderInfo;
-}
-
-WebGPUShaderFactory::BindGroupBuilder &WebGPUShaderFactory::getOrCreateBindGroup(uint32_t groupIndex)
-{
-	return m_bindGroupsBuilder[groupIndex];
 }
 
 void WebGPUShaderFactory::createBindGroupLayouts()
@@ -290,10 +333,13 @@ void WebGPUShaderFactory::createBindGroupLayouts()
 		// Store material slot names for texture bindings
 		for (const auto &binding : bindings)
 		{
-			if (binding.type == BindingType::Texture && !binding.materialSlotName.empty())
+			if (binding.type != BindingType::Texture)
+				continue;
+			if(!binding.materialSlotName.empty())
 			{
 				layoutInfo->setMaterialSlotName(binding.binding, binding.materialSlotName);
 			}
+			layoutInfo->setFallbackColor(binding.binding, binding.fallbackColor);
 		}
 
 		m_shaderInfo->addBindGroupLayout(groupIndex, layoutInfo);
