@@ -317,10 +317,4 @@ WebGPURenderPassFactory &WebGPUContext::renderPassFactory()
 	return *m_renderPassFactory;
 }
 
-wgpu::Texture WebGPUContext::createTexture(const wgpu::TextureDescriptor &desc)
-{
-	// --------------- Create texture ---------------
-	return m_device.createTexture(desc);
-}
-
 } // namespace engine::rendering::webgpu

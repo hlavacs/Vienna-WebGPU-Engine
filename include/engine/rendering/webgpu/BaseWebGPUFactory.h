@@ -71,6 +71,17 @@ class BaseWebGPUFactory
 		return createFromHandleUncached(handle);
 	}
 
+	/**
+	 * @brief Clear the internal cache of created resources.
+	 * Careful: this does not delete the resources themselves if they are still referenced elsewhere.
+	 * @note Override this method in derived classes if additional cleanup is needed.
+	 * @warning If used it might lead to dangling pointers in existing resources!
+	 */
+	virtual void cleanup()
+	{
+		m_cache.clear();
+	}
+
   protected:
 	/**
 	 * @brief Create a GPU resource from a handle to a source object.
@@ -78,14 +89,6 @@ class BaseWebGPUFactory
 	 * @return Shared pointer to the created GPU resource.
 	 */
 	virtual std::shared_ptr<ProductT> createFromHandleUncached(const typename SourceT::Handle &handle) = 0;
-
-	/**
-	 * @brief Clear the internal cache of created resources.
-	 */
-	void cleanup()
-	{
-		m_cache.clear();
-	}
 
   protected:
 	/**

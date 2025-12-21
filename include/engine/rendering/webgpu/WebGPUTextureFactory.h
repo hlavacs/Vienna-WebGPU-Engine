@@ -1,4 +1,26 @@
+
 #pragma once
+
+// Hash specialization for tuple used as color texture cache key
+#include <tuple>
+#include <cstdint>
+#include <functional>
+namespace std {
+template<>
+struct hash<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>> {
+	size_t operator()(const std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>& t) const noexcept {
+		size_t h = 0;
+		h ^= std::hash<uint8_t>{}(std::get<0>(t)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		h ^= std::hash<uint8_t>{}(std::get<1>(t)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		h ^= std::hash<uint8_t>{}(std::get<2>(t)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		h ^= std::hash<uint8_t>{}(std::get<3>(t)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		h ^= std::hash<uint32_t>{}(std::get<4>(t)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		h ^= std::hash<uint32_t>{}(std::get<5>(t)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		return h;
+	}
+};
+}
+
 #include <glm/glm.hpp>
 #include <memory>
 
@@ -53,6 +75,13 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	 */
 	std::shared_ptr<WebGPUTexture> getDefaultNormalTexture();
 
+	void cleanup() override {
+		m_whiteTexture.reset();
+		m_defaultNormalTexture.reset();
+		m_colorTextureCache.clear();
+		BaseWebGPUFactory::cleanup();
+	}
+
   protected:
 	/**
 	 * @brief Create a WebGPUTexture from a Texture handle.
@@ -66,6 +95,6 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
   private:
 	std::shared_ptr<WebGPUTexture> m_whiteTexture;
 	std::shared_ptr<WebGPUTexture> m_defaultNormalTexture;
+	std::unordered_map<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>, std::shared_ptr<WebGPUTexture>> m_colorTextureCache;
 };
-
 } // namespace engine::rendering::webgpu

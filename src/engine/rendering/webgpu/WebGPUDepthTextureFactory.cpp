@@ -36,7 +36,7 @@ std::shared_ptr<WebGPUDepthTexture> WebGPUDepthTextureFactory::create(
 	desc.usage = usage;
 
 	// Create the texture
-	wgpu::Texture texture = m_context.createTexture(desc);
+	wgpu::Texture texture = m_context.getDevice().createTexture(desc);
 	assert(texture);
 
 	// Describe the view

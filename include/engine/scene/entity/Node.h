@@ -110,8 +110,30 @@ public:
 	void removeChild(Ptr child);
 	/** @brief Get parent node. */
 	Node* getParent() const;
-	/** @brief Get children. */
-	const std::vector<Ptr>& getChildren() const;
+	
+	/**
+	 * @brief Get child nodes. If name is provided, only children with that name are returned.
+	 * @param name Optional name to filter children by.
+	 * @return Vector of child nodes.
+	 */
+	 std::vector<Ptr> getChildren(std::optional<std::string> name = std::nullopt) const;
+
+	/**
+	 * @brief Get child nodes of a specific type.
+	 * @tparam T The derived node type to filter by.
+	 * @return Vector of child nodes of type T.
+	 */
+	template<typename T>
+	std::vector<std::shared_ptr<T>> getChildrenOfType() const {
+		std::vector<std::shared_ptr<T>> result;
+		for (const auto& child : children) {
+			auto casted = std::dynamic_pointer_cast<T>(child);
+			if (casted) {
+				result.push_back(casted);
+			}
+		}
+		return result;
+	}
 	
 	/** @brief Get the node type flags for this node. */
 	NodeType getNodeType() const { return m_nodeType; }

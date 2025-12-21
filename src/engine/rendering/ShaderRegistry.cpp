@@ -13,8 +13,7 @@
 namespace engine::rendering
 {
 
-ShaderRegistry::ShaderRegistry(webgpu::WebGPUContext& context)
-	: m_context(context)
+ShaderRegistry::ShaderRegistry(webgpu::WebGPUContext &context) : m_context(context)
 {
 }
 
@@ -51,6 +50,34 @@ bool ShaderRegistry::initializeDefaultShaders()
 	return true;
 }
 
+void ShaderRegistry::reloadAllShaders()
+{
+	spdlog::info("Reloading all shaders in ShaderRegistry...");
+
+	// Reload default shaders
+	for (auto &[type, shaderInfo] : m_defaultShaders)
+	{
+		if (shaderInfo)
+		{
+			auto name = shaderInfo->getName();
+			spdlog::info("Reloading shader '{}'", name);
+			m_context.shaderFactory().reloadShader(shaderInfo);
+		}
+	}
+
+	// Reload custom shaders
+	for (auto &[name, shaderInfo] : m_customShaders)
+	{
+		if (shaderInfo)
+		{
+			spdlog::info("Reloading custom shader '{}'", name);
+			m_context.shaderFactory().reloadShader(shaderInfo);
+		}
+	}
+
+	spdlog::info("Shader reload complete");
+}
+
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getShader(ShaderType type) const
 {
 	auto it = m_defaultShaders.find(type);
@@ -70,7 +97,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getShader(ShaderType t
 	return getShader(type);
 }
 
-std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getCustomShader(const std::string& name) const
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getCustomShader(const std::string &name) const
 {
 	auto it = m_customShaders.find(name);
 	if (it != m_customShaders.end())
@@ -80,7 +107,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getCustomShader(const 
 	return nullptr;
 }
 
-bool ShaderRegistry::registerCustomShader(const std::string& name, std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo)
+bool ShaderRegistry::registerCustomShader(const std::string &name, std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo)
 {
 	if (m_customShaders.find(name) != m_customShaders.end())
 	{
@@ -104,7 +131,7 @@ bool ShaderRegistry::hasShader(ShaderType type) const
 	return m_defaultShaders.find(type) != m_defaultShaders.end();
 }
 
-bool ShaderRegistry::hasCustomShader(const std::string& name) const
+bool ShaderRegistry::hasCustomShader(const std::string &name) const
 {
 	return m_customShaders.find(name) != m_customShaders.end();
 }
@@ -112,7 +139,7 @@ bool ShaderRegistry::hasCustomShader(const std::string& name) const
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
 {
 	// Create the standard PBR lit shader matching shader.wgsl
-	// 
+	//
 	// shader.wgsl structure:
 	// @group(0) @binding(0) var<uniform> uFrame: FrameUniforms;
 	// @group(1) @binding(0) var<storage, read> uLights: LightsBuffer;
@@ -121,57 +148,108 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
 	// @group(3) @binding(1) var textureSampler: sampler;
 	// @group(3) @binding(2) var baseColorTexture: texture_2d<f32>;
 	// @group(3) @binding(3) var normalTexture: texture_2d<f32>;
-	
-	auto shaderInfo = m_context.shaderFactory()
-		.begin("lit", "vs_main", "fs_main", engine::core::PathProvider::getResource("shader.wgsl"))
-		// Group 0: Frame uniforms (camera, time)
-		.addFrameUniforms(0)
-		// Group 1: Lighting data (storage buffer with max 16 lights)
-		.addLightUniforms(1, 16)
-		// Group 2: Object uniforms (model matrix, normal matrix)
-		.addCustomUniform(
-			"objectUniforms",
-			sizeof(ObjectUniforms),
-			2,  // group
-			0,  // binding
-			WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
-		)
-		// Group 3: Material data (properties + textures)
-		.addCustomUniform(
-			"materialUniforms",
-			sizeof(Material::MaterialProperties),
-			3,  // group
-			0,  // binding
-			WGPUShaderStage_Fragment
-		)
-		.addSampler(
-			"textureSampler",
-			3,  // group
-			1,  // binding
-			wgpu::SamplerBindingType::Filtering,
-			WGPUShaderStage_Fragment
-		)
-		.addTexture(
-			"baseColorTexture",
-			MaterialTextureSlots::ALBEDO,  // material slot name
-			3,  // group
-			2,  // binding
-			wgpu::TextureSampleType::Float,
-			wgpu::TextureViewDimension::_2D,
-			false,  // not multisampled
-			WGPUShaderStage_Fragment
-		)
-		.addTexture(
-			"normalTexture",
-			MaterialTextureSlots::NORMAL,  // material slot name
-			3,  // group
-			3,  // binding
-			wgpu::TextureSampleType::Float,
-			wgpu::TextureViewDimension::_2D,
-			false,
-			WGPUShaderStage_Fragment
-		)
-		.build();
+	// @group(3) @binding(4) var aoTexture: texture_2d<f32>;
+	// @group(3) @binding(5) var roughnessTexture: texture_2d<f32>;
+	// @group(3) @binding(6) var metallicTexture: texture_2d<f32>;
+	// @group(3) @binding(7) var emissionTexture: texture_2d<f32>;
+
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin("lit", "vs_main", "fs_main", engine::core::PathProvider::getResource("shader.wgsl"))
+			// Group 0: Frame uniforms (camera, time)
+			.addFrameUniforms(0)
+			// Group 1: Lighting data (storage buffer with max 16 lights)
+			.addLightUniforms(1, 16)
+			// Group 2: Object uniforms (model matrix, normal matrix)
+			.addCustomUniform(
+				"objectUniforms",
+				sizeof(ObjectUniforms),
+				2, // group
+				0, // binding
+				WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
+			)
+			// Group 3: Material data (properties + textures)
+			.addCustomUniform(
+				"materialUniforms",
+				sizeof(Material::MaterialProperties),
+				3, // group
+				0, // binding
+				WGPUShaderStage_Fragment
+			)
+			.addSampler(
+				"textureSampler",
+				3, // group
+				1, // binding
+				wgpu::SamplerBindingType::Filtering,
+				WGPUShaderStage_Fragment
+			)
+			.addTexture(
+				"baseColorTexture",
+				MaterialTextureSlots::ALBEDO, // material slot name
+				3,							  // group
+				2,							  // binding
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false, // not multisampled
+				WGPUShaderStage_Fragment,
+				glm::vec3(1.0f, 1.0f, 1.0f) // default white for base color
+			)
+			.addTexture(
+				"normalTexture",
+				MaterialTextureSlots::NORMAL, // material slot name
+				3,							  // group
+				3,							  // binding
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment,
+				glm::vec3(0.5f, 0.5f, 1.0f) // default normal map color
+			)
+			.addTexture(
+				"aoTexture",
+				MaterialTextureSlots::AO, // material slot name
+				3,						  // group
+				4,						  // binding
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment,
+				glm::vec3(1.0f, 1.0f, 1.0f) // default white for AO
+			)
+			.addTexture(
+				"roughnessTexture",
+				MaterialTextureSlots::ROUGHNESS, // material slot name
+				3,								 // group
+				5,								 // binding
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment,
+				glm::vec3(1.0f, 1.0f, 1.0f) // default white for roughness
+			)
+			.addTexture(
+				"metallicTexture",
+				MaterialTextureSlots::METALLIC, // material slot name
+				3,								// group
+				6,								// binding
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment,
+				glm::vec3(0.0f, 0.0f, 0.0f) // default black for metallic
+			)
+			.addTexture(
+				"emissionTexture",
+				MaterialTextureSlots::EMISSIVE, // material slot name
+				3,								// group
+				7,								// binding
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment,
+				glm::vec3(0.0f, 0.0f, 0.0f) // default black for emission
+			)
+			.build();
 
 	return shaderInfo;
 }
@@ -179,23 +257,24 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 {
 	// Create debug visualization shader
-	// 
+	//
 	// debug.wgsl structure:
 	// @group(0) @binding(0) var<uniform> uFrameUniforms: FrameUniforms; (view-proj matrix)
 	// @group(1) @binding(0) var<storage, read> uDebugPrimitives: array<DebugPrimitive>;
-	
-	auto shaderInfo = m_context.shaderFactory()
-		.begin("debug", "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
-		.addFrameUniforms(0)  // View-projection matrix from frame uniforms
-		.addStorageBuffer(
-			"uDebugPrimitives",
-			sizeof(DebugPrimitive) * 1024,  // Max 1024 debug primitives (80 KB)
-			1,  // group 1 (separate from frame uniforms)
-			0,  // binding 0
-			true,  // read-only
-			WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
-		)
-		.build();
+
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin("debug", "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
+			.addFrameUniforms(0) // View-projection matrix from frame uniforms
+			.addStorageBuffer(
+				"uDebugPrimitives",
+				sizeof(DebugPrimitive) * 1024, // Max 1024 debug primitives (80 KB)
+				1,							   // group 1 (separate from frame uniforms)
+				0,							   // binding 0
+				true,						   // read-only
+				WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
+			)
+			.build();
 
 	return shaderInfo;
 }

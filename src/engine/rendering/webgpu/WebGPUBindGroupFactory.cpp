@@ -121,12 +121,24 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 			}
 			std::string slotName = layoutInfo->getMaterialSlotName(entryLayout.binding);
 			auto tex = material->getTexture(slotName);
-			if (!tex || !tex->getTextureView())
+			if (tex)
 			{
-				allReady = false;
-				break;
+				entry.textureView = tex->getTextureView();
 			}
-			entry.textureView = tex->getTextureView();
+			else
+			{
+				auto fallbackColor = layoutInfo->getFallbackColor(entryLayout.binding);
+				if (fallbackColor.has_value())
+				{
+					entry.textureView = m_context.textureFactory().createFromColor(fallbackColor.value())->getTextureView();
+				}
+				else
+				{
+					allReady = false;
+					spdlog::debug("Texture for slot '{}' not ready", slotName);
+					continue;
+				}
+			}
 		}
 		else if (entryLayout.sampler.type != wgpu::SamplerBindingType::Undefined)
 		{
