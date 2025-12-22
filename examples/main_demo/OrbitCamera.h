@@ -48,6 +48,10 @@ class OrbitCameraController : public engine::scene::entity::UpdateNode
 
 	void update(float deltaTime) override;
 
+	std::shared_ptr<engine::scene::CameraNode> getCamera() const { return m_camera; }
+
+	OrbitCameraState &getOrbitState() const { return m_orbitState; }
+
   private:
 	OrbitCameraState &m_orbitState;
 	std::shared_ptr<engine::scene::CameraNode> m_camera;
