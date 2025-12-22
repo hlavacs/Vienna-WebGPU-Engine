@@ -17,6 +17,8 @@ add_executable(MainDemo
     main.cpp
     OrbitCamera.cpp
     OrbitCamera.h
+    MainDemoImGuiUI.cpp
+    MainDemoImGuiUI.h
 )
 
 # Link against the engine

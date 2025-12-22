@@ -68,7 +68,9 @@ class BaseWebGPUFactory
 		{
 			return it->second;
 		}
-		return createFromHandleUncached(handle);
+		auto product = createFromHandleUncached(handle);
+		m_cache[handle] = product;
+		return product;
 	}
 
 	/**
