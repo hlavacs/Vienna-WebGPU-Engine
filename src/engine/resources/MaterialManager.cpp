@@ -24,17 +24,23 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(cons
 	props.specular[2] = objMat.specular[2];
 	props.specular[3] = 1.0f; // specular strength
 
+	// Emission RGB + intensity
+	props.emission[0] = objMat.emission[0];
+	props.emission[1] = objMat.emission[1];
+	props.emission[2] = objMat.emission[2];
+	props.emission[3] = 1.0f; // emission intensity
+
 	// Transmittance RGB + intensity
 	props.transmittance[0] = objMat.transmittance[0];
 	props.transmittance[1] = objMat.transmittance[1];
 	props.transmittance[2] = objMat.transmittance[2];
 	props.transmittance[3] = 1.0f; // optional factor
 
-	// Emission RGB + intensity
-	props.emission[0] = objMat.emission[0];
-	props.emission[1] = objMat.emission[1];
-	props.emission[2] = objMat.emission[2];
-	props.emission[3] = 1.0f; // emission intensity
+	// Ambient RGB + intensity
+	props.ambient[0] = objMat.ambient[0];
+	props.ambient[1] = objMat.ambient[1];
+	props.ambient[2] = objMat.ambient[2];
+	props.ambient[3] = 1.0f; // optional factor
 
 	// PBR parameters packed in a struct (scalar values remain separate)
 	props.shininess = objMat.shininess;
@@ -71,7 +77,13 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(cons
 
 	if (!objMat.specular_texname.empty())
 		mat->setSpecularTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.specular_texname)));
-	
+
+	if (!objMat.reflection_texname.empty())
+		mat->setTexture(
+			engine::rendering::MaterialTextureSlots::REFLECTION,
+			unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.reflection_texname))
+		);
+		
 	// TODO: respect other texture slots like displacement_texname, reflection_texname, etc. if needed
 	auto handleOpt = add(mat);
 	if (!handleOpt)

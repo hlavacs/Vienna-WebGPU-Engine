@@ -120,7 +120,7 @@ class Transform : public std::enable_shared_from_this<Transform>
 
 	/**
 	 * @brief Gets the forward direction in world space.
-	 * @return Forward vector (+Z).
+	 * @return Forward vector (-Z).
 	 */
 	glm::vec3 forward() const;
 

@@ -13,7 +13,14 @@ std::optional<TextureManager::TexturePtr> TextureManager::createTexture(uint32_t
 
 std::optional<TextureManager::TexturePtr> TextureManager::createTextureFromFile(const path &filepath, bool forceReload)
 {
-	std::string key = (m_loader->getBasePath() / filepath).string();
+	std::filesystem::path basePath(filepath);
+	std::filesystem::path texturePath;
+	std::string key;
+	if (basePath.is_absolute())
+		texturePath = filepath;
+	else
+		texturePath = m_loader->getBasePath() / filepath;
+	key = texturePath.string();
 	if (!forceReload)
 	{
 		// Check if texture already loaded
@@ -28,7 +35,7 @@ std::optional<TextureManager::TexturePtr> TextureManager::createTextureFromFile(
 		}
 	}
 
-	auto result = m_loader->load(filepath);
+	auto result = m_loader->load(texturePath);
 	if (!result)
 		return std::nullopt;
 
@@ -47,7 +54,15 @@ std::optional<TextureManager::TexturePtr> TextureManager::createTextureFromFile(
 
 std::optional<TextureManager::TexturePtr> TextureManager::getTextureByPath(const path &filepath) const
 {
-	std::string key = (m_loader->getBasePath() / filepath).string();
+	std::string key;
+	std::filesystem::path basePath(filepath);
+	std::filesystem::path texturePath;
+	if (basePath.is_absolute())
+		texturePath = filepath;
+	else
+		texturePath = m_loader->getBasePath() / filepath;
+	key = texturePath.string();
+
 	auto it = m_pathToTexture.find(key);
 	if (it == m_pathToTexture.end())
 		return std::nullopt;

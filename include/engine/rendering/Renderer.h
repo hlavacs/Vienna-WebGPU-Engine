@@ -81,6 +81,7 @@ class Renderer
 	
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_frameBindGroup;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_debugBindGroup;
 
 	// Cached resources
 	std::shared_ptr<webgpu::WebGPUDepthTexture> m_depthBuffer;

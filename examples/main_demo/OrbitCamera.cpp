@@ -20,9 +20,9 @@ void updateOrbitCamera(OrbitCameraState &state, std::shared_ptr<engine::scene::C
 	state.distance = glm::clamp(state.distance, 0.5f, 20.0f);
 
 	// Convert spherical coordinates to Cartesian
-	float x = cos(state.elevation) * cos(state.azimuth);
+	float x = cos(state.elevation) * sin(state.azimuth);
 	float y = sin(state.elevation);
-	float z = cos(state.elevation) * sin(state.azimuth);
+	float z = cos(state.elevation) * cos(state.azimuth);
 
 	glm::vec3 position = state.targetPoint + glm::vec3(x, y, z) * state.distance;
 
@@ -55,9 +55,9 @@ void updateDragInertia(OrbitCameraState &state, std::shared_ptr<engine::scene::C
 	}
 }
 
-OrbitCameraController::OrbitCameraController(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera)
-	: m_orbitState(state), m_camera(camera)
+OrbitCameraController::OrbitCameraController(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera) : m_orbitState(state), m_camera(camera)
 {
+	updateOrbitCamera(m_orbitState, m_camera);
 }
 
 void OrbitCameraController::update(float deltaTime)

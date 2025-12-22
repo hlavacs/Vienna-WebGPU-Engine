@@ -42,6 +42,7 @@ struct Material : public engine::core::Identifiable<Material>,
 		float specular[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // RGB + Specular intensity in A
 		float emission[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 		float transmittance[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+		float ambient[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
 		float shininess = 32.0f;
 		float roughness = 0.5f;

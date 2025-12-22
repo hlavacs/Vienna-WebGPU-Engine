@@ -323,7 +323,10 @@ void WebGPUShaderFactory::createBindGroupLayouts()
 			entries.push_back(entry);
 		}
 
-		auto layoutInfo = m_context.bindGroupFactory().createBindGroupLayoutInfo(entries);
+		auto layoutInfo = m_context.bindGroupFactory().createBindGroupLayoutInfo(
+			m_shaderInfo->getName() + "_BindGroupLayout_" + std::to_string(groupIndex),
+			entries
+		);
 		if (bindGroupBuilder.key.has_value())
 		{
 			layoutInfo->setKey(bindGroupBuilder.key);
@@ -335,7 +338,7 @@ void WebGPUShaderFactory::createBindGroupLayouts()
 		{
 			if (binding.type != BindingType::Texture)
 				continue;
-			if(!binding.materialSlotName.empty())
+			if (!binding.materialSlotName.empty())
 			{
 				layoutInfo->setMaterialSlotName(binding.binding, binding.materialSlotName);
 			}

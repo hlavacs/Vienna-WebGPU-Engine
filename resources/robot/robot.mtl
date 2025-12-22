@@ -1,0 +1,26 @@
+newmtl mat0
+Ns 0
+Ka 1.0 1.0 1.0
+Kd 1.0 1.0 1.0
+Ks 1.0 1.0 1.0            # can hold metallic info
+Ke 1.0 1.0 1.0
+Ni 1.0
+d 1.0
+illum 2
+map_Kd material_baseColor.png
+map_Pr material_roughness.png
+map_Pm material_metallic.png 
+map_Ke material_emissive.png 
+map_Ao material_ao.png 
+norm material_normal.png
+map_Bump -bm 0.300000 material_normal.png
+
+newmtl mat1
+Ns 250
+Ka 1.0 1.0 1.0
+Kd 0.85 0.85 0.85
+Ks 0.0 0.0 0.0
+Ke 0.0 0.0 0.0
+Ni 1.0
+d 1.0
+illum 1

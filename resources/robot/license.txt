@@ -1,0 +1,8 @@
+Model Information:
+* title:	Robot
+* source:	https://sketchfab.com/3d-models/robot-435566387be94cbfbc623c3d45241769
+* author:	Lagst (https://sketchfab.com/Lagst)
+
+Model License:
+* license type:	SKETCHFAB Standard (https://sketchfab.com/licenses)
+* requirements:	Under basic restrictions, use worldwide, on all types of media, commercially or not, and in all types of derivative works

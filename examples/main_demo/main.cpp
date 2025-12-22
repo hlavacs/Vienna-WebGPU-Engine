@@ -50,6 +50,13 @@ int main(int argc, char **argv)
 	orbitState.elevation = 0.3f;
 
 	// Create directional light
+	auto ambientLightNode = std::make_shared<engine::scene::entity::LightNode>();
+	ambientLightNode->setLightType(0); // Ambient
+	ambientLightNode->setColor(glm::vec3(0.2f, 0.2f, 0.2f));
+
+	rootNode->addChild(std::static_pointer_cast<engine::scene::entity::Node>(ambientLightNode));
+
+	
 	auto lightNode = std::make_shared<engine::scene::entity::LightNode>();
 	lightNode->setLightType(1); // Directional
 	lightNode->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
@@ -72,34 +79,41 @@ int main(int argc, char **argv)
 
 	// Load model (CPU-side only, GPU resources will be created by the renderer)
 	engine::rendering::Model::Handle modelHandleFourareen;
-	engine::rendering::Model::Handle modelHandleCylinder;
+	engine::rendering::Model::Handle modelHandleRobot;
 	auto maybeModelFourareen = resourceManager->m_modelManager->createModel("fourareen.obj");
-	auto maybeModelCylinder = resourceManager->m_modelManager->createModel("cylinder.obj");
+	auto maybeModelRobot = resourceManager->m_modelManager->createModel(
+		"robot/robot.obj",
+		"Robot",
+		engine::math::CoordinateSystem::Cartesian::LH_Y_UP_Z_FORWARD,
+		engine::math::CoordinateSystem::DEFAULT
+	);
 	if (!maybeModelFourareen.has_value())
 	{
 		spdlog::error("Failed to load fourareen.obj model");
 		return -1;
 	}
-	if (!maybeModelCylinder.has_value())
+	if (!maybeModelRobot.has_value())
 	{
-		spdlog::error("Failed to load cylinder.obj model");
+		spdlog::error("Failed to load robot.obj model");
 		return -1;
 	}
 	spdlog::info("Loaded fourareen.obj model");
-	spdlog::info("Loaded cylinder.obj model");
+	spdlog::info("Loaded robot.obj model");
 	modelHandleFourareen = maybeModelFourareen.value()->getHandle();
-	modelHandleCylinder = maybeModelCylinder.value()->getHandle();
+	modelHandleRobot = maybeModelRobot.value()->getHandle();
 
 	auto modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandleFourareen);
-	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, -2.0f));
+	modelNode->getTransform()->setLocalPosition(glm::vec3(-2.0f, 0.0f, -0.0f));
 	rootNode->addChild(modelNode);
 
-	modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandleCylinder);
+	modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandleRobot);
 	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+	// Because the robot model is lying flat, rotate it upright
+	modelNode->getTransform()->rotate(glm::vec3(90.0f, 0.0f, 0.0f));
 	rootNode->addChild(modelNode);
 
 	modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandleFourareen);
-	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, 2.0f));
+	modelNode->getTransform()->setLocalPosition(glm::vec3(2.0f, 0.0f, 0.0f));
 	rootNode->addChild(modelNode);
 
 	// Load the scene (makes it active)

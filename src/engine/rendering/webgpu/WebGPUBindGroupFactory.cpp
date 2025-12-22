@@ -154,11 +154,11 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 		return nullptr;
 	}
 
-	// Create the raw WebGPU bind group
-	wgpu::BindGroup rawBindGroup = createBindGroup(
-		layoutInfo->getLayout(),
-		entries
-	);
+	const char* baseLabel = layoutInfo->getLayoutDescriptor().label;
+	std::string labelStr = baseLabel ? (std::string(baseLabel)) : "BindGroup";
+	wgpu::BindGroupDescriptor desc = createBindGroupDescriptor(layoutInfo->getLayout(), entries);
+	desc.label = labelStr.c_str();
+	wgpu::BindGroup rawBindGroup = createBindGroupFromDescriptor(desc);
 
 	auto bindGroup = std::make_shared<WebGPUBindGroup>(
 		rawBindGroup,

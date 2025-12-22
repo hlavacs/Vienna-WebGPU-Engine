@@ -16,6 +16,11 @@ MainDemoImGuiUI::MainDemoImGuiUI(
 	m_orbitState(orbitCameraController->getOrbitState())
 {
 	m_cameraNode = orbitCameraController->getCamera();
+
+	for (const auto &child : m_rootNode->getChildrenOfType<engine::scene::entity::LightNode>())
+	{
+		m_lightNodes.push_back(child);
+	};
 }
 
 void MainDemoImGuiUI::render()
@@ -52,10 +57,6 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 	ImGui::Checkbox("Debug Rendering", &showDebugRendering);
 	if (showDebugRendering != prevDebugState)
 	{
-		for (const auto &child : m_rootNode->getChildrenOfType<engine::scene::entity::LightNode>())
-		{
-			m_lightNodes.push_back(child);
-		}
 		for (auto &light : m_lightNodes)
 		{
 			if (light)
