@@ -9,7 +9,15 @@ TextureLoader::TextureLoader(std::filesystem::path basePath, std::shared_ptr<spd
 
 std::optional<engine::rendering::Texture::Ptr> TextureLoader::load(const std::filesystem::path &file)
 {
-	auto fullPath = m_basePath / file;
+	std::filesystem::path fullPath;
+	if (file.is_absolute())
+	{
+		fullPath = file;
+	}
+	else
+	{
+		fullPath = m_basePath / file;
+	}
 
 	logInfo("Loading texture from '{}'", fullPath.string());
 

@@ -27,7 +27,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 	desc.size.width = texture.getWidth();
 	desc.size.height = texture.getHeight();
 	desc.size.depthOrArrayLayers = 1;
-	desc.format = wgpu::TextureFormat::RGBA8Unorm; // by convention for bmp, png and jpg file. Be careful with other formats.
+	desc.format = wgpu::TextureFormat::RGBA8UnormSrgb; // by convention for bmp, png and jpg file. Be careful with other formats.
 	desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
 	desc.mipLevelCount = texture.getMipLevelCount();
 	desc.sampleCount = 1;
@@ -111,7 +111,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	desc.size.width = width;
 	desc.size.height = height;
 	desc.size.depthOrArrayLayers = 1;
-	desc.format = wgpu::TextureFormat::RGBA8Unorm;
+	desc.format = wgpu::TextureFormat::RGBA8UnormSrgb;
 	desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
 	desc.mipLevelCount = 1;
 	desc.sampleCount = 1;

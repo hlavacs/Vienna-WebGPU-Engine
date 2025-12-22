@@ -1,5 +1,11 @@
 #pragma once
 #include <memory>
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_FORCE_RIGHT_HANDED
+#include <glm/ext.hpp>
+#include <glm/glm.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/polar_coordinates.hpp>
 
 namespace engine
 {

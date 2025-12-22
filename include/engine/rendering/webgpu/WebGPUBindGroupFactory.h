@@ -102,10 +102,11 @@ class WebGPUBindGroupFactory
 
 	/**
 	 * @brief Helper to create a vector of BindGroupLayoutEntries with auto binding assignment.
+	 * @param name Optional name for the layout.
 	 * @param rawEntries BindGroupLayoutEntry objects (with binding=-1 for auto).
 	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
 	 */
-	std::shared_ptr<WebGPUBindGroupLayoutInfo> createBindGroupLayoutInfo(std::vector<wgpu::BindGroupLayoutEntry> entries)
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> createBindGroupLayoutInfo(std::string name, std::vector<wgpu::BindGroupLayoutEntry> entries)
 	{
 		uint32_t nextBinding = 0;
 
@@ -121,6 +122,7 @@ class WebGPUBindGroupFactory
 			}
 		}
 		wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
+		desc.label = name.c_str();
 		auto layout = createBindGroupLayoutFromDescriptor(desc);
 		return std::make_shared<WebGPUBindGroupLayoutInfo>(layout, desc);
 	}
@@ -132,12 +134,12 @@ class WebGPUBindGroupFactory
 	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
 	 */
 	template <typename... Entries>
-	std::shared_ptr<WebGPUBindGroupLayoutInfo> createBindGroupLayoutInfo(Entries &&...rawEntries)
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> createBindGroupLayoutInfo(std::string name, Entries &&...rawEntries)
 	{
 		static_assert((std::is_convertible_v<Entries, wgpu::BindGroupLayoutEntry> && ...), "All arguments must be convertible to wgpu::BindGroupLayoutEntry");
 
 		std::vector<wgpu::BindGroupLayoutEntry> entries = {std::forward<Entries>(rawEntries)...};
-		return createBindGroupLayoutInfo(entries);
+		return createBindGroupLayoutInfo(name, entries);
 	}
 
 	/**

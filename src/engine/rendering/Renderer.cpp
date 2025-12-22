@@ -52,13 +52,13 @@ bool Renderer::initialize()
 	}
 
 	auto frameUniformsLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("frameUniforms");
-	if(frameUniformsLayout == nullptr)
+	if (frameUniformsLayout == nullptr)
 	{
 		spdlog::error("Failed to get global bind group layout for frameUniforms");
 		return false;
 	}
 	auto lightUniformsLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("lightUniforms");
-	if(lightUniformsLayout == nullptr)
+	if (lightUniformsLayout == nullptr)
 	{
 		spdlog::error("Failed to get global bind group layout for lightUniforms");
 		return false;
@@ -337,6 +337,10 @@ bool Renderer::setupDefaultPipelines()
 		return true;			 // Don't fail initialization
 	}
 
+	m_debugBindGroup = m_context->bindGroupFactory().createBindGroup(
+		m_debugShader->getBindGroupLayout(1)
+	);
+
 	spdlog::info("Successfully created debug pipeline");
 	return true;
 }
@@ -415,22 +419,18 @@ void Renderer::renderDebugPrimitives(
 	}
 
 	spdlog::debug("Rendering {} debug primitives", primitiveCount);
+	renderPass.setPipeline(debugPipeline->getPipeline());
 
-	// Update the debug primitive storage buffer (group 1, binding 0)
-	// This writes the primitive data directly to the shader's existing storage buffer
-	auto bindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_debugShader->getBindGroupLayout(1)
-	);
-	bindGroup->updateBuffer(
+	m_debugBindGroup->updateBuffer(
 		0, // binding 0
 		debugCollector.getPrimitives().data(),
 		debugCollector.getPrimitives().size() * sizeof(DebugPrimitive),
 		0,
 		m_context->getQueue()
 	);
+	renderPass.setBindGroup(1, m_debugBindGroup->getBindGroup(), 0, nullptr);
 
 	// Set the debug pipeline
-	renderPass.setPipeline(debugPipeline->getPipeline());
 
 	// Draw primitives with correct vertex counts per type
 	for (uint32_t i = 0; i < primitiveCount; ++i)

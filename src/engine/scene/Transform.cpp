@@ -96,7 +96,7 @@ void Transform::updateWorldMatrix() const
 
 glm::vec3 Transform::forward() const
 {
-	return glm::normalize(glm::vec3(getWorldMatrix()[2]));
+	return glm::normalize(-glm::vec3(getWorldMatrix()[2]));
 }
 
 glm::vec3 Transform::right() const

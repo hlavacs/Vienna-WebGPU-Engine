@@ -38,9 +38,16 @@ class ModelManager : public engine::resources::ResourceManagerBase<engine::rende
 	 * @brief Create a model from a file path
 	 * @param filePath Path to the model file
 	 * @param name Optional name for the model
+	 * @param srcCoordSys Source coordinate system of the model file
+	 * @param dstCoordSys Destination coordinate system for the model
 	 * @return Optional containing the created model if successful
 	 */
-	std::optional<ModelPtr> createModel(const std::string &filePath, const std::string &name = "");
+	std::optional<ModelPtr> createModel(
+		const std::string &filePath,
+		const std::string &name = "",
+		const engine::math::CoordinateSystem::Cartesian srcCoordSys = engine::math::CoordinateSystem::Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD,
+		const engine::math::CoordinateSystem::Cartesian dstCoordSys = engine::math::CoordinateSystem::DEFAULT
+	);
 
 	/**
 	 * @brief Get the mesh manager

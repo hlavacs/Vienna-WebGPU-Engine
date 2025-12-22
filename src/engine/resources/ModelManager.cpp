@@ -11,7 +11,12 @@ ModelManager::ModelManager(
 	m_materialManager(std::move(materialManager)),
 	m_objLoader(std::move(objLoader)) {}
 
-std::optional<ModelManager::ModelPtr> ModelManager::createModel(const std::string &filePath, const std::string &name)
+std::optional<ModelManager::ModelPtr> ModelManager::createModel(
+	const std::string &filePath, 
+	const std::string &name,
+	const engine::math::CoordinateSystem::Cartesian srcCoordSys,
+	const engine::math::CoordinateSystem::Cartesian dstCoordSys
+)
 {
 	std::string modelName = filePath;
 	auto optModel = getByName(modelName);
@@ -21,7 +26,7 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(const std::strin
 	if (!m_objLoader || !m_meshManager)
 		return std::nullopt;
 
-	auto objDataOpt = m_objLoader->load(filePath, engine::math::CoordinateSystem::Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD, engine::math::CoordinateSystem::DEFAULT);
+	auto objDataOpt = m_objLoader->load(filePath, srcCoordSys, dstCoordSys);
 	if (!objDataOpt)
 		return std::nullopt;
 	const auto &objData = *objDataOpt;
@@ -39,12 +44,13 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(const std::strin
 
 	auto model = std::make_shared<engine::rendering::Model>(
 		meshHandle,
-		filePath,
+		objData.filePath,
 		modelName
 	);
 
 	if (m_materialManager && !objData.materialRanges.empty())
 	{
+		std::filesystem::path textureBasePath = std::filesystem::path(objData.filePath).parent_path();
 		for (const auto &range : objData.materialRanges)
 		{
 			if (range.indexCount == 0)
@@ -57,7 +63,8 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(const std::strin
 			int matId = range.materialId;
 			if (matId >= 0 && matId < static_cast<int>(objData.materials.size()))
 			{
-				auto matOpt = m_materialManager->createMaterial(objData.materials[matId]);
+				// ToDo: Wrapper for material properties so other formats can be supported too example gltf
+				auto matOpt = m_materialManager->createMaterial(objData.materials[matId], textureBasePath.string() + "/");
 				if (matOpt && *matOpt)
 					submesh.material = (*matOpt)->getHandle();
 			}

@@ -216,7 +216,7 @@ void CameraNode::updateMatrices()
 		return;
 
 	glm::vec3 pos = m_transform->getPosition();
-	m_viewMatrix = glm::lookAt(pos, pos + m_transform->forward(), glm::vec3(0.0f, 1.0f, 0.0f));
+	m_viewMatrix = glm::lookAt(pos, pos - m_transform->forward(), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	// Calculate projection matrix based on mode
 	if (m_isPerspective)
