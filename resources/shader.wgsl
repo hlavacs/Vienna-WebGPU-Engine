@@ -17,6 +17,7 @@ struct VertexOutput {
 	@location(3) viewDirection: vec3f,
 	@location(4) tangent: vec3f,
 	@location(5) bitangent: vec3f,
+	@location(6) worldPosition: vec4f,
 }
 
 ;
@@ -73,6 +74,8 @@ struct MaterialUniforms {
 	emission: vec4f,
 	// xyz = transmittanceColor, w = transmittanceIntensity
 	transmittance: vec4f,
+	// xyz = ambientColor, w = ambientIntensity
+	ambient: vec4f,
 
 	shininess: f32,
 	roughness: f32,
@@ -109,20 +112,55 @@ var metallicTexture: texture_2d<f32>;
 var emissionTexture: texture_2d<f32>;
 
 const PI: f32 = 3.141592653589793;
-const AMBIENT_INTENSITY: f32 = 0.03;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
 	var out: VertexOutput;
 	let worldPosition = uObject.modelMatrix * vec4<f32>(in.position, 1.0);
+	out.worldPosition = worldPosition;
 	out.position = uFrame.viewProjectionMatrix * worldPosition;
-	out.tangent = (uObject.modelMatrix * vec4f(in.tangent, 0.0)).xyz;
-	out.bitangent = (uObject.modelMatrix * vec4f(in.bitangent, 0.0)).xyz;
-	out.normal = (uObject.modelMatrix * vec4f(in.normal, 0.0)).xyz;
+	out.normal = normalize((uObject.normalMatrix * vec4f(in.normal, 0.0)).xyz);
+	out.tangent = normalize((uObject.normalMatrix * vec4f(in.tangent, 0.0)).xyz);
+	out.bitangent = normalize((uObject.normalMatrix * vec4f(in.bitangent, 0.0)).xyz);
 	out.color = in.color;
 	out.uv = in.uv;
 	out.viewDirection = uFrame.cameraWorldPosition - worldPosition.xyz;
 	return out;
+}
+
+// ------------------------------------------------------------
+// Utility
+// ------------------------------------------------------------
+fn saturate(v: f32) -> f32 {
+	return clamp(v, 0.0, 1.0);
+}
+
+fn fresnelSchlick(cosTheta: f32, F0: vec3f) -> vec3f {
+	return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+fn distributionGGX(N: vec3f, H: vec3f, roughness: f32) -> f32 {
+	let a = roughness * roughness;
+	let a2 = a * a;
+	let NdotH = max(dot(N, H), 0.0);
+	let NdotH2 = NdotH * NdotH;
+
+	let denom = (NdotH2 * (a2 - 1.0) + 1.0);
+	return a2 / (PI * denom * denom);
+}
+
+fn geometrySchlickGGX(NdotV: f32, roughness: f32) -> f32 {
+	let r = roughness + 1.0;
+	let k = (r * r) / 8.0;
+	return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+fn geometrySmith(N: vec3f, V: vec3f, L: vec3f, roughness: f32) -> f32 {
+	let NdotV = max(dot(N, V), 0.0);
+	let NdotL = max(dot(N, L), 0.0);
+	let ggx1 = geometrySchlickGGX(NdotV, roughness);
+	let ggx2 = geometrySchlickGGX(NdotL, roughness);
+	return ggx1 * ggx2;
 }
 
 fn getDirectionFromTransform(transform: mat4x4f) -> vec3f {
@@ -133,99 +171,99 @@ fn getPositionFromTransform(transform: mat4x4f) -> vec3f {
 	return transform[3].xyz;
 }
 
+// ------------------------------------------------------------
+// Fragment
+// ------------------------------------------------------------
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-	// Sample normal
-	let normalMapStrength = 1.0;
-	let encodedN = textureSample(normalTexture, textureSampler, in.uv).rgb;
-	let localN = encodedN * 2.0 - 1.0;
-	// The TBN matrix converts directions from the local space to the world space
-	let localToWorld = mat3x3f(normalize(in.tangent), normalize(in.bitangent), normalize(in.normal),);
-	let worldN = localToWorld * localN;
-	let N = normalize(mix(in.normal, worldN, normalMapStrength));
+	// ---- Normal mapping ----
+	let TBN = mat3x3f(in.tangent, in.bitangent, in.normal);
+	let N = normalize(TBN * (textureSample(normalTexture, textureSampler, in.uv).rgb * 2.0 - 1.0));
 
 	let V = normalize(in.viewDirection);
 
-	// Sample texture
-	let baseColor = textureSample(baseColorTexture, textureSampler, in.uv).rgb;
+	// ---- Material textures ----
+	let baseColor = textureSample(baseColorTexture, textureSampler, in.uv).rgb * uMaterial.diffuse.rgb;
+	let roughness = clamp(textureSample(roughnessTexture, textureSampler, in.uv).r * uMaterial.roughness, 0.04, 1.0);
+	let metallic = textureSample(metallicTexture, textureSampler, in.uv).r * uMaterial.metallic;
+	let aoTex = textureSample(aoTexture, textureSampler, in.uv).r;
+	let ao = saturate(aoTex);
+	let emission = textureSample(emissionTexture, textureSampler, in.uv).rgb * uMaterial.emission.rgb * uMaterial.emission.w;
 
-	// Compute shading
-	var color = vec3f(0.0);
+	// ---- Fresnel base reflectance ----
+	let ior = max(uMaterial.ior, 1.0);
+	let F0_dielectric = pow((ior - 1.0) / (ior + 1.0), 2.0);
+	let F0 = mix(vec3f(F0_dielectric), baseColor, metallic);
 
-	// Calculate world position from view direction and camera position
-	let worldPos = uFrame.cameraWorldPosition - in.viewDirection;
-
-	// Get material properties from the buffer
-	let kd = 1.0;
-	// Diffuse coefficient (using material diffuse color below)
-	let ks = length(uMaterial.specular.rgb) / 1.732;
-	// Specular coefficient (normalize from vec3 to scalar)
-	let hardness = uMaterial.shininess;
+	var Lo = vec3f(0.0);
+	let worldPos = in.worldPosition.xyz;
 
 	for (var i: u32 = 0u; i < uLights.count; i = i + 1u) {
 		let light = uLights.lights[i];
-
 		if (light.light_type == 0u) {
-			// Ambient light: just add its color * intensity
-			color += baseColor * uMaterial.diffuse.rgb * light.color * light.intensity;
+			// Ambient only
+			Lo += baseColor * uMaterial.ambient.rgb * uMaterial.ambient.w * light.color * light.intensity * ao;
 			continue;
 		}
-
 		var L = vec3f(0.0);
 		var attenuation = 1.0;
 
 		if (light.light_type == 1u) {
-			// Directional
+			// Directional light
 			L = getDirectionFromTransform(light.transform);
 		}
 		else if (light.light_type == 2u) {
-			// Point
+			// Point light
 			let lightPos = getPositionFromTransform(light.transform);
-			L = normalize(lightPos - worldPos);
-			let dist = length(lightPos - worldPos);
-			attenuation = 1.0 / (dist * dist);
+			let toLight = lightPos - worldPos;
+			let dist = length(toLight);
+			L = normalize(toLight);
+			attenuation = 1.0 / max(dist * dist, 0.01);
 		}
 		else if (light.light_type == 3u) {
-			// Spot light calculation
+			// Spotlight
 			let lightPos = getPositionFromTransform(light.transform);
-			L = normalize(lightPos - worldPos);
-			let dist = length(lightPos - worldPos);
+			let toLight = lightPos - worldPos;
+			let dist = length(toLight);
+			L = normalize(toLight);
 
-			// Get spotlight direction from transform matrix
+			// Spotlight cone
 			let spotDir = getDirectionFromTransform(light.transform);
-
-			// Calculate cosine of angle between light vector and spotlight direction
 			let cosTheta = dot(L, spotDir);
-
-			// Calculate spotlight effect with configurable soft falloff
-			let softnessFactor = max(0.01, light.spot_softness);
-			// Ensure we don't divide by zero
-
-			// Calculate the inner cone angle based on softness
-			// Higher softness = smaller inner cone = smoother transition
-			let innerRatio = 1.0 - softnessFactor;
+			let innerRatio = 1.0 - max(0.01, light.spot_softness);
 			let cosOuter = cos(light.spot_angle);
 			let cosInner = cos(light.spot_angle * innerRatio);
-
-			// Smooth spotlight falloff between inner and outer cones
 			let spotEffect = smoothstep(cosOuter, cosInner, cosTheta);
-
-			// Apply spotlight effect with distance attenuation
-			attenuation = spotEffect * 1.0 / (1.0 + 0.1 * dist + 0.01 * dist * dist);
-
-			// Set attenuation to zero if outside the cone
-			attenuation = select(0.0, attenuation, cosTheta > cosOuter);
+			attenuation = select(0.0, spotEffect / (1.0 + 0.1 * dist + 0.01 * dist * dist), cosTheta > cosOuter);
 		}
 
-		let diffuse = max(0.0, dot(L, N)) * light.color.rgb * light.intensity * attenuation * kd;
-		let R = reflect(- L, N);
-		let specular = pow(max(0.0, dot(R, V)), hardness) * ks * light.intensity * attenuation;
+		let H = normalize(V + L);
+		let NdotL = max(dot(N, L), 0.0);
+		let NdotV = max(dot(N, V), 0.0);
+		if (NdotL <= 0.0) {
+			continue;
+		}
 
-		// Combine texture color with material diffuse color and apply lighting
-		color += baseColor * uMaterial.diffuse.rgb * diffuse + uMaterial.specular.rgb * specular;
+		let D = distributionGGX(N, H, roughness);
+		let G = geometrySmith(N, V, L, roughness);
+		let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+
+		let numerator = D * G * F;
+		let denominator = max(4.0 * NdotV * NdotL, 0.001);
+		let specular = numerator / denominator;
+
+		let kS = F;
+		let kD = (vec3f(1.0) - kS) * (1.0 - metallic);
+
+		let radiance = light.color * light.intensity * attenuation;
+		Lo += (kD * baseColor / PI + specular) * radiance * NdotL;
 	}
 
-	// Gamma-correction
-	let corrected_color = pow(color, vec3f(2.2));
-	return vec4f(corrected_color, uMaterial.diffuse.w);
+	// ---- Emission ----
+	let color = Lo + emission;
+
+	return vec4f(color, uMaterial.diffuse.w);
 }
+
+
+
