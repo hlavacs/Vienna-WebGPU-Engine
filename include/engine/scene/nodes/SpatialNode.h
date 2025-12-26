@@ -1,15 +1,15 @@
 #pragma once
 #include "engine/scene/Transform.h"
-#include "engine/scene/entity/Node.h"
+#include "engine/scene/nodes/Node.h"
 #include <memory>
 
-namespace engine::scene
+namespace engine::scene::nodes
 {
 /**
  * @brief Base node for all spatial objects (has a transform).
  * Uses virtual inheritance to prevent diamond inheritance issues.
  */
-class SpatialNode : public virtual entity::Node
+class SpatialNode : public virtual nodes::Node
 {
   public:
 	using Ptr = std::shared_ptr<SpatialNode>;
@@ -26,4 +26,4 @@ class SpatialNode : public virtual entity::Node
   protected:
 	std::shared_ptr<Transform> m_transform;
 };
-} // namespace engine::scene
+} // namespace engine::scene::nodes

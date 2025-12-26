@@ -1,7 +1,9 @@
 #pragma once
 
+#include "engine/math/AABB.h"
 #include "engine/rendering/Mesh.h"
 #include "engine/resources/ResourceManagerBase.h"
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -28,6 +30,7 @@ class MeshManager : public engine::resources::ResourceManagerBase<engine::render
 	std::optional<MeshPtr> createMesh(
 		std::vector<engine::rendering::Vertex> vertices,
 		std::vector<uint32_t> indices,
+		engine::math::AABB boundingBox = engine::math::AABB(),
 		const std::string &name = ""
 	);
 

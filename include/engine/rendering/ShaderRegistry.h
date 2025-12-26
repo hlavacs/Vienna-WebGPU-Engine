@@ -14,20 +14,12 @@ class WebGPUContext;
 namespace engine::rendering
 {
 
-/**
- * @enum ShaderType
- * @brief Predefined shader types for the engine.
- */
-enum class ShaderType
+namespace shader::default
 {
-	// Standard shaders
-	Lit,   // Full PBR lighting shader (shader.wgsl)
-	Unlit, // Simple unlit shader (future)
-	Debug, // Debug visualization shader (debug.wgsl)
+	constexpr const char *PBR = "PBR_Lit_Shader";
+	constexpr const char *DEBUG = "Debug_Shader";
+} // namespace shader::default
 
-	// Custom shader slot
-	Custom
-};
 
 /**
  * @class ShaderRegistry
@@ -55,60 +47,34 @@ class ShaderRegistry
 	void reloadAllShaders();
 
 	/**
-	 * @brief Get a shader by its type.
-	 * @param type The shader type to retrieve.
+	 * @brief Get a shader by name.
+	 * @param name The name of the shader.
 	 * @return Shared pointer to shader info, or nullptr if not found.
 	 */
-	std::shared_ptr<webgpu::WebGPUShaderInfo> getShader(ShaderType type) const;
+	std::shared_ptr<webgpu::WebGPUShaderInfo> getShader(const std::string &name) const;
 
 	/**
-	 * @brief Get a shader by its type.
-	 * @param type The shader type to retrieve.
-	 * @param name The custom shader name (if type is Custom).
-	 * @return Shared pointer to shader info, or nullptr if not found.
-	 */
-	std::shared_ptr<webgpu::WebGPUShaderInfo> getShader(ShaderType type, const std::string &customName) const;
-
-	/**
-	 * @brief Get a custom shader by name.
-	 * @param name The name of the custom shader.
-	 * @return Shared pointer to shader info, or nullptr if not found.
-	 */
-	std::shared_ptr<webgpu::WebGPUShaderInfo> getCustomShader(const std::string &name) const;
-
-	/**
-	 * @brief Register a custom shader.
-	 * @param name Unique name for the shader.
+	 * @brief Register a shader with its name. Names must be unique.
 	 * @param shaderInfo The shader to register.
 	 * @return True if registered successfully, false if name already exists.
 	 */
-	bool registerCustomShader(const std::string &name, std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo);
+	bool registerShader(std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo);
 
 	/**
-	 * @brief Check if a shader type is registered.
-	 * @param type The shader type to check.
+	 * @brief Check if a shader is registered.
+	 * @param name The shader name.
 	 * @return True if shader exists.
 	 */
-	bool hasShader(ShaderType type) const;
-
-	/**
-	 * @brief Check if a custom shader is registered.
-	 * @param name The custom shader name.
-	 * @return True if shader exists.
-	 */
-	bool hasCustomShader(const std::string &name) const;
+	bool hasShader(const std::string &name) const;
 
   private:
 	webgpu::WebGPUContext &m_context;
 
-	// Default shaders indexed by type
-	std::unordered_map<ShaderType, std::shared_ptr<webgpu::WebGPUShaderInfo>> m_defaultShaders;
-
 	// Custom shaders indexed by name
-	std::unordered_map<std::string, std::shared_ptr<webgpu::WebGPUShaderInfo>> m_customShaders;
+	std::unordered_map<std::string, std::shared_ptr<webgpu::WebGPUShaderInfo>> m_shaders;
 
 	// Helper methods to create specific default shaders
-	std::shared_ptr<webgpu::WebGPUShaderInfo> createLitShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createPBRShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createDebugShader();
 };
 

@@ -79,36 +79,31 @@ int main(int argc, char **argv)
 
 	// Load model (CPU-side only, GPU resources will be created by the renderer)
 	engine::rendering::Model::Handle modelHandleFourareen;
-	engine::rendering::Model::Handle modelHandleRobot;
+	engine::rendering::Model::Handle modelHandleCylinder;
 	auto maybeModelFourareen = resourceManager->m_modelManager->createModel("fourareen.obj");
-	auto maybeModelRobot = resourceManager->m_modelManager->createModel(
-		"robot/robot.obj",
-		"Robot",
-		engine::math::CoordinateSystem::Cartesian::LH_Y_UP_Z_FORWARD,
-		engine::math::CoordinateSystem::DEFAULT
-	);
+	auto maybeModelCylinder = resourceManager->m_modelManager->createModel("cylinder.obj");
 	if (!maybeModelFourareen.has_value())
 	{
 		spdlog::error("Failed to load fourareen.obj model");
 		return -1;
 	}
-	if (!maybeModelRobot.has_value())
+	if (!maybeModelCylinder.has_value())
 	{
-		spdlog::error("Failed to load robot.obj model");
+		spdlog::error("Failed to load cylinder.obj model");
 		return -1;
 	}
 	spdlog::info("Loaded fourareen.obj model");
-	spdlog::info("Loaded robot.obj model");
+	spdlog::info("Loaded cylinder.obj model");
 	modelHandleFourareen = maybeModelFourareen.value()->getHandle();
-	modelHandleRobot = maybeModelRobot.value()->getHandle();
+	modelHandleCylinder = maybeModelCylinder.value()->getHandle();
 
 	auto modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandleFourareen);
 	modelNode->getTransform()->setLocalPosition(glm::vec3(-2.0f, 0.0f, -0.0f));
 	rootNode->addChild(modelNode);
 
-	modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandleRobot);
+	modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(modelHandleCylinder);
 	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-	// Because the robot model is lying flat, rotate it upright
+	// Because the cylinder model is lying flat, rotate it upright
 	modelNode->getTransform()->rotate(glm::vec3(90.0f, 0.0f, 0.0f));
 	rootNode->addChild(modelNode);
 

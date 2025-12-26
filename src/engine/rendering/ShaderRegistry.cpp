@@ -21,15 +21,14 @@ bool ShaderRegistry::initializeDefaultShaders()
 {
 	spdlog::info("Initializing default shaders...");
 
-	// Create standard lit shader
-	auto litShader = createLitShader();
-	if (!litShader || !litShader->isValid())
+	// Create standard PBR shader
+	auto pbrShader = createPBRShader();
+	if (!pbrShader || !pbrShader->isValid())
 	{
-		spdlog::error("Failed to create Lit shader");
+		spdlog::error("Failed to create PBR shader");
 		return false;
 	}
-	m_defaultShaders[ShaderType::Lit] = litShader;
-	spdlog::info("Created Lit shader");
+	registerShader(pbrShader);
 
 	// Create debug shader
 	auto debugShader = createDebugShader();
@@ -40,8 +39,7 @@ bool ShaderRegistry::initializeDefaultShaders()
 	}
 	else
 	{
-		m_defaultShaders[ShaderType::Debug] = debugShader;
-		spdlog::info("Created Debug shader");
+		registerShader(debugShader);
 	}
 
 	// TODO: Add more default shaders as needed (Unlit, etc.)
@@ -55,7 +53,7 @@ void ShaderRegistry::reloadAllShaders()
 	spdlog::info("Reloading all shaders in ShaderRegistry...");
 
 	// Reload default shaders
-	for (auto &[type, shaderInfo] : m_defaultShaders)
+	for (auto &[name, shaderInfo] : m_shaders)
 	{
 		if (shaderInfo)
 		{
@@ -65,78 +63,44 @@ void ShaderRegistry::reloadAllShaders()
 		}
 	}
 
-	// Reload custom shaders
-	for (auto &[name, shaderInfo] : m_customShaders)
-	{
-		if (shaderInfo)
-		{
-			spdlog::info("Reloading custom shader '{}'", name);
-			m_context.shaderFactory().reloadShader(shaderInfo);
-		}
-	}
-
 	spdlog::info("Shader reload complete");
 }
 
-std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getShader(ShaderType type) const
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getShader(const std::string &name) const
 {
-	auto it = m_defaultShaders.find(type);
-	if (it != m_defaultShaders.end())
+	auto it = m_shaders.find(name);
+	if (it != m_shaders.end())
 	{
 		return it->second;
 	}
 	return nullptr;
 }
 
-std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getShader(ShaderType type, const std::string &customName) const
+bool ShaderRegistry::registerShader(std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo)
 {
-	if (type == ShaderType::Custom)
+	if (m_shaders.find(shaderInfo->getName()) != m_shaders.end())
 	{
-		return getCustomShader(customName);
-	}
-	return getShader(type);
-}
-
-std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getCustomShader(const std::string &name) const
-{
-	auto it = m_customShaders.find(name);
-	if (it != m_customShaders.end())
-	{
-		return it->second;
-	}
-	return nullptr;
-}
-
-bool ShaderRegistry::registerCustomShader(const std::string &name, std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo)
-{
-	if (m_customShaders.find(name) != m_customShaders.end())
-	{
-		spdlog::warn("Custom shader '{}' already registered", name);
+		spdlog::warn("Shader '{}' already registered", shaderInfo->getName());
 		return false;
 	}
 
 	if (!shaderInfo || !shaderInfo->isValid())
 	{
-		spdlog::error("Cannot register invalid shader '{}'", name);
+		spdlog::error("Cannot register invalid shader '{}'", shaderInfo->getName());
 		return false;
 	}
 
-	m_customShaders[name] = shaderInfo;
-	spdlog::info("Registered custom shader '{}'", name);
+	m_shaders[shaderInfo->getName()] = shaderInfo;
+	spdlog::info("Registered custom shader '{}'", shaderInfo->getName());
 	return true;
 }
 
-bool ShaderRegistry::hasShader(ShaderType type) const
+bool ShaderRegistry::hasShader(const std::string &name) const
 {
-	return m_defaultShaders.find(type) != m_defaultShaders.end();
+	return m_shaders.find(name) != m_shaders.end();
 }
 
-bool ShaderRegistry::hasCustomShader(const std::string &name) const
-{
-	return m_customShaders.find(name) != m_customShaders.end();
-}
-
-std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 {
 	// Create the standard PBR lit shader matching shader.wgsl
 	//
@@ -155,7 +119,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
 
 	auto shaderInfo =
 		m_context.shaderFactory()
-			.begin("lit", "vs_main", "fs_main", engine::core::PathProvider::getResource("shader.wgsl"))
+			.begin(shader::default ::PBR, ShaderType::Lit, "vs_main", "fs_main", engine::core::PathProvider::getResource("shader.wgsl"))
 			// Group 0: Frame uniforms (camera, time)
 			.addFrameUniforms(0)
 			// Group 1: Lighting data (storage buffer with max 16 lights)
@@ -171,7 +135,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
 			// Group 3: Material data (properties + textures)
 			.addCustomUniform(
 				"materialUniforms",
-				sizeof(Material::MaterialProperties),
+				sizeof(PBRProperties),
 				3, // group
 				0, // binding
 				WGPUShaderStage_Fragment
@@ -185,9 +149,9 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
 			)
 			.addTexture(
 				"baseColorTexture",
-				MaterialTextureSlots::ALBEDO, // material slot name
-				3,							  // group
-				2,							  // binding
+				MaterialTextureSlots::DIFFUSE, // material slot name
+				3,							   // group
+				2,							   // binding
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				false, // not multisampled
@@ -207,9 +171,9 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createLitShader()
 			)
 			.addTexture(
 				"aoTexture",
-				MaterialTextureSlots::AO, // material slot name
-				3,						  // group
-				4,						  // binding
+				MaterialTextureSlots::AMBIENT, // material slot name
+				3,							   // group
+				4,							   // binding
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				false,
@@ -264,7 +228,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 
 	auto shaderInfo =
 		m_context.shaderFactory()
-			.begin("debug", "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
+			.begin(shader::default::DEBUG, ShaderType::Debug, "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
 			.addFrameUniforms(0) // View-projection matrix from frame uniforms
 			.addStorageBuffer(
 				"uDebugPrimitives",

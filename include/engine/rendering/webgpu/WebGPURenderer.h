@@ -1,6 +1,6 @@
 #pragma once
 #include "engine/rendering/Renderer.h"
-#include "engine/scene/CameraNode.h"
+#include "engine/scene/nodes/CameraNode.h"
 
 #include "engine/rendering/Model.h"
 #include "engine/rendering/webgpu/WebGPUModel.h"
@@ -19,7 +19,7 @@ class WebGPURenderer : public engine::rendering::Renderer
 	virtual ~WebGPURenderer();
 
 	void initialize();
-	void beginFrame(const engine::scene::CameraNode &camera);
+	void beginFrame(const engine::scene::nodes::CameraNode &camera);
 	void renderScene(const engine::rendering::RenderCollector &collector);
 	void submitFrame();
 	void shutdown();
@@ -37,7 +37,7 @@ class WebGPURenderer : public engine::rendering::Renderer
 	wgpu::Buffer m_frameUniformBuffer = nullptr;
 	wgpu::Buffer m_lightsBuffer = nullptr;
 
-	void updateFrameUniforms(const engine::scene::CameraNode &camera);
+	void updateFrameUniforms(const engine::scene::nodes::CameraNode &camera);
 	void updateLights(const std::vector<engine::rendering::LightStruct> &lights);
 };
 

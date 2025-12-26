@@ -51,6 +51,24 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	// Set file path
 	void setFilePath(const std::string &filepath);
 
+	/**
+	 * @brief Replace the pixel data and dimensions of the texture.
+	 * @param newPixels New pixel data.
+	 * @param newWidth New width in pixels.
+	 * @param newHeight New height in pixels.
+	 * @param newChannels New number of channels.
+	 * @note This invalidates any existing mipmaps.
+	 */
+	void replaceData(const std::vector<uint8_t> &newPixels, uint32_t newWidth, uint32_t newHeight, uint32_t newChannels) {
+		m_width = newWidth;
+		m_height = newHeight;
+		m_channels = newChannels;
+		pixels = newPixels;
+		mips.clear();
+		m_isMipped = false;
+		incrementVersion();
+	}
+
 	// Generates mipmaps, modifies only mips vector
 	void generateMipmaps();
 

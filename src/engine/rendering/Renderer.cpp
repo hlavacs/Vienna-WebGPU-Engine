@@ -3,18 +3,27 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
-#include "engine/rendering/BindGroupLayout.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
+#include "engine/rendering/Material.h"
+#include "engine/rendering/Mesh.h"
+#include "engine/rendering/Model.h"
 #include "engine/rendering/ObjectUniforms.h"
+#include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
+#include "engine/scene/nodes/CameraNode.h"
 
 namespace engine::rendering
 {
 
-Renderer::Renderer(std::shared_ptr<webgpu::WebGPUContext> context) : m_context(context), m_pipelineManager(std::make_unique<PipelineManager>(*context)), m_renderPassManager(std::make_unique<RenderPassManager>(*context))
+Renderer::Renderer(std::shared_ptr<webgpu::WebGPUContext> context) :
+	m_context(context),
+	m_pipelineManager(std::make_unique<webgpu::WebGPUPipelineManager>(*context)),
+	m_renderPassManager(std::make_unique<RenderPassManager>(*context))
 {
 }
 
@@ -37,43 +46,24 @@ bool Renderer::initialize()
 		return false;
 	}
 
-	// Setup default pipelines
-	if (!setupDefaultPipelines())
-	{
-		spdlog::error("Failed to setup pipelines");
-		return false;
-	}
-
-	// Setup default render passes
-	if (!setupDefaultRenderPasses())
-	{
-		spdlog::error("Failed to setup render passes");
-		return false;
-	}
-
-	auto frameUniformsLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("frameUniforms");
-	if (frameUniformsLayout == nullptr)
+	m_frameBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("frameUniforms");
+	if (m_frameBindGroupLayout == nullptr)
 	{
 		spdlog::error("Failed to get global bind group layout for frameUniforms");
 		return false;
 	}
-	auto lightUniformsLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("lightUniforms");
-	if (lightUniformsLayout == nullptr)
+	m_lightBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("lightUniforms");
+	if (m_lightBindGroupLayout == nullptr)
 	{
 		spdlog::error("Failed to get global bind group layout for lightUniforms");
 		return false;
 	}
-	m_frameBindGroup = m_context->bindGroupFactory().createBindGroup(frameUniformsLayout);
-	m_lightBindGroup = m_context->bindGroupFactory().createBindGroup(lightUniformsLayout);
+	m_lightBindGroup = m_context->bindGroupFactory().createBindGroup(m_lightBindGroupLayout);
 
 	spdlog::info("Renderer initialized successfully");
 	return true;
 }
 
-void Renderer::updateFrameUniforms(const FrameUniforms &frameUniforms)
-{
-	m_frameBindGroup->updateBuffer(0, &frameUniforms, sizeof(FrameUniforms), 0, m_context->getQueue());
-}
 void Renderer::updateLights(const std::vector<LightStruct> &lights)
 {
 	// Always write the header, even if there are no lights (count = 0)
@@ -90,9 +80,12 @@ void Renderer::updateLights(const std::vector<LightStruct> &lights)
 	}
 }
 
-void Renderer::bindFrameUniforms(wgpu::RenderPassEncoder renderPass)
+void Renderer::bindFrameUniforms(wgpu::RenderPassEncoder renderPass, const FrameUniforms &frameUniforms)
 {
-	renderPass.setBindGroup(0, m_frameBindGroup->getBindGroup(), 0, nullptr);
+	// ToDo: Cache frame bind group per camera
+	auto frameBindGroup = m_context->bindGroupFactory().createBindGroup(m_frameBindGroupLayout);
+	frameBindGroup->updateBuffer(0, &frameUniforms, sizeof(FrameUniforms), 0, m_context->getQueue());
+	renderPass.setBindGroup(0, frameBindGroup->getBindGroup(), 0, nullptr);
 }
 
 void Renderer::bindLightUniforms(wgpu::RenderPassEncoder renderPass)
@@ -100,158 +93,121 @@ void Renderer::bindLightUniforms(wgpu::RenderPassEncoder renderPass)
 	renderPass.setBindGroup(1, m_lightBindGroup->getBindGroup(), 0, nullptr);
 }
 
-void Renderer::renderFrame(
+void Renderer::startFrame()
+{
+	m_surfaceTexture = m_context->surfaceManager().acquireNextTexture();
+}
+
+void Renderer::renderCameraToTexture(
 	const RenderCollector &collector,
-	const DebugRenderCollector *debugCollector,
-	std::function<void(wgpu::RenderPassEncoder)> uiCallback
+	RenderTarget &target,
+	const FrameUniforms &frameUniforms
 )
 {
-	// 1. Update lights from collected data
+	// ToDo: Light should be stored per camera or scene but not in the renderer
 	updateLights(collector.getLights());
-
-	// 2. Acquire next surface texture
-	auto surfaceTexture = m_context->surfaceManager().acquireNextTexture();
-
-	// 3. Create command encoder
-	wgpu::CommandEncoderDescriptor encoderDesc{};
-	encoderDesc.label = "Frame Command Encoder";
-	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
-
-	// 4. Create or update render pass
-	if (m_mainPassId == 0)
+	auto viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * target.viewport.z);
+	auto viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * target.viewport.w);
+	
+	if (target.cpuTarget)
 	{
-		// First frame - create the render pass with the acquired surface texture
-		auto mainPass = m_context->renderPassFactory().createDefault(
-			surfaceTexture,
-			m_depthBuffer
-		);
-
-		m_renderPassManager->registerPass(mainPass);
-		m_mainPassId = mainPass->getId();
+		if (target.gpuTexture == nullptr)
+		{
+			target.gpuTexture = m_context->textureFactory().createFromHandle(target.cpuTarget.value()->getHandle());
+		}
+		auto resizeResult = target.gpuTexture->resize(*m_context, target.cpuTarget.value()->getWidth(), target.cpuTarget.value()->getHeight());
+		if (!resizeResult)
+		{
+			spdlog::error("Failed to resize GPU texture for CPU readback target");
+			return;
+		}
 	}
 	else
 	{
-		// Subsequent frames - update the render pass attachments
-		m_renderPassManager->updatePassAttachments(
-			m_mainPassId,
-			surfaceTexture,
-			m_depthBuffer
-		);
+		target.gpuTexture = m_context->textureFactory().createFromColor(
+
+		)
 	}
 
-	// 5. Begin main render pass
-	wgpu::RenderPassEncoder renderPass = m_renderPassManager->beginPass(m_mainPassId, encoder);
-	bindFrameUniforms(renderPass);
+	wgpu::CommandEncoderDescriptor encoderDesc{};
+	encoderDesc.label = "Camera Command Encoder";
+	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
+
+	// 2. Create render pass
+	auto renderPassDesc = m_context->renderPassFactory().createForTexture(
+		target.gpuTexture,
+		m_depthBuffer,
+		target.clearFlags,
+		target.backgroundColor
+	);
+	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDesc);
+
+	bindFrameUniforms(renderPass, frameUniforms);
 	bindLightUniforms(renderPass);
 
-	// 7. Render all collected items
-	std::string currentPipelineName = ""; // Track current pipeline to avoid redundant switches
-	std::shared_ptr<webgpu::WebGPUShaderInfo> currentShader = nullptr;
+	// 3. Render all collected objects
+	renderCollectorItems(renderPass, collector);
 
-	std::vector<std::shared_ptr<webgpu::WebGPUBindGroup>> bindGroups;
-	std::vector<std::shared_ptr<webgpu::WebGPUBuffer>> buffers;
-	for (const auto &item : collector.getRenderItems())
-	{
-		// Get or create WebGPUModel for this handle
-		auto webgpuModel = getOrCreateWebGPUModel(item.model);
-		if (!webgpuModel)
-		{
-			spdlog::warn("Failed to get WebGPUModel for render item");
-			continue;
-		}
-
-		// Determine which pipeline to use based on material
-		std::string pipelineName = "main"; // Default
-		// ToDo: RenderObjects with render collect and better rendering
-
-		// Set pipeline if it changed (avoid redundant pipeline switches)
-		if (pipelineName != currentPipelineName)
-		{
-			// ToDo: beginPass for different pipelines?
-			auto pipeline = m_pipelineManager->getPipeline(pipelineName);
-			if (pipeline && pipeline->isValid())
-			{
-				renderPass.setPipeline(pipeline->getPipeline());
-				currentPipelineName = pipelineName;
-
-				// Get the shader info for this pipeline
-				currentShader = m_pipelineManager->getShaderInfo(pipelineName);
-			}
-			else
-			{
-				spdlog::warn("Pipeline '{}' not found, skipping render item", pipelineName);
-				continue;
-			}
-		}
-
-		if (!currentShader)
-		{
-			spdlog::warn("No shader info for pipeline '{}'", pipelineName);
-			continue;
-		}
-
-		// Update object uniforms (Group 2)
-		// Object uniforms (model/normal matrices) change per object, so we must write them
-		// for each draw call to the shared global buffer
-		ObjectUniforms objectUniforms;
-		objectUniforms.modelMatrix = item.worldTransform;
-		objectUniforms.normalMatrix = glm::transpose(glm::inverse(item.worldTransform));
-		auto uniformBindGroup = m_context->bindGroupFactory().createBindGroup(
-			currentShader->getBindGroupLayout(2)
-		);
-		uniformBindGroup->updateBuffer(0, &objectUniforms, sizeof(ObjectUniforms), 0, m_context->getQueue());
-		renderPass.setBindGroup(2, uniformBindGroup->getBindGroup(), 0, nullptr);
-		bindGroups.push_back(uniformBindGroup);
-		// ToDo: Cache uniform bind groups per object in RenderItem
-
-		// ToDo: RenderCollector should do that update stuff
-		webgpuModel->update();
-		webgpuModel->getMesh()->update();
-		for (auto &submesh : webgpuModel->getMesh()->getSubmeshes())
-		{
-			// Set material bind groups
-			auto material = submesh.material;
-			if (material)
-			{
-				material->update();
-			}
-		}
-		webgpuModel->render(encoder, renderPass);
-	}
-
-	// 8. Render debug primitives if provided
-	if (debugCollector && !debugCollector->getPrimitives().empty())
-	{
-		renderDebugPrimitives(renderPass, *debugCollector);
-	}
-
-	// 10. Render UI/debug overlays if callback provided
-	if (uiCallback)
-	{
-		uiCallback(renderPass);
-	}
-
-	// 11. End render pass
 	renderPass.end();
 	renderPass.release();
 
-	// 12. Finish encoder and submit commands
+	// 4. Submit GPU commands
 	wgpu::CommandBufferDescriptor cmdBufferDesc{};
-	cmdBufferDesc.label = "Frame Command Buffer";
+	cmdBufferDesc.label = "Camera Command Buffer";
 	wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
-
-	// 13. Release resources after encoding is complete
 	encoder.release();
-
 	m_context->getQueue().submit(commands);
 	commands.release();
 
-	// 12. Present frame
-	m_context->getSurface().present();
+	// 5. Optional CPU readback
+	if (target.cpuTarget)
+	{
+		target.gpuTexture->readbackToCPU(target.cpuTarget.value());
+	}
 
-	// 13. Release surface texture to allow next frame acquisition
-	// This is critical - the surface texture must be dropped before the next getCurrentTexture()
-	surfaceTexture.reset();
+	// 6. If offscreen (no cpuTarget), store for later compositing
+	if (!target.cpuTarget)
+	{
+		m_offscreenTextures.push_back(target.gpuTexture);
+	}
+}
+
+void Renderer::compositeCamerasToSwapchain(
+	const std::vector<RenderTarget> &targets,
+	std::function<void(wgpu::RenderPassEncoder)> uiCallback
+)
+{
+	auto swapchainTexture = m_context->surfaceManager().acquireNextTexture();
+
+	wgpu::CommandEncoderDescriptor encoderDesc{};
+	encoderDesc.label = "Composite Command Encoder";
+	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
+
+	auto mainPass = m_context->renderPassFactory().createDefault(swapchainTexture, m_depthBuffer);
+	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(mainPass);
+
+	// Draw each camera texture to its portion of the screen
+	for (auto &camera : cameras)
+	{
+		drawFullScreenQuad(renderPass, camera->getRenderTarget(), camera->getViewport());
+	}
+
+	// Draw UI on top (only once)
+	if (uiCallback)
+		uiCallback(renderPass);
+
+	renderPass.end();
+	renderPass.release();
+
+	wgpu::CommandBufferDescriptor cmdBufferDesc{};
+	cmdBufferDesc.label = "Composite Command Buffer";
+	wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
+	encoder.release();
+	m_context->getQueue().submit(commands);
+	commands.release();
+
+	m_context->getSurface().present();
+	swapchainTexture.reset();
 }
 
 void Renderer::onResize(uint32_t width, uint32_t height)
@@ -264,93 +220,6 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 
 	// Update render pass attachments will happen on next frame
 	spdlog::info("Renderer resized to {}x{}", width, height);
-}
-
-bool Renderer::setupDefaultPipelines()
-{
-	// Get the lit shader from ShaderRegistry (already initialized in WebGPUContext)
-	m_mainShader = m_context->shaderRegistry().getShader(ShaderType::Lit);
-
-	if (!m_mainShader || !m_mainShader->isValid())
-	{
-		spdlog::error("Failed to get Lit shader from ShaderRegistry");
-		return false;
-	}
-
-	// Extract the created bind group layout infos from the shader
-	const auto &layoutInfos = m_mainShader->getBindGroupLayoutVector();
-	if (layoutInfos.size() < 4)
-	{
-		spdlog::error("WebGPUShaderFactory didn't create expected bind group layouts (got {}, expected 4)", layoutInfos.size());
-		return false;
-	}
-
-	// Main rendering pipeline
-	PipelineConfig mainConfig;
-	mainConfig.shaderInfo = m_mainShader;
-	mainConfig.colorFormat = m_context->getSwapChainFormat();
-	mainConfig.depthFormat = wgpu::TextureFormat::Depth24Plus;
-	mainConfig.bindGroupLayouts = layoutInfos;
-	mainConfig.enableDepth = true;
-	mainConfig.topology = wgpu::PrimitiveTopology::TriangleList;
-	mainConfig.vertexBufferCount = 1;
-
-	if (!m_pipelineManager->createPipeline("main", mainConfig))
-	{
-		spdlog::error("Failed to create main pipeline");
-		return false;
-	}
-
-	// Get the debug shader from ShaderRegistry
-	m_debugShader = m_context->shaderRegistry().getShader(ShaderType::Debug);
-
-	if (!m_debugShader || !m_debugShader->isValid())
-	{
-		spdlog::warn("Failed to get Debug shader from ShaderRegistry - debug rendering will be unavailable");
-		return true; // Don't fail initialization if debug shader fails
-	}
-
-	// Debug pipeline for line rendering
-	PipelineConfig debugConfig;
-	debugConfig.shaderInfo = m_debugShader;
-	debugConfig.colorFormat = m_context->getSwapChainFormat();
-	debugConfig.depthFormat = wgpu::TextureFormat::Depth24Plus;
-	debugConfig.topology = wgpu::PrimitiveTopology::LineList;
-	debugConfig.vertexBufferCount = 0;
-	debugConfig.enableDepth = true;
-
-	// Use WebGPUShaderFactory-generated layout
-	auto debugLayoutInfos = m_debugShader->getBindGroupLayoutVector();
-	if (debugLayoutInfos.empty())
-	{
-		spdlog::error("Debug shader has no bind group layouts");
-		return false;
-	}
-
-	spdlog::debug("Debug shader has {} bind group layouts", debugLayoutInfos.size());
-	debugConfig.bindGroupLayouts = debugLayoutInfos;
-
-	if (!m_pipelineManager->createPipeline("debug", debugConfig))
-	{
-		spdlog::error("Failed to create debug pipeline - debug rendering will be unavailable");
-		m_debugShader = nullptr; // Clear the shader so we don't try to use it
-		return true;			 // Don't fail initialization
-	}
-
-	m_debugBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_debugShader->getBindGroupLayout(1)
-	);
-
-	spdlog::info("Successfully created debug pipeline");
-	return true;
-}
-
-bool Renderer::setupDefaultRenderPasses()
-{
-	// Don't create the render pass here - we'll create it on the first frame
-	// when we have a valid surface texture to work with.
-	// This avoids acquiring a surface texture during initialization that never gets released.
-	return true;
 }
 
 std::shared_ptr<webgpu::WebGPUModel> Renderer::getOrCreateWebGPUModel(
@@ -392,71 +261,48 @@ void Renderer::renderDebugPrimitives(
 	const DebugRenderCollector &debugCollector
 )
 {
+	// ToDo: Implement debug primitive rendering
 	if (!m_debugShader || !m_debugShader->isValid())
 	{
 		spdlog::warn("Debug shader is null or invalid");
 		return; // Debug shader not available
 	}
-
-	// Get the debug pipeline
-	auto debugPipeline = m_pipelineManager->getPipeline("debug");
-	if (!debugPipeline)
-	{
-		spdlog::warn("Debug pipeline not found in pipeline manager");
-		return; // Debug pipeline not available
-	}
-
-	if (!debugPipeline->isValid())
-	{
-		spdlog::warn("Debug pipeline is invalid");
-		return; // Debug pipeline not available
-	}
-
-	uint32_t primitiveCount = static_cast<uint32_t>(debugCollector.getPrimitives().size());
-	if (primitiveCount == 0)
-	{
-		return;
-	}
-
-	spdlog::debug("Rendering {} debug primitives", primitiveCount);
-	renderPass.setPipeline(debugPipeline->getPipeline());
-
-	m_debugBindGroup->updateBuffer(
-		0, // binding 0
-		debugCollector.getPrimitives().data(),
-		debugCollector.getPrimitives().size() * sizeof(DebugPrimitive),
-		0,
-		m_context->getQueue()
-	);
-	renderPass.setBindGroup(1, m_debugBindGroup->getBindGroup(), 0, nullptr);
-
-	// Set the debug pipeline
-
-	// Draw primitives with correct vertex counts per type
-	for (uint32_t i = 0; i < primitiveCount; ++i)
-	{
-		const auto &primitive = debugCollector.getPrimitives()[i];
-		uint32_t vertexCount = 2; // Default for lines
-
-		switch (static_cast<DebugPrimitiveType>(primitive.type))
+	/*
+		// Get the debug pipeline
+		auto debugPipeline = m_pipelineManager->getOrCreatePipeline("debug");
+		if (!debugPipeline)
 		{
-		case DebugPrimitiveType::Line:
-			vertexCount = 2;
-			break;
-		case DebugPrimitiveType::Disk:
-			vertexCount = 32;
-			break;
-		case DebugPrimitiveType::AABB:
-			vertexCount = 24; // 12 edges * 2 vertices
-			break;
-		case DebugPrimitiveType::Arrow:
-			vertexCount = 10; // shaft (2) + head (8)
-			break;
+			spdlog::warn("Debug pipeline not found in pipeline manager");
+			return; // Debug pipeline not available
 		}
 
-		// Draw this primitive instance
-		renderPass.draw(vertexCount, 1, 0, i);
-	}
+		if (!debugPipeline->isValid())
+		{
+			spdlog::warn("Debug pipeline is invalid");
+			return; // Debug pipeline not available
+		}
+
+		uint32_t primitiveCount = static_cast<uint32_t>(debugCollector.getPrimitives().size());
+		if (primitiveCount == 0)
+		{
+			return;
+		}
+
+		spdlog::debug("Rendering {} debug primitives", primitiveCount);
+		renderPass.setPipeline(debugPipeline->getPipeline());
+
+		m_debugBindGroup->updateBuffer(
+			0, // binding 0
+			debugCollector.getPrimitives().data(),
+			debugCollector.getPrimitives().size() * sizeof(DebugPrimitive),
+			0,
+			m_context->getQueue()
+		);
+		renderPass.setBindGroup(1, m_debugBindGroup->getBindGroup(), 0, nullptr);
+
+		constexpr uint32_t maxVertexCount = 32;
+		renderPass.draw(maxVertexCount, primitiveCount, 0, 0);
+		*/
 }
 
 } // namespace engine::rendering

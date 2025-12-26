@@ -1,9 +1,12 @@
 #pragma once
+
+#include <memory>
+#include <set>
+
 #include "engine/rendering/DebugCollector.h"
 #include "engine/rendering/RenderCollector.h"
-#include "engine/scene/CameraNode.h"
-#include "engine/scene/entity/Node.h"
-#include <memory>
+#include "engine/scene/nodes/CameraNode.h"
+#include "engine/scene/nodes/Node.h"
 
 namespace engine
 {
@@ -25,19 +28,49 @@ class Scene
 	virtual ~Scene() = default;
 
 	/** @brief Set the root node of the scene */
-	void setRoot(entity::Node::Ptr root) { m_root = root; }
+	void setRoot(nodes::Node::Ptr root) { m_root = root; }
 
 	/** @brief Get the root node of the scene */
-	entity::Node::Ptr getRoot() const { return m_root; }
+	nodes::Node::Ptr getRoot() const { return m_root; }
 
 	/** @brief Set the active camera */
-	void setActiveCamera(CameraNode::Ptr camera) { m_activeCamera = camera; }
+	void setMainCamera(nodes::CameraNode::Ptr camera)
+	{
+		m_cameras.emplace(camera);
+		m_mainCamera = camera;
+	}
 
 	/** @brief Get the active camera */
-	CameraNode::Ptr getActiveCamera() const { return m_activeCamera; }
+	nodes::CameraNode::Ptr getMainCamera() const { return m_mainCamera; }
 
-	/** @brief Get the render collector for this frame */
-	const engine::rendering::RenderCollector &getRenderCollector() const { return m_renderCollector; }
+	/** @brief Get all active cameras in the scene
+	 * @note The main camera is always first in the returned vector
+	 */
+	std::vector<std::shared_ptr<nodes::CameraNode>> getActiveCameras() const
+	{
+		if (!m_mainCamera || !m_mainCamera->isEnabled())
+			return {}; // If no main camera we will not rendrer anything
+
+		std::vector<std::shared_ptr<nodes::CameraNode>> result;
+		result.push_back(m_mainCamera);
+
+		// ToDo: Order by some criteria (layer, priority, etc.)
+		for (auto &cam : m_cameras)
+		{
+			if (cam != m_mainCamera && cam->isEnabled())
+				result.push_back(cam);
+		}
+
+		return result;
+	}
+
+	/** @brief Add a camera to the scene
+	 * @return true if added, false if already present
+	 */
+	bool addCamera(nodes::CameraNode::Ptr camera)
+	{
+		return m_cameras.emplace(camera).second;
+	}
 
 	/** @brief Get the debug render collector for this frame */
 	const engine::rendering::DebugRenderCollector &getDebugCollector() const { return m_debugCollector; }
@@ -51,9 +84,6 @@ class Scene
   protected:
 	friend class engine::GameEngine;
 
-	/** @brief Process a complete frame lifecycle */
-	void onFrame(float deltaTime);
-
 	/** @brief Update phase - movement, animation, input, gameplay logic */
 	void update(float deltaTime);
 
@@ -61,7 +91,7 @@ class Scene
 	void lateUpdate(float deltaTime);
 
 	/** @brief Collect render data from scene graph into RenderCollector and sort */
-	void collectRenderData();
+	void collectRenderData(engine::rendering::RenderCollector &renderCollector);
 
 	/** @brief Collect debug primitives from nodes with debug enabled */
 	void collectDebugData();
@@ -73,9 +103,9 @@ class Scene
 	void postRender();
 
   private:
-	entity::Node::Ptr m_root;
-	CameraNode::Ptr m_activeCamera;
-	engine::rendering::RenderCollector m_renderCollector;
+	nodes::Node::Ptr m_root;
+	nodes::CameraNode::Ptr m_mainCamera;
+	std::set<nodes::CameraNode::Ptr> m_cameras;
 	engine::rendering::DebugRenderCollector m_debugCollector;
 	engine::EngineContext *m_engineContext = nullptr;
 };

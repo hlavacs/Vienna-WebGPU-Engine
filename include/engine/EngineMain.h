@@ -26,10 +26,10 @@
 // Scene management
 #include "engine/scene/Scene.h"
 #include "engine/scene/SceneManager.h"
-#include "engine/scene/CameraNode.h"
-#include "engine/scene/entity/LightNode.h"
-#include "engine/scene/entity/ModelRenderNode.h"
-#include "engine/scene/entity/UpdateNode.h"
+#include "engine/scene/nodes/CameraNode.h"
+#include "engine/scene/nodes/LightNode.h"
+#include "engine/scene/nodes/ModelRenderNode.h"
+#include "engine/scene/nodes/UpdateNode.h"
 
 // Resource management
 #include "engine/resources/ResourceManager.h"

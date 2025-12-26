@@ -1,10 +1,12 @@
-#include "engine/scene/entity/Node.h"
+#include "engine/scene/nodes/Node.h"
+#include "engine/EngineContext.h"
 #include "engine/rendering/DebugCollector.h"
-#include "engine/scene/entity/PhysicsNode.h"
-#include "engine/scene/entity/RenderNode.h"
-#include "engine/scene/entity/UpdateNode.h"
+#include "engine/scene/nodes/PhysicsNode.h"
+#include "engine/scene/nodes/RenderNode.h"
+#include "engine/scene/nodes/SpatialNode.h"
+#include "engine/scene/nodes/UpdateNode.h"
 
-namespace engine::scene::entity
+namespace engine::scene::nodes
 {
 Node::Node() {}
 Node::~Node() { onDestroy(); }
@@ -53,6 +55,16 @@ void Node::onDebugDraw(engine::rendering::DebugRenderCollector &collector)
 {
 	// Default implementation: do nothing
 	// Derived classes can override to add debug visualization
+}
+
+engine::resources::ResourceManager *Node::getResourceManager() const
+{
+	return m_engineContext ? m_engineContext->getResourceManager() : nullptr;
+}
+
+const engine::resources::ResourceManager *Node::resourceManager() const
+{
+	return m_engineContext ? m_engineContext->getResourceManager() : nullptr;
 }
 
 void Node::enable()
@@ -108,7 +120,6 @@ void Node::setEngineContext(engine::EngineContext *context)
 	}
 }
 
-Node *Node::getParent() const { return parent; }
 std::vector<Node::Ptr> Node::getChildren(std::optional<std::string> name) const
 {
 	if (!name.has_value())
@@ -153,4 +164,12 @@ std::shared_ptr<PhysicsNode> Node::asPhysicsNode()
 	return nullptr;
 }
 
-} // namespace engine::scene::entity
+std::shared_ptr<SpatialNode> Node::asSpatialNode()
+{
+	if (isSpatial())
+	{
+		return std::dynamic_pointer_cast<SpatialNode>(shared_from_this());
+	}
+	return nullptr;
+
+} // namespace engine::scene::nodes

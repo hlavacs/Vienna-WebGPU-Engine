@@ -1,10 +1,12 @@
 #pragma once
+#include "engine/rendering/Texture.h"
 #include <memory>
 #include <webgpu/webgpu.hpp>
 
 namespace engine::rendering::webgpu
 {
 
+class WebGPUContext; // forward declaration
 /**
  * @class WebGPUTexture
  * @brief GPU-side texture: wraps a WebGPU texture and its view, descriptors, and provides accessors.
@@ -41,7 +43,7 @@ class WebGPUTexture
 		assert(m_textureDesc.size.height > 0 && "Texture height must be > 0");
 		assert(m_textureView); // Should be valid
 	}
-	
+
 	/**
 	 * @brief Returns true if this is a surface texture (only view is relevant).
 	 */
@@ -118,11 +120,32 @@ class WebGPUTexture
 	 */
 	const wgpu::TextureViewDescriptor &getTextureViewDescriptor() const { return m_viewDesc; }
 
+	/**
+	 * @brief Reads back the GPU texture into an existing CPU-side texture.
+	 * @param context The WebGPU context.
+	 * @param outTexture CPU-side texture to write into. Must have matching width/height/format.
+	 * @return True on success, false on failure.
+	 */
+	bool readbackToCPU(WebGPUContext &context, std::shared_ptr<Texture> outTexture);
+
+	/**
+	 * @brief Resizes the texture to the new dimensions if needed.
+	 *        Recreates the texture and view if the size or format changes.
+	 * @param context The WebGPU context for resource creation.
+	 * @param newWidth The new width in pixels.
+	 * @param newHeight The new height in pixels.
+	 */
+	bool resize(WebGPUContext &context, uint32_t newWidth, uint32_t newHeight);
+
   protected:
 	/**
 	 * @brief True if this is a surface texture (only view is relevant).
 	 */
 	bool m_isSurfaceTexture = false;
+	/**
+	 * @brief True if this is a depth texture.
+	 */
+	bool m_isDepthTexture = false;
 	/**
 	 * @brief The underlying WebGPU texture resource.
 	 */

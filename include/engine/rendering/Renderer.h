@@ -5,19 +5,50 @@
 #include <unordered_map>
 #include <webgpu/webgpu.hpp>
 
-#include "engine/rendering/PipelineManager.h"
+#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/FrameUniforms.h"
+#include "engine/rendering/LightUniforms.h"
+#include "engine/rendering/Model.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderPassManager.h"
-#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/Texture.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUModel.h"
+#include "engine/rendering/webgpu/WebGPUPipelineManager.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
+
+namespace engine
+{
+class GameEngine; // forward declaration
+} // namespace engine
 
 namespace engine::rendering
 {
 
-// Forward declarations
-struct FrameUniforms;
+struct RenderTarget
+{
+	RenderTarget(
+		std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> gpuTexture,
+		glm::vec4 viewport = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f),
+		uint32_t clearFlags = 0,
+		glm::vec4 backgroundColor = glm::vec4(0.0f),
+		std::optional<std::shared_ptr<Texture>> cpuTarget = std::nullopt
+	) : gpuTexture(std::move(gpuTexture)),
+		viewport(viewport),
+		clearFlags(clearFlags),
+		backgroundColor(backgroundColor),
+		cpuTarget(std::move(cpuTarget))
+	{
+	}
+
+	std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> gpuTexture; // actual GPU render target
+	glm::vec4 viewport;													  // The relative viewport (x, y, width, height) in [0,1]
+	uint32_t clearFlags;
+	glm::vec4 backgroundColor;
+	std::optional<std::shared_ptr<Texture>> cpuTarget; // optional CPU-side texture
+};
 
 /**
  * @brief Central renderer that orchestrates the rendering pipeline.
@@ -27,7 +58,8 @@ struct FrameUniforms;
  */
 class Renderer
 {
-  public:
+	friend class engine::GameEngine;
+
 	Renderer(std::shared_ptr<webgpu::WebGPUContext> context);
 	~Renderer();
 
@@ -37,21 +69,17 @@ class Renderer
 	 */
 	bool initialize();
 
-	/**
-	 * @brief Updates frame uniforms (camera, time, etc).
-	 * @param frameUniforms The frame-level uniform data.
-	 */
-	void updateFrameUniforms(const FrameUniforms &frameUniforms);
+  protected:
+	void startFrame();
 
-	/**
-	 * @brief Renders a frame using collected scene data.
-	 * @param collector Collected render items and lights.
-	 * @param debugCollector Optional debug primitives to render.
-	 * @param uiCallback Optional callback for rendering UI/debug overlays.
-	 */
-	void renderFrame(
+	void renderCameraToTexture(
 		const RenderCollector &collector,
-		const DebugRenderCollector *debugCollector = nullptr,
+		RenderTarget &target,
+		const FrameUniforms &frameUniforms
+	);
+
+	void compositeCamerasToSwapchain(
+		const std::vector<RenderTarget> &targets,
 		std::function<void(wgpu::RenderPassEncoder)> uiCallback = nullptr
 	);
 
@@ -66,7 +94,7 @@ class Renderer
 	 * @brief Gets the pipeline manager.
 	 * @return Reference to pipeline manager.
 	 */
-	PipelineManager &pipelineManager() { return *m_pipelineManager; }
+	webgpu::WebGPUPipelineManager &pipelineManager() { return *m_pipelineManager; }
 
 	/**
 	 * @brief Gets the render pass manager.
@@ -74,45 +102,36 @@ class Renderer
 	 */
 	RenderPassManager &renderPassManager() { return *m_renderPassManager; }
 
-  private:
-	std::shared_ptr<webgpu::WebGPUContext> m_context;
-	std::unique_ptr<PipelineManager> m_pipelineManager;
-	std::unique_ptr<RenderPassManager> m_renderPassManager;
-	
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_frameBindGroup;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_debugBindGroup;
-
-	// Cached resources
-	std::shared_ptr<webgpu::WebGPUDepthTexture> m_depthBuffer;
-
-	// Main shader (holds global buffers for frame, lights, object, material)
-	std::shared_ptr<webgpu::WebGPUShaderInfo> m_mainShader = nullptr;
-
-	// Debug shader (for debug visualization)
-	std::shared_ptr<webgpu::WebGPUShaderInfo> m_debugShader = nullptr;
-
-	// WebGPU model cache (CPU Model Handle -> GPU Model)
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
-
-	// Main render pass ID
-	uint64_t m_mainPassId = 0;
-
-	bool setupDefaultPipelines();
-	bool setupDefaultRenderPasses();
 	void updateLights(const std::vector<LightStruct> &lights);
 
-	void bindFrameUniforms(wgpu::RenderPassEncoder renderPass);
+	void bindFrameUniforms(wgpu::RenderPassEncoder renderPass, const FrameUniforms &frameUniforms);
 	void bindLightUniforms(wgpu::RenderPassEncoder renderPass);
 
 	void renderDebugPrimitives(
 		wgpu::RenderPassEncoder renderPass,
 		const DebugRenderCollector &debugCollector
 	);
-	
+
 	std::shared_ptr<webgpu::WebGPUModel> getOrCreateWebGPUModel(
 		const engine::core::Handle<engine::rendering::Model> &modelHandle
 	);
+
+  private:
+	std::shared_ptr<webgpu::WebGPUContext> m_context;
+	std::unique_ptr<webgpu::WebGPUPipelineManager> m_pipelineManager;
+	std::unique_ptr<RenderPassManager> m_renderPassManager;
+
+	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
+	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_lightBindGroupLayout;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_debugBindGroup;
+
+	// Cached resources
+	std::shared_ptr<webgpu::WebGPUDepthTexture> m_depthBuffer;
+	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
+
+	// WebGPU model cache (CPU Model Handle -> GPU Model)
+	std::unordered_map<Model::Handle, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
 };
 
 } // namespace engine::rendering

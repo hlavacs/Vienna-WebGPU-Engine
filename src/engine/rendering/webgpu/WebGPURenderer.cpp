@@ -20,7 +20,7 @@ void WebGPURenderer::initialize()
 	// Allocate frame and lights buffers
 }
 
-void WebGPURenderer::beginFrame(const engine::scene::CameraNode &camera)
+void WebGPURenderer::beginFrame(const engine::scene::nodes::CameraNode &camera)
 {
 	updateFrameUniforms(camera);
 }
@@ -50,7 +50,7 @@ void WebGPURenderer::renderScene(const engine::rendering::RenderCollector &colle
 
 	for (const auto &item : collector.getRenderItems())
 	{
-		auto modelHandle = item.model;
+		auto modelHandle = item.modelHandle;
 		std::shared_ptr<WebGPUModel> gpuModel;
 		auto it = m_modelCache.find(modelHandle);
 		if (it != m_modelCache.end()) {
@@ -81,7 +81,7 @@ void WebGPURenderer::shutdown()
 	// Release GPU resources
 }
 
-void WebGPURenderer::updateFrameUniforms(const engine::scene::CameraNode &camera)
+void WebGPURenderer::updateFrameUniforms(const engine::scene::nodes::CameraNode &camera)
 {
 	// Fill m_frameUniforms and write to m_frameUniformBuffer
 }

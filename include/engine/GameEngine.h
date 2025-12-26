@@ -6,10 +6,10 @@
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/scene/SceneManager.h"
 #include "engine/ui/ImGuiManager.h"
+#include <SDL.h>
 #include <atomic>
 #include <memory>
 #include <thread>
-#include <SDL.h>
 
 namespace engine
 {
@@ -47,7 +47,7 @@ class GameEngine
 	// Setup API - call before run()
 	// Can also be called at runtime to update options (VSync, window size, etc.)
 	void setOptions(const GameEngineOptions &options);
-	
+
 	// Initialize the engine (creates window, WebGPU context, renderer, ImGui)
 	// Call this before run() if you need to access ImGuiManager or other subsystems
 	// @param opts Optional engine options. If not provided, uses previously set options via setOptions()
@@ -69,14 +69,14 @@ class GameEngine
 	std::shared_ptr<engine::ui::ImGuiManager> getImGuiManager() { return m_imguiManager; }
 
 	// Access the engine context for nodes and subsystems
-	EngineContext* getEngineContext() { return &m_engineContext; }
+	EngineContext *getEngineContext() { return &m_engineContext; }
 
 	// Access the input manager
-	input::InputManager* getInputManager() { return &m_inputManager; }
-	
+	input::InputManager *getInputManager() { return &m_inputManager; }
+
 	// Get current FPS
 	float getFPS() const { return m_currentFPS; }
-	
+
 	// Get current frame time in milliseconds
 	float getFrameTime() const { return m_currentFrameTime; }
 
@@ -90,9 +90,23 @@ class GameEngine
   private:
 	void cleanup();
 
-	void gameLoop();
 	void physicsLoop();
 
+	void gameLoop();
+	void processEvents();
+	void onWindowResize(int width, int height);
+	void updateScene(float deltaTime);
+	void renderFrame(float deltaTime);
+	void renderCamera(
+		const std::shared_ptr<engine::scene::Scene> &scene,
+		const std::shared_ptr<engine::scene::nodes::CameraNode> &camera
+	);
+	void updateFrameStats(float frameDelta, double frameStartTime);
+	void limitFrameRate(double frameStartTime);
+
+	std::function<void(wgpu::RenderPassEncoder)> createUICallback();
+
+  private:
 	// Core subsystems
 	SDL_Window *m_window = nullptr;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUContext> m_context;
@@ -103,14 +117,14 @@ class GameEngine
 
 	engine::input::InputManager m_inputManager;
 	engine::physics::PhysicsEngine m_physicsEngine;
-	
+
 	// Context for node system access
 	EngineContext m_engineContext;
 
 	// Window size tracking
 	int m_currentWidth = 1280;
 	int m_currentHeight = 720;
-	
+
 	// Frame statistics
 	float m_currentFPS = 0.0f;
 	float m_currentFrameTime = 0.0f;
