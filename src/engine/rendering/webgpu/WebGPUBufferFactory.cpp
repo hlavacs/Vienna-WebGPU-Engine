@@ -240,36 +240,4 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
 	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
 	return std::make_shared<WebGPUBuffer>(buffer, name, binding, bufferSize, static_cast<WGPUBufferUsageFlags>(desc.usage));
 }
-
-// Explicit template instantiations for wrapped buffer creation
-template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped<float>(
-	const std::string &, uint32_t, const float *, std::size_t
-);
-template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped<float>(
-	const std::string &, uint32_t, const std::vector<float> &
-);
-template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped<engine::rendering::Material::MaterialProperties>(
-	const std::string &, uint32_t, const engine::rendering::Material::MaterialProperties *, std::size_t
-);
-
-template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped<float>(
-	const std::string &, uint32_t, const float *, std::size_t
-);
-template std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped<float>(
-	const std::string &, uint32_t, const std::vector<float> &
-);
-
-// Explicit template instantiations for legacy methods (deprecated)
-template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<float>(const float *, std::size_t);
-template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<float>(const std::vector<float> &);
-template wgpu::Buffer WebGPUBufferFactory::createUniformBuffer<engine::rendering::Material::MaterialProperties>(
-	const engine::rendering::Material::MaterialProperties *, std::size_t
-);
-template wgpu::Buffer WebGPUBufferFactory::createStorageBuffer<float>(const float *, std::size_t);
-template wgpu::Buffer WebGPUBufferFactory::createStorageBuffer<float>(const std::vector<float> &);
-template wgpu::Buffer WebGPUBufferFactory::createVertexBuffer<float>(const float *, std::size_t);
-template wgpu::Buffer WebGPUBufferFactory::createVertexBuffer<float>(const std::vector<float> &);
-template wgpu::Buffer WebGPUBufferFactory::createIndexBuffer<uint16_t>(const uint16_t *, std::size_t);
-template wgpu::Buffer WebGPUBufferFactory::createIndexBuffer<uint16_t>(const std::vector<uint16_t> &);
-
 } // namespace engine::rendering::webgpu

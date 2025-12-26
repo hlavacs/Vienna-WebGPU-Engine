@@ -42,6 +42,7 @@ std::optional<engine::rendering::Mesh> GltfLoader::load(const std::filesystem::p
 	const tinygltf::Mesh &gltfMesh = model.meshes[0];
 	std::vector<engine::rendering::Vertex> vertices;
 	std::vector<uint32_t> indices;
+	engine::math::AABB boundingBox;
 
 	// Assume all primitives are triangles
 	bool triangulated = true;
@@ -99,9 +100,10 @@ std::optional<engine::rendering::Mesh> GltfLoader::load(const std::filesystem::p
 				v.uv = {uvData[i * 2 + 0], uvData[i * 2 + 1]};
 
 			vertices.push_back(v);
+			boundingBox.expandToFit(v.position);
 		}
 
-		if (false && indexed)
+		if (indexed)
 		{
 			const tinygltf::Accessor &indexAccessor = model.accessors[primitive.indices];
 			const tinygltf::BufferView &indexView = model.bufferViews[indexAccessor.bufferView];
@@ -140,12 +142,12 @@ std::optional<engine::rendering::Mesh> GltfLoader::load(const std::filesystem::p
 	if (indexed && !indices.empty())
 	{
 		logInfo("Loaded indexed GLTF with " + std::to_string(vertices.size()) + " unique vertices and " + std::to_string(indices.size()) + " indices");
-		return std::make_optional<engine::rendering::Mesh>(std::move(vertices), std::move(indices), triangulated);
+		return std::make_optional<engine::rendering::Mesh>(std::move(vertices), std::move(indices), boundingBox, triangulated);
 	}
 	else
 	{
 		logInfo("Loaded non-indexed GLTF with " + std::to_string(vertices.size()) + " vertices");
-		return std::make_optional<engine::rendering::Mesh>(std::move(vertices), triangulated);
+		return std::make_optional<engine::rendering::Mesh>(std::move(vertices), boundingBox, triangulated);
 	}
 }
 

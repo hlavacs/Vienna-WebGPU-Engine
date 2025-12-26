@@ -1,14 +1,17 @@
 #include "engine/GameEngine.h"
-#include "engine/resources/ResourceManager.h"
-#include "engine/core/PathProvider.h"
-#include "engine/rendering/FrameUniforms.h"
-#include <chrono>
-#include <iostream>
 
 #include <SDL.h>
+#include <backends/imgui_impl_sdl2.h>
+#include <chrono>
+#include <iostream>
 #include <sdl2webgpu.h>
 #include <spdlog/spdlog.h>
-#include <backends/imgui_impl_sdl2.h>
+
+#include "engine/core/PathProvider.h"
+#include "engine/rendering/FrameUniforms.h"
+#include "engine/rendering/RenderCollector.h"
+#include "engine/rendering/Renderer.h"
+#include "engine/resources/ResourceManager.h"
 
 namespace engine
 {
@@ -26,16 +29,17 @@ GameEngine::GameEngine() :
 	spdlog::info("LIB Root: {}", engine::core::PathProvider::getLibraryRoot().string());
 
 	m_resourceManager = std::make_shared<engine::resources::ResourceManager>(
-		engine::core::PathProvider::getResourceRoot());
+		engine::core::PathProvider::getResourceRoot()
+	);
 	m_context = std::make_shared<engine::rendering::webgpu::WebGPUContext>();
 	m_sceneManager = std::make_shared<engine::scene::SceneManager>();
-	
+
 	// Setup engine context for node system access
 	m_engineContext.setInputManager(&m_inputManager);
 	m_engineContext.setWebGPUContext(m_context.get());
 	m_engineContext.setResourceManager(m_resourceManager.get());
 	m_engineContext.setSceneManager(m_sceneManager.get());
-	
+
 	// Give scene manager access to engine context
 	m_sceneManager->setEngineContext(&m_engineContext);
 }
@@ -53,10 +57,10 @@ void GameEngine::setOptions(const GameEngineOptions &opts)
 	bool windowSizeChanged = (options.windowWidth != opts.windowWidth || options.windowHeight != opts.windowHeight);
 	bool resizableChanged = (options.resizableWindow != opts.resizableWindow);
 	bool fullscreenChanged = (options.fullscreen != opts.fullscreen);
-	
+
 	// Update options
 	options = opts;
-	
+
 	// Handle runtime changes if engine is already initialized
 	if (m_window)
 	{
@@ -65,18 +69,18 @@ void GameEngine::setOptions(const GameEngineOptions &opts)
 		{
 			SDL_SetWindowFullscreen(m_window, options.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
 		}
-		
+
 		// Update window size (only if not in fullscreen)
 		if (windowSizeChanged && !options.fullscreen)
 		{
 			SDL_SetWindowSize(m_window, options.windowWidth, options.windowHeight);
 			// Center window after resize
 			SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-			
+
 			// Update internal tracking
 			m_currentWidth = options.windowWidth;
 			m_currentHeight = options.windowHeight;
-			
+
 			// Notify subsystems of resize
 			if (m_context)
 			{
@@ -86,26 +90,26 @@ void GameEngine::setOptions(const GameEngineOptions &opts)
 			{
 				m_renderer->onResize(m_currentWidth, m_currentHeight);
 			}
-			
+
 			// Update camera aspect ratio
 			auto activeScene = m_sceneManager->getActiveScene();
 			if (activeScene)
 			{
-				auto cam = activeScene->getActiveCamera();
-				if (cam)
+				auto cameras = activeScene->getActiveCameras();
+				for (auto &camera : cameras)
 				{
-					cam->setAspect(static_cast<float>(m_currentWidth) / static_cast<float>(m_currentHeight));
+					camera->onResize(m_currentWidth, m_currentHeight);
 				}
 			}
 		}
-		
+
 		// Update resizable state
 		if (resizableChanged)
 		{
 			SDL_SetWindowResizable(m_window, options.resizableWindow ? SDL_TRUE : SDL_FALSE);
 		}
 	}
-	
+
 	// If VSync changed and context is initialized, reconfigure it
 	if (vsyncChanged && m_context)
 	{
@@ -127,10 +131,10 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 	{
 		options = opts.value();
 	}
-	
+
 	// Tell SDL we're handling main ourselves
 	SDL_SetMainReady();
-	
+
 	// Create SDL window
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
 	{
@@ -150,7 +154,8 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 		SDL_WINDOWPOS_CENTERED,
 		options.windowWidth,
 		options.windowHeight,
-		windowFlags);
+		windowFlags
+	);
 
 	if (!m_window)
 	{
@@ -176,7 +181,7 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 		spdlog::error("Failed to initialize ImGuiManager!");
 		return false;
 	}
-	
+
 	m_initialized = true;
 	return true;
 }
@@ -233,153 +238,6 @@ void GameEngine::run()
 	cleanup();
 }
 
-void GameEngine::gameLoop()
-{
-	double previousTime = getCurrentTime();
-
-	while (running)
-	{
-		// Handle SDL events (window close, input, etc.)
-		SDL_Event event;
-		while (SDL_PollEvent(&event))
-		{
-			// Pass events to ImGui first
-			if (m_imguiManager)
-			{
-				ImGui_ImplSDL2_ProcessEvent(&event);
-			}
-
-			// Check if ImGui wants to capture input
-			ImGuiIO &io = ImGui::GetIO();
-			bool imguiWantsInput = io.WantCaptureMouse || io.WantCaptureKeyboard;
-
-			// Process input events only if ImGui doesn't want them
-			if (!imguiWantsInput)
-			{
-				m_inputManager.processEvent(event);
-			}
-
-			// Handle window events (always process these)
-			if (event.type == SDL_QUIT)
-			{
-				running = false;
-			}
-			else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED)
-			{
-				m_currentWidth = event.window.data1;
-				m_currentHeight = event.window.data2;
-				
-				m_context->surfaceManager().updateIfNeeded(m_currentWidth, m_currentHeight);
-				// Notify renderer of resize
-				if (m_renderer)
-				{
-					m_renderer->onResize(m_currentWidth, m_currentHeight);
-				}
-				
-				// Update camera aspect ratio if needed
-				auto activeScene = m_sceneManager->getActiveScene();
-				if (activeScene)
-				{
-					auto cam = activeScene->getActiveCamera();
-					if (cam)
-					{
-						cam->setAspect(static_cast<float>(m_currentWidth) / static_cast<float>(m_currentHeight));
-					}
-				}
-			}
-		}
-
-		double currentTime = getCurrentTime();
-		float frameDelta = static_cast<float>(currentTime - previousTime);
-		previousTime = currentTime;
-
-		// Clamp delta time to prevent spiral of death
-		if (frameDelta > options.maxDeltaTime)
-			frameDelta = options.maxDeltaTime;
-
-		accumulatedTime += frameDelta;
-
-		// Get active scene from scene manager
-		auto activeScene = m_sceneManager->getActiveScene();
-		if (activeScene)
-		{
-			activeScene->onFrame(frameDelta);
-
-			// Update camera uniforms and render
-			auto cam = activeScene->getActiveCamera();
-			if (cam && m_renderer)
-			{
-				// Update frame uniforms from active camera
-				engine::rendering::FrameUniforms frameUniforms;
-				frameUniforms.viewMatrix = cam->getViewMatrix();
-				frameUniforms.projectionMatrix = cam->getProjectionMatrix();
-				frameUniforms.viewProjectionMatrix = cam->getProjectionMatrix() * cam->getViewMatrix();
-				frameUniforms.cameraWorldPosition = cam->getPosition();
-				frameUniforms.time = static_cast<float>(SDL_GetTicks64() / 1000.0);
-
-				// Render the frame using the scene's render collector
-				m_renderer->updateFrameUniforms(frameUniforms);
-				
-				// Collect debug data from the scene
-				activeScene->collectDebugData();
-				
-				// Create UI render callback that delegates to ImGuiManager
-				std::function<void(wgpu::RenderPassEncoder)> uiRenderCallback = nullptr;
-				if (m_imguiManager)
-				{
-					uiRenderCallback = [this](wgpu::RenderPassEncoder renderPass) {
-						m_imguiManager->render(renderPass);
-					};
-				}
-				
-				m_renderer->renderFrame(
-					activeScene->getRenderCollector(),
-					&activeScene->getDebugCollector(),
-					uiRenderCallback
-				);
-			}
-
-			// Post-render cleanup
-			activeScene->postRender();
-		}
-		
-		// Reset per-frame input state
-		m_inputManager.endFrame();
-
-		// Update frame statistics
-		static int frameCount = 0;
-		static double fpsTimer = 0.0;
-		frameCount++;
-		fpsTimer += frameDelta;
-		m_currentFrameTime = frameDelta * 1000.0f; // Convert to milliseconds
-		
-		if (fpsTimer >= 1.0)
-		{
-			m_currentFPS = frameCount / static_cast<float>(fpsTimer);
-			
-			// Log frame stats if enabled
-			if (options.showFrameStats)
-			{
-				spdlog::info("FPS: {} | Frame Time: {:.2f}ms", static_cast<int>(m_currentFPS), m_currentFrameTime);
-			}
-			
-			frameCount = 0;
-			fpsTimer = 0.0;
-		}
-
-		// Frame rate limiting (if enabled)
-		if (options.limitFrameRate && !options.enableVSync)
-		{
-			double targetFrameTime = 1.0 / options.targetFrameRate;
-			double frameTime = getCurrentTime() - currentTime;
-			if (frameTime < targetFrameTime)
-			{
-				SDL_Delay(static_cast<Uint32>((targetFrameTime - frameTime) * 1000.0));
-			}
-		}
-	}
-}
-
 void GameEngine::physicsLoop()
 {
 	double previousTime = getCurrentTime();
@@ -390,7 +248,7 @@ void GameEngine::physicsLoop()
 		float frameDelta = static_cast<float>(currentTime - previousTime);
 		previousTime = currentTime;
 		localAccum += frameDelta;
-		
+
 		int subSteps = 0;
 		while (localAccum >= options.fixedDeltaTime && subSteps < options.maxSubSteps)
 		{
@@ -414,5 +272,212 @@ void GameEngine::physicsLoop()
 	}
 }
 
-} // namespace engine
+void GameEngine::gameLoop()
+{
+	double previousTime = getCurrentTime();
 
+	while (running)
+	{
+		processEvents();
+
+		const double currentTime = getCurrentTime();
+		float frameDelta = static_cast<float>(currentTime - previousTime);
+		previousTime = currentTime;
+
+		if (frameDelta > options.maxDeltaTime)
+			frameDelta = options.maxDeltaTime;
+
+		updateScene(frameDelta);
+		renderFrame(frameDelta);
+
+		m_inputManager.endFrame();
+		updateFrameStats(frameDelta, currentTime);
+		limitFrameRate(currentTime);
+	}
+}
+
+void GameEngine::processEvents()
+{
+	SDL_Event event;
+	while (SDL_PollEvent(&event))
+	{
+		if (m_imguiManager)
+			ImGui_ImplSDL2_ProcessEvent(&event);
+
+		ImGuiIO &io = ImGui::GetIO();
+		const bool imguiWantsInput = io.WantCaptureMouse || io.WantCaptureKeyboard;
+
+		if (!imguiWantsInput)
+			m_inputManager.processEvent(event);
+
+		if (event.type == SDL_QUIT)
+		{
+			running = false;
+		}
+		else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED)
+		{
+			onWindowResize(event.window.data1, event.window.data2);
+		}
+	}
+}
+
+void GameEngine::onWindowResize(int width, int height)
+{
+	m_currentWidth = width;
+	m_currentHeight = height;
+	m_context->surfaceManager().updateIfNeeded(width, height);
+
+	if (m_renderer)
+		m_renderer->onResize(width, height);
+
+	auto scene = m_sceneManager->getActiveScene();
+	if (!scene)
+		return;
+
+	auto cameras = scene->getActiveCameras();
+	if (!cameras.empty())
+	{
+		for (auto &camera : cameras)
+		{
+			camera->onResize(width, height);
+		}
+	}
+}
+
+void GameEngine::updateScene(float deltaTime)
+{
+	auto scene = m_sceneManager->getActiveScene();
+	if (!scene)
+		return;
+
+	scene->update(deltaTime);
+	scene->lateUpdate(deltaTime);
+}
+
+void GameEngine::renderFrame(float deltaTime)
+{
+	auto scene = m_sceneManager->getActiveScene();
+	if (!scene || !m_renderer)
+		return;
+
+	scene->preRender(); // Update transforms & matrices once per frame
+
+	auto cameras = scene->getActiveCameras();
+	auto uiCallback = createUICallback();
+
+	// 1. Render each camera to its own target if specified
+	for (auto &camera : cameras)
+	{
+		renderCamera(scene, camera);
+	}
+
+	m_renderer->compositeCamerasToSwapchain(cameras, uiCallback);
+
+	scene->postRender();
+}
+
+void GameEngine::renderCamera(
+	const std::shared_ptr<engine::scene::Scene> &scene,
+	const std::shared_ptr<engine::scene::nodes::CameraNode> &camera
+)
+{
+	camera->preRender();
+
+	// Prepare per-camera uniforms
+	engine::rendering::FrameUniforms frameUniforms{};
+	frameUniforms.viewMatrix = camera->getViewMatrix();
+	frameUniforms.projectionMatrix = camera->getProjectionMatrix();
+	frameUniforms.viewProjectionMatrix = camera->getViewProjectionMatrix();
+	frameUniforms.cameraWorldPosition = camera->getPosition();
+	frameUniforms.time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
+
+	engine::rendering::RenderCollector renderCollector(
+		camera->getViewMatrix(),
+		camera->getProjectionMatrix(),
+		camera->getPosition(),
+		camera->getFrustum()
+	);
+
+	scene->collectRenderData(renderCollector);
+	renderCollector.sort();
+
+	// Determine render target: custom texture or nullptr (composite main pass)
+	auto targetOptional = camera->getRenderTarget();
+	if (!targetOptional.has_value())
+	{
+		spdlog::warn("CameraNode '{}' has no valid render target!", camera->getName());
+		return;
+	}
+	auto textureOptional = targetOptional.value().get();
+	if (!textureOptional.has_value())
+	{
+		spdlog::warn("CameraNode '{}' has invalid render target texture!", camera->getName());
+		return;
+	}
+	auto webgpuTexture = m_context->textureFactory().createFromHandle(targetOptional.value());
+	webgpuTexture->getTexture();
+
+	m_renderer->renderCameraToTexture(
+		renderCollector,
+		&scene->getDebugCollector(),
+		texture,
+		camera->getViewport(),
+		camera->getClearFlags(),
+		camera->getBackgroundColor(),
+		frameUniforms
+	);
+}
+
+std::function<void(wgpu::RenderPassEncoder)> GameEngine::createUICallback()
+{
+	if (!m_imguiManager)
+		return nullptr;
+
+	return [this](wgpu::RenderPassEncoder pass)
+	{
+		m_imguiManager->render(pass);
+	};
+}
+
+void GameEngine::updateFrameStats(float frameDelta, double frameStartTime)
+{
+	static int frameCount = 0;
+	static double fpsTimer = 0.0;
+
+	frameCount++;
+	fpsTimer += frameDelta;
+	m_currentFrameTime = frameDelta * 1000.0f;
+
+	if (fpsTimer >= 1.0)
+	{
+		m_currentFPS = frameCount / static_cast<float>(fpsTimer);
+
+		if (options.showFrameStats)
+		{
+			spdlog::info(
+				"FPS: {} | Frame Time: {:.2f}ms",
+				static_cast<int>(m_currentFPS),
+				m_currentFrameTime
+			);
+		}
+
+		frameCount = 0;
+		fpsTimer = 0.0;
+	}
+}
+
+void GameEngine::limitFrameRate(double frameStartTime)
+{
+	if (!options.limitFrameRate || options.enableVSync)
+		return;
+
+	const double targetFrameTime = 1.0 / options.targetFrameRate;
+	const double frameTime = getCurrentTime() - frameStartTime;
+
+	if (frameTime < targetFrameTime)
+	{
+		SDL_Delay(static_cast<Uint32>((targetFrameTime - frameTime) * 1000.0));
+	}
+}
+
+} // namespace engine

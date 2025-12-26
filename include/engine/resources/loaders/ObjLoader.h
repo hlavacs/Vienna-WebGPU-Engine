@@ -1,8 +1,8 @@
 #pragma once
 
 #include "engine/io/tiny_obj_loader.h"
-#include "engine/rendering/Vertex.h"
 #include "engine/rendering/Submesh.h"
+#include "engine/rendering/Vertex.h"
 #include "engine/resources/loaders/GeometryLoader.h"
 #include <optional>
 #include <string>
@@ -16,20 +16,21 @@ namespace engine::resources::loaders
  */
 struct ObjGeometryData
 {
-    std::string filePath;
-    std::string name;
-    std::vector<engine::rendering::Vertex> vertices;
-    std::vector<uint32_t> indices;
+	std::string filePath;
+	std::string name;
+	std::vector<engine::rendering::Vertex> vertices;
+	std::vector<uint32_t> indices;
+	engine::math::AABB boundingBox;
 
-    struct MaterialRange
-    {
-        int materialId = -1;          // Index in tinyobj::material_t array
-        uint32_t indexOffset = 0;    // Start in the global indices array
-        uint32_t indexCount = 0;     // Number of indices for this material
-    };
+	struct MaterialRange
+	{
+		int materialId = -1;	  // Index in tinyobj::material_t array
+		uint32_t indexOffset = 0; // Start in the global indices array
+		uint32_t indexCount = 0;  // Number of indices for this material
+	};
 
-    std::vector<MaterialRange> materialRanges;
-    std::vector<tinyobj::material_t> materials;
+	std::vector<MaterialRange> materialRanges;
+	std::vector<tinyobj::material_t> materials;
 };
 
 /**

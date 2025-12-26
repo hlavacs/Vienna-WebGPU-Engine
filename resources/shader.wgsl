@@ -68,8 +68,6 @@ struct ObjectUniforms {
 struct MaterialUniforms {
 	// xyz = baseColor, w = opacity
 	diffuse: vec4f,
-	// xyz = specularColor, w = specularStrength
-	specular: vec4f,
 	// xyz = emissiveColor, w = emissionIntensity
 	emission: vec4f,
 	// xyz = transmittanceColor, w = transmittanceIntensity
@@ -77,10 +75,10 @@ struct MaterialUniforms {
 	// xyz = ambientColor, w = ambientIntensity
 	ambient: vec4f,
 
-	shininess: f32,
 	roughness: f32,
 	metallic: f32,
 	ior: f32,
+	_pad0: f32
 }
 
 ;
@@ -177,14 +175,18 @@ fn getPositionFromTransform(transform: mat4x4f) -> vec3f {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 	// ---- Normal mapping ----
-	let TBN = mat3x3f(in.tangent, in.bitangent, in.normal);
-	let N = normalize(TBN * (textureSample(normalTexture, textureSampler, in.uv).rgb * 2.0 - 1.0));
+	let N = normalize(in.normal);
+	let T = normalize(in.tangent - N * dot(N, in.tangent));
+	let B = cross(N, T);
+
+	let TBN = mat3x3f(T, B, N);
+	let normal = normalize(TBN * (textureSample(normalTexture, textureSampler, in.uv).rgb * 2.0 - 1.0));
 
 	let V = normalize(in.viewDirection);
 
 	// ---- Material textures ----
 	let baseColor = textureSample(baseColorTexture, textureSampler, in.uv).rgb * uMaterial.diffuse.rgb;
-	let roughness = clamp(textureSample(roughnessTexture, textureSampler, in.uv).r * uMaterial.roughness, 0.04, 1.0);
+	let roughness = clamp(textureSample(roughnessTexture, textureSampler, in.uv).r * uMaterial.roughness, 0.001, 1.0);
 	let metallic = textureSample(metallicTexture, textureSampler, in.uv).r * uMaterial.metallic;
 	let aoTex = textureSample(aoTexture, textureSampler, in.uv).r;
 	let ao = saturate(aoTex);
@@ -238,14 +240,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 		}
 
 		let H = normalize(V + L);
-		let NdotL = max(dot(N, L), 0.0);
-		let NdotV = max(dot(N, V), 0.0);
+		let NdotL = max(dot(normal, L), 0.0);
+		let NdotV = max(dot(normal, V), 0.0);
 		if (NdotL <= 0.0) {
 			continue;
 		}
 
-		let D = distributionGGX(N, H, roughness);
-		let G = geometrySmith(N, V, L, roughness);
+		let D = distributionGGX(normal, H, roughness);
+		let G = geometrySmith(normal, V, L, roughness);
 		let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
 
 		let numerator = D * G * F;

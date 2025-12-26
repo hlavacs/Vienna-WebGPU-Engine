@@ -9,8 +9,6 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/Vertex.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
-#include "engine/rendering/webgpu/WebGPUTexture.h"
 #include "engine/resources/MaterialManager.h"
 #include "engine/resources/MeshManager.h"
 #include "engine/resources/ModelManager.h"
@@ -31,9 +29,6 @@ class ResourceManager
 	using mat3x3 = glm::mat3x3;
 
 	explicit ResourceManager(path baseDir);
-
-	// Load a shader from a WGSL file into a new shader module
-	static wgpu::ShaderModule loadShaderModule(const path &path, wgpu::Device device);
   public:
 	std::shared_ptr<engine::resources::loaders::ObjLoader> m_objLoader;
 	std::shared_ptr<engine::resources::loaders::GltfLoader> m_gltfLoader;

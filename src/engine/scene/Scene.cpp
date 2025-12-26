@@ -1,6 +1,6 @@
 #include "engine/scene/Scene.h"
-#include "engine/scene/entity/RenderNode.h"
-#include "engine/scene/entity/UpdateNode.h"
+#include "engine/scene/nodes/RenderNode.h"
+#include "engine/scene/nodes/UpdateNode.h"
 #include <functional>
 
 namespace engine::scene
@@ -9,26 +9,12 @@ namespace engine::scene
 Scene::Scene() : m_root(nullptr), m_activeCamera(nullptr)
 {
 	// Always create a root node
-	m_root = std::make_shared<entity::Node>();
+	m_root = std::make_shared<nodes::Node>();
 
 	// Always create a camera node as a child of the root
 	auto cameraNode = std::make_shared<CameraNode>();
 	m_root->addChild(cameraNode);
 	m_activeCamera = cameraNode;
-}
-
-void Scene::onFrame(float deltaTime)
-{
-	// Clear render collector at the start of each frame
-	m_renderCollector.clear();
-
-	// Complete frame lifecycle
-	update(deltaTime);
-	lateUpdate(deltaTime);
-	collectRenderData(); // Collect and sort render items
-	preRender();		 // Prepare nodes for rendering
-						 // Note: actual rendering happens in Application via Renderer
-						 // postRender() is called by Application after rendering
 }
 
 void Scene::update(float deltaTime)
@@ -37,8 +23,8 @@ void Scene::update(float deltaTime)
 		return;
 
 	// Process all UpdateNodes in the scene graph
-	std::function<void(entity::Node::Ptr, float)> processUpdateNodes;
-	processUpdateNodes = [&processUpdateNodes](entity::Node::Ptr node, float dt)
+	std::function<void(nodes::Node::Ptr, float)> processUpdateNodes;
+	processUpdateNodes = [&processUpdateNodes](nodes::Node::Ptr node, float dt)
 	{
 		if (node->isEnabled())
 		{
@@ -70,8 +56,8 @@ void Scene::lateUpdate(float deltaTime)
 		return;
 
 	// Process all UpdateNodes in the scene graph for lateUpdate
-	std::function<void(entity::Node::Ptr, float)> processLateUpdateNodes;
-	processLateUpdateNodes = [&processLateUpdateNodes](entity::Node::Ptr node, float dt)
+	std::function<void(nodes::Node::Ptr, float)> processLateUpdateNodes;
+	processLateUpdateNodes = [&processLateUpdateNodes](nodes::Node::Ptr node, float dt)
 	{
 		if (node->isEnabled())
 		{
@@ -97,28 +83,22 @@ void Scene::lateUpdate(float deltaTime)
 	processLateUpdateNodes(m_root, deltaTime);
 }
 
-void Scene::collectRenderData()
+ void Scene::collectRenderData(engine::rendering::RenderCollector& renderCollector)
 {
-	if (!m_root || !m_activeCamera)
+	if (!m_root)
 		return;
 
 	// Process all RenderNodes in the scene graph for render collection
-	std::function<void(entity::Node::Ptr)> processRenderNodes;
-	processRenderNodes = [&processRenderNodes, this](entity::Node::Ptr node)
+	std::function<void(nodes::Node::Ptr)> processRenderNodes;
+	processRenderNodes = [&processRenderNodes, &renderCollector](nodes::Node::Ptr node)
 	{
 		if (node->isEnabled())
 		{
-			// If this is a RenderNode, call its onRenderCollect method
 			if (node->isRender())
 			{
 				auto renderNode = node->asRenderNode();
-				if (renderNode)
-				{
-					renderNode->onRenderCollect(m_renderCollector);
-				}
+				renderNode->onRenderCollect(renderCollector);
 			}
-
-			// Process children
 			for (const auto &child : node->getChildren())
 			{
 				processRenderNodes(child);
@@ -129,8 +109,7 @@ void Scene::collectRenderData()
 	// Start traversal from root
 	processRenderNodes(m_root);
 
-	// Sort collected items for optimal rendering
-	m_renderCollector.sort();
+	return renderCollector;
 }
 
 void Scene::collectDebugData()
@@ -142,8 +121,8 @@ void Scene::collectDebugData()
 	m_debugCollector.clear();
 
 	// Process all nodes with debug enabled
-	std::function<void(entity::Node::Ptr)> processDebugNodes;
-	processDebugNodes = [&processDebugNodes, this](entity::Node::Ptr node)
+	std::function<void(nodes::Node::Ptr)> processDebugNodes;
+	processDebugNodes = [&processDebugNodes, this](nodes::Node::Ptr node)
 	{
 		if (node->isEnabled() && node->isDebugEnabled())
 		{
@@ -174,8 +153,8 @@ void Scene::preRender()
 	}
 
 	// Process all RenderNodes in the scene graph for preRender
-	std::function<void(entity::Node::Ptr)> processPreRenderNodes;
-	processPreRenderNodes = [&processPreRenderNodes](entity::Node::Ptr node)
+	std::function<void(nodes::Node::Ptr)> processPreRenderNodes;
+	processPreRenderNodes = [&processPreRenderNodes](nodes::Node::Ptr node)
 	{
 		if (node->isEnabled())
 		{
@@ -207,8 +186,8 @@ void Scene::postRender()
 		return;
 
 	// Process all RenderNodes in the scene graph for postRender
-	std::function<void(entity::Node::Ptr)> processPostRenderNodes;
-	processPostRenderNodes = [&processPostRenderNodes](entity::Node::Ptr node)
+	std::function<void(nodes::Node::Ptr)> processPostRenderNodes;
+	processPostRenderNodes = [&processPostRenderNodes](nodes::Node::Ptr node)
 	{
 		if (node->isEnabled())
 		{

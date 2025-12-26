@@ -9,7 +9,7 @@
 
 namespace engine::scene
 {
-
+// ToDo: Move to math and move parenting to nodes
 /**
  * @brief Represents a position, rotation, and scale in 3D space with support for hierarchical transforms.
  */

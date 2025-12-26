@@ -282,7 +282,7 @@ All managers derive from `ResourceManagerBase<T>` which provides:
 
 ### Rendering Managers
 
-1. **PipelineManager** (`include/engine/rendering/PipelineManager.h`)
+1. **PipelineManager** (`include/engine/rendering/WebGPUPipelineManager.h`)
    - Manages render pipelines with hot-reloading support
    - `createPipeline(name, config)` - Create and register pipeline
    - `getPipeline(name)` - Get cached pipeline by name

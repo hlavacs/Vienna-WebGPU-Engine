@@ -88,15 +88,10 @@ class WebGPUMaterial : public WebGPURenderObject<engine::rendering::Material>, p
 	const WebGPUMaterialOptions &getOptions() const { return m_options; }
 
 	/**
-	 * @brief Get the shader type used by this material.
-	 * @return ShaderType enum value.
+	 * @brief Get the shader name used by this material.
+	 * @return The shader name string.
 	 */
-	ShaderType getShaderType() const { return m_shaderType; }
-
-	/**
-	 * @brief Get the custom shader name (only valid if shaderType == ShaderType::Custom).
-	 */
-	const std::string &getCustomShaderName() const { return m_customShaderName; }
+	const std::string &getShaderName() const { return m_shaderName; }
 
 	/**
 	 * @brief Update GPU resources from CPU data.
@@ -116,14 +111,9 @@ class WebGPUMaterial : public WebGPURenderObject<engine::rendering::Material>, p
 	WebGPUMaterialOptions m_options;
 
 	/**
-	 * @brief The shader type used by this material.
+	 * @brief The name of the shader used by this material.
 	 */
-	ShaderType m_shaderType = ShaderType::Lit;
-
-	/**
-	 * @brief Custom shader name. Only used if shaderType == ShaderType::Custom.
-	 */
-	std::string m_customShaderName;
+	std::string m_shaderName;
 
 	/**
 	 * @brief The material bind group.

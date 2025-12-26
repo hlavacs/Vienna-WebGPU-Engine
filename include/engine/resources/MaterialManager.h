@@ -2,6 +2,7 @@
 
 #include "engine/io/tiny_obj_loader.h"
 #include "engine/rendering/Material.h"
+#include "engine/rendering/MaterialFeatureMask.h"
 #include "engine/resources/ResourceManagerBase.h"
 #include "engine/resources/TextureManager.h"
 #include <memory>
@@ -23,6 +24,7 @@ class MaterialManager : public ResourceManagerBase<engine::rendering::Material>
 {
   public:
 	using Material = engine::rendering::Material;
+	using MaterialFeature = engine::rendering::MaterialFeature;
 	using MaterialHandle = Material::Handle;
 	using MaterialPtr = std::shared_ptr<Material>;
 	using TextureHandle = engine::rendering::Texture::Handle;

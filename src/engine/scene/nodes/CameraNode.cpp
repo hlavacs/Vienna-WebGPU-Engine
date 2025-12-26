@@ -1,15 +1,16 @@
-#include "engine/scene/CameraNode.h"
+#include "engine/scene/nodes/CameraNode.h"
+#include "engine/resources/ResourceManager.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/quaternion.hpp>
 
-namespace engine::scene
+namespace engine::scene::nodes
 {
 
 CameraNode::CameraNode()
 {
-	addNodeType(entity::NodeType::Camera);
-	
+	addNodeType(nodes::NodeType::Camera);
+
 	// Initialize camera parameters
 	m_fov = 45.0f;
 	m_aspect = 16.0f / 9.0f;
@@ -33,7 +34,7 @@ CameraNode::CameraNode()
 void CameraNode::setTransform(const std::shared_ptr<Transform> &t)
 {
 	m_transform = t;
-	updateMatrices();
+	m_dirtyView = m_dirtyFrustum = true;
 }
 
 void CameraNode::lookAt(const glm::vec3 &target, const glm::vec3 &up)
@@ -42,8 +43,7 @@ void CameraNode::lookAt(const glm::vec3 &target, const glm::vec3 &up)
 		return;
 
 	m_transform->lookAt(target, up);
-
-	updateMatrices();
+	m_dirtyView = m_dirtyFrustum = true;
 }
 
 void CameraNode::pan(float deltaX, float deltaY)
@@ -60,9 +60,7 @@ void CameraNode::pan(float deltaX, float deltaY)
 
 	// Apply movement to position
 	m_transform->translate(movement, false);
-
-	// Update camera matrices
-	updateMatrices();
+	m_dirtyView = m_dirtyFrustum = true;
 }
 
 void CameraNode::tilt(float deltaX, float deltaY)
@@ -107,9 +105,7 @@ void CameraNode::tilt(float deltaX, float deltaY)
 
 	// Set new rotation
 	m_transform->setLocalRotation(newRotation);
-
-	// Update camera matrices
-	updateMatrices();
+	m_dirtyView = m_dirtyFrustum = true;
 }
 
 void CameraNode::dolly(float delta)
@@ -125,82 +121,42 @@ void CameraNode::dolly(float delta)
 	glm::vec3 forward = m_transform->forward();
 	m_transform->translate(forward * delta * 2.0f, false); // Multiply by 2.0 for more responsive zooming
 
-	// Update camera matrices
-	updateMatrices();
+	m_dirtyView = m_dirtyFrustum = true;
 }
 
 void CameraNode::setFov(float fovDegrees)
 {
 	m_fov = fovDegrees;
-	updateMatrices();
-}
-
-void CameraNode::setAspect(float aspect)
-{
-	m_aspect = aspect;
-	updateMatrices();
+	m_dirtyProjection = m_dirtyFrustum = true;
 }
 
 void CameraNode::setNearFar(float near, float far)
 {
 	m_near = near;
 	m_far = far;
-	updateMatrices();
+	m_dirtyProjection = m_dirtyFrustum = true;
 }
 
 void CameraNode::setPerspective(bool perspective)
 {
 	m_isPerspective = perspective;
-	updateMatrices();
+	m_dirtyProjection = m_dirtyFrustum = true;
 }
 
 void CameraNode::setOrthographicSize(float size)
 {
 	m_orthographicSize = size;
-	updateMatrices();
-}
-
-float CameraNode::getFov() const
-{
-	return m_fov;
-}
-
-float CameraNode::getAspect() const
-{
-	return m_aspect;
-}
-
-float CameraNode::getNear() const
-{
-	return m_near;
-}
-
-float CameraNode::getFar() const
-{
-	return m_far;
-}
-
-bool CameraNode::isPerspective() const
-{
-	return m_isPerspective;
-}
-
-float CameraNode::getOrthographicSize() const
-{
-	return m_orthographicSize;
+	m_dirtyProjection = m_dirtyFrustum = true;
 }
 
 // View and projection matrix getters are now inline in the header
 
 void CameraNode::update(float deltaTime)
 {
-	// No specific update needed in the update phase
 }
 
 void CameraNode::lateUpdate(float deltaTime)
 {
-	// Final transform-based updates after all other nodes
-	updateMatrices();
 }
 
 void CameraNode::preRender()
@@ -208,30 +164,55 @@ void CameraNode::preRender()
 	// Final matrices update before rendering
 	// This is where matrices can be updated before being used by the renderer
 	updateMatrices();
+	updateFrustumPlanes();
 }
 
-void CameraNode::updateMatrices()
+void CameraNode::updateMatrices() const
 {
 	if (!m_transform)
 		return;
 
-	glm::vec3 pos = m_transform->getPosition();
-	m_viewMatrix = glm::lookAt(pos, pos - m_transform->forward(), glm::vec3(0.0f, 1.0f, 0.0f));
+	if (!m_dirtyView && !m_dirtyProjection)
+		return;
 
-	// Calculate projection matrix based on mode
-	if (m_isPerspective)
+	if (m_dirtyView)
 	{
-		m_projectionMatrix = glm::perspective(glm::radians(m_fov), m_aspect, m_near, m_far);
-	}
-	else
-	{
-		// Orthographic projection
-		float halfHeight = m_orthographicSize * 0.5f;
-		float halfWidth = halfHeight * m_aspect;
-		m_projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, m_near, m_far);
+		glm::vec3 pos = m_transform->getPosition();
+		m_viewMatrix = glm::lookAt(
+			pos,
+			pos - m_transform->forward(),
+			glm::vec3(0.0f, 1.0f, 0.0f)
+		);
+		m_dirtyView = false;
 	}
 
-	// Calculate combined view-projection matrix
+	if (m_dirtyProjection)
+	{
+		if (m_isPerspective)
+		{
+			m_projectionMatrix = glm::perspective(
+				glm::radians(m_fov),
+				m_aspect,
+				m_near,
+				m_far
+			);
+		}
+		else
+		{
+			float halfHeight = m_orthographicSize * 0.5f;
+			float halfWidth = halfHeight * m_aspect;
+			m_projectionMatrix = glm::ortho(
+				-halfWidth,
+				halfWidth,
+				-halfHeight,
+				halfHeight,
+				m_near,
+				m_far
+			);
+		}
+		m_dirtyProjection = false;
+	}
+
 	m_viewProjectionMatrix = m_projectionMatrix * m_viewMatrix;
 }
 
@@ -240,6 +221,49 @@ glm::vec3 CameraNode::getPosition() const
 	return m_transform ? m_transform->getPosition() : glm::vec3(0.0f);
 }
 
-// No camera handle needed since we store all data directly in the node
+const engine::math::Frustum &CameraNode::getFrustum() const
+{
+	// ToDo: Lazy update only when needed
+	updateFrustumPlanes();
+	return m_frustum;
+}
 
-} // namespace engine::scene
+void CameraNode::updateFrustumPlanes() const
+{
+	if (!m_dirtyFrustum)
+		return;
+	glm::mat4 vp = m_viewProjectionMatrix;
+
+	// Left
+	m_frustum.left.normal = glm::vec3(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0]);
+	m_frustum.left.d = vp[3][3] + vp[3][0];
+
+	// Right
+	m_frustum.right.normal = glm::vec3(vp[0][3] - vp[0][0], vp[1][3] - vp[1][0], vp[2][3] - vp[2][0]);
+	m_frustum.right.d = vp[3][3] - vp[3][0];
+
+	// Bottom
+	m_frustum.bottom.normal = glm::vec3(vp[0][3] + vp[0][1], vp[1][3] + vp[1][1], vp[2][3] + vp[2][1]);
+	m_frustum.bottom.d = vp[3][3] + vp[3][1];
+
+	// Top
+	m_frustum.top.normal = glm::vec3(vp[0][3] - vp[0][1], vp[1][3] - vp[1][1], vp[2][3] - vp[2][1]);
+	m_frustum.top.d = vp[3][3] - vp[3][1];
+
+	// Near
+	m_frustum.near.normal = glm::vec3(vp[0][3] + vp[0][2], vp[1][3] + vp[1][2], vp[2][3] + vp[2][2]);
+	m_frustum.near.d = vp[3][3] + vp[3][2];
+
+	// Far
+	m_frustum.far.normal = glm::vec3(vp[0][3] - vp[0][2], vp[1][3] - vp[1][2], vp[2][3] - vp[2][2]);
+	m_frustum.far.d = vp[3][3] - vp[3][2];
+
+	// Normalize
+	for (auto &p : m_frustum.asArray())
+	{
+		float len = glm::length(p->normal);
+		p->normal /= len;
+		p->d /= len;
+	}
+}
+} // namespace engine::scene::nodes

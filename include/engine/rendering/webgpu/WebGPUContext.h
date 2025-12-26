@@ -4,20 +4,21 @@
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
+#include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
-#include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
-#include "engine/rendering/webgpu/WebGPUMeshFactory.h"
-#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
-#include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
-#include "engine/rendering/webgpu/WebGPUSurfaceManager.h"
-#include "engine/rendering/webgpu/WebGPUTextureFactory.h"
-// #include "engine/rendering/webgpu/WebGPUSwapChainFactory.h"
-#include "engine/rendering/webgpu/WebGPUShaderFactory.h"
 #include "engine/rendering/webgpu/WebGPUDepthStencilStateFactory.h"
 #include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
+#include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
+#include "engine/rendering/webgpu/WebGPUMeshFactory.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
+#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
+#include "engine/rendering/webgpu/WebGPUPipelineManager.h"
 #include "engine/rendering/webgpu/WebGPURenderPassFactory.h"
+#include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
+#include "engine/rendering/webgpu/WebGPUShaderFactory.h"
+#include "engine/rendering/webgpu/WebGPUSurfaceManager.h"
+#include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -85,6 +86,7 @@ class WebGPUContext
 	WebGPUModelFactory &modelFactory();
 	WebGPUShaderFactory &shaderFactory();
 	ShaderRegistry &shaderRegistry();
+	WebGPUPipelineManager &pipelineManager();
 
   private:
 	void initDevice();
@@ -117,6 +119,7 @@ class WebGPUContext
 	std::unique_ptr<WebGPUModelFactory> m_modelFactory;
 	std::unique_ptr<WebGPUShaderFactory> m_shaderFactory;
 	std::unique_ptr<ShaderRegistry> m_shaderRegistry;
+	std::unique_ptr<WebGPUPipelineManager> m_pipelineManager;
 };
 
 } // namespace engine::rendering::webgpu

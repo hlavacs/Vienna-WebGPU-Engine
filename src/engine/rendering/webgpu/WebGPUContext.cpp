@@ -27,6 +27,7 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
 	m_depthStencilStateFactory = std::make_unique<WebGPUDepthStencilStateFactory>();
 	m_renderPassFactory = std::make_unique<WebGPURenderPassFactory>(*this);
 	m_shaderFactory = std::make_unique<WebGPUShaderFactory>(*this);
+	m_pipelineManager = std::make_unique<WebGPUPipelineManager>(*this);
 	m_lastWindowHandle = windowHandle;
 #ifdef __EMSCRIPTEN__
 	m_instance = wgpu::wgpuCreateInstance(nullptr);
@@ -60,11 +61,11 @@ void WebGPUContext::updatePresentMode(bool enableVSync)
 	{
 		throw std::runtime_error("Cannot update present mode: WebGPUSurfaceManager not initialized!");
 	}
-	
+
 	// Get current config and update only the present mode
 	auto currentConfig = m_surfaceManager->currentConfig();
 	currentConfig.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
-	
+
 	// Reconfigure the surface with updated present mode
 	m_surfaceManager->reconfigure(currentConfig);
 }
@@ -317,4 +318,13 @@ WebGPURenderPassFactory &WebGPUContext::renderPassFactory()
 	return *m_renderPassFactory;
 }
 
+WebGPUPipelineManager &WebGPUContext::pipelineManager()
+{
+	if (!m_pipelineManager)
+	{
+		throw std::runtime_error("WebGPUPipelineManager not initialized!");
+	}
+	return *m_pipelineManager;
+
 } // namespace engine::rendering::webgpu
+}

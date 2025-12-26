@@ -1,6 +1,6 @@
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
-#include "engine/rendering/BindGroupLayout.h"
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 #include <spdlog/spdlog.h>
@@ -24,22 +24,17 @@ void WebGPUMaterial::updateGPUResources()
 	const auto &cpuMaterial = getCPUObject();
 
 	// Determine shader type and custom shader
-	ShaderType shaderType = cpuMaterial.getShaderType();
-	std::string customShaderName = (shaderType == ShaderType::Custom) ? cpuMaterial.getCustomShaderName() : "";
-
-	bool shaderChanged = shaderType != m_shaderType || customShaderName != m_customShaderName;
-	m_shaderType = shaderType;
-	m_customShaderName = customShaderName;
+	const std::string &shaderName = cpuMaterial.getShader();
+	bool shaderChanged = shaderName != m_shaderName;
+	m_shaderName = shaderName;
 
 	// Get shader info
 	std::shared_ptr<WebGPUShaderInfo> shaderInfo =
-		(shaderType == ShaderType::Custom)
-			? m_context.shaderRegistry().getCustomShader(customShaderName)
-			: m_context.shaderRegistry().getShader(shaderType);
+		m_context.shaderRegistry().getShader(shaderName);
 
 	if (!shaderInfo)
 	{
-		spdlog::warn("WebGPUMaterial: Shader not found (type={}, name='{}')", static_cast<int>(shaderType), customShaderName);
+		spdlog::warn("WebGPUMaterial: Shader not found (name='{}')", shaderName);
 		return;
 	}
 
@@ -56,9 +51,10 @@ void WebGPUMaterial::updateGPUResources()
 		m_materialBindGroup = m_context.bindGroupFactory().createBindGroup(layout, shared_from_this());
 	}
 
-	m_materialBindGroup->updateBuffer(0, // binding 0 for material properties
+	m_materialBindGroup->updateBuffer(
+		0, // binding 0 for material properties
 		reinterpret_cast<const uint8_t *>(&cpuMaterial.getProperties()),
-		sizeof(Material::MaterialProperties),
+		cpuMaterial.getPropertiesSize(),
 		0,
 		m_context.getQueue()
 	);

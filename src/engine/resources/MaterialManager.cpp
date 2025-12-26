@@ -10,7 +10,7 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(cons
 {
 	auto mat = std::make_shared<Material>();
 
-	Material::MaterialProperties props{};
+	engine::rendering::PBRProperties props{};
 	// Fill properties from tinyobj
 	// Diffuse RGB + opacity
 	props.diffuse[0] = objMat.diffuse[0];
@@ -18,11 +18,7 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(cons
 	props.diffuse[2] = objMat.diffuse[2];
 	props.diffuse[3] = objMat.dissolve; // opacity
 
-	// Specular RGB + strength
-	props.specular[0] = objMat.specular[0];
-	props.specular[1] = objMat.specular[1];
-	props.specular[2] = objMat.specular[2];
-	props.specular[3] = 1.0f; // specular strength
+	// Specular is not used in a PBR material directly, so we skip it
 
 	// Emission RGB + intensity
 	props.emission[0] = objMat.emission[0];
@@ -43,7 +39,7 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(cons
 	props.ambient[3] = 1.0f; // optional factor
 
 	// PBR parameters packed in a struct (scalar values remain separate)
-	props.shininess = objMat.shininess;
+	// props.shininess = objMat.shininess; // Not used in PBR
 	props.roughness = objMat.roughness;
 	props.metallic = objMat.metallic;
 	props.ior = objMat.ior;
@@ -51,40 +47,59 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(cons
 	mat->setProperties(props);
 	mat->setName(objMat.name);
 
+	MaterialFeature features = MaterialFeature::None;
+
+	if (!objMat.normal_texname.empty())
+		features = features | MaterialFeature::UsesNormalMap;
+	if (objMat.dissolve < 1.0f || !objMat.alpha_texname.empty())
+		features = features | MaterialFeature::AlphaTest;
+	// Skinned / instanced flags can be set elsewhere based on mesh usage
+	if (objMat.roughness > 0.0f || objMat.metallic > 0.0f)
+		features = features | MaterialFeature::UsesMetallicRoughness;
+	if (!objMat.ambient_texname.empty())
+		features = features | MaterialFeature::UsesOcclusionMap;
+	if (!objMat.emissive_texname.empty())
+		features = features | MaterialFeature::UsesEmissiveMap;
+	if (objMat.transmittance[3] > 0.0f)
+		features = features | MaterialFeature::Transparent;
+	// DoubleSided could be set from objMat.flags or some convention
+
+	mat->setFeatureMask(features); // <-- store the feature mask on the material
+
+	// TODO: Guess shader type based on available textures
+	// For now, we default to PBR
+	mat->setShader(engine::rendering::shader::default::PBR);
+
 	// TODO: support for additional tinyobj::material_t texture slots if needed (e.g. bump_texname, displacement_texname, reflection_texname, etc.)
 	using engine::core::unwrapOrHandle;
 
+	if (!objMat.ambient_texname.empty())
+		mat->setAmbientTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.ambient_texname)));
 	if (!objMat.diffuse_texname.empty())
-		mat->setAlbedoTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.diffuse_texname)));
-
+		mat->setDiffuseTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.diffuse_texname)));
+	if (!objMat.specular_texname.empty())
+		mat->setSpecularTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.specular_texname)));
+	if (!objMat.specular_highlight_texname.empty())
+		mat->setSpecularHighlightTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.specular_highlight_texname)));
+	if (!objMat.bump_texname.empty())
+		mat->setBumpTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.bump_texname)));
+	if (!objMat.displacement_texname.empty())
+		mat->setDisplacementTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.displacement_texname)));
+	if (!objMat.reflection_texname.empty())
+		mat->setReflectionTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.reflection_texname)));
+	if (!objMat.alpha_texname.empty())
+		mat->setAlphaTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.alpha_texname)));
+	if (!objMat.roughness_texname.empty())
+		mat->setRoughnessTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.roughness_texname)));
+	if (!objMat.metallic_texname.empty())
+		mat->setMetallicTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.metallic_texname)));
+	if (!objMat.sheen_texname.empty())
+		mat->setSheenTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.sheen_texname)));
+	if (!objMat.emissive_texname.empty())
+		mat->setEmissiveTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.emissive_texname)));
 	if (!objMat.normal_texname.empty())
 		mat->setNormalTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.normal_texname)));
 
-	if (!objMat.metallic_texname.empty())
-		mat->setMetallicTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.metallic_texname)));
-
-	if (!objMat.roughness_texname.empty())
-		mat->setRoughnessTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.roughness_texname)));
-
-	if (!objMat.ambient_texname.empty())
-		mat->setAOTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.ambient_texname)));
-
-	if (!objMat.emissive_texname.empty())
-		mat->setEmissiveTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.emissive_texname)));
-
-	if (!objMat.alpha_texname.empty())
-		mat->setOpacityTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.alpha_texname)));
-
-	if (!objMat.specular_texname.empty())
-		mat->setSpecularTexture(unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.specular_texname)));
-
-	if (!objMat.reflection_texname.empty())
-		mat->setTexture(
-			engine::rendering::MaterialTextureSlots::REFLECTION,
-			unwrapOrHandle(m_textureManager->createTextureFromFile(textureBasePath + objMat.reflection_texname))
-		);
-		
-	// TODO: respect other texture slots like displacement_texname, reflection_texname, etc. if needed
 	auto handleOpt = add(mat);
 	if (!handleOpt)
 		return std::nullopt;

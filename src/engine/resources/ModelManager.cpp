@@ -12,7 +12,7 @@ ModelManager::ModelManager(
 	m_objLoader(std::move(objLoader)) {}
 
 std::optional<ModelManager::ModelPtr> ModelManager::createModel(
-	const std::string &filePath, 
+	const std::string &filePath,
 	const std::string &name,
 	const engine::math::CoordinateSystem::Cartesian srcCoordSys,
 	const engine::math::CoordinateSystem::Cartesian dstCoordSys
@@ -20,7 +20,7 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 {
 	std::string modelName = filePath;
 	auto optModel = getByName(modelName);
-	if(optModel.has_value())
+	if (optModel.has_value())
 		return *optModel;
 
 	if (!m_objLoader || !m_meshManager)
@@ -32,7 +32,12 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 	const auto &objData = *objDataOpt;
 
 	// Build Mesh from parsed geometry using the MeshManager
-	auto meshOpt = m_meshManager->createMesh(std::move(objData.vertices), std::move(objData.indices), modelName);
+	auto meshOpt = m_meshManager->createMesh(
+		std::move(objData.vertices),
+		std::move(objData.indices),
+		objData.boundingBox,
+		modelName
+	);
 	if (!meshOpt || !(*meshOpt))
 		return std::nullopt;
 

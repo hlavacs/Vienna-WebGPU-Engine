@@ -2,15 +2,15 @@
 
 #include "engine/rendering/Model.h"
 #include "engine/rendering/RenderCollector.h"
-#include "engine/scene/entity/RenderNode.h"
-#include "engine/scene/SpatialNode.h"
+#include "engine/scene/nodes/RenderNode.h"
+#include "engine/scene/nodes/SpatialNode.h"
 
-namespace engine::scene::entity
+namespace engine::scene::nodes
 {
 
 /**
  * @brief A node that renders a 3D model.
- * 
+ *
  * Combines RenderNode functionality with model rendering.
  * Automatically adds its model to the RenderCollector during scene traversal.
  * Inherits from SpatialNode to have a transform for positioning the model.
@@ -93,4 +93,4 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 	uint32_t m_renderLayer = 0;
 };
 
-} // namespace engine::scene::entity
+} // namespace engine::scene::nodes

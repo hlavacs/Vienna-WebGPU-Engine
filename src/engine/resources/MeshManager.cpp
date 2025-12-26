@@ -5,10 +5,15 @@ namespace engine::resources
 std::optional<MeshManager::MeshPtr> MeshManager::createMesh(
 	std::vector<engine::rendering::Vertex> vertices,
 	std::vector<uint32_t> indices,
+	engine::math::AABB boundingBox,
 	const std::string &name
 )
 {
-	auto mesh = std::make_shared<engine::rendering::Mesh>(std::move(vertices), std::move(indices));
+	auto mesh = std::make_shared<engine::rendering::Mesh>(
+		std::move(vertices),
+		std::move(indices),
+		boundingBox
+	);
 	if (!name.empty())
 	{
 		mesh->setName(name);

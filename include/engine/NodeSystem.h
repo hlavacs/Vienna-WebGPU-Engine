@@ -14,12 +14,12 @@
 // Scene graph
 #include "engine/scene/Scene.h"
 #include "engine/scene/Transform.h"
-#include "engine/scene/entity/Node.h"
-#include "engine/scene/entity/UpdateNode.h"
-#include "engine/scene/entity/RenderNode.h"
-#include "engine/scene/CameraNode.h"
-#include "engine/scene/entity/LightNode.h"
-#include "engine/scene/entity/ModelRenderNode.h"
+#include "engine/scene/nodes/Node.h"
+#include "engine/scene/nodes/UpdateNode.h"
+#include "engine/scene/nodes/RenderNode.h"
+#include "engine/scene/nodes/CameraNode.h"
+#include "engine/scene/nodes/LightNode.h"
+#include "engine/scene/nodes/ModelRenderNode.h"
 
 // Common math
 #include <glm/glm.hpp>

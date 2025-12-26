@@ -2,7 +2,7 @@ newmtl Material_#25
 Kd 1.0 1.0 1.0
 Ka 1.000000 1.000000 1.000000
 Ks 0.04 0.04 0.04
-Pr 1.0      # roughness
+Pr 1.0     # roughness
 Pm 0.22    # metallic
 Ns 0
 Ni 1.450000

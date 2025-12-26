@@ -1,7 +1,7 @@
 #pragma once
-#include "engine/scene/entity/Node.h"
+#include "engine/scene/nodes/Node.h"
 
-namespace engine::scene::entity
+namespace engine::scene::nodes
 {
 /**
  * @brief Node with update and lateUpdate methods for per-frame logic.
@@ -23,4 +23,4 @@ class UpdateNode : public virtual Node
 	/** @brief Called after all updates. */
 	virtual void lateUpdate(float deltaTime) {}
 };
-} // namespace engine::scene::entity
+} // namespace engine::scene::nodes

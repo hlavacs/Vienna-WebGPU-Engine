@@ -48,6 +48,7 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 	if (ImGui::Button("Reload Shaders (F5)"))
 	{
 		m_engine.getContext()->shaderRegistry().reloadAllShaders();
+		m_engine.getContext()->pipelineManager().reloadAllPipelines();
 		// ToDo: Recreate pipelines
 	}
 	ImGui::SameLine();
@@ -108,16 +109,15 @@ void MainDemoImGuiUI::renderMaterialProperties()
 			{
 				auto material = materialOpt.value();
 				ImGui::Text("Material Handle: %s", material->getName().value_or("Unnamed").c_str());
-				auto materialProperties = material->getProperties();
+				auto materialProperties = material->getProperties<engine::rendering::PBRProperties>();
 				bool materialsChanged = false;
 				materialsChanged |= ImGui::ColorEdit4("Diffuse (Kd)", materialProperties.diffuse);
-				materialsChanged |= ImGui::ColorEdit4("Specular (Ks)", materialProperties.specular);
 				materialsChanged |= ImGui::ColorEdit4("Emission (Ke)", materialProperties.emission);
 				materialsChanged |= ImGui::ColorEdit4("Transmittance (Kt)", materialProperties.transmittance);
-				materialsChanged |= ImGui::SliderFloat("Roughness", &materialProperties.roughness, 0.0f, 1.0f);
-				materialsChanged |= ImGui::SliderFloat("Shininess", &materialProperties.shininess, 0.0f, 256.0f);
-				materialsChanged |= ImGui::SliderFloat("Metallic", &materialProperties.metallic, 0.0f, 1.0f);
-				materialsChanged |= ImGui::SliderFloat("IOR", &materialProperties.ior, 0.0f, 5.0f);
+				materialsChanged |= ImGui::ColorEdit4("Ambient (Ka)", materialProperties.ambient);
+				materialsChanged |= ImGui::SliderFloat("Roughness (Pr)", &materialProperties.roughness, 0.0f, 1.0f);
+				materialsChanged |= ImGui::SliderFloat("Metallic (Pm)", &materialProperties.metallic, 0.0f, 1.0f);
+				materialsChanged |= ImGui::SliderFloat("IOR (Ni)", &materialProperties.ior, 0.0f, 5.0f);
 				if (materialsChanged)
 				{
 					material->setProperties(materialProperties);

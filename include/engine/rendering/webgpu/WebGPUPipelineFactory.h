@@ -1,8 +1,9 @@
 #pragma once
 
-#include <memory>
+#include "engine/rendering/Mesh.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include <memory>
 
 namespace engine::rendering::webgpu
 {
@@ -13,53 +14,50 @@ class WebGPUPipelineFactory
   public:
 	explicit WebGPUPipelineFactory(WebGPUContext &context);
 
-	/**
-	 * @brief Creates a WebGPUPipeline wrapper from descriptor and bind group layouts.
-	 * @param descriptor The render pipeline descriptor.
-	 * @param layouts Array of bind group layouts for the pipeline.
-	 * @param layoutCount Number of bind group layouts.
-	 * @param shaderInfo Optional shader info to store in the pipeline.
-	 * @return Shared pointer to WebGPUPipeline wrapper.
-	 */
-	std::shared_ptr<WebGPUPipeline> createPipeline(
-		const wgpu::RenderPipelineDescriptor &descriptor,
-		const wgpu::BindGroupLayout *layouts,
-		uint32_t layoutCount,
-		std::shared_ptr<WebGPUShaderInfo> shaderInfo = nullptr
-	);
-
-	// Create pipeline descriptor
-	wgpu::RenderPipelineDescriptor createRenderPipelineDescriptor(
-		const wgpu::VertexBufferLayout *vertexBuffers = nullptr,
-		uint32_t vertexBufferCount = 1,
-		const wgpu::ColorTargetState *colorTargets = nullptr,
-		uint32_t colorTargetCount = 0,
-		const wgpu::DepthStencilState *depthStencil = nullptr,
-		const wgpu::PrimitiveState *primitive = nullptr,
-		const wgpu::MultisampleState *multisample = nullptr,
-		const WebGPUShaderInfo *vertexShader = nullptr,
-		const WebGPUShaderInfo *fragmentShader = nullptr
-	);
-
 	// Create pipeline descriptor with only minimum required, using defaults for the rest
-	wgpu::RenderPipelineDescriptor createRenderPipelineDescriptor(
-		const WebGPUShaderInfo *vertexShader = nullptr,
+	std::shared_ptr<WebGPUPipeline> createRenderPipeline(
+		const WebGPUShaderInfo *vertexShader,
 		const WebGPUShaderInfo *fragmentShader = nullptr,
 		wgpu::TextureFormat colorFormat = wgpu::TextureFormat::Undefined,
 		wgpu::TextureFormat depthFormat = wgpu::TextureFormat::Undefined,
-		bool enableDepth = true
+		engine::rendering::Topology::Type topology = engine::rendering::Topology::Type::Triangles,
+		wgpu::CullMode cullMode = wgpu::CullMode::Back,
+		uint32_t sampleCount = 1
 	);
-
-	// Returns a default pipeline (created on first call, then cached)
-	std::shared_ptr<WebGPUPipeline> getDefaultRenderPipeline();
 
 	// Helper to create a pipeline layout from bind group layouts
 	wgpu::PipelineLayout createPipelineLayout(const wgpu::BindGroupLayout *layouts, uint32_t layoutCount);
 
+	/**
+	 * @brief Converts engine::rendering::Topology::Type to wgpu::PrimitiveTopology.
+	 * @param topology The engine topology enum.
+	 * @return Corresponding wgpu::PrimitiveTopology.
+	 */
+	wgpu::PrimitiveTopology convertTopology(engine::rendering::Topology::Type topology) const
+	{
+		switch (topology)
+		{
+		case engine::rendering::Topology::Type::Points:
+			return wgpu::PrimitiveTopology::PointList;
+		case engine::rendering::Topology::Type::Lines:
+			return wgpu::PrimitiveTopology::LineList;
+		case engine::rendering::Topology::Type::LineStrip:
+			return wgpu::PrimitiveTopology::LineStrip;
+		case engine::rendering::Topology::Type::Triangles:
+			return wgpu::PrimitiveTopology::TriangleList;
+		case engine::rendering::Topology::Type::TriangleStrip:
+			return wgpu::PrimitiveTopology::TriangleStrip;
+		default:
+			return wgpu::PrimitiveTopology::TriangleList;
+		}
+		return wgpu::PrimitiveTopology::TriangleList;
+	}
+
+	wgpu::VertexBufferLayout createVertexLayoutFromEnum(engine::rendering::VertexLayout layout, std::vector<wgpu::VertexAttribute> &attributes) const;
+
   private:
 	WebGPUContext &m_context;
-	std::shared_ptr<WebGPUPipeline> m_defaultPipeline = nullptr; // Cached default pipeline
-	bool m_defaultPipelineInitialized = false;
+	wgpu::BlendState m_defaultBlendState;
 };
 
 } // namespace engine::rendering::webgpu

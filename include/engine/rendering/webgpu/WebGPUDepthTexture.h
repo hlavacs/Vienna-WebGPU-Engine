@@ -16,16 +16,15 @@ class WebGPUContext;
 class WebGPUDepthTexture : public WebGPUTexture
 {
   public:
-	using WebGPUTexture::WebGPUTexture;
-
-	/**
-	 * @brief Resizes the depth buffer to the new dimensions if needed.
-	 *        Recreates the texture and view if the size or format changes.
-	 * @param context The WebGPU context for resource creation.
-	 * @param newWidth The new width in pixels.
-	 * @param newHeight The new height in pixels.
-	 */
-	bool resize(WebGPUContext &context, uint32_t newWidth, uint32_t newHeight);
+	WebGPUDepthTexture(
+		wgpu::Texture texture,
+		wgpu::TextureView textureView,
+		const wgpu::TextureDescriptor &textureDesc,
+		const wgpu::TextureViewDescriptor &viewDesc
+	) : WebGPUTexture(texture, textureView, textureDesc, viewDesc)
+	{
+		m_isDepthTexture = true;
+	}
 };
 
 } // namespace engine::rendering::webgpu

@@ -1,8 +1,8 @@
 #pragma once
-#include "engine/scene/entity/Node.h"
+#include "engine/scene/nodes/Node.h"
 #include "engine/rendering/RenderCollector.h"
 
-namespace engine::scene::entity
+namespace engine::scene::nodes
 {
 /**
  * @brief Node with preRender, render, and postRender methods for the rendering cycle.
@@ -28,4 +28,4 @@ class RenderNode : public virtual Node
 	/** @brief Collect render data for this node (Option B). */
 	virtual void onRenderCollect(engine::rendering::RenderCollector &collector) {}
 };
-} // namespace engine::scene::entity
+} // namespace engine::scene::nodes

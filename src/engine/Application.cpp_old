@@ -37,10 +37,10 @@
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
-#include "engine/scene/CameraNode.h"
-#include "engine/scene/entity/LightNode.h"
-#include "engine/scene/entity/ModelRenderNode.h"
-#include "engine/scene/entity/Node.h"
+#include "engine/scene/nodes/CameraNode.h"
+#include "engine/scene/nodes/LightNode.h"
+#include "engine/scene/nodes/ModelRenderNode.h"
+#include "engine/scene/nodes/Node.h"
 
 using namespace wgpu;
 using engine::rendering::Vertex;
@@ -382,7 +382,7 @@ bool Application::initGeometry()
 			m_material = webgpuModel->getMaterial();
 
 			// Create a ModelRenderNode and add it to the scene
-			auto modelNode = std::make_shared<engine::scene::entity::ModelRenderNode>(
+			auto modelNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(
 				modelOpt.value()->getHandle()
 			);
 
@@ -444,7 +444,7 @@ bool Application::initUniforms()
 	// Create root node if it doesn't exist
 	if (!m_scene->getRoot())
 	{
-		auto rootNode = std::make_shared<engine::scene::entity::Node>();
+		auto rootNode = std::make_shared<engine::scene::nodes::Node>();
 		m_scene->setRoot(rootNode);
 	}
 
@@ -755,7 +755,7 @@ void Application::updateGui(RenderPassEncoder renderPass)
 void Application::addLight()
 {
 	// Create a new LightNode
-	auto lightNode = std::make_shared<engine::scene::entity::LightNode>();
+	auto lightNode = std::make_shared<engine::scene::nodes::LightNode>();
 
 	// Set light type (first light is directional, others are point)
 	uint32_t lightType = m_lightNodes.empty() ? 1 : 2; // 1=directional, 2=point

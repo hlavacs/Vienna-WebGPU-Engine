@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "engine/core/Handle.h"
+#include "engine/math/Frustum.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Model.h"
 
@@ -11,13 +12,30 @@ namespace engine::rendering
 {
 
 /**
- * @brief Item to be rendered with its world transform.
+ * @brief Single renderable item collected for rendering.
  */
 struct RenderItem
 {
-	engine::core::Handle<engine::rendering::Model> model;
+	engine::rendering::Model::Handle modelHandle;
+	engine::rendering::Submesh submesh;
 	glm::mat4 worldTransform;
-	uint32_t renderLayer = 0; // For sorting/filtering
+	uint32_t renderLayer = 0;
+
+	bool operator<(const RenderItem &other) const
+	{
+		if (renderLayer != other.renderLayer)
+			return renderLayer < other.renderLayer;
+
+		auto aMatId = submesh.material.id();
+		auto bMatId = other.submesh.material.id();
+		if (aMatId != bMatId)
+			return aMatId < bMatId;
+
+		if (modelHandle.id() != other.modelHandle.id())
+			return modelHandle.id() < other.modelHandle.id();
+
+		return submesh.indexOffset < other.submesh.indexOffset;
+	}
 };
 
 /**
@@ -29,7 +47,17 @@ struct RenderItem
 class RenderCollector
 {
   public:
-	RenderCollector() = default;
+	RenderCollector(
+		glm::mat4 viewMatrix,
+		glm::mat4 projMatrix,
+		glm::vec3 cameraPosition,
+		engine::math::Frustum frustum = {}
+	) : m_viewMatrix(viewMatrix),
+		m_projMatrix(projMatrix),
+		m_cameraPosition(cameraPosition),
+		m_frustum(frustum)
+	{
+	}
 
 	/**
 	 * @brief Adds a model to be rendered.
@@ -63,13 +91,13 @@ class RenderCollector
 	 * @brief Gets all collected render items.
 	 * @return Const reference to render items vector.
 	 */
-	const std::vector<RenderItem> &getRenderItems() const;
+	const std::vector<RenderItem> &getRenderItems() const { return m_renderItems; };
 
 	/**
 	 * @brief Gets all collected lights.
 	 * @return Const reference to lights vector.
 	 */
-	const std::vector<LightStruct> &getLights() const;
+	const std::vector<LightStruct> &getLights() const { return m_lights; };
 
 	/**
 	 * @brief Gets the number of collected render items.
@@ -84,8 +112,17 @@ class RenderCollector
 	size_t getLightCount() const { return m_lights.size(); }
 
   private:
+	bool isAABBVisible(
+		const engine::math::AABB &aabb
+	) const;
+
 	std::vector<RenderItem> m_renderItems;
 	std::vector<LightStruct> m_lights;
+
+	glm::mat4 m_viewMatrix;
+	glm::mat4 m_projMatrix;
+	glm::vec3 m_cameraPosition;
+	engine::math::Frustum m_frustum;
 };
 
 } // namespace engine::rendering

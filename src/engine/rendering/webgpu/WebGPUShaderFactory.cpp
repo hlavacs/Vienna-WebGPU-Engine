@@ -15,37 +15,57 @@
 namespace engine::rendering::webgpu
 {
 
-WebGPUShaderFactory::WebGPUShaderFactory(WebGPUContext &context) : m_context(context), m_shaderInfo(nullptr)
+WebGPUShaderFactory::WebGPUShaderFactory(WebGPUContext &context) : m_context(context)
 {
 }
 
-WebGPUShaderFactory &WebGPUShaderFactory::begin(
+WebGPUShaderFactory::WebGPUShaderBuilder WebGPUShaderFactory::begin(
 	const std::string &name,
+	const ShaderType type,
 	const std::string &vertexEntry,
 	const std::string &fragmentEntry,
-	const std::filesystem::path &shaderPath
+	const std::optional<std::filesystem::path> &shaderPath
 )
 {
 	// Reset state for new shader
-	m_shaderInfo = std::make_shared<WebGPUShaderInfo>(
+	auto shaderInfo = std::make_shared<WebGPUShaderInfo>(
 		name,
-		shaderPath.string(),
+		shaderPath ? shaderPath->string() : "",
+		type,
 		vertexEntry,
 		fragmentEntry
 	);
-	m_shaderPath = shaderPath;
-	m_bindGroupsBuilder.clear();
 
-	return *this;
+	return WebGPUShaderFactory::WebGPUShaderBuilder(*this, shaderInfo);
 }
 
-WebGPUShaderFactory &WebGPUShaderFactory::setShaderModule(wgpu::ShaderModule module)
+void WebGPUShaderFactory::reloadShader(const std::shared_ptr<WebGPUShaderInfo> &shaderInfo)
+{
+	std::string shaderPath = shaderInfo->getPath();
+
+	auto shaderModule = loadShaderModule(shaderPath);
+
+	if (!shaderModule)
+	{
+		spdlog::error("WebGPUShaderFactory::reloadShader() - Failed to reload shader from '{}'", shaderPath);
+		return;
+	}
+
+	shaderInfo->setModule(shaderModule);
+}
+
+WebGPUShaderFactory::BindGroupBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::getOrCreateBindGroup(uint32_t groupIndex)
+{
+	return m_bindGroupsBuilder[groupIndex];
+}
+
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::setShaderModule(wgpu::ShaderModule module)
 {
 	m_shaderInfo->setModule(module);
 	return *this;
 }
 
-WebGPUShaderFactory &WebGPUShaderFactory::addFrameUniforms(uint32_t groupIndex)
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addFrameUniforms(uint32_t groupIndex)
 {
 	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);
 	bindGroupBuilder.key = "frameUniforms";
@@ -62,7 +82,7 @@ WebGPUShaderFactory &WebGPUShaderFactory::addFrameUniforms(uint32_t groupIndex)
 	return *this;
 }
 
-WebGPUShaderFactory &WebGPUShaderFactory::addLightUniforms(uint32_t groupIndex, size_t maxLights)
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addLightUniforms(uint32_t groupIndex, size_t maxLights)
 {
 	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);
 	bindGroupBuilder.key = "lightUniforms";
@@ -85,7 +105,7 @@ WebGPUShaderFactory &WebGPUShaderFactory::addLightUniforms(uint32_t groupIndex, 
 	return *this;
 }
 
-WebGPUShaderFactory &WebGPUShaderFactory::addCustomUniform(
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addCustomUniform(
 	const std::string &name,
 	size_t size,
 	uint32_t groupIndex,
@@ -107,14 +127,14 @@ WebGPUShaderFactory &WebGPUShaderFactory::addCustomUniform(
 	return *this;
 }
 
-WebGPUShaderFactory &WebGPUShaderFactory::asGlobalBindGroup(uint32_t groupIndex, std::string key)
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::asGlobalBindGroup(uint32_t groupIndex, std::string key)
 {
 	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);
 	bindGroupBuilder.key = std::move(key);
 	return *this;
 }
 
-WebGPUShaderFactory &WebGPUShaderFactory::addStorageBuffer(
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addStorageBuffer(
 	const std::string &name,
 	size_t size,
 	uint32_t groupIndex,
@@ -138,7 +158,7 @@ WebGPUShaderFactory &WebGPUShaderFactory::addStorageBuffer(
 	return *this;
 }
 
-WebGPUShaderFactory &WebGPUShaderFactory::addTexture(
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addTexture(
 	const std::string &name,
 	const std::string &materialSlotName,
 	uint32_t groupIndex,
@@ -167,7 +187,7 @@ WebGPUShaderFactory &WebGPUShaderFactory::addTexture(
 	return *this;
 }
 
-WebGPUShaderFactory &WebGPUShaderFactory::addSampler(
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addSampler(
 	const std::string &name,
 	uint32_t groupIndex,
 	uint32_t binding,
@@ -188,56 +208,17 @@ WebGPUShaderFactory &WebGPUShaderFactory::addSampler(
 	return *this;
 }
 
-void WebGPUShaderFactory::reloadShader(const std::shared_ptr<WebGPUShaderInfo> &shaderInfo)
-{
-	std::string shaderPath = shaderInfo->getPath();
-
-	std::ifstream file(shaderPath);
-	if (!file.is_open())
-	{
-		spdlog::error("WebGPUShaderFactory::reloadShader() - Failed to open shader file '{}'", shaderPath);
-		return;
-	}
-	file.seekg(0, std::ios::end);
-	size_t size = file.tellg();
-	std::string shaderSource(size, ' ');
-	file.seekg(0);
-	file.read(shaderSource.data(), size);
-
-	wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc;
-	shaderCodeDesc.chain.next = nullptr;
-	shaderCodeDesc.chain.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-	shaderCodeDesc.code = shaderSource.c_str();
-	wgpu::ShaderModuleDescriptor shaderDesc;
-	shaderDesc.nextInChain = &shaderCodeDesc.chain;
-#ifdef WEBGPU_BACKEND_WGPU
-	shaderDesc.hintCount = 0;
-	shaderDesc.hints = nullptr;
-#endif
-
-	auto shaderModule = m_context.getDevice().createShaderModule(shaderDesc);
-
-	if (!shaderModule)
-	{
-		spdlog::error("WebGPUShaderFactory::loadShaderModule() - Failed to load shader from '{}'", m_shaderPath.string());
-		return;
-	}
-
-	m_shaderInfo->setModule(shaderModule);
-	spdlog::debug("Loaded shader module from '{}'", m_shaderPath.string());
-}
-
-WebGPUShaderFactory::BindGroupBuilder &WebGPUShaderFactory::getOrCreateBindGroup(uint32_t groupIndex)
-{
-	return m_bindGroupsBuilder[groupIndex];
-}
-
-std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::build()
+std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::WebGPUShaderBuilder::build()
 {
 	// Load shader module if not already set and path provided
-	if (!m_shaderInfo->getModule() && !m_shaderPath.empty())
+	if (!m_shaderInfo->getModule() && !m_shaderInfo->getPath().empty())
 	{
-		loadShaderModule();
+		auto shaderModule = m_factory.loadShaderModule(m_shaderInfo->getPath());
+		if (!shaderModule)
+		{
+			return nullptr;
+		}
+		m_shaderInfo->setModule(shaderModule);
 	}
 
 	// Validate shader module exists
@@ -247,23 +228,26 @@ std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::build()
 		return nullptr;
 	}
 
-	createBindGroupLayouts();
+	m_factory.createBindGroupLayouts(m_shaderInfo, m_bindGroupsBuilder);
 
 	spdlog::info("WebGPUShaderFactory: Built shader '{}' with {} bind groups", m_shaderInfo->getName(), m_shaderInfo->getBindGroupLayouts().size());
 
 	return m_shaderInfo;
 }
 
-void WebGPUShaderFactory::createBindGroupLayouts()
+void WebGPUShaderFactory::createBindGroupLayouts(
+	std::shared_ptr<WebGPUShaderInfo> shaderInfo,
+	std::map<uint32_t, BindGroupBuilder> &bindGroupsBuilder
+)
 {
-	for (auto &[groupIndex, bindGroupBuilder] : m_bindGroupsBuilder)
+	for (auto &[groupIndex, bindGroupBuilder] : bindGroupsBuilder)
 	{
 		if (bindGroupBuilder.key.has_value())
 		{
 			auto existingLayout = m_context.bindGroupFactory().getGlobalBindGroupLayout(bindGroupBuilder.key.value());
 			if (existingLayout)
 			{
-				m_shaderInfo->addBindGroupLayout(groupIndex, existingLayout);
+				shaderInfo->addBindGroupLayout(groupIndex, existingLayout);
 				spdlog::debug("Reused existing global bind group layout for group {} with key '{}'", groupIndex, bindGroupBuilder.key.value());
 				continue;
 			}
@@ -324,7 +308,7 @@ void WebGPUShaderFactory::createBindGroupLayouts()
 		}
 
 		auto layoutInfo = m_context.bindGroupFactory().createBindGroupLayoutInfo(
-			m_shaderInfo->getName() + "_BindGroupLayout_" + std::to_string(groupIndex),
+			shaderInfo->getName() + "_BindGroupLayout_" + std::to_string(groupIndex),
 			entries
 		);
 		if (bindGroupBuilder.key.has_value())
@@ -345,26 +329,26 @@ void WebGPUShaderFactory::createBindGroupLayouts()
 			layoutInfo->setFallbackColor(binding.binding, binding.fallbackColor);
 		}
 
-		m_shaderInfo->addBindGroupLayout(groupIndex, layoutInfo);
+		shaderInfo->addBindGroupLayout(groupIndex, layoutInfo);
 
 		spdlog::debug("Created bind group layout {} for group {} with {} entries", groupIndex, groupIndex, entries.size());
 	}
 }
 
-void WebGPUShaderFactory::loadShaderModule()
+wgpu::ShaderModule WebGPUShaderFactory::loadShaderModule(const std::string &shaderPath)
 {
-	if (m_shaderPath.empty())
+	if (shaderPath.empty())
 	{
 		spdlog::error("WebGPUShaderFactory::loadShaderModule() - No shader path specified");
-		return;
+		return nullptr;
 	}
 
 	// Use ResourceManager to load shader
-	std::ifstream file(m_shaderPath);
+	std::ifstream file(shaderPath);
 	if (!file.is_open())
 	{
-		spdlog::error("WebGPUShaderFactory::loadShaderModule() - Failed to open shader file '{}'", m_shaderPath.string());
-		return;
+		spdlog::error("WebGPUShaderFactory::loadShaderModule() - Failed to open shader file '{}'", shaderPath);
+		return nullptr;
 	}
 	file.seekg(0, std::ios::end);
 	size_t size = file.tellg();
@@ -387,12 +371,10 @@ void WebGPUShaderFactory::loadShaderModule()
 
 	if (!shaderModule)
 	{
-		spdlog::error("WebGPUShaderFactory::loadShaderModule() - Failed to load shader from '{}'", m_shaderPath.string());
-		return;
+		spdlog::error("WebGPUShaderFactory::loadShaderModule() - Failed to load shader from '{}'", shaderPath);
+		return nullptr;
 	}
-
-	m_shaderInfo->setModule(shaderModule);
-	spdlog::debug("Loaded shader module from '{}'", m_shaderPath.string());
+	return shaderModule;
 }
 
 } // namespace engine::rendering::webgpu

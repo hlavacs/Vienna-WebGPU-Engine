@@ -3,10 +3,10 @@
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/DebugCollector.h"
-#include "engine/scene/entity/RenderNode.h"
-#include "engine/scene/SpatialNode.h"
+#include "engine/scene/nodes/RenderNode.h"
+#include "engine/scene/nodes/SpatialNode.h"
 
-namespace engine::scene::entity
+namespace engine::scene::nodes
 {
 
 /**
@@ -15,7 +15,7 @@ namespace engine::scene::entity
  * Automatically adds its light data to the RenderCollector during scene traversal.
  * Inherits from SpatialNode to have a transform for positioning the light.
  */
-class LightNode : public RenderNode, public SpatialNode
+class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 {
   public:
 	using Ptr = std::shared_ptr<LightNode>;
@@ -25,7 +25,7 @@ class LightNode : public RenderNode, public SpatialNode
 	 */
 	LightNode()
 	{
-		addNodeType(NodeType::Light);
+		addNodeType(nodes::NodeType::Light);
 		m_light.color = glm::vec3(1.0f, 1.0f, 1.0f);
 		m_light.intensity = 1.0f;
 		m_light.light_type = 0; // Ambient by default
@@ -193,4 +193,4 @@ class LightNode : public RenderNode, public SpatialNode
 	engine::rendering::LightStruct m_light;
 };
 
-} // namespace engine::scene::entity
+} // namespace engine::scene::nodes

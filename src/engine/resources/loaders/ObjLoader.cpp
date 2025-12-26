@@ -26,8 +26,8 @@ std::optional<ObjGeometryData> ObjLoader::load(
 	std::string err, warn;
 
 	bool triangulate = true;
-	
-    bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.string().c_str(), filePath.parent_path().string().c_str(), triangulate);
+
+	bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.string().c_str(), filePath.parent_path().string().c_str(), triangulate);
 
 	if (!warn.empty())
 		logWarn(warn);
@@ -56,6 +56,9 @@ std::optional<ObjGeometryData> ObjLoader::load(
 	int currentMaterial = -1;
 	uint32_t currentOffset = 0;
 	ObjGeometryData::MaterialRange currentRange;
+
+	data.boundingBox.min = glm::vec3(std::numeric_limits<float>::max());
+	data.boundingBox.max = glm::vec3(std::numeric_limits<float>::lowest());
 
 	for (const auto &shape : shapes)
 	{
@@ -87,7 +90,7 @@ std::optional<ObjGeometryData> ObjLoader::load(
 					attrib.vertices[3 * index.vertex_index + 2]
 				};
 				vertex.position = math::CoordinateSystem::transform(pos, srcCoordSys, dstCoordSys);
-
+				data.boundingBox.expandToFit(vertex.position);
 				if (index.normal_index >= 0)
 				{
 					glm::vec3 nrm = {
