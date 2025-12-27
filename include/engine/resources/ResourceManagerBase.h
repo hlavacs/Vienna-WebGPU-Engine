@@ -1,7 +1,5 @@
 #pragma once
 
-#include "engine/core/Handle.h"
-#include "engine/core/Identifiable.h"
 #include <cassert>
 #include <memory>
 #include <mutex>
@@ -9,6 +7,10 @@
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
+
+#include "engine/core/Handle.h"
+#include "engine/core/Identifiable.h"
+#include "engine/debug/Loggable.h"
 
 namespace engine::resources
 {
@@ -23,7 +25,7 @@ namespace engine::resources
  * @tparam T The resource type, must inherit from Identifiable<T>.
  */
 template <typename T>
-class ResourceManagerBase
+class ResourceManagerBase : public engine::debug::Loggable
 {
   public:
 	using HandleType = engine::core::Handle<T>;
@@ -81,7 +83,7 @@ class ResourceManagerBase
 		if (it != m_resources.end())
 		{
 			// const_cast needed because map key is const, but we need to invalidate
-			const_cast<HandleType&>(it->first).invalidate();
+			const_cast<HandleType &>(it->first).invalidate();
 			m_resources.erase(it);
 			return true;
 		}
@@ -173,7 +175,7 @@ class ResourceManagerBase
 		for (auto &[handle, _] : m_resources)
 		{
 			// const_cast needed because map key is const, but we need to invalidate
-			const_cast<HandleType&>(handle).invalidate();
+			const_cast<HandleType &>(handle).invalidate();
 		}
 		m_resources.clear();
 	}
@@ -204,6 +206,16 @@ class ResourceManagerBase
 		for (const auto &[_, ptr] : m_resources)
 			out.push_back(ptr);
 		return out;
+	}
+
+	/**
+	 * @brief Gets the total number of resources managed.
+	 * @return The resource count.
+	 */
+	size_t getResourceCount() const
+	{
+		std::scoped_lock lock(m_mutex);
+		return m_resources.size();
 	}
 
   protected:

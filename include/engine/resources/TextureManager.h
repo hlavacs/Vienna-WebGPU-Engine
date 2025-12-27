@@ -1,24 +1,26 @@
 #pragma once
 
-#include "engine/rendering/Texture.h"
-#include "engine/resources/ResourceManagerBase.h"
-#include "engine/resources/loaders/TextureLoader.h"
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
+
+#include "engine/rendering/Texture.h"
+#include "engine/resources/ResourceManagerBase.h"
+#include "engine/resources/loaders/ImageLoader.h"
 
 namespace engine::resources
 {
+
 /**
  * @class TextureManager
  * @brief Manages creation, storage, and retrieval of textures within the engine.
  *
- * Provides facilities to create textures from raw data or files, keeps track of loaded textures,
- * and allows querying by handle, runtime ID, file path, or human-readable name.
- * Textures are stored as shared pointers for safe usage across subsystems.
- * File path mapping avoids duplicate loads and enables efficient resource management.
+ * Supports different texture types: Image (from file or raw data), DepthStencil, and Surface.
+ * Provides caching for image textures by file path, and stores created depth/surface textures
+ * internally for bookkeeping. Thread-safe via internal mutex.
  */
 class TextureManager : public ResourceManagerBase<engine::rendering::Texture>
 {
@@ -28,49 +30,67 @@ class TextureManager : public ResourceManagerBase<engine::rendering::Texture>
 	using TexturePtr = std::shared_ptr<engine::rendering::Texture>;
 
 	/**
-	 * @brief Constructs a TextureManager with a given TextureLoader.
-	 * @param loader Shared pointer to a TextureLoader.
+	 * @brief Constructs a TextureManager with a given ImageLoader.
+	 * @param loader Shared pointer to an ImageLoader.
 	 */
-	explicit TextureManager(std::shared_ptr<engine::resources::loaders::TextureLoader> loader) :
-		m_loader(std::move(loader)) {}
+	explicit TextureManager(std::shared_ptr<engine::resources::loaders::ImageLoader> loader) : m_loader(std::move(loader)) {}
 
 	/**
-	 * @brief Creates a texture from raw data.
+	 * @brief Creates an Image texture from raw pixel data.
 	 * @param width Texture width.
 	 * @param height Texture height.
-	 * @param channels Number of color channels.
-	 * @param pixels Raw pixel data.
-	 * @return Optional shared pointer to the created texture, or std::nullopt on failure.
+	 * @param channels Number of channels.
+	 * @param pixels Pixel data vector.
+	 * @param filePath Optional file path for caching.
+	 * @return Optional shared pointer to the texture, or std::nullopt on failure.
 	 */
 	[[nodiscard]]
-	std::optional<TexturePtr> createTexture(uint32_t width, uint32_t height, uint32_t channels, std::vector<uint8_t> &&pixels);
+	std::optional<TexturePtr> createImageTexture(
+		engine::resources::Image::Ptr image, std::optional<path> filePath = std::nullopt
+	);
 
 	/**
-	 * @brief Creates or loads a texture from a file path.
-	 *
-	 * If the texture for the given path is already loaded and forceReload is false,
-	 * returns the existing texture pointer.
-	 * If forceReload is true, forces loading the texture from file,
-	 * replacing any existing texture associated with that path.
-	 *
-	 * @param filepath The file path to load the texture from.
-	 * @param forceReload If true, forces reloading the texture even if already loaded.
-	 * @return Optional shared pointer to the texture on success, std::nullopt on failure.
+	 * @brief Creates a depth-stencil texture.
+	 * @param width Texture width.
+	 * @param height Texture height.
+	 * @return Optional shared pointer to the texture, or std::nullopt on failure.
+	 */
+	[[nodiscard]]
+	std::optional<TexturePtr> createDepthTexture(uint32_t width, uint32_t height);
+
+	/**
+	 * @brief Creates a surface texture (color target).
+	 * @param width Texture width.
+	 * @param height Texture height.
+	 * @return Optional shared pointer to the texture, or std::nullopt on failure.
+	 */
+	[[nodiscard]]
+	std::optional<TexturePtr> createSurfaceTexture(uint32_t width, uint32_t height, uint32_t channels = 4);
+
+	/**
+	 * @brief Loads an image texture from file or returns cached one.
+	 * @param filepath Path to the image file.
+	 * @param forceReload If true, reloads the texture even if cached.
+	 * @return Optional shared pointer to the texture, or std::nullopt on failure.
 	 */
 	[[nodiscard]]
 	std::optional<TexturePtr> createTextureFromFile(const path &filepath, bool forceReload = false);
 
 	/**
-	 * @brief Retrieves a texture by its file path.
-	 * @param filepath The path to the texture file.
-	 * @return Optional shared pointer to the texture if found, std::nullopt otherwise.
+	 * @brief Retrieves a cached image texture by its file path.
+	 * @param filepath Path to the image file.
+	 * @return Optional shared pointer to the texture, or std::nullopt if not found.
 	 */
 	[[nodiscard]]
 	std::optional<TexturePtr> getTextureByPath(const path &filepath) const;
 
   private:
-	std::shared_ptr<engine::resources::loaders::TextureLoader> m_loader;
-	std::unordered_map<std::string, TextureHandle> m_pathToTexture;
+	std::shared_ptr<engine::resources::loaders::ImageLoader> m_loader;
+
+	// Caches
+	std::unordered_map<std::string, TextureHandle> m_imageCache; ///< Image textures cached by absolute file path
+	std::vector<TextureHandle> m_depthCache;					 ///< DepthStencil textures
+	std::vector<TextureHandle> m_surfaceCache;					 ///< Surface textures
 };
 
 } // namespace engine::resources

@@ -1,15 +1,17 @@
 #pragma once
 
+#include <memory>
+#include <optional>
+#include <string>
+#include <tiny_gltf.h>
+#include <unordered_map>
+#include <vector>
+
 #include "engine/io/tiny_obj_loader.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/MaterialFeatureMask.h"
 #include "engine/resources/ResourceManagerBase.h"
 #include "engine/resources/TextureManager.h"
-#include <memory>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace engine::resources
 {
@@ -33,7 +35,8 @@ class MaterialManager : public ResourceManagerBase<engine::rendering::Material>
 	 * @brief Constructs a MaterialManager with a given TextureManager.
 	 * @param textureManager Shared pointer to a TextureManager.
 	 */
-	explicit MaterialManager(std::shared_ptr<TextureManager> textureManager);
+	explicit MaterialManager(std::shared_ptr<TextureManager> textureManager) :
+		m_textureManager(std::move(textureManager)) {}
 
 	/**
 	 * @brief Creates a Material from a tinyobj::material_t and adds it to the manager.
@@ -43,6 +46,15 @@ class MaterialManager : public ResourceManagerBase<engine::rendering::Material>
 	 */
 	[[nodiscard]]
 	std::optional<MaterialPtr> createMaterial(const tinyobj::material_t &objMat, const std::string &textureBasePath = "");
+
+	/**
+	 * @brief Creates a Material from a tinygltf::Material and adds it to the manager.
+	 * @param gltfMat The tinygltf material.
+	 * @param textureBasePath The base path for texture files.
+	 * @return Optional shared pointer to the created material, or std::nullopt on failure.
+	 */
+	[[nodiscard]]
+	std::optional<MaterialPtr> createMaterial(const tinygltf::Material &gltfMat, const std::string &textureBasePath = "");
 
 	/**
 	 * @brief Access the underlying TextureManager.

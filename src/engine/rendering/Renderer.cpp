@@ -108,7 +108,7 @@ void Renderer::renderCameraToTexture(
 	updateLights(collector.getLights());
 	auto viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * target.viewport.z);
 	auto viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * target.viewport.w);
-	
+
 	if (target.cpuTarget)
 	{
 		if (target.gpuTexture == nullptr)
@@ -125,8 +125,10 @@ void Renderer::renderCameraToTexture(
 	else
 	{
 		target.gpuTexture = m_context->textureFactory().createFromColor(
-
-		)
+			glm::vec3(0.0f, 0.0f, 0.0f),
+			viewPortWidth,
+			viewPortHeight
+		);
 	}
 
 	wgpu::CommandEncoderDescriptor encoderDesc{};

@@ -1,36 +1,127 @@
 #include "engine/resources/TextureManager.h"
+#include "engine/resources/Image.h"
 
 namespace engine::resources
 {
-std::optional<TextureManager::TexturePtr> TextureManager::createTexture(uint32_t width, uint32_t height, uint32_t channels, std::vector<uint8_t> &&pixels)
+
+std::optional<TextureManager::TexturePtr> TextureManager::createImageTexture(
+	engine::resources::Image::Ptr image,
+	std::optional<std::filesystem::path> filePath
+)
 {
-	auto texture = std::make_shared<engine::rendering::Texture>(width, height, channels, std::move(pixels));
+	if (!image)
+		return std::nullopt;
+
+	std::string key;
+	if (filePath.has_value())
+		key = filePath->string();
+
+	{
+		std::scoped_lock lock(m_mutex);
+		if (!key.empty())
+		{
+			auto it = m_imageCache.find(key);
+			if (it != m_imageCache.end())
+			{
+				auto cached = get(it->second);
+				if (cached && *cached)
+					return *cached;
+			}
+		}
+	}
+
+	auto texture = std::make_shared<engine::rendering::Texture>(
+		engine::rendering::Texture::Type::Image,
+		image->getWidth(),
+		image->getHeight(),
+		image->getChannelCount(),
+		std::move(image),
+		filePath.value_or(std::filesystem::path{})
+	);
+
 	auto handleOpt = add(texture);
 	if (!handleOpt)
 		return std::nullopt;
+
+	if (!key.empty())
+	{
+		std::scoped_lock lock(m_mutex);
+		m_imageCache[key] = *handleOpt;
+	}
+
 	return texture;
 }
 
-std::optional<TextureManager::TexturePtr> TextureManager::createTextureFromFile(const path &filepath, bool forceReload)
+std::optional<TextureManager::TexturePtr> TextureManager::createDepthTexture(
+	uint32_t width,
+	uint32_t height
+)
 {
-	std::filesystem::path basePath(filepath);
+	auto texture = std::make_shared<engine::rendering::Texture>(
+		engine::rendering::Texture::Type::DepthStencil,
+		width,
+		height,
+		1, // single channel, placeholder
+		nullptr,
+		std::filesystem::path{}
+	); // no file path
+
+	texture->setName("DepthStencilTexture");
+
+	auto handleOpt = add(texture);
+	if (!handleOpt)
+		return std::nullopt;
+
+	return texture;
+}
+
+std::optional<TextureManager::TexturePtr> TextureManager::createSurfaceTexture(
+	uint32_t width,
+	uint32_t height,
+	uint32_t channels
+)
+{
+	auto texture = std::make_shared<engine::rendering::Texture>(
+		engine::rendering::Texture::Type::Surface,
+		width,
+		height,
+		channels,
+		nullptr,
+		std::filesystem::path{}
+	); // no file path
+
+	texture->setName("SurfaceTexture");
+
+	auto handleOpt = add(texture);
+	if (!handleOpt)
+		return std::nullopt;
+
+	return texture;
+}
+
+std::optional<TextureManager::TexturePtr> TextureManager::createTextureFromFile(
+	const std::filesystem::path &filepath,
+	bool forceReload
+)
+{
 	std::filesystem::path texturePath;
-	std::string key;
-	if (basePath.is_absolute())
+	if (filepath.is_absolute())
 		texturePath = filepath;
 	else
 		texturePath = m_loader->getBasePath() / filepath;
-	key = texturePath.string();
-	if (!forceReload)
+
+	std::string key = texturePath.string();
+
 	{
-		// Check if texture already loaded
-		auto it = m_pathToTexture.find(key);
-		if (it != m_pathToTexture.end())
+		std::scoped_lock lock(m_mutex);
+		if (!forceReload)
 		{
-			auto texOpt = get(it->second);
-			if (texOpt && *texOpt)
+			auto it = m_imageCache.find(key);
+			if (it != m_imageCache.end())
 			{
-				return *texOpt;
+				auto cached = get(it->second);
+				if (cached && *cached)
+					return *cached;
 			}
 		}
 	}
@@ -39,33 +130,27 @@ std::optional<TextureManager::TexturePtr> TextureManager::createTextureFromFile(
 	if (!result)
 		return std::nullopt;
 
-	auto texture = result.value();
-	texture->setName(filepath.filename().string());
-	texture->setFilePath(key);
-
-	auto handleOpt = add(texture);
-	if (!handleOpt)
-		return std::nullopt;
-
-	m_pathToTexture[key] = *handleOpt;
-
+	auto texture = createImageTexture(result.value(), texturePath);
 	return texture;
 }
 
-std::optional<TextureManager::TexturePtr> TextureManager::getTextureByPath(const path &filepath) const
+std::optional<TextureManager::TexturePtr> TextureManager::getTextureByPath(
+	const std::filesystem::path &filepath
+) const
 {
-	std::string key;
-	std::filesystem::path basePath(filepath);
 	std::filesystem::path texturePath;
-	if (basePath.is_absolute())
+	if (filepath.is_absolute())
 		texturePath = filepath;
 	else
 		texturePath = m_loader->getBasePath() / filepath;
-	key = texturePath.string();
 
-	auto it = m_pathToTexture.find(key);
-	if (it == m_pathToTexture.end())
+	std::string key = texturePath.string();
+
+	std::scoped_lock lock(m_mutex);
+	auto it = m_imageCache.find(key);
+	if (it == m_imageCache.end())
 		return std::nullopt;
+
 	return get(it->second);
 }
 

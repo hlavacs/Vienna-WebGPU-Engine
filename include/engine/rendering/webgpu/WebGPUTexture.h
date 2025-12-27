@@ -7,47 +7,45 @@ namespace engine::rendering::webgpu
 {
 
 class WebGPUContext; // forward declaration
+
 /**
  * @class WebGPUTexture
  * @brief GPU-side texture: wraps a WebGPU texture and its view, descriptors, and provides accessors.
  *
  * This class encapsulates a WebGPU texture and its associated view, along with the descriptors
- * used to create them. It provides accessors for all relevant properties and ensures resource
- * cleanup. Used for all GPU-side textures, including color, normal, and depth textures.
+ * used to create them. Supports standard textures, render targets, surface textures, and depth textures.
  */
 class WebGPUTexture
 {
   public:
+
 	/**
 	 * @brief Constructs a WebGPUTexture from descriptors and GPU objects.
 	 *
-	 * @param texture The GPU-side texture.
+	 * @param texture The GPU-side texture (nullptr for Surface textures).
 	 * @param textureView The GPU-side texture view.
 	 * @param textureDesc The texture descriptor used to create the texture.
 	 * @param viewDesc The texture view descriptor used to create the view.
-	 *
-	 * @throws Assertion failure if width/height are zero or resources are invalid.
+	 * @param type The type of texture (Standard, RenderTarget, Surface, DepthStencil).
+	 * @param cpuHandle Optional CPU-side Texture handle.
 	 */
 	WebGPUTexture(
 		wgpu::Texture texture,
 		wgpu::TextureView textureView,
 		const wgpu::TextureDescriptor &textureDesc,
-		const wgpu::TextureViewDescriptor &viewDesc
+		const wgpu::TextureViewDescriptor &viewDesc,
+		Type type = Type::Standard,
+		std::shared_ptr<Texture> cpuHandle = nullptr
 	) : m_texture(texture),
 		m_textureView(textureView),
 		m_textureDesc(textureDesc),
 		m_viewDesc(viewDesc),
-		m_isSurfaceTexture(texture == nullptr)
+		m_type(type),
+		m_cpuHandle(cpuHandle)
 	{
-		assert(m_textureDesc.size.width > 0 && "Texture width must be > 0");
-		assert(m_textureDesc.size.height > 0 && "Texture height must be > 0");
-		assert(m_textureView); // Should be valid
+		assert((type == Type::Surface || texture) && "WebGPUTexture: Texture cannot be null for non-surface types.");
+		assert(m_textureView && "WebGPUTexture: TextureView cannot be null.");
 	}
-
-	/**
-	 * @brief Returns true if this is a surface texture (only view is relevant).
-	 */
-	bool isSurfaceTexture() const { return m_isSurfaceTexture; }
 
 	/**
 	 * @brief Destructor that cleans up WebGPU resources.
@@ -77,6 +75,21 @@ class WebGPUTexture
 	{
 		return getWidth() == w && getHeight() == h && getFormat() == f;
 	}
+
+	/**
+	 * @brief Returns true if this is a surface texture (only view is relevant).
+	 */
+	bool isSurfaceTexture() const { return m_type == Type::Surface; }
+
+	/**
+	 * @brief Returns true if this is a depth texture.
+	 */
+	bool isDepthTexture() const { return m_type == Type::DepthStencil; }
+
+	/**
+	 * @brief Returns the CPU-side texture handle if available.
+	 */
+	std::shared_ptr<Texture> getCPUHandle() const { return m_cpuHandle; }
 
 	/**
 	 * @brief Gets the underlying WebGPU texture.
@@ -138,33 +151,12 @@ class WebGPUTexture
 	bool resize(WebGPUContext &context, uint32_t newWidth, uint32_t newHeight);
 
   protected:
-	/**
-	 * @brief True if this is a surface texture (only view is relevant).
-	 */
-	bool m_isSurfaceTexture = false;
-	/**
-	 * @brief True if this is a depth texture.
-	 */
-	bool m_isDepthTexture = false;
-	/**
-	 * @brief The underlying WebGPU texture resource.
-	 */
-	wgpu::Texture m_texture;
-
-	/**
-	 * @brief The view of the WebGPU texture.
-	 */
-	wgpu::TextureView m_textureView;
-
-	/**
-	 * @brief Descriptor used to create the texture.
-	 */
-	wgpu::TextureDescriptor m_textureDesc;
-
-	/**
-	 * @brief Descriptor used to create the texture view.
-	 */
-	wgpu::TextureViewDescriptor m_viewDesc;
+	Type m_type = Type::Standard;					//< The type of texture.
+	std::shared_ptr<Texture> m_cpuHandle = nullptr; //< Optional CPU-side texture handle.
+	wgpu::Texture m_texture;						//< The underlying WebGPU texture resource.
+	wgpu::TextureView m_textureView;				//< The view of the WebGPU texture.
+	wgpu::TextureDescriptor m_textureDesc;			//< Descriptor used to create the texture.
+	wgpu::TextureViewDescriptor m_viewDesc;			//< Descriptor used to create the texture view.
 };
 
 } // namespace engine::rendering::webgpu

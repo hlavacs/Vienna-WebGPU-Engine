@@ -10,44 +10,60 @@
 #include "engine/debug/Loggable.h"
 #include "engine/math/CoordinateSystem.h"
 #include "engine/rendering/Mesh.h"
+#include "engine/resources/loaders/LoaderBase.h"
 
 namespace engine::resources::loaders
 {
-/**
+
+/*
  * @class GeometryLoader
- * @brief Abstract base class for geometry loaders that read mesh data from files.
+ * @brief Abstract base class for geometry loaders handling 3D mesh data.
+ *        Provides coordinate system management and common functionality.
  *
- * Provides a common interface for loading 3D geometry meshes from various file formats.
- * Supports loading meshes either with indexed vertices or as non-indexed (expanded) vertex arrays.
- *
- * Derived classes such as ObjLoader or GltfLoader implement format-specific parsing logic and set their own default source coordinate system.
- * The source coordinate system can be queried or overridden via getter/setter.
- *
- * @note The class also manages base path for asset loading and supports logging through an injected logger.
+ * Inherits from LoaderBase<T>, where T is the type of GeometryData being loaded.
+ * Derived classes must implement the load method to parse specific file formats.
+ * @tparam T The type of GeometryData to be loaded (e.g., ObjGeometryData, GltfGeometryData).
  */
-class GeometryLoader : public engine::debug::Loggable
+template <typename T>
+class GeometryLoader : public LoaderBase<T>
 {
   public:
 	virtual ~GeometryLoader() = default;
 
-	// Getters
-	const std::filesystem::path &getBasePath() const { return m_basePath; }
-	const std::shared_ptr<spdlog::logger> &getLogger() const { return m_logger; }
 	engine::math::CoordinateSystem::Cartesian getSourceCoordinateSystem() const { return m_srcCoordSys; }
 
-	// Setters
-	void setBasePath(const std::filesystem::path &basePath) { m_basePath = basePath; }
-	void setLogger(const std::shared_ptr<spdlog::logger> &logger) { m_logger = logger; }
 	void setSourceCoordinateSystem(engine::math::CoordinateSystem::Cartesian srcCoordSys) { m_srcCoordSys = srcCoordSys; }
+
+	/**
+	 * @brief Loads geometry data from a file using default coordinate systems.
+	 * @param file Relative or absolute path to the geometry file.
+	 * @return Optional Ptr to the loaded GeometryData, std::nullopt on failure.
+	 * @note Uses the loader's default source coordinate system and the engine's default destination coordinate system.
+	 */
+	[[nodiscard]]
+	std::optional<Loaded> load(const std::filesystem::path &file) override
+	{
+		return load(file, std::nullopt, std::nullopt);
+	}
+
+	/**
+	 * @brief Loads geometry data from a file, with optional coordinate system overrides.
+	 * @param file Relative or absolute path to the geometry file.
+	 * @param srcCoordSys Optional: source coordinate system for this load (overrides loaders default if set)
+	 * @param dstCoordSys Optional: destination coordinate system (defaults to CoordinateSystem::DEFAULT
+	 */
+	[[nodiscard]]
+	virtual std::optional<Loaded> load(const std::filesystem::path &file, std::optional<engine::math::CoordinateSystem::Cartesian> srcCoordSys, std::optional<engine::math::CoordinateSystem::Cartesian> dstCoordSys) = 0;
 
   protected:
 	/**
 	 * @brief Constructs the GeometryLoader with a base path, and optional logger.
 	 *        Derived classes must set m_srcCoordSys to their default in their constructor.
 	 * @param basePath The base filesystem path to resolve relative files.
-	 * @param logger Optional shared pointer to a logger instance.
 	 */
-	explicit GeometryLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger = nullptr);
+	explicit GeometryLoader(std::filesystem::path basePath) :
+		LoaderBase(std::move(basePath)),
+		m_srcCoordSys(math::CoordinateSystem::DEFAULT) {}
 
 	std::filesystem::path m_basePath;
 	engine::math::CoordinateSystem::Cartesian m_srcCoordSys;
