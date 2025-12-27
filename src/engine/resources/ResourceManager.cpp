@@ -10,27 +10,16 @@ using namespace wgpu;
 namespace engine::resources
 {
 
-std::shared_ptr<spdlog::logger> getOrCreateLogger(const std::string &name, spdlog::level::level_enum level = spdlog::level::info)
-{
-	auto logger = spdlog::get(name);
-	if (!logger)
-	{
-		logger = spdlog::stdout_color_mt(name);
-		logger->set_level(level);
-	}
-	return logger;
-}
-
 ResourceManager::ResourceManager(path baseDir)
 {
-	m_objLoader = std::make_shared<engine::resources::loaders::ObjLoader>(baseDir, getOrCreateLogger("ResourceManager_ObjLoader"));
+	m_objLoader = std::make_shared<engine::resources::loaders::ObjLoader>(baseDir);
 
-	m_gltfLoader = std::make_shared<engine::resources::loaders::GltfLoader>(baseDir, getOrCreateLogger("ResourceManager_GltfLoader"));
+	m_gltfLoader = std::make_shared<engine::resources::loaders::GltfLoader>(baseDir);
 
-	m_textureLoader = std::make_shared<engine::resources::loaders::TextureLoader>(baseDir, getOrCreateLogger("ResourceManager_TextureLoader"));
+	m_imageLoader = std::make_shared<engine::resources::loaders::ImageLoader>(baseDir);
 
 	m_meshManager = std::make_shared<engine::resources::MeshManager>();
-	m_textureManager = std::make_shared<engine::resources::TextureManager>(m_textureLoader);
+	m_textureManager = std::make_shared<engine::resources::TextureManager>(m_imageLoader);
 	m_materialManager = std::make_shared<engine::resources::MaterialManager>(m_textureManager);
 	m_modelManager = std::make_shared<engine::resources::ModelManager>(
 		m_meshManager,

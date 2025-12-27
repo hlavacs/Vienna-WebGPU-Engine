@@ -2,39 +2,68 @@
 
 namespace engine::resources
 {
-ModelManager::ModelManager(
-	std::shared_ptr<MeshManager> meshManager,
-	std::shared_ptr<MaterialManager> materialManager,
-	std::shared_ptr<loaders::ObjLoader> objLoader
-) :
-	m_meshManager(std::move(meshManager)),
-	m_materialManager(std::move(materialManager)),
-	m_objLoader(std::move(objLoader)) {}
 
 std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 	const std::string &filePath,
-	const std::string &name,
+	const std::optional<std::string> &name,
 	const engine::math::CoordinateSystem::Cartesian srcCoordSys,
 	const engine::math::CoordinateSystem::Cartesian dstCoordSys
 )
 {
-	std::string modelName = filePath;
-	auto optModel = getByName(modelName);
-	if (optModel.has_value())
-		return *optModel;
+	// Check if model already exists
+	std::string modelName = name.value_or(filePath);
+	auto existing = getByName(modelName);
+	if (existing.has_value())
+		return *existing;
 
-	if (!m_objLoader || !m_meshManager)
+	std::filesystem::path path(filePath);
+	auto ext = path.extension().string();
+	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+	if (ext == ".obj")
+	{
+		if (!m_objLoader)
+			return std::nullopt;
+
+		auto objDataOpt = m_objLoader->load(filePath, srcCoordSys, dstCoordSys);
+		if (!objDataOpt)
+			return std::nullopt;
+
+		return createModel(*objDataOpt, modelName);
+	}
+	else if (ext == ".gltf" || ext == ".glb")
+	{
+		if (!m_gltfLoader)
+			return std::nullopt;
+
+		auto gltfDataOpt = m_gltfLoader->load(filePath, srcCoordSys, dstCoordSys);
+		if (!gltfDataOpt)
+			return std::nullopt;
+
+		return createModel(*gltfDataOpt, modelName);
+	}
+	else
+	{
+		logError("Unsupported model format: '{}'", filePath);
+		return std::nullopt;
+	}
+}
+
+// Overload: create model from ObjGeometryData
+std::optional<ModelManager::ModelPtr> ModelManager::createModel(
+	const engine::resources::ObjGeometryData &objData,
+	const std::optional<std::string> &name
+)
+{
+	std::string modelName = name.value_or(objData.name);
+
+	if (!m_meshManager)
 		return std::nullopt;
 
-	auto objDataOpt = m_objLoader->load(filePath, srcCoordSys, dstCoordSys);
-	if (!objDataOpt)
-		return std::nullopt;
-	const auto &objData = *objDataOpt;
-
-	// Build Mesh from parsed geometry using the MeshManager
+	// Build Mesh from parsed geometry
 	auto meshOpt = m_meshManager->createMesh(
-		std::move(objData.vertices),
-		std::move(objData.indices),
+		objData.vertices,
+		objData.indices,
 		objData.boundingBox,
 		modelName
 	);
@@ -44,8 +73,7 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 	auto &mesh = *meshOpt;
 	mesh->computeTangents();
 
-	// Get the mesh handle
-	engine::rendering::MeshHandle meshHandle = mesh->getHandle();
+	auto meshHandle = mesh->getHandle();
 
 	auto model = std::make_shared<engine::rendering::Model>(
 		meshHandle,
@@ -53,10 +81,11 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 		modelName
 	);
 
-	if (m_materialManager && !objData.materialRanges.empty())
+	// Assign materials if available
+	if (m_materialManager && !objData.materials.empty())
 	{
 		std::filesystem::path textureBasePath = std::filesystem::path(objData.filePath).parent_path();
-		for (const auto &range : objData.materialRanges)
+		for (const auto &range : objData.submeshes)
 		{
 			if (range.indexCount == 0)
 				continue;
@@ -68,8 +97,81 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 			int matId = range.materialId;
 			if (matId >= 0 && matId < static_cast<int>(objData.materials.size()))
 			{
-				// ToDo: Wrapper for material properties so other formats can be supported too example gltf
 				auto matOpt = m_materialManager->createMaterial(objData.materials[matId], textureBasePath.string() + "/");
+				if (matOpt && *matOpt)
+					submesh.material = (*matOpt)->getHandle();
+			}
+
+			model->addSubmesh(submesh);
+		}
+	}
+
+	auto handleOpt = add(model);
+	if (!handleOpt)
+		return std::nullopt;
+
+	return model;
+}
+
+// Overload: create model from GltfGeometryData
+std::optional<ModelManager::ModelPtr> ModelManager::createModel(
+	const engine::resources::GltfGeometryData &gltfData,
+	const std::optional<std::string> &name
+)
+{
+	std::string modelName = name.value_or(gltfData.name);
+
+	if (!m_meshManager)
+		return std::nullopt;
+
+	// Build a mesh per primitive
+	std::vector<engine::rendering::MeshHandle> meshHandles;
+	for (const auto &prim : gltfData.primitives)
+	{
+		if (prim.indexCount == 0)
+			continue;
+
+		auto meshOpt = m_meshManager->createMesh(
+			std::vector<engine::rendering::Vertex>(gltfData.vertices.begin() + prim.vertexOffset, gltfData.vertices.begin() + prim.vertexOffset + prim.vertexCount),
+			std::vector<uint32_t>(gltfData.indices.begin() + prim.indexOffset, gltfData.indices.begin() + prim.indexOffset + prim.indexCount),
+			gltfData.boundingBox,
+			modelName
+		);
+		if (!meshOpt || !(*meshOpt))
+			continue;
+
+		auto &mesh = *meshOpt;
+		mesh->computeTangents();
+		meshHandles.push_back(mesh->getHandle());
+	}
+
+	if (meshHandles.empty())
+		return std::nullopt;
+
+	auto model = std::make_shared<engine::rendering::Model>(
+		meshHandles.front(), // or handle multiple meshes inside Model if supported
+		gltfData.filePath,
+		modelName
+	);
+
+	// Assign submeshes & materials
+	if (m_materialManager && !gltfData.materials.empty())
+	{
+		std::filesystem::path textureBasePath = std::filesystem::path(gltfData.filePath).parent_path();
+		for (size_t i = 0; i < gltfData.primitives.size(); ++i)
+		{
+			const auto &prim = gltfData.primitives[i];
+			if (prim.indexCount == 0)
+				continue;
+
+			engine::rendering::Submesh submesh;
+			submesh.indexOffset = prim.indexOffset;
+			submesh.indexCount = prim.indexCount;
+
+			int matId = prim.materialId;
+			if (matId >= 0 && matId < static_cast<int>(gltfData.materials.size()))
+			{
+				auto matOpt = m_materialManager->createMaterial(gltfData.materials[matId], textureBasePath.string() + "/");
 				if (matOpt && *matOpt)
 					submesh.material = (*matOpt)->getHandle();
 			}

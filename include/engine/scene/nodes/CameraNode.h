@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/math/Frustum.h"
 #include "engine/math/Rect.h"
+#include "engine/rendering/ClearFlags.h"
 #include "engine/scene/Transform.h"
 #include "engine/scene/nodes/Node.h"
 #include "engine/scene/nodes/RenderNode.h"
@@ -28,17 +29,6 @@ namespace engine::scene::nodes
 class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public nodes::SpatialNode
 {
   public:
-	/**
-	 * @brief Camera clear flags enumeration.
-	 */
-	enum class ClearFlags
-	{
-		SolidColor, ///< Clear to a solid background color.
-		Skybox,		///< Draw the scene's skybox as background.
-		DepthOnly,	///< Only clear depth buffer (useful for overlay cameras).
-		Nothing		///< Do not clear any buffer (rarely used).
-	};
-
 	using Ptr = std::shared_ptr<CameraNode>;
 
 	/**
@@ -186,12 +176,12 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	 * @brief Set camera clear flags.
 	 * @param flags ClearFlags enum value.
 	 */
-	void setClearFlags(ClearFlags flags) { m_clearFlags = flags; }
+	void setClearFlags(engine::rendering::ClearFlags flags) { m_clearFlags = flags; }
 
 	/**
 	 * @brief Get camera clear flags.
 	 */
-	ClearFlags getClearFlags() const { return m_clearFlags; }
+	engine::rendering::ClearFlags getClearFlags() const { return m_clearFlags; }
 
 	/**
 	 * @brief Set a render target (texture or surface) for this camera.
@@ -340,12 +330,12 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	// =========================================================
 	// Rendering parameters
 	// =========================================================
-	math::Rect m_viewport = glm::vec4(0, 0, 1, 1);					   ///< Normalized viewport
-	glm::vec4 m_clearColor = glm::vec4(0, 0, 0, 1);					   ///< Background clear color
-	ClearFlags m_clearFlags = ClearFlags::SolidColor;				   ///< Clear flags
-	std::optional<engine::rendering::Texture::Handle> m_renderTexture; ///< Target texture/surface
-	bool m_msaa = true;												   ///< MSAA enabled
-	bool m_hdr = false;												   ///< HDR enabled
+	math::Rect m_viewport = glm::vec4(0, 0, 1, 1);											///< Normalized viewport
+	glm::vec4 m_clearColor = glm::vec4(0, 0, 0, 1);											///< Background clear color
+	engine::rendering::ClearFlags m_clearFlags = engine::rendering::ClearFlags::SolidColor; ///< Clear flags
+	std::optional<engine::rendering::Texture::Handle> m_renderTexture;						///< Target texture/surface
+	bool m_msaa = true;																		///< MSAA enabled
+	bool m_hdr = false;																		///< HDR enabled
 };
 
 } // namespace engine::scene::nodes

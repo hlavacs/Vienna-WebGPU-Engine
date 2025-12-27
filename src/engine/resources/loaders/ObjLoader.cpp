@@ -4,11 +4,6 @@
 
 namespace engine::resources::loaders
 {
-ObjLoader::ObjLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger) :
-	GeometryLoader(std::move(basePath), std::move(logger))
-{
-	m_srcCoordSys = engine::math::CoordinateSystem::BLENDER;
-}
 std::optional<ObjGeometryData> ObjLoader::load(
 	const std::filesystem::path &file,
 	std::optional<engine::math::CoordinateSystem::Cartesian> srcCoordSysOpt,
@@ -17,8 +12,8 @@ std::optional<ObjGeometryData> ObjLoader::load(
 {
 	auto srcCoordSys = srcCoordSysOpt.value_or(m_srcCoordSys);
 	auto dstCoordSys = dstCoordSysOpt.value_or(engine::math::CoordinateSystem::DEFAULT);
-	std::filesystem::path filePath = std::filesystem::path(m_basePath / file);
-	logInfo("Loading OBJ file: " + filePath.string());
+	std::filesystem::path filePath = resolvePath(file);
+	logInfo("Loading OBJ file: '{}'", filePath.string());
 
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
@@ -27,7 +22,16 @@ std::optional<ObjGeometryData> ObjLoader::load(
 
 	bool triangulate = true;
 
-	bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.string().c_str(), filePath.parent_path().string().c_str(), triangulate);
+	bool success = tinyobj::LoadObj(
+		&attrib,
+		&shapes,
+		&materials,
+		&warn,
+		&err,
+		filePath.string().c_str(),
+		filePath.parent_path().string().c_str(),
+		triangulate
+	);
 
 	if (!warn.empty())
 		logWarn(warn);
@@ -67,7 +71,6 @@ std::optional<ObjGeometryData> ObjLoader::load(
 		{
 			int matId = shape.mesh.material_ids[f];
 
-			// Materialwechsel → vorheriges MaterialRange abschließen
 			if (matId != currentMaterial)
 			{
 				if (currentRange.indexCount > 0)
@@ -141,6 +144,7 @@ std::optional<ObjGeometryData> ObjLoader::load(
 
 	data.indices.shrink_to_fit();
 	data.vertices.shrink_to_fit();
+	data.materialRanges.shrink_to_fit();
 
 	return data;
 }

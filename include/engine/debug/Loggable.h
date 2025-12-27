@@ -5,75 +5,100 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <typeinfo>
+
+#ifdef __GNUG__
+#include <cxxabi.h>
+#endif
 
 namespace engine::debug
 {
+
 class Loggable
 {
 	template <typename... Args>
 	using format_string_t = fmt::format_string<Args...>;
 
-  public:
-	explicit Loggable(std::shared_ptr<spdlog::logger> logger = nullptr) :
-		m_logger(logger) {}
+	protected:
+	Loggable()
+	{
+		initLogger(demangle(typeid(*this).name()));
+	}
 
-	virtual ~Loggable() = default;
-
-  protected:
+	// Logging functions
 	template <typename... Args>
-	inline void logTrace(format_string_t<Args...> fmt, Args &&...args)
+	void logTrace(format_string_t<Args...> fmt, Args &&...args) const
 	{
 		if (m_logger)
-		{
 			m_logger->trace(fmt, std::forward<Args>(args)...);
-		}
 	}
 
 	template <typename... Args>
-	inline void logDebug(format_string_t<Args...> fmt, Args &&...args)
+	void logDebug(format_string_t<Args...> fmt, Args &&...args) const
 	{
 		if (m_logger)
-		{
 			m_logger->debug(fmt, std::forward<Args>(args)...);
-		}
 	}
 
 	template <typename... Args>
-	inline void logInfo(format_string_t<Args...> fmt, Args &&...args)
+	void logInfo(format_string_t<Args...> fmt, Args &&...args) const
 	{
 		if (m_logger)
-		{
 			m_logger->info(fmt, std::forward<Args>(args)...);
-		}
 	}
 
 	template <typename... Args>
-	inline void logWarn(format_string_t<Args...> fmt, Args &&...args)
+	void logWarn(format_string_t<Args...> fmt, Args &&...args) const
 	{
 		if (m_logger)
-		{
 			m_logger->warn(fmt, std::forward<Args>(args)...);
-		}
 	}
 
 	template <typename... Args>
-	inline void logError(format_string_t<Args...> fmt, Args &&...args)
+	void logError(format_string_t<Args...> fmt, Args &&...args) const
 	{
 		if (m_logger)
-		{
 			m_logger->error(fmt, std::forward<Args>(args)...);
-		}
 	}
 
 	template <typename... Args>
-	inline void logCritical(format_string_t<Args...> fmt, Args &&...args)
+	void logCritical(format_string_t<Args...> fmt, Args &&...args) const
 	{
 		if (m_logger)
-		{
 			m_logger->critical(fmt, std::forward<Args>(args)...);
-		}
 	}
 
-	std::shared_ptr<spdlog::logger> m_logger;
+  private:
+	mutable std::shared_ptr<spdlog::logger> m_logger;
+
+	void initLogger(const std::string &name)
+	{
+		auto existing = spdlog::get(name);
+		if (existing)
+			m_logger = existing;
+		else
+			m_logger = spdlog::stdout_color_mt(name);
+	}
+
+	/**
+	 * @brief Demangles a C++ type name to a human-readable form.
+	 * @param name The mangled type name.
+	 * @return The demangled type name as a std::string.
+	 * @note Uses __cxa_demangle on GCC/Clang, returns original name on other compilers.
+	 */
+	static std::string demangle(const char *name)
+	{
+#ifdef __GNUG__
+		int status = 0;
+		std::unique_ptr<char, void (*)(void *)> res{
+			abi::__cxa_demangle(name, nullptr, nullptr, &status),
+			std::free
+		};
+		return (status == 0) ? res.get() : name;
+#else
+		return name;
+#endif
+	}
 };
+
 } // namespace engine::debug

@@ -11,11 +11,11 @@ class CoordinateSystem
 	enum class Cartesian
 	{
 		// Left-handed systems
-		LH_Y_UP_Z_FORWARD, // Unity, Direct3D, glTF (LH, +Y up, +Z forward)
+		LH_Y_UP_Z_FORWARD, // Unity, Direct3D (LH, +Y up, +Z forward)
 		LH_Z_UP_X_FORWARD, // Unreal Engine (LH, +Z up, +X forward)
 
 		// Right-handed systems
-		RH_Y_UP_NEGATIVE_Z_FORWARD, // WebGPU, Vulkan, OpenGL, Maya (RH, +Y up, -Z forward)
+		RH_Y_UP_NEGATIVE_Z_FORWARD, // WebGPU, Vulkan, OpenGL, Maya, glTF (RH, +Y up, -Z forward)
 		RH_Z_UP_NEGATIVE_Y_FORWARD,	// Blender, 3ds Max (RH, +Z up, -Y forward)
 	};
 
@@ -32,7 +32,9 @@ class CoordinateSystem
 		Handedness handedness;
 	};
 
-	// Common aliases
+	/*
+	* @brief Default coordinate system used by the engine
+	*/
 	static constexpr Cartesian DEFAULT = Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD;
 
 	static constexpr Cartesian UNITY = Cartesian::LH_Y_UP_Z_FORWARD;
@@ -43,7 +45,7 @@ class CoordinateSystem
 	static constexpr Cartesian OPENGL = Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD;
 
 	static constexpr Cartesian MAYA = Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD;
-	static constexpr Cartesian GLTF = Cartesian::LH_Y_UP_Z_FORWARD;
+	static constexpr Cartesian GLTF = Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD;
 
 	static constexpr Cartesian UNREAL = Cartesian::LH_Z_UP_X_FORWARD;
 	static constexpr Cartesian BLENDER = Cartesian::RH_Z_UP_NEGATIVE_Y_FORWARD;

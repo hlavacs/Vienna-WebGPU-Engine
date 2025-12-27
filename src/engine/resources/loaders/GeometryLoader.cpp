@@ -3,11 +3,6 @@
 namespace engine::resources::loaders
 {
 
-GeometryLoader::GeometryLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger) :
-	engine::debug::Loggable(std::move(logger)),
-	m_basePath(std::move(basePath)),
-	m_srcCoordSys(math::CoordinateSystem::DEFAULT) {}
-
 // Compute the TBN local to a triangle face from its corners and return it as
 // a matrix whose columns are the T, B and N vectors.
 glm::mat3x3 GeometryLoader::computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN)

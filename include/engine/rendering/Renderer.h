@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <webgpu/webgpu.hpp>
 
+#include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/DebugCollector.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"

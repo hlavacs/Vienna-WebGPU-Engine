@@ -16,7 +16,7 @@ enum class MaterialFeature : uint32_t
 	UsesEmissiveMap = 1 << 6,		// Material has emissive map
 	Transparent = 1 << 7,			// Material is semi-transparent
 	DoubleSided = 1 << 8,			// Material disables backface culling
-	// Extend with additional material-driven pipeline features
+									// Extend with additional material-driven pipeline features
 };
 
 // Bitwise operators for enum class (modern C++ best practice)
@@ -33,6 +33,12 @@ inline constexpr MaterialFeature operator&(MaterialFeature a, MaterialFeature b)
 inline constexpr MaterialFeature operator~(MaterialFeature a) noexcept
 {
 	return static_cast<MaterialFeature>(~static_cast<uint32_t>(a));
+}
+
+inline MaterialFeature &operator|=(MaterialFeature &a, MaterialFeature b) noexcept
+{
+	a = a | b;
+	return a;
 }
 
 } // namespace engine::rendering

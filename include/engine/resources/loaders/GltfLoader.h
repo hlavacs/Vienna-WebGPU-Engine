@@ -1,30 +1,32 @@
+#include "engine/resources/GltfGeometryData.h"
 #include "engine/resources/loaders/GeometryLoader.h"
 
 namespace engine::resources::loaders
 {
-class GltfLoader : public GeometryLoader
+class GltfLoader : public GeometryLoader<engine::resources::GltfGeometryData>
 {
   public:
 	/**
 	 * @brief Constructs an ObjLoader with the given base path and optional logger.
 	 * @param basePath The base directory path where OBJ files are located.
-	 * @param logger Optional shared pointer to a spdlog logger for logging.
 	 */
-	explicit GltfLoader(std::filesystem::path basePath, std::shared_ptr<spdlog::logger> logger = nullptr);
+	explicit GltfLoader(std::filesystem::path basePath) :
+		GeometryLoader(std::move(basePath))
+	{
+		// Default source coordinate system for GLTF files
+		m_srcCoordSys = engine::math::CoordinateSystem::Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD;
+	}
 
 	/**
-	 * @brief Loads a mesh from the given file path.
+	 * @brief Parses a GLTF/GLB file and returns geometry data.
 	 * @param file The relative or absolute file path to load the geometry from.
-	 * @param indexed If true, loads the mesh with indexing (unique vertices + indices).
-	 *                If false, loads the mesh as non-indexed (expanded vertices, no indices).
-	 *                Default is true.
-	 * @return An optional Mesh object containing the loaded geometry data.
+	 * @param srcCoordSys Optional: source coordinate system for this load (overrides loaders default if set)
+	 * @param dstCoordSys Optional: destination coordinate system (defaults to CoordinateSystem::DEFAULT)
+	 * @return An optional GeometryData object containing the parsed geometry.
 	 *         Returns std::nullopt on failure.
 	 */
 	[[nodiscard]]
-	std::optional<engine::rendering::Mesh> load(const std::filesystem::path &file, bool indexed = true);
-
-  protected:
+	std::optional<Loaded> load(const std::filesystem::path &file, std::optional<engine::math::CoordinateSystem::Cartesian> srcCoordSys, std::optional<engine::math::CoordinateSystem::Cartesian> dstCoordSys) override;
 };
 
 } // namespace engine::resources::loaders

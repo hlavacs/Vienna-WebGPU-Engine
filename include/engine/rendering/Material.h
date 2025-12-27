@@ -37,6 +37,8 @@ inline constexpr const char *SHEEN = "sheen";		  // Sheen map
 inline constexpr const char *EMISSIVE = "emissive";	  // Emissive/glow map
 inline constexpr const char *NORMAL = "normal";		  // Normal map
 
+inline constexpr const char *OCCLUSION = "occlusion";  // Occlusion map
+
 } // namespace MaterialTextureSlots
 
 struct PBRProperties
@@ -236,6 +238,7 @@ struct Material : public engine::core::Identifiable<Material>,
 	TextureHandle getSheenTexture() const { return getTexture(MaterialTextureSlots::SHEEN); }
 	TextureHandle getEmissiveTexture() const { return getTexture(MaterialTextureSlots::EMISSIVE); }
 	TextureHandle getNormalTexture() const { return getTexture(MaterialTextureSlots::NORMAL); }
+	TextureHandle getOcclusionTexture() const { return getTexture(MaterialTextureSlots::OCCLUSION); }
 
 	void setAmbientTexture(TextureHandle t) { setTexture(MaterialTextureSlots::AMBIENT, t); }
 	void setDiffuseTexture(TextureHandle t) { setTexture(MaterialTextureSlots::DIFFUSE, t); }
@@ -250,6 +253,7 @@ struct Material : public engine::core::Identifiable<Material>,
 	void setSheenTexture(TextureHandle t) { setTexture(MaterialTextureSlots::SHEEN, t); }
 	void setEmissiveTexture(TextureHandle t) { setTexture(MaterialTextureSlots::EMISSIVE, t); }
 	void setNormalTexture(TextureHandle t) { setTexture(MaterialTextureSlots::NORMAL, t); }
+	void setOcclusionTexture(TextureHandle t) { setTexture(MaterialTextureSlots::OCCLUSION, t); }
 
 	bool hasAmbientTexture() const { return hasTexture(MaterialTextureSlots::AMBIENT); }
 	bool hasDiffuseTexture() const { return hasTexture(MaterialTextureSlots::DIFFUSE); }
@@ -264,6 +268,7 @@ struct Material : public engine::core::Identifiable<Material>,
 	bool hasSheenTexture() const { return hasTexture(MaterialTextureSlots::SHEEN); }
 	bool hasEmissiveTexture() const { return hasTexture(MaterialTextureSlots::EMISSIVE); }
 	bool hasNormalTexture() const { return hasTexture(MaterialTextureSlots::NORMAL); }
+	bool hasOcclusionTexture() const { return hasTexture(MaterialTextureSlots::OCCLUSION); }
 
   private:
 	/**

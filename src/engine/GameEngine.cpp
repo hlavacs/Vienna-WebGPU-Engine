@@ -414,16 +414,20 @@ void GameEngine::renderCamera(
 		spdlog::warn("CameraNode '{}' has invalid render target texture!", camera->getName());
 		return;
 	}
-	auto webgpuTexture = m_context->textureFactory().createFromHandle(targetOptional.value());
-	webgpuTexture->getTexture();
+
+	std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> webgpuTexture = nullptr;
+
+	engine::rendering::RenderTarget renderTarget(
+		webgpuTexture,
+		camera->getViewport(), 
+		camera->getClearFlags(),
+		camera->getBackgroundColor(),
+		textureOptional
+	);
 
 	m_renderer->renderCameraToTexture(
 		renderCollector,
-		&scene->getDebugCollector(),
-		texture,
-		camera->getViewport(),
-		camera->getClearFlags(),
-		camera->getBackgroundColor(),
+		renderTarget,
 		frameUniforms
 	);
 }
