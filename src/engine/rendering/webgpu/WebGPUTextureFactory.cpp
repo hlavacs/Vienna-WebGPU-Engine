@@ -9,70 +9,6 @@ namespace engine::rendering::webgpu
 WebGPUTextureFactory::WebGPUTextureFactory(WebGPUContext &context) :
 	BaseWebGPUFactory(context) {}
 
-std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
-	const engine::rendering::TextureHandle &textureHandle
-)
-{
-	auto textureOpt = textureHandle.get();
-	if (!textureOpt || !textureOpt.value())
-	{
-		throw std::runtime_error("Invalid texture handle in WebGPUTextureFactory::createFromHandle");
-	}
-	const auto &texture = *textureOpt.value();
-	std::string textureName = texture.getName().value_or(std::to_string(textureHandle.id()));
-	// Prepare texture descriptor
-	wgpu::TextureDescriptor desc{};
-	desc.label = ("Texture_" + textureName).c_str();
-	desc.dimension = wgpu::TextureDimension::_2D;
-	desc.size.width = texture.getWidth();
-	desc.size.height = texture.getHeight();
-	desc.size.depthOrArrayLayers = 1;
-	desc.format = wgpu::TextureFormat::RGBA8UnormSrgb; // by convention for bmp, png and jpg file. Be careful with other formats.
-	desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
-	desc.mipLevelCount = texture.getMipLevelCount();
-	desc.sampleCount = 1;
-	desc.viewFormatCount = 0;
-	desc.viewFormats = nullptr;
-
-	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(desc);
-
-	// Upload data (assume RGBA8)
-	wgpu::ImageCopyTexture dst{};
-	dst.texture = gpuTexture;
-	dst.mipLevel = 0;
-	dst.origin = {0, 0, 0};
-	dst.aspect = wgpu::TextureAspect::All;
-
-	wgpu::TextureDataLayout layout{};
-	layout.offset = 0;
-	layout.bytesPerRow = texture.getWidth() * 4;
-	layout.rowsPerImage = texture.getHeight();
-
-	wgpu::Extent3D extent{texture.getWidth(), texture.getHeight(), 1};
-
-	m_context.getQueue().writeTexture(dst, texture.getPixels().data(), texture.getWidth() * texture.getHeight() * 4, layout, extent);
-
-	// Create view
-	wgpu::TextureViewDescriptor viewDesc{};
-	// Use the same format as the texture
-	viewDesc.format = desc.format;
-	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
-	viewDesc.baseMipLevel = 0;
-	viewDesc.mipLevelCount = 1;
-	viewDesc.baseArrayLayer = 0;
-	viewDesc.arrayLayerCount = 1;
-	viewDesc.aspect = wgpu::TextureAspect::All;
-
-	wgpu::TextureView nextTexture = gpuTexture.createView(viewDesc);
-
-	return std::make_shared<WebGPUTexture>(
-		gpuTexture,
-		nextTexture,
-		desc,
-		viewDesc
-	);
-}
-
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	const glm::vec3 &color,
 	uint32_t width,
@@ -80,14 +16,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 )
 {
 	// Check cache first
-	auto it = m_colorTextureCache.find(std::make_tuple(
-		static_cast<uint8_t>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f),
-		static_cast<uint8_t>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f),
-		static_cast<uint8_t>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f),
-		255,
-		width,
-		height
-	));
+	auto it = m_colorTextureCache.find(std::make_tuple(static_cast<uint8_t>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f), static_cast<uint8_t>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f), static_cast<uint8_t>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f), 255, width, height));
 	if (it != m_colorTextureCache.end())
 	{
 		return it->second;
@@ -154,6 +83,119 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	return texturePtr;
 }
 
+std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
+	const TextureHandle &textureHandle,
+	const WebGPUTextureOptions &options
+)
+{
+	auto textureOpt = textureHandle.get();
+	if (!textureOpt || !textureOpt.value())
+	{
+		spdlog::error("WebGPUTextureFactory::createFromHandle: Invalid texture handle {}", textureHandle.id());
+		return nullptr;
+	}
+
+	const auto &texture = *textureOpt.value();
+
+	if (texture.getType() == Texture::Type::Surface)
+	{
+		spdlog::error("Surface textures cannot be created via createFromHandleUncached");
+		return nullptr;
+	}
+
+	std::string textureName = texture.getName().value_or(std::to_string(textureHandle.id()));
+
+	// Format
+	wgpu::TextureFormat format = options.format.value_or(wgpu::TextureFormat::Undefined);
+	if (format == wgpu::TextureFormat::Undefined)
+	{
+		switch (texture.getType())
+		{
+		case Texture::Type::Image:
+			format = WebGPUTexture::mapImageFormatToGPU(texture.getImage()->getFormat());
+			break;
+		case Texture::Type::RenderTarget:
+			format = wgpu::TextureFormat::RGBA8UnormSrgb;
+			break;
+		case Texture::Type::DepthStencil:
+			format = wgpu::TextureFormat::Depth24PlusStencil8;
+			break;
+		case Texture::Type::Depth:
+			format = wgpu::TextureFormat::Depth24Plus;
+			break;
+		}
+	}
+
+	// Mip levels
+	uint32_t mipLevelCount = options.generateMipmaps
+								 ? 1 + static_cast<uint32_t>(std::floor(std::log2(std::max(texture.getWidth(), texture.getHeight()))))
+								 : 1;
+
+	// Usage
+	wgpu::TextureUsage usage = options.usage.value_or(wgpu::TextureUsage::None);
+	if (usage == wgpu::TextureUsage::None)
+	{
+		switch (texture.getType())
+		{
+		case Texture::Type::Image:
+			usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
+			break;
+		case Texture::Type::RenderTarget:
+			usage = static_cast<WGPUTextureUsage>(
+				WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc
+			);
+			break;
+		case Texture::Type::DepthStencil:
+		case Texture::Type::Depth:
+			usage = WGPUTextureUsage_RenderAttachment;
+			break;
+		}
+	}
+
+	// Descriptor
+	wgpu::TextureDescriptor desc{};
+	desc.label = ("Texture_" + textureName).c_str();
+	desc.dimension = wgpu::TextureDimension::_2D;
+	desc.size.width = texture.getWidth();
+	desc.size.height = texture.getHeight();
+	desc.size.depthOrArrayLayers = 1;
+	desc.format = format;
+	desc.mipLevelCount = mipLevelCount;
+	desc.sampleCount = 1;
+	desc.usage = usage;
+
+	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(desc);
+
+	// Upload base level for images
+	if (texture.getType() == Texture::Type::Image)
+		uploadTextureData(texture, gpuTexture);
+
+	// Generate mipmaps
+	if (options.generateMipmaps && mipLevelCount > 1)
+		generateMipmaps(gpuTexture, format, texture.getWidth(), texture.getHeight(), mipLevelCount);
+
+	// Create default view
+	wgpu::TextureViewDescriptor viewDesc{};
+	viewDesc.format = desc.format;
+	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
+	viewDesc.baseMipLevel = 0;
+	viewDesc.mipLevelCount = mipLevelCount;
+	viewDesc.baseArrayLayer = 0;
+	viewDesc.arrayLayerCount = 1;
+	viewDesc.aspect = wgpu::TextureAspect::All;
+
+	wgpu::TextureView textureView = gpuTexture.createView(viewDesc);
+
+	return std::make_shared<WebGPUTexture>(
+		gpuTexture,
+		textureView,
+		desc,
+		viewDesc,
+		texture.getType(),
+		textureOpt.value()
+	);
+}
+
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
 	const wgpu::TextureDescriptor &textureDesc,
 	const wgpu::TextureViewDescriptor &viewDesc
@@ -176,6 +218,24 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
 	);
 }
 
+void WebGPUTextureFactory::uploadTextureData(const Texture &texture, wgpu::Texture &gpuTexture)
+{
+	wgpu::ImageCopyTexture dst{};
+	dst.texture = gpuTexture;
+	dst.mipLevel = 0;
+	dst.origin = {0, 0, 0};
+	dst.aspect = wgpu::TextureAspect::All;
+
+	wgpu::TextureDataLayout layout{};
+	layout.offset = 0;
+	layout.bytesPerRow = texture.getWidth() * texture.getChannels();
+	layout.rowsPerImage = texture.getHeight();
+
+	wgpu::Extent3D extent{texture.getWidth(), texture.getHeight(), 1};
+
+	m_context.getQueue().writeTexture(dst, texture.getPixels().data(), texture.getWidth() * texture.getHeight() * texture.getChannels(), layout, extent);
+}
+
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::getWhiteTexture()
 {
 	if (!m_whiteTexture)
@@ -183,6 +243,15 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::getWhiteTexture()
 		m_whiteTexture = createFromColor(glm::vec3(1.0f), 1, 1);
 	}
 	return m_whiteTexture;
+}
+
+std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::getBlackTexture()
+{
+	if (!m_blackTexture)
+	{
+		m_blackTexture = createFromColor(glm::vec3(0.0f), 1, 1);
+	}
+	return m_blackTexture;
 }
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::getDefaultNormalTexture()

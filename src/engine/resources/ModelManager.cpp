@@ -85,7 +85,7 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 	if (m_materialManager && !objData.materials.empty())
 	{
 		std::filesystem::path textureBasePath = std::filesystem::path(objData.filePath).parent_path();
-		for (const auto &range : objData.submeshes)
+		for (const auto &range : objData.materialRanges)
 		{
 			if (range.indexCount == 0)
 				continue;

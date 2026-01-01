@@ -5,7 +5,7 @@ namespace engine::scene::nodes
 {
 SpatialNode::SpatialNode() : m_transform(std::make_shared<Transform>())
 {
-	addNodeType(nodes::NodeType::Spatial);
+	addNodeType(NodeType::Spatial);
 }
 
 void SpatialNode::onDebugDraw(engine::rendering::DebugRenderCollector &collector)
@@ -17,7 +17,7 @@ void SpatialNode::onDebugDraw(engine::rendering::DebugRenderCollector &collector
 	}
 
 	// Call base class
-	nodes::Node::onDebugDraw(collector);
+	Node::onDebugDraw(collector);
 }
 
 } // namespace engine::scene::nodes

@@ -1,27 +1,17 @@
+#pragma once
+
+#include "engine/core/Enum.h"
+
 namespace engine::rendering
 {
-enum class ShaderFeature : uint32_t
-{
+ENUM_BIT_FLAGS_WRAPPED(
+	ShaderFeature,
+	Flag,
+	5,
 	None = 0,
 	UsesNormalMap = 1 << 0,
 	AlphaTest = 1 << 1,
 	Skinned = 1 << 2,
-	Instanced = 1 << 3,
-};
-
-inline constexpr ShaderFeature operator|(ShaderFeature a, ShaderFeature b) noexcept
-{
-	return static_cast<ShaderFeature>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-}
-
-inline constexpr ShaderFeature operator&(ShaderFeature a, ShaderFeature b) noexcept
-{
-	return static_cast<ShaderFeature>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
-}
-
-inline constexpr ShaderFeature operator~(ShaderFeature a) noexcept
-{
-	return static_cast<ShaderFeature>(~static_cast<uint32_t>(a));
-}
-
+	Instanced = 1 << 3
+)
 }

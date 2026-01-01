@@ -1,44 +1,41 @@
 #pragma once
 
+#include "engine/core/Enum.h"
 #include <cstdint>
 
 namespace engine::rendering
 {
-enum class MaterialFeature : uint32_t
-{
-	None = 0,						// Default, no special features
-	UsesNormalMap = 1 << 0,			// Material has a normal map
-	AlphaTest = 1 << 1,				// Material requires alpha cutoff
-	Skinned = 1 << 2,				// Material is on a skinned mesh
-	Instanced = 1 << 3,				// Material is drawn with instances
-	UsesMetallicRoughness = 1 << 4, // PBR metallic-roughness workflow
-	UsesOcclusionMap = 1 << 5,		// Material has occlusion map
-	UsesEmissiveMap = 1 << 6,		// Material has emissive map
-	Transparent = 1 << 7,			// Material is semi-transparent
-	DoubleSided = 1 << 8,			// Material disables backface culling
-									// Extend with additional material-driven pipeline features
-};
 
-// Bitwise operators for enum class (modern C++ best practice)
-inline constexpr MaterialFeature operator|(MaterialFeature a, MaterialFeature b) noexcept
-{
-	return static_cast<MaterialFeature>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-}
+ENUM_BIT_FLAGS64_WRAPPED(
+	MaterialFeature,
+	Flag,
+	15,
 
-inline constexpr MaterialFeature operator&(MaterialFeature a, MaterialFeature b) noexcept
-{
-	return static_cast<MaterialFeature>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
-}
+	None = 0,
 
-inline constexpr MaterialFeature operator~(MaterialFeature a) noexcept
-{
-	return static_cast<MaterialFeature>(~static_cast<uint32_t>(a));
-}
+	// --- Texture presence ---
+	UsesBaseColorMap = 1 << 0,
+	UsesNormalMap = 1 << 1,
+	UsesOcclusionMap = 1 << 2,
+	UsesEmissiveMap = 1 << 3,
 
-inline MaterialFeature &operator|=(MaterialFeature &a, MaterialFeature b) noexcept
-{
-	a = a | b;
-	return a;
-}
+	// --- PBR workflows ---
+	UsesMetallicRoughnessMap = 1 << 4, // packed ORM (glTF style)
+	UsesMetallicMap = 1 << 5,		   // separate metallic
+	UsesRoughnessMap = 1 << 6,		   // separate roughness
+	UsesSpecularGlossiness = 1 << 7,   // alternative PBR workflow
+
+	// --- Extra maps ---
+	UsesHeightMap = 1 << 8, // Parallax / Displacement
+
+	// --- Render behavior ---
+	AlphaTest = 1 << 9,
+	Transparent = 1 << 10,
+	DoubleSided = 1 << 11,
+
+	// --- Mesh features ---
+	Skinned = 1 << 12,
+	Instanced = 1 << 13
+)
 
 } // namespace engine::rendering

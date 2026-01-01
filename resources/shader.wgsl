@@ -78,7 +78,7 @@ struct MaterialUniforms {
 	roughness: f32,
 	metallic: f32,
 	ior: f32,
-	_pad0: f32
+	normalStrength: f32
 }
 
 ;
@@ -180,7 +180,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 	let B = cross(N, T);
 
 	let TBN = mat3x3f(T, B, N);
-	let normal = normalize(TBN * (textureSample(normalTexture, textureSampler, in.uv).rgb * 2.0 - 1.0));
+	let n: vec3f = textureSample(normalTexture, textureSampler, in.uv).rgb * 2.0 - 1.0;
+	let scaledN = clamp(n.xy * uMaterial.normalStrength, vec2<f32>(-2.0, -2.0), vec2<f32>(2.0, 2.0));
+	let normal = normalize(TBN * vec3<f32>(scaledN.x, scaledN.y, n.z));
 
 	let V = normalize(in.viewDirection);
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "engine/core/Enum.h"
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <memory>
@@ -14,16 +15,15 @@ class WebGPUBuffer;
 namespace engine::rendering
 {
 
-/**
- * @brief Types of debug primitives that can be rendered.
- */
-enum class DebugPrimitiveType : uint32_t
-{
-	Line = 0,
-	Disk = 1,
-	AABB = 2,
-	Arrow = 3
-};
+ENUM_BEGIN_WRAPPED(
+	DebugPrimitiveKind,
+	4,
+	Line,
+	Disk,
+	AABB,
+	Arrow
+)
+ENUM_END()
 
 /**
  * @brief GPU-compatible debug primitive structure.
@@ -34,7 +34,7 @@ enum class DebugPrimitiveType : uint32_t
 struct alignas(16) DebugPrimitive
 {
 	float padding1[3]; // Align to 16 bytes
-	uint32_t type;	   // DebugPrimitiveType
+	uint32_t type;	   // DebugPrimitiveKind
 	glm::vec4 color;   // RGBA color
 
 	// Union data - 48 bytes (3 vec4s)
@@ -90,10 +90,10 @@ struct alignas(16) DebugPrimitive
 	static DebugPrimitive createDisk(const glm::vec3 &center, const glm::vec3 &radii, const glm::vec4 &color = glm::vec4(1.0f));
 	static DebugPrimitive createAABB(const glm::vec3 &min, const glm::vec3 &max, const glm::vec4 &color = glm::vec4(1.0f));
 	static DebugPrimitive createArrow(const glm::vec3 &from, const glm::vec3 &to, float headSize, const glm::vec4 &color = glm::vec4(1.0f));
-	
+
 	// Helper for creating a sphere from 3 orthogonal disks
 	static std::vector<DebugPrimitive> createSphere(const glm::vec3 &center, float radius, const glm::vec4 &color = glm::vec4(1.0f));
-	
+
 	// Helper for transform axes visualization
 	static std::vector<DebugPrimitive> createTransformAxes(const glm::mat4 &transform, float scale = 1.0f);
 };
@@ -143,7 +143,7 @@ class DebugRenderCollector
 	/**
 	 * @brief Add a sphere primitive (created from 3 orthogonal disks).
 	 */
-	void addSphere(const glm::vec3& center, float radius, const glm::vec4& color = glm::vec4(1.0f));
+	void addSphere(const glm::vec3 &center, float radius, const glm::vec4 &color = glm::vec4(1.0f));
 
 	/**
 	 * @brief Add an AABB primitive.
@@ -153,7 +153,7 @@ class DebugRenderCollector
 	/**
 	 * @brief Add an arrow primitive.
 	 */
-	void addArrow(const glm::vec3& from, const glm::vec3& to, float headSize, const glm::vec4& color = glm::vec4(1.0f));
+	void addArrow(const glm::vec3 &from, const glm::vec3 &to, float headSize, const glm::vec4 &color = glm::vec4(1.0f));
 
 	/**
 	 * @brief Clear all collected primitives.

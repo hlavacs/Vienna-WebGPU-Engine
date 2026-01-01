@@ -37,12 +37,9 @@ class TextureManager : public ResourceManagerBase<engine::rendering::Texture>
 
 	/**
 	 * @brief Creates an Image texture from raw pixel data.
-	 * @param width Texture width.
-	 * @param height Texture height.
-	 * @param channels Number of channels.
-	 * @param pixels Pixel data vector.
-	 * @param filePath Optional file path for caching.
-	 * @return Optional shared pointer to the texture, or std::nullopt on failure.
+	 * @param image Shared pointer to an Image object containing pixel data.
+	 * @param filePath Optional file path associated with the image.
+	 * @return Optional shared pointer to the created texture, or std::nullopt on failure.
 	 */
 	[[nodiscard]]
 	std::optional<TexturePtr> createImageTexture(
@@ -62,6 +59,7 @@ class TextureManager : public ResourceManagerBase<engine::rendering::Texture>
 	 * @brief Creates a surface texture (color target).
 	 * @param width Texture width.
 	 * @param height Texture height.
+	 * @param channels Number of color channels.
 	 * @return Optional shared pointer to the texture, or std::nullopt on failure.
 	 */
 	[[nodiscard]]
@@ -89,8 +87,6 @@ class TextureManager : public ResourceManagerBase<engine::rendering::Texture>
 
 	// Caches
 	std::unordered_map<std::string, TextureHandle> m_imageCache; ///< Image textures cached by absolute file path
-	std::vector<TextureHandle> m_depthCache;					 ///< DepthStencil textures
-	std::vector<TextureHandle> m_surfaceCache;					 ///< Surface textures
 };
 
 } // namespace engine::resources

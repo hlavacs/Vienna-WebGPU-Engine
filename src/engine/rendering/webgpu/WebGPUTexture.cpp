@@ -1,4 +1,4 @@
-#include "engine/rendering/webgpu/WebGPUTexture.h" // your CPU-side texture
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include <memory>
 #include <spdlog/spdlog.h>
@@ -15,7 +15,8 @@ bool WebGPUTexture::resize(WebGPUContext &context, uint32_t newWidth, uint32_t n
 	if (matches(newWidth, newHeight, getFormat()))
 		return true;
 
-	if (m_isSurfaceTexture) {
+	if (isSurfaceTexture())
+	{
 		return false;
 	}
 
@@ -37,15 +38,6 @@ bool WebGPUTexture::resize(WebGPUContext &context, uint32_t newWidth, uint32_t n
 
 	// Prepare view descriptor
 	wgpu::TextureViewDescriptor newViewDesc = m_viewDesc;
-	if (newViewDesc.format == wgpu::TextureFormat::Undefined)
-	{
-		newViewDesc.dimension = wgpu::TextureViewDimension::_2D;
-		newViewDesc.aspect = m_isDepthTexture ? wgpu::TextureAspect::DepthOnly : wgpu::TextureAspect::All;
-		newViewDesc.baseMipLevel = 0;
-		newViewDesc.mipLevelCount = 1;
-		newViewDesc.baseArrayLayer = 0;
-		newViewDesc.arrayLayerCount = 1;
-	}
 	newViewDesc.format = newTexDesc.format;
 
 	// Create new view
@@ -75,73 +67,89 @@ bool WebGPUTexture::resize(WebGPUContext &context, uint32_t newWidth, uint32_t n
 	return true;
 }
 
-bool WebGPUTexture::readbackToCPU(WebGPUContext &context, std::shared_ptr<Texture> outTexture)
+std::future<bool> WebGPUTexture::readbackToCPUAsync(WebGPUContext &context, std::shared_ptr<Texture> outTexture)
 {
-	if (!outTexture)
-		return false;
+	// Capture necessary data by value for async lambda
+	auto texture = m_texture;
+	auto width = getWidth();
+	auto height = getHeight();
+	auto bytesPerPixel = engine::resources::ImageFormat::getChannelCount(
+		mapGPUFormatToImageFormat(getFormat())
+	);
+	auto bufferSize = width * height * bytesPerPixel;
 
-	try
-	{
+	return std::async(std::launch::async, [&, texture, width, height, bytesPerPixel, bufferSize, outTexture]() -> bool
+					  {
+        if (!outTexture)
+            return false;
 
-		// Assume RGBA8 format for simplicity
-		size_t bytesPerPixel = 4;
-		size_t bufferSize = getWidth() * getHeight() * bytesPerPixel;
+        try
+        {
+            // 1. Create staging buffer
+            wgpu::BufferDescriptor bufferDesc{};
+            bufferDesc.size = bufferSize;
+            bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+            wgpu::Buffer stagingBuffer = context.getDevice().createBuffer(bufferDesc);
 
-		// 1. Create staging buffer for GPU->CPU copy
-		wgpu::BufferDescriptor bufferDesc{};
-		bufferDesc.size = bufferSize;
-		bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
-		wgpu::Buffer stagingBuffer = context.getDevice().createBuffer(bufferDesc);
+            // 2. Copy texture to buffer
+            wgpu::CommandEncoder encoder = context.getDevice().createCommandEncoder();
 
-		wgpu::CommandEncoder encoder = context.getDevice().createCommandEncoder();
+            wgpu::ImageCopyTexture srcTexture{};
+            srcTexture.texture = texture;
+            srcTexture.mipLevel = 0;
+            srcTexture.origin = {0, 0, 0};
 
-		wgpu::ImageCopyTexture srcTexture{};
-		srcTexture.texture = m_texture;
-		srcTexture.mipLevel = 0;
-		srcTexture.origin = {0, 0, 0};
+            wgpu::ImageCopyBuffer dstBuffer{};
+            dstBuffer.buffer = stagingBuffer;
+            dstBuffer.layout.bytesPerRow = width * bytesPerPixel;
+            dstBuffer.layout.rowsPerImage = height;
 
-		wgpu::ImageCopyBuffer dstBuffer{};
-		dstBuffer.buffer = stagingBuffer;
-		dstBuffer.layout.bytesPerRow = getWidth() * bytesPerPixel;
-		dstBuffer.layout.rowsPerImage = getHeight();
+            wgpu::Extent3D copySize{width, height, 1};
 
-		wgpu::Extent3D copySize{};
-		copySize.width = getWidth();
-		copySize.height = getHeight();
-		copySize.depthOrArrayLayers = 1;
+            encoder.copyTextureToBuffer(srcTexture, dstBuffer, copySize);
 
-		encoder.copyTextureToBuffer(srcTexture, dstBuffer, copySize);
+            wgpu::CommandBuffer commands = encoder.finish();
+            context.getQueue().submit(1, &commands);
 
-		wgpu::CommandBuffer commands = encoder.finish();
-		context.getQueue().submit(1, &commands);
-		static auto mappedCallback = [](WGPUBufferMapAsyncStatus status)
-		{
-			if (status != WGPUBufferMapAsyncStatus_Success)
-			{
-				spdlog::error("Failed to map buffer for reading.");
-			}
-		};
-		stagingBuffer.mapAsync(wgpu::MapMode::Read, 0, bufferSize, mappedCallback);
-		auto mappedRange = stagingBuffer.getMappedRange(0, bufferSize);
+            // 3. Map buffer asynchronously
+            std::promise<bool> resultPromise;
+            auto resultFuture = resultPromise.get_future();
 
-		std::vector<uint8_t> pixelData(bufferSize);
-		std::memcpy(pixelData.data(), mappedRange, bufferSize);
+            stagingBuffer.mapAsync(wgpu::MapMode::Read, 0, bufferSize, [stagingBuffer, outTexture, width, height, bytesPerPixel, &resultPromise](WGPUBufferMapAsyncStatus status) mutable {
+                if (status != WGPUBufferMapAsyncStatus_Success)
+                {
+                    spdlog::error("Failed to map buffer for reading.");
+                    resultPromise.set_value(false);
+                    return;
+                }
 
-		outTexture->replaceData(
-			std::move(pixelData),
-			getWidth(),
-			getHeight(),
-			outTexture->getChannels()
-		);
+                auto mappedRange = stagingBuffer.getMappedRange(0, width * height * bytesPerPixel);
+                std::vector<uint8_t> pixelData(width * height * bytesPerPixel);
+                std::memcpy(pixelData.data(), mappedRange, width * height * bytesPerPixel);
 
-		stagingBuffer.unmap();
-		stagingBuffer.release();
-		return true;
-	}
-	catch (const std::exception &e)
-	{
-		spdlog::error("Exception during texture readback: {}", e.what());
-		return false;
-	}
+                // Create Image and replace texture data
+                engine::resources::Image::Ptr image = std::make_shared<engine::resources::Image>(
+                    width,
+                    height,
+                    outTexture->getImage()->getFormat(),
+                    std::move(pixelData)
+                );
+                outTexture->replaceImageData(image);
+
+                stagingBuffer.unmap();
+                stagingBuffer.release();
+
+                resultPromise.set_value(true);
+            });
+
+            // Wait for async map callback to complete
+            return resultFuture.get();
+        }
+        catch (const std::exception &e)
+        {
+            spdlog::error("Exception during async texture readback: {}", e.what());
+            return false;
+        } });
 }
+
 } // namespace engine::rendering::webgpu

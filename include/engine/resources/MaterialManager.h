@@ -50,11 +50,18 @@ class MaterialManager : public ResourceManagerBase<engine::rendering::Material>
 	/**
 	 * @brief Creates a Material from a tinygltf::Material and adds it to the manager.
 	 * @param gltfMat The tinygltf material.
+	 * @param textures The array of tinygltf textures.
+	 * @param images The array of tinygltf images.
 	 * @param textureBasePath The base path for texture files.
 	 * @return Optional shared pointer to the created material, or std::nullopt on failure.
 	 */
 	[[nodiscard]]
-	std::optional<MaterialPtr> createMaterial(const tinygltf::Material &gltfMat, const std::string &textureBasePath = "");
+	std::optional<MaterialPtr> createMaterial(
+		const tinygltf::Material &gltfMat,
+		const std::vector<tinygltf::Texture> &textures,
+		const std::vector<tinygltf::Image> &images,
+		const std::string &textureBasePath = ""
+	);
 
 	/**
 	 * @brief Access the underlying TextureManager.

@@ -49,28 +49,7 @@ enum class NodeType : uint32_t
 	Light = 1 << 6,	  // Light node
 	Model = 1 << 7,	  // Model render node
 };
-
-// Bitwise operators for NodeType flags
-inline NodeType operator|(NodeType a, NodeType b)
-{
-	return static_cast<NodeType>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-}
-
-inline NodeType operator&(NodeType a, NodeType b)
-{
-	return static_cast<NodeType>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
-}
-
-inline NodeType &operator|=(NodeType &a, NodeType b)
-{
-	a = a | b;
-	return a;
-}
-
-inline bool hasNodeType(NodeType flags, NodeType type)
-{
-	return (static_cast<uint32_t>(flags) & static_cast<uint32_t>(type)) != 0;
-}
+ENUM_BIT_OPERATORS(NodeType)
 
 /**
  * @brief Minimal base node type with parent-child structure and lifecycle.
@@ -80,6 +59,7 @@ class Node : public engine::core::Identifiable<Node>, public std::enable_shared_
 {
   public:
 	using Ptr = std::shared_ptr<Node>;
+	ENUM_BIT_FLAGS_HAS(NodeType)
 
 	// Allow Scene and SceneManager to set engine context
 	friend class engine::scene::Scene;
@@ -156,7 +136,7 @@ class Node : public engine::core::Identifiable<Node>, public std::enable_shared_
 	/** @brief Check if this node has a specific type flag. */
 	bool hasType(NodeType type) const
 	{
-		return hasNodeType(m_nodeType, type);
+		return Node::hasFlag(m_nodeType, type);
 	}
 
 	/** @brief Check if this node is a spatial node (has transform). */
