@@ -31,12 +31,15 @@ namespace engine::rendering
 struct RenderTarget
 {
 	RenderTarget(
+		uint64_t cameraId,
 		std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> gpuTexture,
 		glm::vec4 viewport = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f),
-		uint32_t clearFlags = 0,
+		ClearFlags clearFlags = ClearFlags::SolidColor,
 		glm::vec4 backgroundColor = glm::vec4(0.0f),
-		std::optional<std::shared_ptr<Texture>> cpuTarget = std::nullopt
-	) : gpuTexture(std::move(gpuTexture)),
+		std::optional<TextureHandle> cpuTarget = std::nullopt
+	) :
+		m_cameraId(cameraId),
+		gpuTexture(std::move(gpuTexture)),
 		viewport(viewport),
 		clearFlags(clearFlags),
 		backgroundColor(backgroundColor),
@@ -46,9 +49,10 @@ struct RenderTarget
 
 	std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> gpuTexture; // actual GPU render target
 	glm::vec4 viewport;													  // The relative viewport (x, y, width, height) in [0,1]
-	uint32_t clearFlags;
+	ClearFlags clearFlags;
 	glm::vec4 backgroundColor;
-	std::optional<std::shared_ptr<Texture>> cpuTarget; // optional CPU-side texture
+	std::optional<TextureHandle> cpuTarget; // optional CPU-side texture
+	uint64_t m_cameraId;					// associated camera ID
 };
 
 /**
@@ -73,15 +77,27 @@ class Renderer
   protected:
 	void startFrame();
 
-	void renderCameraToTexture(
+	void renderToTexture(
 		const RenderCollector &collector,
-		RenderTarget &target,
+		uint64_t renderTargetId, // eindeutige ID für das RenderTarget
+		const glm::vec4 &viewport,
+		ClearFlags clearFlags,
+		const glm::vec4 &backgroundColor,
+		std::optional<TextureHandle> cpuTarget,
 		const FrameUniforms &frameUniforms
 	);
 
-	void compositeCamerasToSwapchain(
-		const std::vector<RenderTarget> &targets,
+	void compositeTexturesToSurface(
+		const std::vector<uint64_t> &targets,
 		std::function<void(wgpu::RenderPassEncoder)> uiCallback = nullptr
+	);
+
+	std::shared_ptr<webgpu::WebGPUTexture> updateRenderTexture(
+		std::shared_ptr<webgpu::WebGPUTexture> &gpuTexture,
+		const std::optional<Texture::Handle> &cpuTarget,
+		const glm::vec4 &viewport,
+		wgpu::TextureFormat format,
+		wgpu::TextureUsage usageFlags
 	);
 
 	/**
@@ -133,6 +149,7 @@ class Renderer
 
 	// WebGPU model cache (CPU Model Handle -> GPU Model)
 	std::unordered_map<Model::Handle, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
+	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
 };
 
 } // namespace engine::rendering

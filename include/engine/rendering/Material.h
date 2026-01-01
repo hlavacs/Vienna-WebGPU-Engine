@@ -51,7 +51,7 @@ struct PBRProperties
 	float roughness = 0.5f;
 	float metallic = 0.0f;
 	float ior = 1.5f;
-	float _pad0 = 0.0f; // Padding for 16-byte alignment
+	float normalTextureScale = 1.0f; 
 };
 static_assert(sizeof(PBRProperties) % 16 == 0, "PBRProperties must be 16-byte aligned");
 
@@ -157,13 +157,13 @@ struct Material : public engine::core::Identifiable<Material>,
 	 * @brief Get the material feature mask.
 	 * @return The feature mask as a MaterialFeature.
 	 */
-	MaterialFeature getFeatureMask() const { return m_featureMask; }
+	MaterialFeature::Flag getFeatureMask() const { return m_featureMask; }
 
 	/**
 	 * @brief Set the material feature mask.
 	 * @param featureMask The feature mask as a MaterialFeature.
 	 */
-	void setFeatureMask(MaterialFeature featureMask)
+	void setFeatureMask(MaterialFeature::Flag featureMask)
 	{
 		m_featureMask = featureMask;
 		incrementVersion();
@@ -284,7 +284,7 @@ struct Material : public engine::core::Identifiable<Material>,
 	/**
 	 * @brief Material feature mask.
 	 */
-	MaterialFeature m_featureMask = MaterialFeature::None;
+	MaterialFeature::Flag m_featureMask = MaterialFeature::FlagNone;
 
 	/**
 	 * @brief Texture dictionary mapping slot names to texture handles.

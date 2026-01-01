@@ -34,11 +34,37 @@ class BaseWebGPUFactory
 	};
 
 	/**
-	 * @brief Create a GPU resource from a source object.
+	 * @brief Get a GPU resource from a source handle if it exists.
+	 * @param handle Handle to the source object.
+	 * @return Shared pointer to the GPU resource, or nullptr if not found.
+	 * @note This does not create the resource if it does not exist; it only retrieves from cache.
+	 */
+	std::shared_ptr<ProductT> get(const typename SourceT::Handle &handle)
+	{
+		auto it = m_cache.find(handle);
+		if (it != m_cache.end())
+		{
+			return it->second;
+		}
+		return nullptr;
+	}
+
+	/**
+	 * @brief Check if a GPU resource exists for the given source handle.
+	 * @param handle Handle to the source object.
+	 * @return True if the resource exists in the cache, false otherwise.
+	 */
+	bool has(const typename SourceT::Handle &handle) {
+		return m_cache.find(handle) != m_cache.end();
+	}
+
+	/**
+	 * @brief Get or create a GPU resource from a source object.
 	 * @param source The source object to create from.
 	 * @return Shared pointer to the created GPU resource.
 	 * @note This automatically creates a handle from the source and calls createFromHandle.
-	 *       If handle creation is not possible, it throws an error.
+	 * If handle creation is not possible, it throws an error.
+	 * This means there cannot be a GPU resource without a valid handle.
 	 */
 	std::shared_ptr<ProductT> createFrom(const SourceT &source)
 	{

@@ -98,6 +98,93 @@ void Renderer::startFrame()
 	m_surfaceTexture = m_context->surfaceManager().acquireNextTexture();
 }
 
+std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
+	std::shared_ptr<webgpu::WebGPUTexture> &gpuTexture,
+	const std::optional<Texture::Handle> &cpuTarget,
+	const glm::vec4 &viewport,
+	wgpu::TextureFormat format,
+	wgpu::TextureUsage usageFlags
+)
+{
+	if (cpuTarget && cpuTarget->valid())
+	{
+		gpuTexture = m_context->textureFactory().createFromHandle(cpuTarget.value());
+		return gpuTexture;
+	}
+
+	uint32_t viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.z);
+	uint32_t viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.w);
+
+	if (gpuTexture)
+	{
+		if (!gpuTexture->matches(viewPortWidth, viewPortHeight, format))
+		{
+			gpuTexture->resize(*m_context, viewPortWidth, viewPortHeight);
+		}
+	}
+	else
+	{
+		wgpu::TextureDescriptor texDesc{};
+		texDesc.size.width = viewPortWidth;
+		texDesc.size.height = viewPortHeight;
+		texDesc.size.depthOrArrayLayers = 1;
+		texDesc.format = format;
+		texDesc.usage = usageFlags;
+
+		wgpu::TextureViewDescriptor viewDesc{};
+		viewDesc.format = format;
+		viewDesc.dimension = wgpu::TextureViewDimension::_2D;
+		viewDesc.aspect = wgpu::TextureAspect::All;
+
+		gpuTexture = m_context->textureFactory().createFromDescriptors(texDesc, viewDesc);
+	}
+	return gpuTexture;
+}
+
+void Renderer::renderToTexture(
+	const RenderCollector &collector,
+	uint64_t renderTargetId, // eindeutige ID für das RenderTarget
+	const glm::vec4 &viewport,
+	ClearFlags clearFlags,
+	const glm::vec4 &backgroundColor,
+	std::optional<TextureHandle> cpuTarget,
+	const FrameUniforms &frameUniforms
+)
+{
+	// Prüfen, ob ein RenderTarget für diese ID existiert
+	RenderTarget &target = m_renderTargets[renderTargetId];
+	uint32_t viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.z);
+	uint32_t viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.w);
+
+	// Update Properties
+	target.viewport = viewport;
+	target.clearFlags = clearFlags;
+	target.backgroundColor = backgroundColor;
+	target.cpuTarget = cpuTarget;
+	target.gpuTexture =
+		updateRenderTexture(
+			target.gpuTexture,
+			cpuTarget,
+			viewport,
+			wgpu::TextureFormat::RGBA8Unorm,
+			wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc
+		);
+	// Rendering starten
+	updateLights(collector.getLights());
+
+	m_commandEncoder = m_context->getDevice().createCommandEncoder();
+
+	m_renderer->renderFrame(
+		collector,
+		target.gpuTexture,
+		frameUniforms,
+		target.clearFlags,
+		target.backgroundColor
+	);
+
+	m_context->getQueue().submit(1, &m_commandEncoder.finish());
+}
+
 void Renderer::renderCameraToTexture(
 	const RenderCollector &collector,
 	RenderTarget &target,
@@ -124,11 +211,7 @@ void Renderer::renderCameraToTexture(
 	}
 	else
 	{
-		target.gpuTexture = m_context->textureFactory().createFromColor(
-			glm::vec3(0.0f, 0.0f, 0.0f),
-			viewPortWidth,
-			viewPortHeight
-		);
+		target.gpuTexture = m_context->textureFactory().create
 	}
 
 	wgpu::CommandEncoderDescriptor encoderDesc{};
@@ -161,12 +244,6 @@ void Renderer::renderCameraToTexture(
 	m_context->getQueue().submit(commands);
 	commands.release();
 
-	// 5. Optional CPU readback
-	if (target.cpuTarget)
-	{
-		target.gpuTexture->readbackToCPU(target.cpuTarget.value());
-	}
-
 	// 6. If offscreen (no cpuTarget), store for later compositing
 	if (!target.cpuTarget)
 	{
@@ -174,8 +251,8 @@ void Renderer::renderCameraToTexture(
 	}
 }
 
-void Renderer::compositeCamerasToSwapchain(
-	const std::vector<RenderTarget> &targets,
+void Renderer::compositeTexturesToSurface(
+	const std::vector<uint64_t> &targets,
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
 )
 {
