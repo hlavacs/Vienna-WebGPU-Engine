@@ -142,7 +142,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 		}
 		else if (entryLayout.sampler.type != wgpu::SamplerBindingType::Undefined)
 		{
-			entry.sampler = m_context.getDefaultSampler();
+			entry.sampler = m_context.samplerFactory().getDefaultSampler();
 		}
 
 		entries.push_back(entry);

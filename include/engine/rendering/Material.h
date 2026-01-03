@@ -3,6 +3,7 @@
 #include "engine/core/Handle.h"
 #include "engine/core/Identifiable.h"
 #include "engine/core/Versioned.h"
+#include "engine/rendering/ColorSpace.h"
 #include "engine/rendering/MaterialFeatureMask.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/Texture.h"
@@ -15,6 +16,20 @@
 namespace engine::rendering
 {
 using TextureHandle = Texture::Handle;
+
+/**
+ * @brief Represents a texture slot with color space information.
+ */
+struct TextureSlot
+{
+	TextureHandle handle;
+	ColorSpace colorSpace = ColorSpace::sRGB;
+
+	TextureSlot() = default;
+	TextureSlot(TextureHandle h, ColorSpace cs = ColorSpace::sRGB) : handle(h), colorSpace(cs) {}
+
+	bool isValid() const { return handle.valid(); }
+};
 
 /**
  * @brief Standard material texture slot names.
@@ -37,9 +52,32 @@ inline constexpr const char *SHEEN = "sheen";		  // Sheen map
 inline constexpr const char *EMISSIVE = "emissive";	  // Emissive/glow map
 inline constexpr const char *NORMAL = "normal";		  // Normal map
 
-inline constexpr const char *OCCLUSION = "occlusion";  // Occlusion map
+inline constexpr const char *OCCLUSION = "occlusion"; // Occlusion map
 
 } // namespace MaterialTextureSlots
+
+/**
+ * @brief Returns the default color space for a given texture slot.
+ * @param slotName Name of the texture slot.
+ * @return The default ColorSpace for that slot.
+ */
+inline ColorSpace defaultColorSpaceForSlot(const std::string &slotName)
+{
+	// sRGB textures (color data that should be gamma-corrected)
+	if (slotName == MaterialTextureSlots::DIFFUSE || slotName == MaterialTextureSlots::EMISSIVE || slotName == MaterialTextureSlots::SPECULAR || slotName == MaterialTextureSlots::AMBIENT)
+	{
+		return ColorSpace::sRGB;
+	}
+
+	// Linear textures (non-color data)
+	if (slotName == MaterialTextureSlots::NORMAL || slotName == MaterialTextureSlots::ROUGHNESS || slotName == MaterialTextureSlots::METALLIC || slotName == MaterialTextureSlots::OCCLUSION || slotName == MaterialTextureSlots::BUMP || slotName == MaterialTextureSlots::DISPLACEMENT || slotName == MaterialTextureSlots::ALPHA || slotName == MaterialTextureSlots::SPECULAR_HIGHLIGHT || slotName == MaterialTextureSlots::SHEEN || slotName == MaterialTextureSlots::REFLECTION)
+	{
+		return ColorSpace::Linear;
+	}
+
+	// Default to linear for unknown slots
+	return ColorSpace::Linear;
+}
 
 struct PBRProperties
 {
@@ -51,7 +89,7 @@ struct PBRProperties
 	float roughness = 0.5f;
 	float metallic = 0.0f;
 	float ior = 1.5f;
-	float normalTextureScale = 1.0f; 
+	float normalTextureScale = 1.0f;
 };
 static_assert(sizeof(PBRProperties) % 16 == 0, "PBRProperties must be 16-byte aligned");
 
@@ -175,25 +213,50 @@ struct Material : public engine::core::Identifiable<Material>,
 	 * @brief Set a texture by slot name.
 	 * @param slotName Name of the texture slot (e.g., MaterialTextureSlots::ALBEDO).
 	 * @param texture Handle to the texture.
+	 * @param colorSpace Color space for the texture. Defaults to Linear unless specified otherwise.
 	 */
-	void setTexture(const std::string &slotName, TextureHandle texture)
+	void setTexture(const std::string &slotName, TextureHandle texture, ColorSpace colorSpace = ColorSpace::Linear)
 	{
 		if (texture.valid())
-			textures[slotName] = texture;
+		{
+			textures[slotName] = TextureSlot(texture, colorSpace);
+		}
 		else
 			textures.erase(slotName);
 		incrementVersion();
 	}
 
 	/**
-	 * @brief Get a texture by slot name.
+	 * @brief Get a texture slot by name.
+	 * @param slotName Name of the texture slot.
+	 * @return TextureSlot, or invalid slot if not found.
+	 */
+	TextureSlot getTextureSlot(const std::string &slotName) const
+	{
+		auto it = textures.find(slotName);
+		return it != textures.end() ? it->second : TextureSlot{};
+	}
+
+	/**
+	 * @brief Get a texture handle by slot name.
 	 * @param slotName Name of the texture slot.
 	 * @return Texture handle, or invalid handle if not found.
 	 */
 	TextureHandle getTexture(const std::string &slotName) const
 	{
 		auto it = textures.find(slotName);
-		return it != textures.end() ? it->second : TextureHandle{};
+		return it != textures.end() ? it->second.handle : TextureHandle{};
+	}
+
+	/**
+	 * @brief Get the color space for a texture slot.
+	 * @param slotName Name of the texture slot.
+	 * @return ColorSpace, or Linear if not found.
+	 */
+	ColorSpace getColorSpace(const std::string &slotName) const
+	{
+		auto it = textures.find(slotName);
+		return it != textures.end() ? it->second.colorSpace : ColorSpace::Linear;
 	}
 
 	/**
@@ -204,14 +267,28 @@ struct Material : public engine::core::Identifiable<Material>,
 	bool hasTexture(const std::string &slotName) const
 	{
 		auto it = textures.find(slotName);
-		return it != textures.end() && it->second.valid();
+		return it != textures.end() && it->second.isValid();
 	}
 
 	/**
-	 * @brief Get all textures.
+	 * @brief Get all texture slots.
+	 * @return Map of texture slot names to texture slots.
+	 */
+	const std::unordered_map<std::string, TextureSlot> &getTextureSlots() const { return textures; }
+
+	/**
+	 * @brief Get all textures (legacy method for backward compatibility).
 	 * @return Map of texture slot names to texture handles.
 	 */
-	const std::unordered_map<std::string, TextureHandle> &getTextures() const { return textures; }
+	std::unordered_map<std::string, TextureHandle> getTextures() const
+	{
+		std::unordered_map<std::string, TextureHandle> result;
+		for (const auto &[slot, texSlot] : textures)
+		{
+			result[slot] = texSlot.handle;
+		}
+		return result;
+	}
 
 	/**
 	 * @brief Remove a texture from a slot.
@@ -240,20 +317,35 @@ struct Material : public engine::core::Identifiable<Material>,
 	TextureHandle getNormalTexture() const { return getTexture(MaterialTextureSlots::NORMAL); }
 	TextureHandle getOcclusionTexture() const { return getTexture(MaterialTextureSlots::OCCLUSION); }
 
-	void setAmbientTexture(TextureHandle t) { setTexture(MaterialTextureSlots::AMBIENT, t); }
-	void setDiffuseTexture(TextureHandle t) { setTexture(MaterialTextureSlots::DIFFUSE, t); }
-	void setSpecularTexture(TextureHandle t) { setTexture(MaterialTextureSlots::SPECULAR, t); }
-	void setSpecularHighlightTexture(TextureHandle t) { setTexture(MaterialTextureSlots::SPECULAR_HIGHLIGHT, t); }
-	void setBumpTexture(TextureHandle t) { setTexture(MaterialTextureSlots::BUMP, t); }
-	void setDisplacementTexture(TextureHandle t) { setTexture(MaterialTextureSlots::DISPLACEMENT, t); }
-	void setReflectionTexture(TextureHandle t) { setTexture(MaterialTextureSlots::REFLECTION, t); }
-	void setAlphaTexture(TextureHandle t) { setTexture(MaterialTextureSlots::ALPHA, t); }
-	void setRoughnessTexture(TextureHandle t) { setTexture(MaterialTextureSlots::ROUGHNESS, t); }
-	void setMetallicTexture(TextureHandle t) { setTexture(MaterialTextureSlots::METALLIC, t); }
-	void setSheenTexture(TextureHandle t) { setTexture(MaterialTextureSlots::SHEEN, t); }
-	void setEmissiveTexture(TextureHandle t) { setTexture(MaterialTextureSlots::EMISSIVE, t); }
-	void setNormalTexture(TextureHandle t) { setTexture(MaterialTextureSlots::NORMAL, t); }
-	void setOcclusionTexture(TextureHandle t) { setTexture(MaterialTextureSlots::OCCLUSION, t); }
+	TextureSlot getAmbientTextureSlot() const { return getTextureSlot(MaterialTextureSlots::AMBIENT); }
+	TextureSlot getDiffuseTextureSlot() const { return getTextureSlot(MaterialTextureSlots::DIFFUSE); }
+	TextureSlot getSpecularTextureSlot() const { return getTextureSlot(MaterialTextureSlots::SPECULAR); }
+	TextureSlot getSpecularHighlightTextureSlot() const { return getTextureSlot(MaterialTextureSlots::SPECULAR_HIGHLIGHT); }
+	TextureSlot getBumpTextureSlot() const { return getTextureSlot(MaterialTextureSlots::BUMP); }
+	TextureSlot getDisplacementTextureSlot() const { return getTextureSlot(MaterialTextureSlots::DISPLACEMENT); }
+	TextureSlot getReflectionTextureSlot() const { return getTextureSlot(MaterialTextureSlots::REFLECTION); }
+	TextureSlot getAlphaTextureSlot() const { return getTextureSlot(MaterialTextureSlots::ALPHA); }
+	TextureSlot getRoughnessTextureSlot() const { return getTextureSlot(MaterialTextureSlots::ROUGHNESS); }
+	TextureSlot getMetallicTextureSlot() const { return getTextureSlot(MaterialTextureSlots::METALLIC); }
+	TextureSlot getSheenTextureSlot() const { return getTextureSlot(MaterialTextureSlots::SHEEN); }
+	TextureSlot getEmissiveTextureSlot() const { return getTextureSlot(MaterialTextureSlots::EMISSIVE); }
+	TextureSlot getNormalTextureSlot() const { return getTextureSlot(MaterialTextureSlots::NORMAL); }
+	TextureSlot getOcclusionTextureSlot() const { return getTextureSlot(MaterialTextureSlots::OCCLUSION); }
+
+	void setAmbientTexture(TextureHandle t) { setTexture(MaterialTextureSlots::AMBIENT, t, defaultColorSpaceForSlot(MaterialTextureSlots::AMBIENT)); }
+	void setDiffuseTexture(TextureHandle t) { setTexture(MaterialTextureSlots::DIFFUSE, t, defaultColorSpaceForSlot(MaterialTextureSlots::DIFFUSE)); }
+	void setSpecularTexture(TextureHandle t) { setTexture(MaterialTextureSlots::SPECULAR, t, defaultColorSpaceForSlot(MaterialTextureSlots::SPECULAR)); }
+	void setSpecularHighlightTexture(TextureHandle t) { setTexture(MaterialTextureSlots::SPECULAR_HIGHLIGHT, t, defaultColorSpaceForSlot(MaterialTextureSlots::SPECULAR_HIGHLIGHT)); }
+	void setBumpTexture(TextureHandle t) { setTexture(MaterialTextureSlots::BUMP, t, defaultColorSpaceForSlot(MaterialTextureSlots::BUMP)); }
+	void setDisplacementTexture(TextureHandle t) { setTexture(MaterialTextureSlots::DISPLACEMENT, t, defaultColorSpaceForSlot(MaterialTextureSlots::DISPLACEMENT)); }
+	void setReflectionTexture(TextureHandle t) { setTexture(MaterialTextureSlots::REFLECTION, t, defaultColorSpaceForSlot(MaterialTextureSlots::REFLECTION)); }
+	void setAlphaTexture(TextureHandle t) { setTexture(MaterialTextureSlots::ALPHA, t, defaultColorSpaceForSlot(MaterialTextureSlots::ALPHA)); }
+	void setRoughnessTexture(TextureHandle t) { setTexture(MaterialTextureSlots::ROUGHNESS, t, defaultColorSpaceForSlot(MaterialTextureSlots::ROUGHNESS)); }
+	void setMetallicTexture(TextureHandle t) { setTexture(MaterialTextureSlots::METALLIC, t, defaultColorSpaceForSlot(MaterialTextureSlots::METALLIC)); }
+	void setSheenTexture(TextureHandle t) { setTexture(MaterialTextureSlots::SHEEN, t, defaultColorSpaceForSlot(MaterialTextureSlots::SHEEN)); }
+	void setEmissiveTexture(TextureHandle t) { setTexture(MaterialTextureSlots::EMISSIVE, t, defaultColorSpaceForSlot(MaterialTextureSlots::EMISSIVE)); }
+	void setNormalTexture(TextureHandle t) { setTexture(MaterialTextureSlots::NORMAL, t, defaultColorSpaceForSlot(MaterialTextureSlots::NORMAL)); }
+	void setOcclusionTexture(TextureHandle t) { setTexture(MaterialTextureSlots::OCCLUSION, t, defaultColorSpaceForSlot(MaterialTextureSlots::OCCLUSION)); }
 
 	bool hasAmbientTexture() const { return hasTexture(MaterialTextureSlots::AMBIENT); }
 	bool hasDiffuseTexture() const { return hasTexture(MaterialTextureSlots::DIFFUSE); }
@@ -287,9 +379,9 @@ struct Material : public engine::core::Identifiable<Material>,
 	MaterialFeature::Flag m_featureMask = MaterialFeature::Flag::None;
 
 	/**
-	 * @brief Texture dictionary mapping slot names to texture handles.
+	 * @brief Texture dictionary mapping slot names to texture slots.
 	 */
-	std::unordered_map<std::string, TextureHandle> textures;
+	std::unordered_map<std::string, TextureSlot> textures;
 };
 
 } // namespace engine::rendering

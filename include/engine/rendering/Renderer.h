@@ -95,6 +95,7 @@ class Renderer
 	);
 
 	std::shared_ptr<webgpu::WebGPUTexture> updateRenderTexture(
+		uint32_t renderTargetId,
 		std::shared_ptr<webgpu::WebGPUTexture> &gpuTexture,
 		const std::optional<Texture::Handle> &cpuTarget,
 		const glm::vec4 &viewport,
