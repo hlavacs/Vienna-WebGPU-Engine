@@ -353,13 +353,14 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	// =========================================================
 	// Rendering parameters
 	// =========================================================
-	math::Rect m_viewport = glm::vec4(0, 0, 1, 1);											///< Normalized viewport
-	glm::vec4 m_clearColor = glm::vec4(0, 0, 0, 1);											///< Background clear color
-	engine::rendering::ClearFlags m_clearFlags = engine::rendering::ClearFlags::SolidColor; ///< Clear flags
-	std::optional<engine::rendering::Texture::Handle> m_renderTexture;						///< Target texture/surface
-	int m_depth = 0;																		///< Rendering depth/order
-	bool m_msaa = true;																		///< MSAA enabled
-	bool m_hdr = false;																		///< HDR enabled
+	math::Rect m_viewport = glm::vec4(0, 0, 1, 1);	///< Normalized viewport
+	glm::vec4 m_clearColor = glm::vec4(0, 0, 0, 1); ///< Background clear color
+	engine::rendering::ClearFlags m_clearFlags =
+		engine::rendering::ClearFlags::SolidColor | engine::rendering::ClearFlags::Depth; ///< Clear flags
+	std::optional<engine::rendering::Texture::Handle> m_renderTexture;					  ///< Target texture/surface
+	int m_depth = 0;																	  ///< Rendering depth/order
+	bool m_msaa = true;																	  ///< MSAA enabled
+	bool m_hdr = false;																	  ///< HDR enabled
 };
 
 } // namespace engine::scene::nodes

@@ -174,6 +174,9 @@ void Renderer::renderToTexture(
 	const FrameUniforms &frameUniforms
 )
 {
+	spdlog::debug("renderToTexture called: targetId={}, renderItems={}, lights={}", 
+		renderTargetId, collector.getRenderItems().size(), collector.getLights().size());
+
 	updateLights(collector.getLights());
 
 	RenderTarget &target = m_renderTargets[renderTargetId];
@@ -213,7 +216,10 @@ void Renderer::renderToTexture(
 
 	bindFrameUniforms(renderPass, renderTargetId, frameUniforms);
 	bindLightUniforms(renderPass);
+	
+	spdlog::debug("About to call renderItems with {} items", collector.getRenderItems().size());
 	renderItems(encoder, renderPass, collector, renderPassContext);
+	spdlog::debug("Returned from renderItems");
 
 	renderPass.end();
 	renderPass.release();
@@ -243,6 +249,12 @@ void Renderer::compositeTexturesToSurface(
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
 )
 {
+	spdlog::debug("compositeTexturesToSurface called with {} target IDs", targetIds.size());
+	for (auto id : targetIds)
+	{
+		spdlog::debug("  - Target ID: {}", id);
+	}
+
 	wgpu::CommandEncoderDescriptor encoderDesc{};
 	encoderDesc.label = "Composite Command Encoder";
 	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
@@ -345,18 +357,36 @@ void Renderer::renderItems(
 	const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext
 )
 {
+	// Set viewport and scissor for the render pass
+	auto colorTexture = renderPassContext->getColorTexture(0);
+	if (colorTexture)
+	{
+		uint32_t width = colorTexture->getWidth();
+		uint32_t height = colorTexture->getHeight();
+		
+		renderPass.setViewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f);
+		renderPass.setScissorRect(0, 0, width, height);
+		
+		spdlog::debug("Set viewport and scissor: {}x{}", width, height);
+	}
+
 	// Track current state to avoid redundant binding
 	uint64_t currentModelId = 0;
 	uint64_t currentMaterialId = 0;
 	std::shared_ptr<webgpu::WebGPUPipeline> currentPipeline = nullptr;
 
+	spdlog::debug("renderItems: Processing {} render items", collector.getRenderItems().size());
+
 	// Each RenderItem represents a specific submesh to render
 	for (const auto &item : collector.getRenderItems())
 	{
+		spdlog::debug("Processing render item with modelHandle id={}", item.modelHandle.id());
+
 		// Get the GPU model
 		auto gpuModel = getOrCreateWebGPUModel(item.modelHandle);
 		if (!gpuModel)
 		{
+			spdlog::warn("Failed to get/create GPU model, skipping");
 			continue;
 		}
 
@@ -366,6 +396,7 @@ void Renderer::renderItems(
 		auto mesh = gpuModel->getMesh();
 		if (!mesh)
 		{
+			spdlog::warn("GPU model has no mesh, skipping");
 			continue;
 		}
 
@@ -378,6 +409,8 @@ void Renderer::renderItems(
 		if (modelId != currentModelId)
 		{
 			currentModelId = modelId;
+
+			spdlog::debug("Binding vertex/index buffers for model id={}", modelId);
 
 			// Set vertex and index buffers for this mesh
 			renderPass.setVertexBuffer(0, mesh->getVertexBuffer(), 0, mesh->getVertexCount() * sizeof(Vertex));
@@ -422,6 +455,8 @@ void Renderer::renderItems(
 		{
 			currentMaterialId = materialId;
 
+			spdlog::debug("Material changed to id={}, creating GPU material", materialId);
+
 			// Get or create GPU material
 			auto gpuMaterial = m_context->materialFactory().createFromHandle(submesh.material);
 			if (!gpuMaterial)
@@ -465,6 +500,8 @@ void Renderer::renderItems(
 
 			auto cpuMesh = meshOpt.value();
 
+			spdlog::debug("Creating pipeline for material id={}", materialId);
+
 			// Get or create render pipeline for this material/mesh combination
 			currentPipeline = m_pipelineManager->getOrCreatePipeline(
 				cpuMesh,
@@ -480,9 +517,13 @@ void Renderer::renderItems(
 
 			// Set the pipeline
 			renderPass.setPipeline(currentPipeline->getPipeline());
+			spdlog::debug("Pipeline set successfully");
 		}
 
 		// Draw this specific submesh
+		spdlog::debug("Drawing submesh: indexCount={}, indexOffset={}, indexed={}", 
+			submesh.indexCount, submesh.indexOffset, mesh->isIndexed());
+
 		if (mesh->isIndexed())
 		{
 			renderPass.drawIndexed(submesh.indexCount, 1, submesh.indexOffset, 0, 0);
@@ -492,6 +533,8 @@ void Renderer::renderItems(
 			renderPass.draw(submesh.indexCount, 1, submesh.indexOffset, 0);
 		}
 	}
+
+	spdlog::debug("renderItems: Finished processing all items");
 }
 
 void Renderer::renderDebugPrimitives(
