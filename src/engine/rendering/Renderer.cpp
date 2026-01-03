@@ -174,8 +174,7 @@ void Renderer::renderToTexture(
 	const FrameUniforms &frameUniforms
 )
 {
-	spdlog::debug("renderToTexture called: targetId={}, renderItems={}, lights={}", 
-		renderTargetId, collector.getRenderItems().size(), collector.getLights().size());
+	spdlog::debug("renderToTexture called: targetId={}, renderItems={}, lights={}", renderTargetId, collector.getRenderItems().size(), collector.getLights().size());
 
 	updateLights(collector.getLights());
 
@@ -216,7 +215,7 @@ void Renderer::renderToTexture(
 
 	bindFrameUniforms(renderPass, renderTargetId, frameUniforms);
 	bindLightUniforms(renderPass);
-	
+
 	spdlog::debug("About to call renderItems with {} items", collector.getRenderItems().size());
 	renderItems(encoder, renderPass, collector, renderPassContext);
 	spdlog::debug("Returned from renderItems");
@@ -363,10 +362,10 @@ void Renderer::renderItems(
 	{
 		uint32_t width = colorTexture->getWidth();
 		uint32_t height = colorTexture->getHeight();
-		
+
 		renderPass.setViewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f);
 		renderPass.setScissorRect(0, 0, width, height);
-		
+
 		spdlog::debug("Set viewport and scissor: {}x{}", width, height);
 	}
 
@@ -405,7 +404,7 @@ void Renderer::renderItems(
 
 		uint64_t modelId = item.modelHandle.id();
 
-		// When model changes: update vertex/index buffers AND object uniforms
+		// When model changes: update vertex/index buffers
 		if (modelId != currentModelId)
 		{
 			currentModelId = modelId;
@@ -419,25 +418,18 @@ void Renderer::renderItems(
 			{
 				renderPass.setIndexBuffer(mesh->getIndexBuffer(), wgpu::IndexFormat::Uint32, 0, mesh->getIndexCount() * sizeof(uint32_t));
 			}
+		}
 
-			// Update object uniforms (group 2) for the new model instance
-			if (item.objectBindGroup)
-			{
-				renderPass.setBindGroup(2, item.objectBindGroup->getBindGroup(), 0, nullptr);
-			}
-			else
-			{
-				// Fallback: Create object uniforms if not provided by collector
-				ObjectUniforms objectUniforms{};
-				objectUniforms.modelMatrix = item.worldTransform;
-				objectUniforms.normalMatrix = glm::transpose(glm::inverse(glm::mat3(item.worldTransform)));
-
-				auto objectBindGroup = m_context->bindGroupFactory().createBindGroup(m_objectBindGroupLayout);
-				objectBindGroup->updateBuffer(0, &objectUniforms, sizeof(ObjectUniforms), 0, m_context->getQueue());
-				renderPass.setBindGroup(2, objectBindGroup->getBindGroup(), 0, nullptr);
-
-				spdlog::warn("RenderItem missing objectBindGroup, creating temporary one (performance impact)");
-			}
+		// ALWAYS update object uniforms (group 2) for each render item
+		// Even if multiple items share the same model, they have different world transforms!
+		if (item.objectBindGroup)
+		{
+			renderPass.setBindGroup(2, item.objectBindGroup->getBindGroup(), 0, nullptr);
+		}
+		else
+		{
+			spdlog::warn("RenderItem missing objectBindGroup, skipping");
+			continue;
 		}
 
 		// Get the material for this specific submesh
@@ -450,7 +442,7 @@ void Renderer::renderItems(
 
 		uint64_t materialId = submesh.material.id();
 
-		// When material changes: rebind material AND update pipeline
+		// When material changes: rebind material and get pipeline
 		if (materialId != currentMaterialId)
 		{
 			currentMaterialId = materialId;
@@ -500,29 +492,32 @@ void Renderer::renderItems(
 
 			auto cpuMesh = meshOpt.value();
 
-			spdlog::debug("Creating pipeline for material id={}", materialId);
+			spdlog::debug("Getting pipeline for material id={}", materialId);
 
 			// Get or create render pipeline for this material/mesh combination
-			currentPipeline = m_pipelineManager->getOrCreatePipeline(
+			auto newPipeline = m_pipelineManager->getOrCreatePipeline(
 				cpuMesh,
 				material,
 				renderPassContext
 			);
 
-			if (!currentPipeline || !currentPipeline->isValid())
+			if (!newPipeline || !newPipeline->isValid())
 			{
 				spdlog::error("Failed to get/create render pipeline");
 				continue;
 			}
 
-			// Set the pipeline
-			renderPass.setPipeline(currentPipeline->getPipeline());
-			spdlog::debug("Pipeline set successfully");
+			// Only set pipeline if it actually changed
+			if (newPipeline != currentPipeline)
+			{
+				currentPipeline = newPipeline;
+				renderPass.setPipeline(currentPipeline->getPipeline());
+				spdlog::debug("Pipeline changed, setting new pipeline");
+			}
 		}
 
 		// Draw this specific submesh
-		spdlog::debug("Drawing submesh: indexCount={}, indexOffset={}, indexed={}", 
-			submesh.indexCount, submesh.indexOffset, mesh->isIndexed());
+		spdlog::debug("Drawing submesh: indexCount={}, indexOffset={}, indexed={}", submesh.indexCount, submesh.indexOffset, mesh->isIndexed());
 
 		if (mesh->isIndexed())
 		{

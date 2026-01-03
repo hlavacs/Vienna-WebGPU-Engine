@@ -71,9 +71,9 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 {
 
 	auto globalKey = layoutInfo->getKey();
-	if (globalKey.has_value())
+	if (layoutInfo->isGlobal() && globalKey.has_value())
 	{
-		auto globalBindGroup = getGlobalBindGroup(globalKey.value_or(""));
+		auto globalBindGroup = getGlobalBindGroup(globalKey.value());
 		if (globalBindGroup)
 		{
 			spdlog::debug("Reusing cached global bind group '{}'", globalKey.value());
@@ -165,7 +165,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 		layoutInfo,
 		groupBuffers
 	);
-	if (globalKey.has_value())
+	if (layoutInfo->isGlobal() && globalKey.has_value())
 		storeGlobalBindGroup(globalKey.value(), bindGroup);
 
 	return bindGroup;

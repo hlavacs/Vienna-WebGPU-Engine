@@ -61,6 +61,18 @@ class WebGPUBindGroupLayoutInfo
 	const std::optional<std::string> &getKey() const { return m_key; }
 
 	/**
+	 * @brief Sets whether this bind group is global. Only relevant if a key is set.
+	 * @param isGlobal True if global, false otherwise.
+	 */
+	void setGlobal(bool isGlobal) { m_isGlobal = isGlobal; }
+
+	/**
+	 * @brief Gets whether this bind group is global.
+	 * @return True if global, false otherwise.
+	 */
+	bool isGlobal() const { return m_isGlobal; }
+
+	/**
 	 * @brief Destructor that cleans up WebGPU resources.
 	 */
 	~WebGPUBindGroupLayoutInfo()
@@ -197,6 +209,9 @@ class WebGPUBindGroupLayoutInfo
 
 	/** Maps binding index to fallback color for texture bindings */
 	std::unordered_map<uint32_t, glm::vec3> m_fallbackColors;
+
+	/** Whether this bind group is global (only relevant if a key is set) */
+	bool m_isGlobal = false;
 };
 
 } // namespace engine::rendering::webgpu
