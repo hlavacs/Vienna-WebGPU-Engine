@@ -66,7 +66,6 @@ class WebGPUContext
 	wgpu::Device getDevice() const { return m_device; }
 	wgpu::Queue getQueue() const { return m_queue; }
 	wgpu::TextureFormat getSwapChainFormat() const { return m_swapChainFormat; }
-	wgpu::Sampler getDefaultSampler() const { return m_defaultSampler; }
 
 	// === Surface Manager Accessor ===
 	WebGPUSurfaceManager &surfaceManager();

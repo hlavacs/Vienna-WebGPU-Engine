@@ -3,9 +3,10 @@
 #include <fstream>
 #include <spdlog/spdlog.h>
 
-#include "engine/rendering/Texture.h"
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/Texture.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
 
 namespace engine::rendering::webgpu
 {
@@ -18,7 +19,8 @@ WebGPUTextureFactory::WebGPUTextureFactory(WebGPUContext &context) :
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	const glm::vec3 &color,
 	uint32_t width,
-	uint32_t height
+	uint32_t height,
+	ColorSpace colorSpace
 )
 {
 	// Check cache first
@@ -40,13 +42,19 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 		rgba[i * 4 + 2] = b;
 		rgba[i * 4 + 3] = a;
 	}
+
+	// Choose format based on color space
+	wgpu::TextureFormat format = (colorSpace == ColorSpace::sRGB)
+									 ? wgpu::TextureFormat::RGBA8UnormSrgb
+									 : wgpu::TextureFormat::RGBA8Unorm;
+
 	wgpu::TextureDescriptor desc{};
 	desc.label = ("ColorTexture (" + std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b) + "," + std::to_string(a) + ")").c_str();
 	desc.dimension = wgpu::TextureDimension::_2D;
 	desc.size.width = width;
 	desc.size.height = height;
 	desc.size.depthOrArrayLayers = 1;
-	desc.format = wgpu::TextureFormat::RGBA8UnormSrgb;
+	desc.format = format;
 	desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
 	desc.mipLevelCount = 1;
 	desc.sampleCount = 1;
@@ -113,6 +121,9 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 
 	std::string textureName = texture.getName().value_or(std::to_string(textureHandle.id()));
 
+	// Determine color space
+	ColorSpace colorSpace = options.colorSpace.value_or(ColorSpace::sRGB);
+
 	// Format
 	wgpu::TextureFormat format = options.format.value_or(wgpu::TextureFormat::Undefined);
 	if (format == wgpu::TextureFormat::Undefined)
@@ -120,7 +131,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 		switch (texture.getType())
 		{
 		case Texture::Type::Image:
-			format = WebGPUTexture::mapImageFormatToGPU(texture.getImage()->getFormat());
+			format = WebGPUTexture::mapImageFormatToGPU(texture.getImage()->getFormat(), colorSpace);
 			break;
 		case Texture::Type::RenderTarget:
 			format = wgpu::TextureFormat::RGBA8UnormSrgb;
@@ -132,6 +143,11 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 			format = wgpu::TextureFormat::Depth24Plus;
 			break;
 		}
+	}
+	else
+	{
+		// Apply color space to the provided format
+		format = WebGPUTexture::applyColorSpaceToFormat(format, colorSpace);
 	}
 
 	// Mip levels
@@ -218,23 +234,23 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 }
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createRenderTarget(
+	uint32_t renderTargetId,
 	uint32_t width,
 	uint32_t height,
 	wgpu::TextureFormat format
 )
 {
-	// Create cache key from dimensions
-	uint64_t cacheKey = (static_cast<uint64_t>(width) << 32) | height;
-
-	// Check cache first
-	auto it = m_renderTargetCache.find(cacheKey);
+	// ToDo: Thread safety
+	auto it = m_renderTargetCache.find(renderTargetId);
 	if (it != m_renderTargetCache.end())
 	{
-		// Verify format matches
-		if (it->second->getFormat() == format)
-		{
+		if (it->second->getWidth() == width && it->second->getHeight() == height && it->second->getTextureDescriptor().format == format)
 			return it->second;
-		}
+		spdlog::debug("Resizing cached render target texture {}x{} format {}", width, height, static_cast<int>(format));
+	}
+	else
+	{
+		spdlog::debug("Creating new render target texture {}x{} format {}", width, height, static_cast<int>(format));
 	}
 
 	// Create new render target texture
@@ -276,7 +292,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createRenderTarget(
 	);
 
 	// Cache for reuse
-	m_renderTargetCache[cacheKey] = texturePtr;
+	m_renderTargetCache[renderTargetId] = texturePtr;
 
 	return texturePtr;
 }
@@ -395,22 +411,21 @@ void WebGPUTextureFactory::generateMipmaps(
 		return;
 	}
 
-	if (!m_mipmapPipeline)
+	// Get or create mipmap pipeline for this format
+	auto mipmapPipeline = getOrCreateMipmapPipeline(format);
+	if (!mipmapPipeline || !mipmapPipeline->isValid())
 	{
-		spdlog::error("Mipmap pipeline not initialized");
+		spdlog::error("Failed to get/create mipmap pipeline for format {}", static_cast<int>(format));
 		return;
 	}
 
 	// Get shader info to access bind group layout
-	auto mipmapShader = m_context.shaderRegistry().getShader(shader::default::MIPMAP_BLIT);
+	auto mipmapShader = m_context.shaderRegistry().getShader(shader::default ::MIPMAP_BLIT);
 	if (!mipmapShader || !mipmapShader->isValid())
 	{
 		spdlog::error("Failed to get mipmap shader for bind group layout");
 		return;
 	}
-
-	spdlog::debug("Mipmap shader name: {}", mipmapShader->getName());
-	spdlog::debug("Mipmap shader path: {}", mipmapShader->getPath());
 
 	auto bindGroupLayouts = mipmapShader->getBindGroupLayoutVector();
 	if (bindGroupLayouts.empty())
@@ -418,6 +433,9 @@ void WebGPUTextureFactory::generateMipmaps(
 		spdlog::error("Mipmap shader has no bind group layouts");
 		return;
 	}
+
+	// Get mipmap sampler from factory
+	auto mipmapSampler = m_context.samplerFactory().getMipmapSampler();
 
 	wgpu::CommandEncoder encoder = m_context.getDevice().createCommandEncoder();
 
@@ -451,7 +469,7 @@ void WebGPUTextureFactory::generateMipmaps(
 		entries[0].binding = 0;
 		entries[0].textureView = srcView;
 		entries[1].binding = 1;
-		entries[1].sampler = m_mipmapSampler;
+		entries[1].sampler = mipmapSampler;
 
 		wgpu::BindGroupDescriptor bindGroupDesc{};
 		bindGroupDesc.layout = bindGroupLayouts[0]->getLayout();
@@ -471,7 +489,7 @@ void WebGPUTextureFactory::generateMipmaps(
 		renderPassDesc.colorAttachments = &colorAttachment;
 
 		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDesc);
-		renderPass.setPipeline(m_mipmapPipeline->getPipeline());
+		renderPass.setPipeline(mipmapPipeline->getPipeline());
 		renderPass.setBindGroup(0, bindGroup, 0, nullptr);
 		renderPass.draw(3, 1, 0, 0); // Fullscreen triangle
 		renderPass.end();
@@ -489,49 +507,35 @@ void WebGPUTextureFactory::generateMipmaps(
 	spdlog::debug("Generated {} mipmap levels for texture", mipLevelCount - 1);
 }
 
-void WebGPUTextureFactory::initializeMipmapPipeline()
+std::shared_ptr<WebGPUPipeline> WebGPUTextureFactory::getOrCreateMipmapPipeline(wgpu::TextureFormat format)
 {
-	if (m_mipmapPipeline)
-		return;
-
-	// Create sampler with linear filtering for mipmap generation
-	wgpu::SamplerDescriptor samplerDesc{};
-	samplerDesc.addressModeU = wgpu::AddressMode::ClampToEdge;
-	samplerDesc.addressModeV = wgpu::AddressMode::ClampToEdge;
-	samplerDesc.addressModeW = wgpu::AddressMode::ClampToEdge;
-	samplerDesc.magFilter = wgpu::FilterMode::Linear;
-	samplerDesc.minFilter = wgpu::FilterMode::Linear;
-	samplerDesc.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-	samplerDesc.maxAnisotropy = 1;
-	m_mipmapSampler = m_context.getDevice().createSampler(samplerDesc);
-
 	// Get the mipmap blit shader from registry
 	auto mipmapShader = m_context.shaderRegistry().getShader(shader::default ::MIPMAP_BLIT);
 	if (!mipmapShader || !mipmapShader->isValid())
 	{
 		spdlog::error("Failed to get mipmap blit shader from registry");
-		return;
+		return nullptr;
 	}
 
-	// Create render pipeline using the pipeline factory
-	m_mipmapPipeline = m_context.pipelineFactory().createRenderPipeline(
-		mipmapShader,					   // vertex shader
-		mipmapShader,					   // fragment shader (same shader has both)
-		wgpu::TextureFormat::RGBA8Unorm,   // color format (generic, will work for most formats)
-		wgpu::TextureFormat::Undefined,	   // no depth
+	// Create render pipeline using the pipeline factory with the specific format
+	auto mipmapPipeline = m_context.pipelineFactory().createRenderPipeline(
+		mipmapShader,					// vertex shader
+		mipmapShader,					// fragment shader (same shader has both)
+		format,							// color format (specific to this texture)
+		wgpu::TextureFormat::Undefined, // no depth
 		engine::rendering::Topology::Type::Triangles,
 		wgpu::CullMode::None,
 		1 // sample count
 	);
 
-	if (!m_mipmapPipeline || !m_mipmapPipeline->getPipeline())
+	if (!mipmapPipeline || !mipmapPipeline->getPipeline())
 	{
-		spdlog::error("Failed to create mipmap pipeline");
-		m_mipmapPipeline = nullptr;
-		return;
+		spdlog::error("Failed to create mipmap pipeline for format {}", static_cast<int>(format));
+		return nullptr;
 	}
+	spdlog::debug("Created mipmap generation pipeline for format {}", static_cast<int>(format));
 
-	spdlog::info("Mipmap generation pipeline initialized");
+	return mipmapPipeline;
 }
 
 } // namespace engine::rendering::webgpu

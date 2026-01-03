@@ -120,6 +120,7 @@ void Renderer::startFrame()
 }
 
 std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
+	uint32_t renderTargetId,
 	std::shared_ptr<webgpu::WebGPUTexture> &gpuTexture,
 	const std::optional<Texture::Handle> &cpuTarget,
 	const glm::vec4 &viewport,
@@ -155,6 +156,7 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 	if (!gpuTexture || !gpuTexture->matches(viewPortWidth, viewPortHeight, format))
 	{
 		gpuTexture = m_context->textureFactory().createRenderTarget(
+			renderTargetId,
 			viewPortWidth,
 			viewPortHeight,
 			format
@@ -186,10 +188,11 @@ void Renderer::renderToTexture(
 	target.cpuTarget = cpuTarget;
 
 	target.gpuTexture = updateRenderTexture(
+		target.m_cameraId,
 		target.gpuTexture,
 		cpuTarget,
 		viewport,
-		wgpu::TextureFormat::RGBA8Unorm,
+		wgpu::TextureFormat::RGBA16Float,
 		static_cast<WGPUTextureUsage>(
 			wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc
 		)

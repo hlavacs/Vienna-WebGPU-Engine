@@ -4,6 +4,7 @@
 #include <optional>
 #include <stdexcept>
 
+#include "engine/rendering/ColorSpace.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
@@ -19,7 +20,8 @@ WebGPUMaterialFactory::WebGPUMaterialFactory(WebGPUContext &context) :
 static std::shared_ptr<WebGPUTexture> getTextureView(
 	WebGPUContext &context,
 	const TextureHandle &textureHandle,
-	const std::optional<glm::vec3> &fallbackColor
+	const std::optional<glm::vec3> &fallbackColor,
+	ColorSpace colorSpace = ColorSpace::sRGB
 )
 {
 	auto &texFactory = context.textureFactory();
@@ -30,8 +32,10 @@ static std::shared_ptr<WebGPUTexture> getTextureView(
 		auto texOpt = textureHandle.get();
 		if (texOpt && texOpt.value())
 		{
-			// Use the texture if it exists
-			return texFactory.createFrom(*texOpt.value());
+			// Use the texture with the specified color space
+			WebGPUTextureOptions options{};
+			options.colorSpace = colorSpace;
+			return texFactory.createFromHandle(textureHandle, options);
 		}
 	}
 
@@ -42,11 +46,11 @@ static std::shared_ptr<WebGPUTexture> getTextureView(
 		// Only create a texture from color if not default white
 		if (color != glm::vec3(1.0f))
 		{
-			return texFactory.createFromColor(color, 1, 1);
+			return texFactory.createFromColor(color, 1, 1, colorSpace);
 		}
 	}
 
-	// Default to white texture
+	// Default to white texture (always sRGB for fallback)
 	return texFactory.getWhiteTexture();
 }
 
@@ -66,15 +70,17 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandleUncached(
 	// Get the material properties
 	const auto &materialProps = material.getProperties();
 
-	auto textures = material.getTextures();
+	// Get texture slots (new API with ColorSpace)
+	auto textureSlots = material.getTextureSlots();
 	std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> textureMap;
-	for(const auto& [slot, texHandle] : textures)
+	for(const auto& [slotName, texSlot] : textureSlots)
 	{
-		if (!texHandle.valid())
+		if (!texSlot.isValid())
 		{
-			throw std::runtime_error("Invalid texture handle for slot " + slot + " in material ID " + std::to_string(material.getId()));
+			throw std::runtime_error("Invalid texture handle for slot " + slotName + " in material ID " + std::to_string(material.getId()));
 		}
-		textureMap[slot] = getTextureView(m_context, texHandle, std::nullopt);
+		// Use the color space from the texture slot
+		textureMap[slotName] = getTextureView(m_context, texSlot.handle, std::nullopt, texSlot.colorSpace);
 	}
 
 	auto webgpuMaterial = std::make_shared<WebGPUMaterial>(

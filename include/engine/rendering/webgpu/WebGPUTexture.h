@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/rendering/ColorSpace.h"
 #include "engine/rendering/Texture.h"
 #include "engine/resources/Image.h"
 #include <memory>
@@ -155,8 +156,11 @@ class WebGPUTexture
 
 	/**
 	 * @brief Maps an ImageFormat::Type to a WebGPU texture format.
+	 * @param format The image format type.
+	 * @param colorSpace The color space (sRGB or Linear).
+	 * @return Corresponding WebGPU texture format.
 	 */
-	static wgpu::TextureFormat mapImageFormatToGPU(ImageFormatType format)
+	static wgpu::TextureFormat mapImageFormatToGPU(ImageFormatType format, ColorSpace colorSpace = ColorSpace::Linear)
 	{
 		switch (format)
 		{
@@ -165,7 +169,8 @@ class WebGPUTexture
 		case ImageFormatType::LDR_RG8:
 			return wgpu::TextureFormat::RG8Unorm;
 		case ImageFormatType::LDR_RGBA8:
-			return wgpu::TextureFormat::RGBA8Unorm;
+			// Apply color space: sRGB for color data, Unorm for linear/non-color data
+			return (colorSpace == ColorSpace::sRGB) ? wgpu::TextureFormat::RGBA8UnormSrgb : wgpu::TextureFormat::RGBA8Unorm;
 		case ImageFormatType::HDR_R16F:
 			return wgpu::TextureFormat::RGBA32Float;
 		case ImageFormatType::HDR_RG16F:
@@ -176,6 +181,27 @@ class WebGPUTexture
 			assert(false && "Unsupported ImageFormat for GPU mapping");
 			return wgpu::TextureFormat::RGBA8Unorm;
 		}
+	}
+
+	/**
+	 * @brief Overload that applies ColorSpace to an existing format.
+	 * @param format The WebGPU texture format.
+	 * @param colorSpace The desired color space.
+	 * @return Modified format with color space applied (if applicable).
+	 */
+	static wgpu::TextureFormat applyColorSpaceToFormat(wgpu::TextureFormat format, ColorSpace colorSpace)
+	{
+		// Only RGBA8 formats support sRGB variants
+		if (format == wgpu::TextureFormat::RGBA8Unorm && colorSpace == ColorSpace::sRGB)
+		{
+			return wgpu::TextureFormat::RGBA8UnormSrgb;
+		}
+		else if (format == wgpu::TextureFormat::RGBA8UnormSrgb && colorSpace == ColorSpace::Linear)
+		{
+			return wgpu::TextureFormat::RGBA8Unorm;
+		}
+		// For other formats, return as-is (they don't have sRGB variants)
+		return format;
 	}
 
 	/**
@@ -190,6 +216,7 @@ class WebGPUTexture
 		case wgpu::TextureFormat::RG8Unorm:
 			return ImageFormatType::LDR_RG8;
 		case wgpu::TextureFormat::RGBA8Unorm:
+		case wgpu::TextureFormat::RGBA8UnormSrgb:
 			return ImageFormatType::LDR_RGBA8;
 		case wgpu::TextureFormat::R16Float:
 			return ImageFormatType::HDR_R16F;
