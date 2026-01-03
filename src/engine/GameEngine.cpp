@@ -422,11 +422,14 @@ void GameEngine::renderCamera(
 	);
 
 	// Process render proxies and populate the render collector
+	spdlog::debug("renderCamera: Processing {} render proxies for camera id={}", renderProxies.size(), camera->getId());
+
 	for (const auto &proxy : renderProxies)
 	{
 		// Check proxy type and process accordingly
 		if (auto modelProxy = std::dynamic_pointer_cast<engine::rendering::ModelRenderProxy>(proxy))
 		{
+			spdlog::debug("  - Adding ModelRenderProxy: objectID={}", modelProxy->objectID);
 			// Add model to render collector with object ID for bind group caching
 			// If material override is provided, use it; otherwise model will use its default materials
 			renderCollector.addModel(
@@ -445,6 +448,10 @@ void GameEngine::renderCamera(
 		{
 			// TODO: Handle debug rendering when debug system is implemented
 			// debugCollector.addPrimitive(debugProxy);
+		} else if(auto lightProxy = std::dynamic_pointer_cast<engine::rendering::LightRenderProxy>(proxy))
+		{
+			// Add light to render collector
+			renderCollector.addLight(lightProxy->lightData);
 		}
 	}
 

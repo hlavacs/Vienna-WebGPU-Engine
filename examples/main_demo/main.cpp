@@ -40,6 +40,8 @@ int main(int argc, char **argv)
 		cameraNode->setPerspective(true);
 		cameraNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
 		cameraNode->lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        cameraNode->setBackgroundColor(glm::vec4(0.1f, 0.1f, 0.1f, 1.0f));
+		// IMPORTANT: Clear both color and depth buffers every frame
 	}
 
 	// Initialize orbit camera state

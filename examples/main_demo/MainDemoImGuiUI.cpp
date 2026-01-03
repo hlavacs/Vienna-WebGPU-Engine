@@ -43,7 +43,7 @@ void MainDemoImGuiUI::renderPerformanceWindow()
 
 void MainDemoImGuiUI::renderLightingAndCameraControls()
 {
-	/* // Shader reload button
+	// Shader reload button
 	if (ImGui::Button("Reload Shaders (F5)"))
 	{
 		m_engine.getContext()->shaderRegistry().reloadAllShaders();
@@ -73,12 +73,12 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 			}
 		}
 		prevDebugState = showDebugRendering;
-	} */
+	}
 }
 
 void MainDemoImGuiUI::renderMaterialProperties()
 {
-	/* float windowWidth = ImGui::GetWindowWidth();
+	float windowWidth = ImGui::GetWindowWidth();
 	if (ImGui::CollapsingHeader("Material Properties") && m_rootNode)
 	{
 		auto children = m_rootNode->getChildrenOfType<engine::scene::nodes::ModelRenderNode>();
@@ -171,7 +171,7 @@ void MainDemoImGuiUI::renderMaterialProperties()
 			}
 			ImGui::PopID();
 		}
-	} */
+	}
 }
 
 void MainDemoImGuiUI::renderLightsSection()
@@ -361,21 +361,20 @@ void MainDemoImGuiUI::renderCameraControlsSection()
 
 ImTextureID MainDemoImGuiUI::getOrCreateImGuiTexture(engine::rendering::TextureHandle textureHandle)
 {
-	 auto it = m_imguiTextureCache.find(textureHandle);
-	 if (it != m_imguiTextureCache.end())
-		 return it->second;
+	auto it = m_imguiTextureCache.find(textureHandle);
+	if (it != m_imguiTextureCache.end())
+		return it->second;
 
-	/*  auto textureOpt = textureHandle.get();
-	 if (!textureOpt.has_value())
-		 return nullptr;
+	auto textureOpt = textureHandle.get();
+	if (!textureOpt.has_value())
+		return nullptr;
 
-	 auto gpuTexture = m_engine.getContext()->textureFactory().createFromHandle(textureHandle);
-	 auto textureView = gpuTexture->getTextureView();
-	 ImTextureID imguiId = (ImTextureID)textureView;
+	auto gpuTexture = m_engine.getContext()->textureFactory().createFromHandle(textureHandle);
+	auto textureView = gpuTexture->getTextureView();
+	ImTextureID imguiId = (ImTextureID)textureView;
 
-	 m_imguiTextureCache[textureHandle] = imguiId;
-	 return imguiId; */
-	return nullptr;
+	m_imguiTextureCache[textureHandle] = imguiId;
+	return imguiId;
 }
 
 } // namespace demo
