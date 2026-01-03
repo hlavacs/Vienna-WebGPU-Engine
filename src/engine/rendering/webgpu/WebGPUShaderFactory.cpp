@@ -82,6 +82,7 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 {
 	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);
 	bindGroupBuilder.key = "frameUniforms";
+	bindGroupBuilder.isGlobal = true; // frame uniforms are global
 
 	ShaderBinding buffer;
 	buffer.type = BindingType::UniformBuffer;
@@ -99,6 +100,7 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 {
 	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);
 	bindGroupBuilder.key = "lightUniforms";
+	bindGroupBuilder.isGlobal = true; // light uniforms are global
 
 	// Calculate buffer size: header + light array
 	size_t headerSize = sizeof(engine::rendering::LightsBuffer);
@@ -344,6 +346,7 @@ void WebGPUShaderFactory::createBindGroupLayouts(
 		if (bindGroupBuilder.key.has_value())
 		{
 			layoutInfo->setKey(bindGroupBuilder.key);
+			layoutInfo->setGlobal(bindGroupBuilder.isGlobal);
 			m_context.bindGroupFactory().storeGlobalBindGroupLayout(bindGroupBuilder.key.value(), layoutInfo);
 		}
 

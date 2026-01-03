@@ -80,6 +80,7 @@ class WebGPUShaderFactory
 	struct BindGroupBuilder
 	{
 		std::optional<std::string> key; // identity of the whole bind group
+		bool isGlobal = false;			// whether this bind group is global
 		std::vector<ShaderBinding> bindings;
 	};
 
