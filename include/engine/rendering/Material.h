@@ -284,7 +284,7 @@ struct Material : public engine::core::Identifiable<Material>,
 	/**
 	 * @brief Material feature mask.
 	 */
-	MaterialFeature::Flag m_featureMask = MaterialFeature::FlagNone;
+	MaterialFeature::Flag m_featureMask = MaterialFeature::Flag::None;
 
 	/**
 	 * @brief Texture dictionary mapping slot names to texture handles.

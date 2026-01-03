@@ -30,6 +30,7 @@ namespace engine::rendering
 
 struct RenderTarget
 {
+	RenderTarget() = default;
 	RenderTarget(
 		uint64_t cameraId,
 		std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> gpuTexture,
@@ -63,6 +64,7 @@ struct RenderTarget
  */
 class Renderer
 {
+  public:
 	friend class engine::GameEngine;
 
 	Renderer(std::shared_ptr<webgpu::WebGPUContext> context);
@@ -107,6 +109,23 @@ class Renderer
 	 */
 	void onResize(uint32_t width, uint32_t height);
 
+  public:
+	/**
+	 * @brief Gets the WebGPU context.
+	 * @return Pointer to WebGPU context.
+	 */
+	webgpu::WebGPUContext *getWebGPUContext() const { return m_context.get(); }
+
+	/**
+	 * @brief Gets the object bind group layout for creating per-instance bind groups.
+	 * @return Shared pointer to object bind group layout.
+	 */
+	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> getObjectBindGroupLayout() const
+	{
+		return m_objectBindGroupLayout;
+	}
+
+  protected:
 	/**
 	 * @brief Gets the pipeline manager.
 	 * @return Reference to pipeline manager.
@@ -121,8 +140,15 @@ class Renderer
 
 	void updateLights(const std::vector<LightStruct> &lights);
 
-	void bindFrameUniforms(wgpu::RenderPassEncoder renderPass, const FrameUniforms &frameUniforms);
+	void bindFrameUniforms(wgpu::RenderPassEncoder renderPass, uint64_t cameraId, const FrameUniforms &frameUniforms);
 	void bindLightUniforms(wgpu::RenderPassEncoder renderPass);
+
+	void renderItems(
+		wgpu::CommandEncoder &encoder,
+		wgpu::RenderPassEncoder renderPass,
+		const RenderCollector &collector,
+		const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext
+	);
 
 	void renderDebugPrimitives(
 		wgpu::RenderPassEncoder renderPass,
@@ -133,6 +159,11 @@ class Renderer
 		const engine::core::Handle<engine::rendering::Model> &modelHandle
 	);
 
+	void drawFullscreenQuads(
+		wgpu::RenderPassEncoder renderPass,
+		const std::vector<std::pair<std::shared_ptr<webgpu::WebGPUTexture>, glm::vec4>> &texturesWithViewports
+	);
+
   private:
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
 	std::unique_ptr<webgpu::WebGPUPipelineManager> m_pipelineManager;
@@ -140,16 +171,20 @@ class Renderer
 
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_lightBindGroupLayout;
+	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_objectBindGroupLayout;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_debugBindGroup;
 
-	// Cached resources
 	std::shared_ptr<webgpu::WebGPUDepthTexture> m_depthBuffer;
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 
-	// WebGPU model cache (CPU Model Handle -> GPU Model)
 	std::unordered_map<Model::Handle, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_frameBindGroupCache;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_fullscreenQuadBindGroupCache; // Cache per render target
+
+	std::shared_ptr<webgpu::WebGPUPipeline> m_fullscreenQuadPipeline;
+	wgpu::Sampler m_fullscreenQuadSampler = nullptr;
 };
 
 } // namespace engine::rendering

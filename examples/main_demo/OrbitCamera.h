@@ -31,30 +31,29 @@ struct OrbitCameraState
 /**
  * @brief Updates orbit camera position based on spherical coordinates
  */
-void updateOrbitCamera(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera);
+void updateOrbitCamera(OrbitCameraState &state, std::shared_ptr<engine::scene::nodes::CameraNode> camera);
 
 /**
  * @brief Updates drag inertia for smooth camera motion
  */
-void updateDragInertia(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera, float deltaTime);
+void updateDragInertia(OrbitCameraState &state, std::shared_ptr<engine::scene::nodes::CameraNode> camera, float deltaTime);
 
 /**
  * @brief Custom UpdateNode for orbit camera control via mouse input
  */
-class OrbitCameraController : public engine::scene::entity::UpdateNode
+class OrbitCameraController : public engine::scene::nodes::UpdateNode
 {
   public:
-	OrbitCameraController(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera);
+	OrbitCameraController(OrbitCameraState &state, std::shared_ptr<engine::scene::nodes::CameraNode> camera);
 
 	void update(float deltaTime) override;
 
-	std::shared_ptr<engine::scene::CameraNode> getCamera() const { return m_camera; }
-
+	std::shared_ptr<engine::scene::nodes::CameraNode> getCamera() const { return m_camera; }
 	OrbitCameraState &getOrbitState() const { return m_orbitState; }
 
   private:
 	OrbitCameraState &m_orbitState;
-	std::shared_ptr<engine::scene::CameraNode> m_camera;
+	std::shared_ptr<engine::scene::nodes::CameraNode> m_camera;
 };
 
 } // namespace demo

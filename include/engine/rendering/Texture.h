@@ -4,6 +4,8 @@
 #include "engine/core/Identifiable.h"
 #include "engine/core/Versioned.h"
 #include "engine/resources/Image.h"
+#include <filesystem>
+#include <future>
 #include <string>
 #include <vector>
 
@@ -11,9 +13,12 @@ namespace engine::resources
 {
 class TextureManager; // forward declaration
 }
-namespace engine::rendering
 
+namespace engine::rendering
 {
+/**
+ * @brief Represents a texture resource in the rendering engine.
+ */
 struct Texture : public engine::core::Identifiable<Texture>, public engine::core::Versioned
 {
 	using Handle = engine::core::Handle<Texture>;
@@ -84,19 +89,97 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 		return true;
 	}
 
-  private:
+	/**
+	 * @brief Checks if a GPU-to-CPU readback is in progress.
+	 * @return True if readback is pending.
+	 */
+	bool isReadbackPending() const
+	{
+		return m_readbackFuture.valid() && 
+			   m_readbackFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+	}
+
+	/**
+	 * @brief Checks if the last readback completed successfully.
+	 * @return True if readback completed and succeeded, false otherwise.
+	 */
+	bool isReadbackComplete() const
+	{
+		return m_readbackFuture.valid() && 
+			   m_readbackFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+	}
+
+	/**
+	 * @brief Gets the result of the readback operation (blocks if not ready).
+	 * @return True if readback succeeded, false if failed or no readback was initiated.
+	 */
+	bool getReadbackResult()
+	{
+		if (!m_readbackFuture.valid())
+			return false;
+		return m_readbackFuture.get();
+	}
+
+	/**
+	 * @brief Requests a GPU-to-CPU readback on the next render.
+	 * Call this when you want to capture the texture data (e.g., for screenshots).
+	 * Check isReadbackComplete() later to see if it's ready.
+	 */
+	void requestReadback()
+	{
+		m_readbackRequested = true;
+	}
+
+	/**
+	 * @brief Checks if a readback has been requested.
+	 * @return True if readback is requested.
+	 */
+	bool isReadbackRequested() const
+	{
+		return m_readbackRequested;
+	}
+
+	/**
+	 * @brief Sets the readback future (for internal use by WebGPUTexture).
+	 * @param future The future representing the async readback operation.
+	 */
+	void setReadbackFuture(std::future<bool> future)
+	{
+		m_readbackFuture = std::move(future);
+		m_readbackRequested = false; // Clear the request flag
+	}
+
+  protected:
 	friend class engine::resources::TextureManager;
 
-	Texture(
-		Type type,
-		uint32_t width,
-		uint32_t height,
-		uint32_t channels,
-		engine::resources::Image::Ptr image = nullptr,
-		std::filesystem::path filePath = {}
-	) : m_type(type), m_width(width), m_height(height), m_channels(channels),
-		m_image(std::move(image)), m_filePath(std::move(filePath)) {}
+	Texture(Type type, engine::resources::Image::Ptr image, std::filesystem::path filePath = {}) :
+		m_type(type),
+		m_image(std::move(image)),
+		m_filePath(std::move(filePath))
+	{
+		if (m_image)
+		{
+			m_width = m_image->getWidth();
+			m_height = m_image->getHeight();
+			m_channels = m_image->getChannelCount();
+		}
+		else
+		{
+			throw std::runtime_error("Texture constructor: image is null");
+		}
+	}
 
+	Texture(Type type, uint32_t width, uint32_t height, uint32_t channels, std::filesystem::path filePath = {}) :
+		m_type(type),
+		m_width(width),
+		m_height(height),
+		m_channels(channels),
+		m_image(nullptr),
+		m_filePath(std::move(filePath))
+	{
+	}
+
+  private:
 	Type m_type;
 	uint32_t m_width = 0;
 	uint32_t m_height = 0;
@@ -104,6 +187,9 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 
 	engine::resources::Image::Ptr m_image;
 	std::filesystem::path m_filePath;
+	
+	mutable std::future<bool> m_readbackFuture; // Future for async GPU-to-CPU readback
+	bool m_readbackRequested = false; // Flag to request readback on next render
 };
 
 } // namespace engine::rendering

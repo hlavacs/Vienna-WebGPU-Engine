@@ -127,6 +127,19 @@ class WebGPUShaderFactory
 		WebGPUShaderBuilder &setShaderModule(wgpu::ShaderModule module);
 
 		/**
+		 * @brief Sets the vertex layout for the shader.
+		 * @param layout Vertex layout enum (use VertexLayout::None for procedural vertex generation).
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &setVertexLayout(engine::rendering::VertexLayout layout);
+
+		/**
+		 * @brief Disables depth testing for this shader.
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &disableDepth();
+
+		/**
 		 * @brief Sets the key for a specific bind group.
 		 * @param groupIndex Bind group index.
 		 * @param key Unique key for the bind group.
@@ -140,6 +153,13 @@ class WebGPUShaderFactory
 		 * @return Reference to this builder for chaining.
 		 */
 		WebGPUShaderBuilder &addFrameUniforms(uint32_t groupIndex);
+
+		/**
+		 * @brief Adds object uniforms (model matrix, normal matrix).
+		 * @param groupIndex Bind group index (typically 0).
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &addObjectUniforms(uint32_t groupIndex);
 
 		/**
 		 * @brief Adds light data uniforms (light count + array of lights).

@@ -8,6 +8,7 @@
 
 namespace engine::scene::nodes
 {
+
 Node::Node() {}
 Node::~Node() { onDestroy(); }
 
@@ -171,5 +172,5 @@ std::shared_ptr<SpatialNode> Node::asSpatialNode()
 		return std::dynamic_pointer_cast<SpatialNode>(shared_from_this());
 	}
 	return nullptr;
-
+}
 } // namespace engine::scene::nodes

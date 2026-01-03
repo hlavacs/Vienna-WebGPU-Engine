@@ -1,3 +1,5 @@
+#pragma once
+
 #include "engine/resources/GltfGeometryData.h"
 #include "engine/resources/loaders/GeometryLoader.h"
 

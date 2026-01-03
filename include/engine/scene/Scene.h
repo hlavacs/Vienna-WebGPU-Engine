@@ -2,9 +2,11 @@
 
 #include <memory>
 #include <set>
+#include <vector>
 
 #include "engine/rendering/DebugCollector.h"
 #include "engine/rendering/RenderCollector.h"
+#include "engine/rendering/RenderProxies.h"
 #include "engine/scene/nodes/CameraNode.h"
 #include "engine/scene/nodes/Node.h"
 
@@ -33,7 +35,10 @@ class Scene
 	/** @brief Get the root node of the scene */
 	nodes::Node::Ptr getRoot() const { return m_root; }
 
-	/** @brief Set the active camera */
+	/** @brief Set the main camera.
+	 * @param camera The camera node to set as the main camera.
+	 * @note This camera will be used for UI rendering and as the default view.
+	 */
 	void setMainCamera(nodes::CameraNode::Ptr camera)
 	{
 		m_cameras.emplace(camera);
@@ -90,8 +95,19 @@ class Scene
 	/** @brief Late update phase - order-dependent logic like camera following */
 	void lateUpdate(float deltaTime);
 
-	/** @brief Collect render data from scene graph into RenderCollector and sort */
-	void collectRenderData(engine::rendering::RenderCollector &renderCollector);
+	/**
+	 * @brief Collect render proxies from scene graph.
+	 * 
+	 * Traverses the scene graph and collects RenderProxy objects from all enabled RenderNodes.
+	 * These proxies are then processed by the renderer to populate the RenderCollector.
+	 * 
+	 * @param outProxies Vector to append RenderProxy objects to.
+	 * @param outLights Vector to append light data to (lights are collected separately).
+	 */
+	void collectRenderProxies(
+		std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies,
+		std::vector<engine::rendering::LightStruct> &outLights
+	);
 
 	/** @brief Collect debug primitives from nodes with debug enabled */
 	void collectDebugData();

@@ -11,7 +11,7 @@ namespace engine::rendering
 DebugPrimitive DebugPrimitive::createLine(const glm::vec3& from, const glm::vec3& to, const glm::vec4& color)
 {
 	DebugPrimitive p;
-	p.type = static_cast<uint32_t>(DebugPrimitiveKind::Line);
+	p.type = static_cast<uint32_t>(DebugPrimitive::Type::Line);
 	p.color = color;
 	p.data.line.from = from;
 	p.data.line.to = to;
@@ -21,7 +21,7 @@ DebugPrimitive DebugPrimitive::createLine(const glm::vec3& from, const glm::vec3
 DebugPrimitive DebugPrimitive::createDisk(const glm::vec3& center, const glm::vec3& radii, const glm::vec4& color)
 {
 	DebugPrimitive p;
-	p.type = static_cast<uint32_t>(DebugPrimitiveKind::Disk);
+	p.type = static_cast<uint32_t>(DebugPrimitive::Type::Disk);
 	p.color = color;
 	p.data.disk.center = center;
 	p.data.disk.radii = radii;
@@ -48,7 +48,7 @@ std::vector<DebugPrimitive> DebugPrimitive::createSphere(const glm::vec3& center
 DebugPrimitive DebugPrimitive::createAABB(const glm::vec3& min, const glm::vec3& max, const glm::vec4& color)
 {
 	DebugPrimitive p;
-	p.type = static_cast<uint32_t>(DebugPrimitiveKind::AABB);
+	p.type = static_cast<uint32_t>(DebugPrimitive::Type::AABB);
 	p.color = color;
 	p.data.aabb.min = min;
 	p.data.aabb.max = max;
@@ -58,7 +58,7 @@ DebugPrimitive DebugPrimitive::createAABB(const glm::vec3& min, const glm::vec3&
 DebugPrimitive DebugPrimitive::createArrow(const glm::vec3& from, const glm::vec3& to, float headSize, const glm::vec4& color)
 {
 	DebugPrimitive p;
-	p.type = static_cast<uint32_t>(DebugPrimitiveKind::Arrow);
+	p.type = static_cast<uint32_t>(DebugPrimitive::Type::Arrow);
 	p.color = color;
 	p.data.arrow.from = from;
 	p.data.arrow.to = to;

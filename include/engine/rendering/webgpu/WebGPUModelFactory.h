@@ -14,7 +14,7 @@ class WebGPUModelFactory : public BaseWebGPUFactory<engine::rendering::Model, We
 	using BaseWebGPUFactory::BaseWebGPUFactory;
 
 	explicit WebGPUModelFactory(WebGPUContext &context);
-
+	
   protected:
 	/**
 	 * @brief Create a WebGPUModel from a Model handle.

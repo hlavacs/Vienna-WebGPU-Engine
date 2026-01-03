@@ -41,6 +41,7 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
 	// Initialize ShaderRegistry after device is ready
 	m_shaderRegistry = std::make_unique<ShaderRegistry>(*this);
 	m_shaderRegistry->initializeDefaultShaders();
+	m_textureFactory->initializeMipmapPipeline();
 
 	// ToDo: Move this to the surface manager
 	SDL_Window *sdlWindow = static_cast<SDL_Window *>(windowHandle);

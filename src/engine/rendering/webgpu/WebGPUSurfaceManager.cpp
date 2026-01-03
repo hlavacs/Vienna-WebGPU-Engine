@@ -107,7 +107,8 @@ std::shared_ptr<WebGPUTexture> WebGPUSurfaceManager::acquireNextTexture()
 		nullptr,
 		nextTexture,
 		texDesc,
-		viewDesc
+		viewDesc,
+		Texture::Type::Surface
 	);
 
 #else

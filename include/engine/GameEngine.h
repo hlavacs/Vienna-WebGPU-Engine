@@ -1,15 +1,18 @@
 #pragma once
-#include "engine/EngineContext.h"
-#include "engine/input/InputManager.h"
-#include "engine/physics/PhysicsEngine.h"
-#include "engine/rendering/Renderer.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
-#include "engine/scene/SceneManager.h"
-#include "engine/ui/ImGuiManager.h"
 #include <SDL.h>
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <unordered_map>
+
+#include "engine/EngineContext.h"
+#include "engine/input/InputManager.h"
+#include "engine/physics/PhysicsEngine.h"
+#include "engine/rendering/RenderCollector.h"
+#include "engine/rendering/Renderer.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/scene/SceneManager.h"
+#include "engine/ui/ImGuiManager.h"
 
 namespace engine
 {
@@ -114,6 +117,9 @@ class GameEngine
 	std::shared_ptr<engine::scene::SceneManager> m_sceneManager;
 	std::shared_ptr<engine::rendering::Renderer> m_renderer;
 	std::shared_ptr<engine::ui::ImGuiManager> m_imguiManager;
+
+	// Per-camera render collectors (cached across frames for bind group reuse)
+	std::unordered_map<uint64_t, engine::rendering::RenderCollector> m_cameraCollectors;
 
 	engine::input::InputManager m_inputManager;
 	engine::physics::PhysicsEngine m_physicsEngine;

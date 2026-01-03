@@ -3,6 +3,9 @@ project(WebGPU_Engine VERSION 0.1.0 LANGUAGES C CXX)
 
 include(utils.cmake)
 
+# Options
+option(BUILD_EXAMPLES "Build example projects" ON)
+
 # C++ Standard and compiler settings
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -61,6 +64,13 @@ target_link_libraries(WebGPU_Engine_Lib PUBLIC
 	spdlog
 )
 
+# Link SDL2main for Windows (required for proper WinMain entry point)
+if(WIN32 AND NOT EMSCRIPTEN)
+    if(TARGET SDL2::SDL2main)
+        target_link_libraries(WebGPU_Engine_Lib PUBLIC SDL2::SDL2main)
+    endif()
+endif()
+
 # imgui compiler warnings
 if(MSVC)
     target_compile_options(imgui PRIVATE /w)
@@ -70,23 +80,32 @@ else()
     target_compile_options(imgui PRIVATE -Wno-nontrivial-memcall)
 endif()
 
-# Build type options for library
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    message(STATUS "Configuring Debug build")
-    if(MSVC)
-        target_compile_options(WebGPU_Engine_Lib PUBLIC /Zi /Od "/diagnostics:caret")
-    else()
-        target_compile_options(WebGPU_Engine_Lib PUBLIC -g -O0 -ferror-limit=0)
-    endif()
-    target_compile_definitions(WebGPU_Engine_Lib PUBLIC DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_definitions(WebGPU_Engine_Lib PUBLIC ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+# Build type options for library (use generator expressions for multi-config generators like Visual Studio)
+if(MSVC)
+    # Debug flags
+    target_compile_options(WebGPU_Engine_Lib PUBLIC 
+        $<$<CONFIG:Debug>:/Zi /Od /RTC1 /diagnostics:caret>
+        $<$<CONFIG:Release>:/O2>
+    )
+    target_compile_definitions(WebGPU_Engine_Lib PUBLIC 
+        $<$<CONFIG:Debug>:DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
+        $<$<CONFIG:Debug>:ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
+    )
 else()
-    message(STATUS "Configuring Release build")
-    if(MSVC)
-        target_compile_options(WebGPU_Engine_Lib PUBLIC /O2)
-    else()
-        target_compile_options(WebGPU_Engine_Lib PUBLIC -O3)
-    endif()
+    # Non-MSVC compilers
+    target_compile_options(WebGPU_Engine_Lib PUBLIC 
+        $<$<CONFIG:Debug>:-g -O0 -ferror-limit=0>
+        $<$<CONFIG:Release>:-O3>
+    )
+    target_compile_definitions(WebGPU_Engine_Lib PUBLIC 
+        $<$<CONFIG:Debug>:DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
+        $<$<CONFIG:Debug>:ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
+    )
+endif()
+
+# Print build configuration message
+if(CMAKE_BUILD_TYPE)
+    message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 endif()
 
 # General library properties
@@ -96,7 +115,7 @@ set_target_properties(WebGPU_Engine_Lib PROPERTIES
 
 # MSVC-specific warnings to suppress
 if(MSVC)
-    target_compile_options(WebGPU_Engine_Lib PUBLIC /wd4201 /wd4305 /wd4244)
+    target_compile_options(WebGPU_Engine_Lib PUBLIC /wd4201 /wd4305 /wd4244 /utf-8 /WX)
 endif()
 
 # imgui backend definition (if WGPU backend is used)
@@ -167,21 +186,37 @@ function(configure_engine_executable TARGET_NAME)
         )
     else()
         # Native build: Copy DLLs and WebGPU binaries
-        # Post-build: copy external DLLs
-        file(GLOB_RECURSE EXTERNAL_DLLS
-            "${CMAKE_CURRENT_BINARY_DIR}/external/*.dll"
-        )
-        foreach(DLL_FILE ${EXTERNAL_DLLS})
-            get_filename_component(DLL_NAME ${DLL_FILE} NAME)
-            add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${DLL_FILE}"
-                    $<TARGET_FILE_DIR:${TARGET_NAME}>/${DLL_NAME}
-            )
-        endforeach()
         
         # Copy WebGPU binaries
         target_copy_webgpu_binaries(${TARGET_NAME})
+        
+        # Copy SDL2 DLL (if it exists as a shared library)
+        if(TARGET SDL2::SDL2)
+            # Get the actual SDL2 library file
+            get_target_property(SDL2_DLL_LOCATION SDL2::SDL2 IMPORTED_LOCATION)
+            if(NOT SDL2_DLL_LOCATION)
+                # For multi-config generators, try to get the debug location
+                get_target_property(SDL2_DLL_LOCATION SDL2::SDL2 IMPORTED_LOCATION_DEBUG)
+            endif()
+            if(NOT SDL2_DLL_LOCATION)
+                # Try to find SDL2.dll in the build tree
+                if(TARGET SDL2)
+                    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                            $<TARGET_FILE:SDL2>
+                            $<TARGET_FILE_DIR:${TARGET_NAME}>
+                        COMMENT "Copying SDL2 DLL to output directory"
+                    )
+                endif()
+            elseif(EXISTS "${SDL2_DLL_LOCATION}")
+                add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${SDL2_DLL_LOCATION}"
+                        $<TARGET_FILE_DIR:${TARGET_NAME}>
+                    COMMENT "Copying SDL2 DLL to output directory"
+                )
+            endif()
+        endif()
         
         # Set debugger environment
         set_target_properties(${TARGET_NAME} PROPERTIES
@@ -197,11 +232,20 @@ function(configure_engine_executable TARGET_NAME)
         endif()
     endif()
     
-    # Copy resources in release builds
-    if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # Copy resources if they exist (for release builds or if resources are in the project directory)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources")
+        # Use generator expression to skip debug builds for both single-config and multi-config generators
         add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Debug>,echo,copy_directory>
                 "${CMAKE_CURRENT_SOURCE_DIR}/resources"
-                $<TARGET_FILE_DIR:${TARGET_NAME}>/resources)
+                $<TARGET_FILE_DIR:${TARGET_NAME}>/resources
+            COMMENT "Copying resources directory (skipped in Debug)")
     endif()
 endfunction()
+
+# Add examples if requested (and not being built as a subdirectory by an example)
+if(BUILD_EXAMPLES AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    message(STATUS "Building examples")
+    add_subdirectory(examples/main_demo)
+    add_subdirectory(examples/scene_editor)
+endif()

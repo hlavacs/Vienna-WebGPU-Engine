@@ -37,7 +37,7 @@ class WebGPUShaderInfo
 		std::string vertexEntry,
 		std::string fragmentEntry,
 		engine::rendering::VertexLayout vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor,
-		engine::rendering::ShaderFeature features = engine::rendering::ShaderFeature::None,
+		engine::rendering::ShaderFeature::Flag features = engine::rendering::ShaderFeature::Flag::None,
 		bool enableDepth = true,
 		bool enableBlend = false,
 		bool cullBackFaces = true
@@ -62,7 +62,7 @@ class WebGPUShaderInfo
 		std::string vertexEntry,
 		std::string fragmentEntry,
 		engine::rendering::VertexLayout vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor,
-		engine::rendering::ShaderFeature features = engine::rendering::ShaderFeature::None,
+		engine::rendering::ShaderFeature::Flag features = engine::rendering::ShaderFeature::Flag::None,
 		bool enableDepth = true,
 		bool enableBlend = false,
 		bool cullBackFaces = true
@@ -118,7 +118,7 @@ class WebGPUShaderInfo
 	 * @brief Gets the vertex layout.
 	 * @return Vertex layout enum.
 	 */
-	const engine::rendering::ShaderFeature &getShaderFeatures() const { return m_features; }
+	const engine::rendering::ShaderFeature::Flag &getShaderFeatures() const { return m_features; }
 	/**
 	 * @brief Wether depth testing is enabled.
 	 * @return True if depth testing is enabled.
@@ -148,10 +148,9 @@ class WebGPUShaderInfo
 	 * @brief Access bind group layouts for pipeline creation.
 	 * @return Vector of layout infos.
 	 */
-	const std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> &getBindGroupLayoutVector() const
+	std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> getBindGroupLayoutVector() const
 	{
-		static std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> layoutVector;
-		layoutVector.clear();
+		std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> layoutVector;
 		for (const auto &[_, layout] : m_bindGroupLayouts)
 		{
 			layoutVector.push_back(layout);
@@ -201,6 +200,12 @@ class WebGPUShaderInfo
 	void setModule(wgpu::ShaderModule mod) { m_module = mod; }
 
 	/**
+	 * @brief Set the vertex layout.
+	 * @param layout The vertex layout enum.
+	 */
+	void setVertexLayout(engine::rendering::VertexLayout layout) { m_vertexLayout = layout; }
+
+	/**
 	 * @brief Set the vertex entry point name.
 	 * @param entry The vertex entry point name.
 	 */
@@ -222,10 +227,16 @@ class WebGPUShaderInfo
 	 * @brief Set the shader features.
 	 * @param features The shader feature mask.
 	 */
-	void setShaderFeatures(engine::rendering::ShaderFeature features) { m_features = features; }
+	void setShaderFeatures(engine::rendering::ShaderFeature::Flag features) { m_features = features; }
 
 	/**
-	 * @brief Add a bind group layout at the specified index.
+	 * @brief Enable or disable depth testing.
+	 * @param enable True to enable depth testing, false to disable.
+	 */
+	void setEnableDepth(bool enable) { m_enableDepth = enable; }
+
+	/**
+	 * @brief Add a bind group layout.
 	 * @param groupIndex The bind group index.
 	 */
 	void addBindGroupLayout(uint32_t groupIndex, std::shared_ptr<WebGPUBindGroupLayoutInfo> layout) { m_bindGroupLayouts[groupIndex] = std::move(layout); }
@@ -241,7 +252,7 @@ class WebGPUShaderInfo
 	std::string m_fragmentEntryPoint;
 	engine::rendering::ShaderType m_shaderType = engine::rendering::ShaderType::Lit;
 	engine::rendering::VertexLayout m_vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor;
-	engine::rendering::ShaderFeature m_features = engine::rendering::ShaderFeature::None;
+	engine::rendering::ShaderFeature::Flag m_features = engine::rendering::ShaderFeature::Flag::None;
 
 	std::unordered_map<uint32_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> m_bindGroupLayouts;
 };

@@ -1,7 +1,9 @@
 #pragma once
+#include <glm/glm.hpp>
+#include <webgpu/webgpu.hpp>
 #include "engine/rendering/webgpu/WebGPURenderPassContext.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
-#include <webgpu/webgpu.hpp>
+#include "engine/rendering/ClearFlags.h"
 
 namespace engine::rendering::webgpu
 {
@@ -29,6 +31,21 @@ class WebGPURenderPassFactory
 	std::shared_ptr<WebGPURenderPassContext> createDefault(
 		const std::shared_ptr<WebGPUTexture> &colorTexture,
 		const std::shared_ptr<WebGPUDepthTexture> &depthTexture
+	);
+
+	/**
+	 * @brief Creates a render pass for a specific texture with custom clear flags and background color.
+	 * @param colorTexture The color texture to render to.
+	 * @param depthTexture The depth texture to use.
+	 * @param clearFlags Flags indicating which buffers to clear.
+	 * @param backgroundColor The background color to clear to.
+	 * @return Shared pointer to WebGPURenderPassContext.
+	 */
+	std::shared_ptr<WebGPURenderPassContext> createForTexture(
+		const std::shared_ptr<WebGPUTexture> &colorTexture,
+		const std::shared_ptr<WebGPUDepthTexture> &depthTexture,
+		engine::rendering::ClearFlags clearFlags,
+		const glm::vec4 &backgroundColor
 	);
 
 		/**

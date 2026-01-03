@@ -21,7 +21,6 @@ bool ShaderRegistry::initializeDefaultShaders()
 {
 	spdlog::info("Initializing default shaders...");
 
-	// Create standard PBR shader
 	auto pbrShader = createPBRShader();
 	if (!pbrShader || !pbrShader->isValid())
 	{
@@ -30,19 +29,31 @@ bool ShaderRegistry::initializeDefaultShaders()
 	}
 	registerShader(pbrShader);
 
-	// Create debug shader
 	auto debugShader = createDebugShader();
 	if (!debugShader || !debugShader->isValid())
 	{
 		spdlog::warn("Failed to create Debug shader - debug rendering will be unavailable");
-		// Don't fail initialization if debug shader fails
 	}
 	else
 	{
 		registerShader(debugShader);
 	}
 
-	// TODO: Add more default shaders as needed (Unlit, etc.)
+	auto fullscreenQuadShader = createFullscreenQuadShader();
+	if (!fullscreenQuadShader || !fullscreenQuadShader->isValid())
+	{
+		spdlog::error("Failed to create Fullscreen Quad shader");
+		return false;
+	}
+	registerShader(fullscreenQuadShader);
+
+	auto mipmapBlitShader = createMipmapBlitShader();
+	if (!mipmapBlitShader || !mipmapBlitShader->isValid())
+	{
+		spdlog::error("Failed to create Mipmap Blit shader");
+		return false;
+	}
+	registerShader(mipmapBlitShader);
 
 	spdlog::info("Default shaders initialized successfully");
 	return true;
@@ -125,13 +136,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 			// Group 1: Lighting data (storage buffer with max 16 lights)
 			.addLightUniforms(1, 16)
 			// Group 2: Object uniforms (model matrix, normal matrix)
-			.addCustomUniform(
-				"objectUniforms",
-				sizeof(ObjectUniforms),
-				2, // group
-				0, // binding
-				WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
-			)
+			.addObjectUniforms(2)
 			// Group 3: Material data (properties + textures)
 			.addCustomUniform(
 				"materialUniforms",
@@ -237,6 +242,83 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 				0,							   // binding 0
 				true,						   // read-only
 				WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
+			)
+			.build();
+
+	return shaderInfo;
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadShader()
+{
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin(
+				shader::default ::FULLSCREEN_QUAD,
+				ShaderType::Unlit,
+				"vs_main",
+				"fs_main",
+				engine::core::PathProvider::getResource("fullscreen_quad.wgsl")
+			)
+			.setVertexLayout(engine::rendering::VertexLayout::None)
+			.disableDepth()
+			.addTexture(
+				"cameraTexture",
+				"",
+				0,
+				0,
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment,
+				std::nullopt
+			)
+			.addSampler(
+				"cameraSampler",
+				0,
+				1,
+				wgpu::SamplerBindingType::Filtering,
+				WGPUShaderStage_Fragment
+			)
+			.build();
+
+	return shaderInfo;
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createMipmapBlitShader()
+{
+	// Create mipmap generation shader - blits from source texture to render target
+	//
+	// mipmap_blit.wgsl structure:
+	// @group(0) @binding(0) var srcTexture: texture_2d<f32>;
+	// @group(0) @binding(1) var srcSampler: sampler;
+
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin(
+				shader::default::MIPMAP_BLIT,
+				ShaderType::Unlit,
+				"vs_main",
+				"fs_main",
+				engine::core::PathProvider::getResource("mipmap_blit.wgsl")
+			)
+			.setVertexLayout(engine::rendering::VertexLayout::None)
+			.addTexture(
+				"srcTexture",
+				"", // No material slot
+				0,	// group
+				0,	// binding
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false, // not multisampled
+				WGPUShaderStage_Fragment,
+				std::nullopt // No default color
+			)
+			.addSampler(
+				"srcSampler",
+				0, // group
+				1, // binding
+				wgpu::SamplerBindingType::Filtering,
+				WGPUShaderStage_Fragment
 			)
 			.build();
 

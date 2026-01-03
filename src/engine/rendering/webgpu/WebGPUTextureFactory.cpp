@@ -1,13 +1,19 @@
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 
+#include <fstream>
+#include <spdlog/spdlog.h>
+
 #include "engine/rendering/Texture.h"
+#include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
 namespace engine::rendering::webgpu
 {
 
 WebGPUTextureFactory::WebGPUTextureFactory(WebGPUContext &context) :
-	BaseWebGPUFactory(context) {}
+	BaseWebGPUFactory(context)
+{
+}
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	const glm::vec3 &color,
@@ -73,11 +79,13 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	viewDesc.aspect = wgpu::TextureAspect::All;
 
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
-	auto texturePtr = std::make_shared<WebGPUTexture>(
-		gpuTexture,
-		view,
-		desc,
-		viewDesc
+	auto texturePtr = std::shared_ptr<WebGPUTexture>(
+		new WebGPUTexture(
+			gpuTexture,
+			view,
+			desc,
+			viewDesc
+		)
 	);
 	m_colorTextureCache[std::make_tuple(r, g, b, a, width, height)] = texturePtr;
 	return texturePtr;
@@ -138,7 +146,18 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 		switch (texture.getType())
 		{
 		case Texture::Type::Image:
-			usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
+			// If mipmaps will be generated, we need RenderAttachment usage
+			// because each mip level is rendered to during generation
+			if (options.generateMipmaps && mipLevelCount > 1)
+			{
+				usage = static_cast<WGPUTextureUsage>(
+					WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_RenderAttachment
+				);
+			}
+			else
+			{
+				usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
+			}
 			break;
 		case Texture::Type::RenderTarget:
 			usage = static_cast<WGPUTextureUsage>(
@@ -186,14 +205,80 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 
 	wgpu::TextureView textureView = gpuTexture.createView(viewDesc);
 
-	return std::make_shared<WebGPUTexture>(
-		gpuTexture,
-		textureView,
-		desc,
-		viewDesc,
-		texture.getType(),
-		textureOpt.value()
+	return std::shared_ptr<WebGPUTexture>(
+		new WebGPUTexture(
+			gpuTexture,
+			textureView,
+			desc,
+			viewDesc,
+			texture.getType(),
+			textureOpt.value()
+		)
 	);
+}
+
+std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createRenderTarget(
+	uint32_t width,
+	uint32_t height,
+	wgpu::TextureFormat format
+)
+{
+	// Create cache key from dimensions
+	uint64_t cacheKey = (static_cast<uint64_t>(width) << 32) | height;
+
+	// Check cache first
+	auto it = m_renderTargetCache.find(cacheKey);
+	if (it != m_renderTargetCache.end())
+	{
+		// Verify format matches
+		if (it->second->getFormat() == format)
+		{
+			return it->second;
+		}
+	}
+
+	// Create new render target texture
+	wgpu::TextureDescriptor textureDesc{};
+	textureDesc.label = ("RenderTarget_" + std::to_string(width) + "x" + std::to_string(height)).c_str();
+	textureDesc.dimension = wgpu::TextureDimension::_2D;
+	textureDesc.size.width = width;
+	textureDesc.size.height = height;
+	textureDesc.size.depthOrArrayLayers = 1;
+	textureDesc.format = format;
+	textureDesc.usage = static_cast<WGPUTextureUsage>(
+		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc
+	);
+	textureDesc.mipLevelCount = 1;
+	textureDesc.sampleCount = 1;
+
+	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(textureDesc);
+
+	wgpu::TextureViewDescriptor viewDesc{};
+	viewDesc.format = textureDesc.format;
+	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
+	viewDesc.baseMipLevel = 0;
+	viewDesc.mipLevelCount = 1;
+	viewDesc.baseArrayLayer = 0;
+	viewDesc.arrayLayerCount = 1;
+	viewDesc.aspect = wgpu::TextureAspect::All;
+
+	wgpu::TextureView view = gpuTexture.createView(viewDesc);
+
+	auto texturePtr = std::shared_ptr<WebGPUTexture>(
+		new WebGPUTexture(
+			gpuTexture,
+			view,
+			textureDesc,
+			viewDesc,
+			Texture::Type::RenderTarget,
+			nullptr
+		)
+	);
+
+	// Cache for reuse
+	m_renderTargetCache[cacheKey] = texturePtr;
+
+	return texturePtr;
 }
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
@@ -210,16 +295,42 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
 
 	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(textureDesc);
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
-	return std::make_shared<WebGPUTexture>(
-		gpuTexture,
-		view,
-		textureDesc,
-		viewDesc
+	return std::shared_ptr<WebGPUTexture>(
+		new WebGPUTexture(
+			gpuTexture,
+			view,
+			textureDesc,
+			viewDesc
+		)
 	);
 }
 
 void WebGPUTextureFactory::uploadTextureData(const Texture &texture, wgpu::Texture &gpuTexture)
 {
+	if (!texture.getImage())
+	{
+		spdlog::warn("Texture has no image data to upload");
+		return;
+	}
+
+	auto image = texture.getImage();
+	const void *pixelData = nullptr;
+	size_t dataSize = 0;
+
+	// Get pixel data based on format
+	if (image->isLDR())
+	{
+		const auto &pixels = image->getPixels8();
+		pixelData = pixels.data();
+		dataSize = pixels.size();
+	}
+	else
+	{
+		const auto &pixels = image->getPixelsF();
+		pixelData = pixels.data();
+		dataSize = pixels.size() * sizeof(float);
+	}
+
 	wgpu::ImageCopyTexture dst{};
 	dst.texture = gpuTexture;
 	dst.mipLevel = 0;
@@ -228,12 +339,12 @@ void WebGPUTextureFactory::uploadTextureData(const Texture &texture, wgpu::Textu
 
 	wgpu::TextureDataLayout layout{};
 	layout.offset = 0;
-	layout.bytesPerRow = texture.getWidth() * texture.getChannels();
+	layout.bytesPerRow = texture.getWidth() * texture.getChannels() * (image->getFormat() >= engine::resources::ImageFormat::Type::HDR_RGBA16F ? sizeof(float) : 1);
 	layout.rowsPerImage = texture.getHeight();
 
 	wgpu::Extent3D extent{texture.getWidth(), texture.getHeight(), 1};
 
-	m_context.getQueue().writeTexture(dst, texture.getPixels().data(), texture.getWidth() * texture.getHeight() * texture.getChannels(), layout, extent);
+	m_context.getQueue().writeTexture(dst, pixelData, dataSize, layout, extent);
 }
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::getWhiteTexture()
@@ -262,6 +373,165 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::getDefaultNormalTexture()
 		m_defaultNormalTexture = createFromColor(glm::vec3(0.5f, 0.5f, 1.0f), 1, 1);
 	}
 	return m_defaultNormalTexture;
+}
+
+void WebGPUTextureFactory::generateMipmaps(
+	wgpu::Texture gpuTexture,
+	wgpu::TextureFormat format,
+	uint32_t width,
+	uint32_t height,
+	uint32_t mipLevelCount
+)
+{
+	if (!gpuTexture)
+	{
+		spdlog::error("Cannot generate mipmaps for invalid texture");
+		return;
+	}
+
+	if (mipLevelCount <= 1)
+	{
+		spdlog::warn("Texture has only 1 mip level, no mipmaps to generate");
+		return;
+	}
+
+	if (!m_mipmapPipeline)
+	{
+		spdlog::error("Mipmap pipeline not initialized");
+		return;
+	}
+
+	// Get shader info to access bind group layout
+	auto mipmapShader = m_context.shaderRegistry().getShader(shader::default::MIPMAP_BLIT);
+	if (!mipmapShader || !mipmapShader->isValid())
+	{
+		spdlog::error("Failed to get mipmap shader for bind group layout");
+		return;
+	}
+
+	spdlog::debug("Mipmap shader name: {}", mipmapShader->getName());
+	spdlog::debug("Mipmap shader path: {}", mipmapShader->getPath());
+
+	auto bindGroupLayouts = mipmapShader->getBindGroupLayoutVector();
+	if (bindGroupLayouts.empty())
+	{
+		spdlog::error("Mipmap shader has no bind group layouts");
+		return;
+	}
+
+	wgpu::CommandEncoder encoder = m_context.getDevice().createCommandEncoder();
+
+	// Generate mipmaps by repeatedly blitting with linear filtering
+	for (uint32_t mipLevel = 1; mipLevel < mipLevelCount; ++mipLevel)
+	{
+		uint32_t srcWidth = std::max(1u, width >> (mipLevel - 1));
+		uint32_t srcHeight = std::max(1u, height >> (mipLevel - 1));
+		uint32_t dstWidth = std::max(1u, width >> mipLevel);
+		uint32_t dstHeight = std::max(1u, height >> mipLevel);
+
+		// Create views for source and destination mip levels
+		wgpu::TextureViewDescriptor srcViewDesc{};
+		srcViewDesc.baseMipLevel = mipLevel - 1;
+		srcViewDesc.mipLevelCount = 1;
+		srcViewDesc.baseArrayLayer = 0;
+		srcViewDesc.arrayLayerCount = 1;
+		srcViewDesc.aspect = wgpu::TextureAspect::All;
+		wgpu::TextureView srcView = gpuTexture.createView(srcViewDesc);
+
+		wgpu::TextureViewDescriptor dstViewDesc{};
+		dstViewDesc.baseMipLevel = mipLevel;
+		dstViewDesc.mipLevelCount = 1;
+		dstViewDesc.baseArrayLayer = 0;
+		dstViewDesc.arrayLayerCount = 1;
+		dstViewDesc.aspect = wgpu::TextureAspect::All;
+		wgpu::TextureView dstView = gpuTexture.createView(dstViewDesc);
+
+		// Create bind group for this mip level
+		std::vector<wgpu::BindGroupEntry> entries(2);
+		entries[0].binding = 0;
+		entries[0].textureView = srcView;
+		entries[1].binding = 1;
+		entries[1].sampler = m_mipmapSampler;
+
+		wgpu::BindGroupDescriptor bindGroupDesc{};
+		bindGroupDesc.layout = bindGroupLayouts[0]->getLayout();
+		bindGroupDesc.entryCount = entries.size();
+		bindGroupDesc.entries = entries.data();
+		wgpu::BindGroup bindGroup = m_context.getDevice().createBindGroup(bindGroupDesc);
+
+		// Set up render pass to blit from src to dst
+		wgpu::RenderPassColorAttachment colorAttachment{};
+		colorAttachment.view = dstView;
+		colorAttachment.loadOp = wgpu::LoadOp::Clear;
+		colorAttachment.storeOp = wgpu::StoreOp::Store;
+		colorAttachment.clearValue = {0.0, 0.0, 0.0, 0.0};
+
+		wgpu::RenderPassDescriptor renderPassDesc{};
+		renderPassDesc.colorAttachmentCount = 1;
+		renderPassDesc.colorAttachments = &colorAttachment;
+
+		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDesc);
+		renderPass.setPipeline(m_mipmapPipeline->getPipeline());
+		renderPass.setBindGroup(0, bindGroup, 0, nullptr);
+		renderPass.draw(3, 1, 0, 0); // Fullscreen triangle
+		renderPass.end();
+
+		bindGroup.release();
+		srcView.release();
+		dstView.release();
+	}
+
+	wgpu::CommandBuffer commands = encoder.finish();
+	m_context.getQueue().submit(commands);
+	commands.release();
+	encoder.release();
+
+	spdlog::debug("Generated {} mipmap levels for texture", mipLevelCount - 1);
+}
+
+void WebGPUTextureFactory::initializeMipmapPipeline()
+{
+	if (m_mipmapPipeline)
+		return;
+
+	// Create sampler with linear filtering for mipmap generation
+	wgpu::SamplerDescriptor samplerDesc{};
+	samplerDesc.addressModeU = wgpu::AddressMode::ClampToEdge;
+	samplerDesc.addressModeV = wgpu::AddressMode::ClampToEdge;
+	samplerDesc.addressModeW = wgpu::AddressMode::ClampToEdge;
+	samplerDesc.magFilter = wgpu::FilterMode::Linear;
+	samplerDesc.minFilter = wgpu::FilterMode::Linear;
+	samplerDesc.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+	samplerDesc.maxAnisotropy = 1;
+	m_mipmapSampler = m_context.getDevice().createSampler(samplerDesc);
+
+	// Get the mipmap blit shader from registry
+	auto mipmapShader = m_context.shaderRegistry().getShader(shader::default ::MIPMAP_BLIT);
+	if (!mipmapShader || !mipmapShader->isValid())
+	{
+		spdlog::error("Failed to get mipmap blit shader from registry");
+		return;
+	}
+
+	// Create render pipeline using the pipeline factory
+	m_mipmapPipeline = m_context.pipelineFactory().createRenderPipeline(
+		mipmapShader,					   // vertex shader
+		mipmapShader,					   // fragment shader (same shader has both)
+		wgpu::TextureFormat::RGBA8Unorm,   // color format (generic, will work for most formats)
+		wgpu::TextureFormat::Undefined,	   // no depth
+		engine::rendering::Topology::Type::Triangles,
+		wgpu::CullMode::None,
+		1 // sample count
+	);
+
+	if (!m_mipmapPipeline || !m_mipmapPipeline->getPipeline())
+	{
+		spdlog::error("Failed to create mipmap pipeline");
+		m_mipmapPipeline = nullptr;
+		return;
+	}
+
+	spdlog::info("Mipmap generation pipeline initialized");
 }
 
 } // namespace engine::rendering::webgpu

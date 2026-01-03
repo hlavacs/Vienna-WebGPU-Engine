@@ -54,7 +54,8 @@ class BaseWebGPUFactory
 	 * @param handle Handle to the source object.
 	 * @return True if the resource exists in the cache, false otherwise.
 	 */
-	bool has(const typename SourceT::Handle &handle) {
+	bool has(const typename SourceT::Handle &handle)
+	{
 		return m_cache.find(handle) != m_cache.end();
 	}
 
@@ -87,7 +88,7 @@ class BaseWebGPUFactory
 	 * @return Shared pointer to the GPU resource.
 	 * @note This uses an internal cache to avoid duplicate creations.
 	 */
-	std::shared_ptr<ProductT> createFromHandle(const typename SourceT::Handle &handle)
+	virtual std::shared_ptr<ProductT> createFromHandle(const typename SourceT::Handle &handle)
 	{
 		auto it = m_cache.find(handle);
 		if (it != m_cache.end())

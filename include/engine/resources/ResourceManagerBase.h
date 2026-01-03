@@ -51,9 +51,27 @@ class ResourceManagerBase : public engine::debug::Loggable
 	ResourceManagerBase(const ResourceManagerBase &) = delete;
 	ResourceManagerBase &operator=(const ResourceManagerBase &) = delete;
 
-	// Allow move constructor and move assignment.
-	ResourceManagerBase(ResourceManagerBase &&) noexcept = default;
-	ResourceManagerBase &operator=(ResourceManagerBase &&) noexcept = default;
+	// Move constructor - must update resolver to point to new instance
+	ResourceManagerBase(ResourceManagerBase &&other) noexcept
+		: m_resources(std::move(other.m_resources))
+	{
+		// Update the resolver to point to the new instance
+		engine::core::Handle<T>::setResolver([this](engine::core::Handle<T> h)
+											 { return get(h); });
+	}
+
+	// Move assignment - must update resolver to point to new instance
+	ResourceManagerBase &operator=(ResourceManagerBase &&other) noexcept
+	{
+		if (this != &other)
+		{
+			m_resources = std::move(other.m_resources);
+			// Update the resolver to point to the new instance
+			engine::core::Handle<T>::setResolver([this](engine::core::Handle<T> h)
+												 { return get(h); });
+		}
+		return *this;
+	}
 
 	/**
 	 * @brief Adds a resource to the manager.

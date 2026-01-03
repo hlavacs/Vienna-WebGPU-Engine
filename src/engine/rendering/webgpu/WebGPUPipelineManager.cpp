@@ -86,8 +86,8 @@ bool WebGPUPipelineManager::createPipelineInternal(
 	}
 	std::shared_ptr<WebGPUShaderInfo> shaderInfo = config.shaderInfo;
 	outPipeline = m_context.pipelineFactory().createRenderPipeline(
-		shaderInfo.get(),
-		shaderInfo.get(), // Same shader info for both vertex and fragment
+		shaderInfo,
+		shaderInfo, // Same shader info for both vertex and fragment
 		config.colorFormat,
 		config.depthFormat,
 		config.topology,

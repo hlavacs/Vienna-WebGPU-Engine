@@ -71,4 +71,5 @@ class GeometryLoader : public LoaderBase<T>
 	static glm::mat3x3 computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN);
 };
 
+
 } // namespace engine::resources::loaders

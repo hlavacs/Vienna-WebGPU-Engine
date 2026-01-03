@@ -19,59 +19,60 @@ class Loggable
 	template <typename... Args>
 	using format_string_t = fmt::format_string<Args...>;
 
-	protected:
-	Loggable()
-	{
-		initLogger(demangle(typeid(*this).name()));
-	}
+  protected:
+	virtual ~Loggable() = default;
 
 	// Logging functions
 	template <typename... Args>
 	void logTrace(format_string_t<Args...> fmt, Args &&...args) const
 	{
-		if (m_logger)
-			m_logger->trace(fmt, std::forward<Args>(args)...);
+		if (!m_logger)
+			initLogger(demangle(typeid(*this).name()));
+		m_logger->trace(fmt, std::forward<Args>(args)...);
 	}
 
 	template <typename... Args>
 	void logDebug(format_string_t<Args...> fmt, Args &&...args) const
 	{
-		if (m_logger)
-			m_logger->debug(fmt, std::forward<Args>(args)...);
+		if (!m_logger)
+			initLogger(demangle(typeid(*this).name()));
+		m_logger->debug(fmt, std::forward<Args>(args)...);
 	}
 
 	template <typename... Args>
 	void logInfo(format_string_t<Args...> fmt, Args &&...args) const
 	{
-		if (m_logger)
-			m_logger->info(fmt, std::forward<Args>(args)...);
+		if (!m_logger)
+			initLogger(demangle(typeid(*this).name()));
+		m_logger->info(fmt, std::forward<Args>(args)...);
 	}
 
 	template <typename... Args>
 	void logWarn(format_string_t<Args...> fmt, Args &&...args) const
 	{
-		if (m_logger)
-			m_logger->warn(fmt, std::forward<Args>(args)...);
+		if (!m_logger)
+			initLogger(demangle(typeid(*this).name()));
+		m_logger->warn(fmt, std::forward<Args>(args)...);
 	}
 
 	template <typename... Args>
 	void logError(format_string_t<Args...> fmt, Args &&...args) const
 	{
-		if (m_logger)
-			m_logger->error(fmt, std::forward<Args>(args)...);
+		if (!m_logger)
+			initLogger(demangle(typeid(*this).name()));
+		m_logger->error(fmt, std::forward<Args>(args)...);
 	}
 
 	template <typename... Args>
 	void logCritical(format_string_t<Args...> fmt, Args &&...args) const
 	{
-		if (m_logger)
-			m_logger->critical(fmt, std::forward<Args>(args)...);
+		if (!m_logger)
+			initLogger(demangle(typeid(*this).name()));
+		m_logger->critical(fmt, std::forward<Args>(args)...);
 	}
 
   private:
-	mutable std::shared_ptr<spdlog::logger> m_logger;
-
-	void initLogger(const std::string &name)
+	void initLogger(const std::string &name) const
 	{
 		auto existing = spdlog::get(name);
 		if (existing)
@@ -79,6 +80,7 @@ class Loggable
 		else
 			m_logger = spdlog::stdout_color_mt(name);
 	}
+	mutable std::shared_ptr<spdlog::logger> m_logger;
 
 	/**
 	 * @brief Demangles a C++ type name to a human-readable form.
@@ -94,10 +96,17 @@ class Loggable
 			abi::__cxa_demangle(name, nullptr, nullptr, &status),
 			std::free
 		};
-		return (status == 0) ? res.get() : name;
+		std::string demangled = (status == 0) ? res.get() : name;
 #else
-		return name;
+		std::string demangled = name;
 #endif
+
+		// Strip namespace: take substring after last '::'
+		auto pos = demangled.rfind("::");
+		if (pos != std::string::npos)
+			return demangled.substr(pos + 2); // +2 to skip '::'
+
+		return demangled;
 	}
 };
 

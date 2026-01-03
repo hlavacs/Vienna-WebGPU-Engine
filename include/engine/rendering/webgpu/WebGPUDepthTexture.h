@@ -21,9 +21,9 @@ class WebGPUDepthTexture : public WebGPUTexture
 		wgpu::TextureView textureView,
 		const wgpu::TextureDescriptor &textureDesc,
 		const wgpu::TextureViewDescriptor &viewDesc
-	) : WebGPUTexture(texture, textureView, textureDesc, viewDesc)
+	) : WebGPUTexture(texture, textureView, textureDesc, viewDesc, Texture::Type::DepthStencil)
 	{
-		m_isDepthTexture = true;
+		
 	}
 };
 

@@ -18,6 +18,8 @@ namespace shader::default
 {
 	constexpr const char *PBR = "PBR_Lit_Shader";
 	constexpr const char *DEBUG = "Debug_Shader";
+	constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_Shader";
+	constexpr const char *MIPMAP_BLIT = "Mipmap_Blit_Shader";
 } // namespace shader::default
 
 
@@ -76,6 +78,8 @@ class ShaderRegistry
 	// Helper methods to create specific default shaders
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createPBRShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createDebugShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createFullscreenQuadShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createMipmapBlitShader();
 };
 
 } // namespace engine::rendering

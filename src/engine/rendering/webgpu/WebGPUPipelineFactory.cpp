@@ -27,8 +27,8 @@ WebGPUPipelineFactory::WebGPUPipelineFactory(WebGPUContext &context) :
 }
 
 std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
-	const WebGPUShaderInfo *vertexShader,
-	const WebGPUShaderInfo *fragmentShader,
+	std::shared_ptr<WebGPUShaderInfo> vertexShader,
+	std::shared_ptr<WebGPUShaderInfo> fragmentShader,
 	wgpu::TextureFormat colorFormat,
 	wgpu::TextureFormat depthFormat,
 	engine::rendering::Topology::Type topology,
@@ -58,8 +58,19 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	wgpu::RenderPipelineDescriptor desc = {};
 	desc.vertex.module = vertexShader->getModule();
 	desc.vertex.entryPoint = vertexShader->getVertexEntryPoint().c_str();
-	desc.vertex.bufferCount = 1;
-	desc.vertex.buffers = &vertexBufferLayout;
+	
+	// Only set vertex buffer if layout is not None (procedural vertex generation)
+	if (vertexLayout != engine::rendering::VertexLayout::None)
+	{
+		desc.vertex.bufferCount = 1;
+		desc.vertex.buffers = &vertexBufferLayout;
+	}
+	else
+	{
+		desc.vertex.bufferCount = 0;
+		desc.vertex.buffers = nullptr;
+	}
+	
 	desc.vertex.constantCount = 0;
 	desc.vertex.constants = nullptr;
 	desc.primitive.topology = primitiveTopology;
@@ -109,8 +120,9 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	}
 
 	auto layouts = vertexShader->getBindGroupLayoutVector();
-	if (fragmentShader)
+	if (fragmentShader && fragmentShader != vertexShader)
 	{
+		// Only add fragment shader layouts if it's a different shader
 		auto fragLayouts = fragmentShader->getBindGroupLayoutVector();
 		layouts.insert(layouts.end(), fragLayouts.begin(), fragLayouts.end());
 	}
@@ -157,8 +169,19 @@ wgpu::PipelineLayout WebGPUPipelineFactory::createPipelineLayout(const wgpu::Bin
 
 wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engine::rendering::VertexLayout layout, std::vector<wgpu::VertexAttribute> &attributes) const
 {
+	// Handle None layout (procedural vertex generation)
+	if (layout == engine::rendering::VertexLayout::None)
+	{
+		wgpu::VertexBufferLayout emptyLayout{};
+		emptyLayout.stepMode = wgpu::VertexStepMode::Vertex;
+		emptyLayout.arrayStride = 0;
+		emptyLayout.attributeCount = 0;
+		emptyLayout.attributes = nullptr;
+		return emptyLayout;
+	}
+
 	engine::rendering::VertexAttribute attribs = engine::rendering::Vertex::requiredAttributes(layout);
-	size_t arrayStride;
+	size_t arrayStride = 0;
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Position))
 	{
 		wgpu::VertexAttribute positionAttr{};
