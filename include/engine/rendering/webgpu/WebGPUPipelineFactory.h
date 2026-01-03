@@ -16,8 +16,8 @@ class WebGPUPipelineFactory
 
 	// Create pipeline descriptor with only minimum required, using defaults for the rest
 	std::shared_ptr<WebGPUPipeline> createRenderPipeline(
-		const WebGPUShaderInfo *vertexShader,
-		const WebGPUShaderInfo *fragmentShader = nullptr,
+		std::shared_ptr<WebGPUShaderInfo> vertexShader,
+		std::shared_ptr<WebGPUShaderInfo> fragmentShader = nullptr,
 		wgpu::TextureFormat colorFormat = wgpu::TextureFormat::Undefined,
 		wgpu::TextureFormat depthFormat = wgpu::TextureFormat::Undefined,
 		engine::rendering::Topology::Type topology = engine::rendering::Topology::Type::Triangles,

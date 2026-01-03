@@ -1,5 +1,4 @@
 #include "MainDemoImGuiUI.h"
-#include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 #include <spdlog/spdlog.h>
 
@@ -8,7 +7,7 @@ namespace demo
 
 MainDemoImGuiUI::MainDemoImGuiUI(
 	engine::GameEngine &engine,
-	const std::shared_ptr<engine::scene::entity::Node> &rootNode,
+	const std::shared_ptr<engine::scene::nodes::Node> &rootNode,
 	const std::shared_ptr<demo::OrbitCameraController> &orbitCameraController
 ) : m_engine(engine),
 	m_rootNode(rootNode),
@@ -17,7 +16,7 @@ MainDemoImGuiUI::MainDemoImGuiUI(
 {
 	m_cameraNode = orbitCameraController->getCamera();
 
-	for (const auto &child : m_rootNode->getChildrenOfType<engine::scene::entity::LightNode>())
+	for (const auto &child : m_rootNode->getChildrenOfType<engine::scene::nodes::LightNode>())
 	{
 		m_lightNodes.push_back(child);
 	};
@@ -44,7 +43,7 @@ void MainDemoImGuiUI::renderPerformanceWindow()
 
 void MainDemoImGuiUI::renderLightingAndCameraControls()
 {
-	// Shader reload button
+	/* // Shader reload button
 	if (ImGui::Button("Reload Shaders (F5)"))
 	{
 		m_engine.getContext()->shaderRegistry().reloadAllShaders();
@@ -67,21 +66,22 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 		{
 			for (auto &child : m_rootNode->getChildren())
 			{
-				auto spatialNode = std::dynamic_pointer_cast<engine::scene::SpatialNode>(child);
-				if (spatialNode)
-					spatialNode->setDebugEnabled(showDebugRendering);
+				if (child->isSpatial())
+				{
+					child->setDebugEnabled(showDebugRendering);
+				}
 			}
 		}
 		prevDebugState = showDebugRendering;
-	}
+	} */
 }
 
 void MainDemoImGuiUI::renderMaterialProperties()
 {
-	float windowWidth = ImGui::GetWindowWidth();
+	/* float windowWidth = ImGui::GetWindowWidth();
 	if (ImGui::CollapsingHeader("Material Properties") && m_rootNode)
 	{
-		auto children = m_rootNode->getChildrenOfType<engine::scene::entity::ModelRenderNode>();
+		auto children = m_rootNode->getChildrenOfType<engine::scene::nodes::ModelRenderNode>();
 		std::set<engine::rendering::MaterialHandle> materials;
 		for (auto &child : children)
 		{
@@ -135,7 +135,7 @@ void MainDemoImGuiUI::renderMaterialProperties()
 						if (textureOpt.has_value())
 						{
 							auto texture = textureOpt.value();
-							ImTextureID imguiTex = GetOrCreateImGuiTexture(textureHandle);
+							ImTextureID imguiTex = getOrCreateImGuiTexture(textureHandle);
 
 							ImVec2 thumbSize(windowWidth - 64.0f, 32.0f);
 
@@ -171,7 +171,7 @@ void MainDemoImGuiUI::renderMaterialProperties()
 			}
 			ImGui::PopID();
 		}
-	}
+	} */
 }
 
 void MainDemoImGuiUI::renderLightsSection()
@@ -180,7 +180,7 @@ void MainDemoImGuiUI::renderLightsSection()
 	{
 		if (ImGui::Button("Add Light"))
 		{
-			auto newLight = std::make_shared<engine::scene::entity::LightNode>();
+			auto newLight = std::make_shared<engine::scene::nodes::LightNode>();
 			uint32_t lightType = m_lightNodes.empty() ? 1 : 2;
 			newLight->setLightType(lightType);
 			newLight->setColor(glm::vec3(1.0f));
@@ -357,6 +357,25 @@ void MainDemoImGuiUI::renderCameraControlsSection()
 			}
 		}
 	}
+}
+
+ImTextureID MainDemoImGuiUI::getOrCreateImGuiTexture(engine::rendering::TextureHandle textureHandle)
+{
+	 auto it = m_imguiTextureCache.find(textureHandle);
+	 if (it != m_imguiTextureCache.end())
+		 return it->second;
+
+	/*  auto textureOpt = textureHandle.get();
+	 if (!textureOpt.has_value())
+		 return nullptr;
+
+	 auto gpuTexture = m_engine.getContext()->textureFactory().createFromHandle(textureHandle);
+	 auto textureView = gpuTexture->getTextureView();
+	 ImTextureID imguiId = (ImTextureID)textureView;
+
+	 m_imguiTextureCache[textureHandle] = imguiId;
+	 return imguiId; */
+	return nullptr;
 }
 
 } // namespace demo

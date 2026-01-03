@@ -37,6 +37,8 @@ inline constexpr VertexAttribute operator&(VertexAttribute a, VertexAttribute b)
  */
 enum class VertexLayout : uint8_t
 {
+	// No vertex buffer (procedural generation in vertex shader)
+	None,
 	// Production PBR / unlit
 	Position,
 	PositionNormal,

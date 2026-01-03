@@ -84,6 +84,9 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandleUncached(
 		options
 	);
 	
+	// Update GPU resources immediately after creation
+	webgpuMaterial->updateGPUResources();
+	
 	return webgpuMaterial;
 }
 

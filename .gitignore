@@ -32,3 +32,5 @@ CMakeUserPresets.json
 # private folders
 private
 /examples/build
+/build_vs
+/examples/main_demo/build_vs

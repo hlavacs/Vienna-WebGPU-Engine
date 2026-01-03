@@ -6,7 +6,7 @@ namespace demo
 
 constexpr float PI = 3.14159265358979323846f;
 
-void updateOrbitCamera(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera)
+void updateOrbitCamera(OrbitCameraState &state, std::shared_ptr<engine::scene::nodes::CameraNode> camera)
 {
 	// Normalize azimuth to [0, 2π]
 	state.azimuth = fmod(state.azimuth, 2.0f * PI);
@@ -34,7 +34,7 @@ void updateOrbitCamera(OrbitCameraState &state, std::shared_ptr<engine::scene::C
 	}
 }
 
-void updateDragInertia(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera, float deltaTime)
+void updateDragInertia(OrbitCameraState &state, std::shared_ptr<engine::scene::nodes::CameraNode> camera, float deltaTime)
 {
 	if (!state.active && glm::length(state.velocity) > 1e-4f)
 	{
@@ -55,7 +55,7 @@ void updateDragInertia(OrbitCameraState &state, std::shared_ptr<engine::scene::C
 	}
 }
 
-OrbitCameraController::OrbitCameraController(OrbitCameraState &state, std::shared_ptr<engine::scene::CameraNode> camera) : m_orbitState(state), m_camera(camera)
+OrbitCameraController::OrbitCameraController(OrbitCameraState &state, std::shared_ptr<engine::scene::nodes::CameraNode> camera) : m_orbitState(state), m_camera(camera)
 {
 	updateOrbitCamera(m_orbitState, m_camera);
 }

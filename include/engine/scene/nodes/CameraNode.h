@@ -159,7 +159,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	/**
 	 * @brief Get the camera viewport rectangle.
 	 */
-	const glm::vec4 &getViewport() const { return m_viewport.toVec4(); }
+	const glm::vec4 getViewport() const { return m_viewport.toVec4(); }
 
 	/**
 	 * @brief Set the clear color for this camera.
@@ -199,6 +199,19 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	 * @note May be an invalid handle if no target is set (offscreen target will be used then).
 	 */
 	std::optional<engine::rendering::Texture::Handle> getRenderTarget() const { return m_renderTexture; }
+
+	/**
+	 * @brief Set the rendering depth/order for this camera.
+	 * @param depth Depth value. Lower values render first, higher values render on top.
+	 * @note Default is 0. Use negative values for background cameras, positive for overlay cameras.
+	 */
+	void setDepth(int depth) { m_depth = depth; }
+
+	/**
+	 * @brief Get the rendering depth/order for this camera.
+	 * @return Depth value.
+	 */
+	int getDepth() const { return m_depth; }
 
 	/**
 	 * @brief Enable or disable MSAA for this camera.
@@ -275,6 +288,16 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	void lateUpdate(float deltaTime) override;
 	void preRender() override;
 
+	/**
+	 * @brief Collect render proxies for this camera.
+	 *
+	 * Creates a CameraRenderProxy to register this camera with the scene
+	 * during the render proxy collection phase.
+	 *
+	 * @param outProxies Vector to append render proxies to.
+	 */
+	void collectRenderProxies(std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies) override;
+
 	void CameraNode::onRenderAreaChanged(uint32_t width, uint32_t height)
 	{
 		if (height == 0)
@@ -334,6 +357,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	glm::vec4 m_clearColor = glm::vec4(0, 0, 0, 1);											///< Background clear color
 	engine::rendering::ClearFlags m_clearFlags = engine::rendering::ClearFlags::SolidColor; ///< Clear flags
 	std::optional<engine::rendering::Texture::Handle> m_renderTexture;						///< Target texture/surface
+	int m_depth = 0;																		///< Rendering depth/order
 	bool m_msaa = true;																		///< MSAA enabled
 	bool m_hdr = false;																		///< HDR enabled
 };

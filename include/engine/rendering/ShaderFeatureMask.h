@@ -14,4 +14,5 @@ ENUM_BIT_FLAGS_WRAPPED(
 	Skinned = 1 << 2,
 	Instanced = 1 << 3
 )
+
 }

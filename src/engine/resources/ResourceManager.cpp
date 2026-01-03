@@ -24,7 +24,8 @@ ResourceManager::ResourceManager(path baseDir)
 	m_modelManager = std::make_shared<engine::resources::ModelManager>(
 		m_meshManager,
 		m_materialManager,
-		m_objLoader
+		m_objLoader,
+		m_gltfLoader
 	);
 }
 

@@ -1,8 +1,9 @@
 #pragma once
-#include "engine/core/Identifiable.h"
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include "engine/core/Identifiable.h"
+#include "engine/core/Enum.h"
 
 namespace engine
 {
@@ -32,6 +33,7 @@ namespace engine::scene::nodes
 class RenderNode;
 class UpdateNode;
 class PhysicsNode;
+class SpatialNode;
 
 /**
  * @brief Node type flags for identifying node capabilities.
@@ -49,6 +51,8 @@ enum class NodeType : uint32_t
 	Light = 1 << 6,	  // Light node
 	Model = 1 << 7,	  // Model render node
 };
+
+
 ENUM_BIT_OPERATORS(NodeType)
 
 /**

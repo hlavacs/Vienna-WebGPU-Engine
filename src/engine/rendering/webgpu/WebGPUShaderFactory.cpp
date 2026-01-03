@@ -7,6 +7,7 @@
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
+#include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
@@ -65,6 +66,18 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	return *this;
 }
 
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::setVertexLayout(engine::rendering::VertexLayout layout)
+{
+	m_shaderInfo->setVertexLayout(layout);
+	return *this;
+}
+
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::disableDepth()
+{
+	m_shaderInfo->setEnableDepth(false);
+	return *this;
+}
+
 WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addFrameUniforms(uint32_t groupIndex)
 {
 	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);
@@ -100,6 +113,23 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	buffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
 	buffer.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
 	buffer.readOnly = true;
+
+	bindGroupBuilder.bindings.push_back(buffer);
+	return *this;
+}
+
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addObjectUniforms(uint32_t groupIndex)
+{
+	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);
+	bindGroupBuilder.key = "objectUniforms";
+
+	ShaderBinding buffer;
+	buffer.type = BindingType::UniformBuffer;
+	buffer.name = "objectUniforms";
+	buffer.binding = 0;
+	buffer.size = sizeof(engine::rendering::ObjectUniforms);
+	buffer.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+	buffer.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
 
 	bindGroupBuilder.bindings.push_back(buffer);
 	return *this;

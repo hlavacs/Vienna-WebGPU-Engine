@@ -5,7 +5,8 @@ namespace engine::resources::loaders
 
 // Compute the TBN local to a triangle face from its corners and return it as
 // a matrix whose columns are the T, B and N vectors.
-glm::mat3x3 GeometryLoader::computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN)
+template <typename T>
+glm::mat3x3 GeometryLoader<T>::computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN)
 {
 	// What we call e in the figure
 	glm::vec3 ePos1 = corners[1].position - corners[0].position;

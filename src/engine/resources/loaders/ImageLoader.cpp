@@ -12,43 +12,53 @@ namespace engine::resources::loaders
 {
 [[nodiscard]] std::optional<Image::Ptr> ImageLoader::load(const std::filesystem::path &file)
 {
-	std::filesystem::path fullPath = file.is_absolute() ? file : (m_basePath / file);
+	std::filesystem::path fullPath = resolvePath(file);
 	logInfo("Loading image from '{}'", fullPath.string());
 
-	int width = 0, height = 0, channels = 0;
 	stbi_set_flip_vertically_on_load(true);
+	int width = 0, height = 0, channels = 0;
 
-	// Load HDR image first
-	float *hdrData = stbi_loadf(fullPath.string().c_str(), &width, &height, &channels, 0);
-	if (hdrData)
+	// Decide HDR based on file extension
+	bool isHDR = fullPath.extension() == ".hdr" || fullPath.extension() == ".exr";
+	if (isHDR)
 	{
-		ImageFormat format = ImageFormat::Unknown;
-		switch (channels)
+		// Load HDR data - force RGBA for RGB images (WebGPU doesn't support RGB formats)
+		float *hdrData = stbi_loadf(fullPath.string().c_str(), &width, &height, &channels, 0);
+		if (!hdrData)
 		{
-		case 1:
-			format = ImageFormat::HDR_R16F;
-			break;
-		case 3:
-			format = ImageFormat::HDR_RGB16F;
-			break;
-		case 4:
-			format = ImageFormat::HDR_RGBA16F;
-			break;
-		default:
-			format = ImageFormat::Unknown;
-			break; // fallback
+			logError("Failed to load HDR image '{}': {}", fullPath.string(), stbi_failure_reason());
+			return std::nullopt;
 		}
 
-		size_t dataSize = static_cast<size_t>(width) * height * channels;
-		std::vector<float> pixels(hdrData, hdrData + dataSize);
+		// Convert RGB to RGBA if needed
+		std::vector<float> pixels;
+		if (channels == 3)
+		{
+			logInfo("Converting HDR RGB to RGBA for WebGPU compatibility");
+			size_t pixelCount = static_cast<size_t>(width) * height;
+			pixels.reserve(pixelCount * 4);
+			for (size_t i = 0; i < pixelCount; ++i)
+			{
+				pixels.push_back(hdrData[i * 3 + 0]); // R
+				pixels.push_back(hdrData[i * 3 + 1]); // G
+				pixels.push_back(hdrData[i * 3 + 2]); // B
+				pixels.push_back(1.0f);				  // A
+			}
+			channels = 4;
+		}
+		else
+		{
+			size_t dataSize = static_cast<size_t>(width) * height * channels;
+			pixels = std::vector<float>(hdrData, hdrData + dataSize);
+		}
+
+		ImageFormatType format = ImageFormat::formatFromChannels(channels, true);
 		stbi_image_free(hdrData);
 
-		auto image = std::make_shared<Image>(width, height, format, std::move(pixels));
-		logInfo("Loaded HDR image '{}', size: {}x{}, channels: {}", fullPath.string(), width, height, channels);
-		return image;
+		return std::make_shared<Image>(width, height, format, std::move(pixels));
 	}
 
-	// Fallback to LDR
+	// Fallback to LDR - force RGBA for RGB images (WebGPU doesn't support RGB formats)
 	unsigned char *ldrData = stbi_load(fullPath.string().c_str(), &width, &height, &channels, 0);
 	if (!ldrData)
 	{
@@ -56,30 +66,32 @@ namespace engine::resources::loaders
 		return std::nullopt;
 	}
 
-	ImageFormat format = ImageFormat::Unknown;
-	switch (channels)
+	// Convert RGB to RGBA if needed
+	std::vector<uint8_t> pixels;
+	if (channels == 3)
 	{
-	case 1:
-		format = ImageFormat::LDR_R8;
-		break;
-	case 3:
-		format = ImageFormat::LDR_RGB8;
-		break;
-	case 4:
-		format = ImageFormat::LDR_RGBA8;
-		break;
-	default:
-		format = ImageFormat::Unknown;
-		break; // fallback
+		logInfo("Converting LDR RGB to RGBA for WebGPU compatibility");
+		size_t pixelCount = static_cast<size_t>(width) * height;
+		pixels.reserve(pixelCount * 4);
+		for (size_t i = 0; i < pixelCount; ++i)
+		{
+			pixels.push_back(ldrData[i * 3 + 0]); // R
+			pixels.push_back(ldrData[i * 3 + 1]); // G
+			pixels.push_back(ldrData[i * 3 + 2]); // B
+			pixels.push_back(255);				  // A
+		}
+		channels = 4;
+	}
+	else
+	{
+		size_t dataSize = static_cast<size_t>(width) * height * channels;
+		pixels = std::vector<uint8_t>(ldrData, ldrData + dataSize);
 	}
 
-	size_t dataSize = static_cast<size_t>(width) * height * channels;
-	std::vector<uint8_t> pixels(ldrData, ldrData + dataSize);
+	ImageFormatType format = ImageFormat::formatFromChannels(channels, false);
 	stbi_image_free(ldrData);
 
-	auto image = std::make_shared<Image>(width, height, format, std::move(pixels));
-	logInfo("Loaded LDR image '{}', size: {}x{}, channels: {}", fullPath.string(), width, height, channels);
-	return image;
+	return std::make_shared<Image>(width, height, format, std::move(pixels));
 }
 
 } // namespace engine::resources::loaders

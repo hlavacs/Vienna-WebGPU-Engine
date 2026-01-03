@@ -2,6 +2,7 @@
 
 #include <SDL.h>
 #include <backends/imgui_impl_sdl2.h>
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <sdl2webgpu.h>
@@ -76,31 +77,7 @@ void GameEngine::setOptions(const GameEngineOptions &opts)
 			SDL_SetWindowSize(m_window, options.windowWidth, options.windowHeight);
 			// Center window after resize
 			SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-
-			// Update internal tracking
-			m_currentWidth = options.windowWidth;
-			m_currentHeight = options.windowHeight;
-
-			// Notify subsystems of resize
-			if (m_context)
-			{
-				m_context->surfaceManager().updateIfNeeded(m_currentWidth, m_currentHeight);
-			}
-			if (m_renderer)
-			{
-				m_renderer->onResize(m_currentWidth, m_currentHeight);
-			}
-
-			// Update camera aspect ratio
-			auto activeScene = m_sceneManager->getActiveScene();
-			if (activeScene)
-			{
-				auto cameras = activeScene->getActiveCameras();
-				for (auto &camera : cameras)
-				{
-					camera->onResize(m_currentWidth, m_currentHeight);
-				}
-			}
+			onWindowResize(options.windowWidth, options.windowHeight);
 		}
 
 		// Update resizable state
@@ -360,18 +337,31 @@ void GameEngine::renderFrame(float deltaTime)
 	if (!scene || !m_renderer)
 		return;
 
-	scene->preRender(); // Update transforms & matrices once per frame
+	scene->preRender();
 
 	auto cameras = scene->getActiveCameras();
-	auto uiCallback = createUICallback();
+	if (cameras.empty())
+		return;
 
-	// 1. Render each camera to its own target if specified
+	// Sort cameras by depth (lower depth renders first)
+	std::sort(cameras.begin(), cameras.end(),
+		[](const auto &a, const auto &b) {
+			return a->getDepth() < b->getDepth();
+		}
+	);
+
+	m_renderer->startFrame();
+
+	std::vector<uint64_t> cameraIds;
+
 	for (auto &camera : cameras)
 	{
 		renderCamera(scene, camera);
+		cameraIds.push_back(camera->getId());
 	}
 
-	m_renderer->compositeCamerasToSwapchain(cameras, uiCallback);
+	auto uiCallback = createUICallback();
+	m_renderer->compositeTexturesToSurface(cameraIds, uiCallback);
 
 	scene->postRender();
 }
@@ -391,30 +381,93 @@ void GameEngine::renderCamera(
 	frameUniforms.cameraWorldPosition = camera->getPosition();
 	frameUniforms.time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
 
-	engine::rendering::RenderCollector renderCollector(
+	// Collect render proxies from scene graph
+	std::vector<std::shared_ptr<engine::rendering::RenderProxy>> renderProxies;
+	std::vector<engine::rendering::LightStruct> lights;
+	scene->collectRenderProxies(renderProxies, lights);
+
+	// Get or create render collector for this camera (cached across frames)
+	uint64_t cameraId = camera->getId();
+	auto it = m_cameraCollectors.find(cameraId);
+	if (it == m_cameraCollectors.end())
+	{
+		// Create new collector for this camera
+		auto result = m_cameraCollectors.emplace(
+			std::piecewise_construct,
+			std::forward_as_tuple(cameraId),
+			std::forward_as_tuple(
+				camera->getViewMatrix(),
+				camera->getProjectionMatrix(),
+				camera->getPosition(),
+				camera->getFrustum(),
+				m_renderer->getWebGPUContext()
+			)
+		);
+		it = result.first;
+		
+		// Set the object bind group layout for the new collector
+		it->second.setObjectBindGroupLayout(m_renderer->getObjectBindGroupLayout());
+	}
+	
+	engine::rendering::RenderCollector &renderCollector = it->second;
+	
+	// Clear previous frame's render items (but keep bind group cache)
+	renderCollector.clear();
+	// Update camera-dependent data for this frame
+	renderCollector.updateCameraData(
 		camera->getViewMatrix(),
 		camera->getProjectionMatrix(),
 		camera->getPosition(),
 		camera->getFrustum()
 	);
 
-	scene->collectRenderData(renderCollector);
-	renderCollector.sort();
-
-	// Determine render target: custom texture or nullptr (composite main pass)
-	auto targetOptional = camera->getRenderTarget();
-	if (!targetOptional.has_value())
+	// Process render proxies and populate the render collector
+	for (const auto &proxy : renderProxies)
 	{
-		spdlog::warn("CameraNode '{}' has no valid render target!", camera->getName());
-		return;
+		// Check proxy type and process accordingly
+		if (auto modelProxy = std::dynamic_pointer_cast<engine::rendering::ModelRenderProxy>(proxy))
+		{
+			// Add model to render collector with object ID for bind group caching
+			// If material override is provided, use it; otherwise model will use its default materials
+			renderCollector.addModel(
+				modelProxy->model,
+				modelProxy->transform,
+				modelProxy->layer,
+				modelProxy->objectID  // Pass object ID for efficient bind group caching
+			);
+		}
+		else if (auto uiProxy = std::dynamic_pointer_cast<engine::rendering::UIRenderProxy>(proxy))
+		{
+			// TODO: Handle UI rendering when UI system is implemented
+			// uiRenderer->addUIElement(uiProxy);
+		}
+		else if (auto debugProxy = std::dynamic_pointer_cast<engine::rendering::DebugRenderProxy>(proxy))
+		{
+			// TODO: Handle debug rendering when debug system is implemented
+			// debugCollector.addPrimitive(debugProxy);
+		}
 	}
 
+	// Sort render items by material for batching
+	renderCollector.sort();
+
+	// Get render target if specified
+	auto targetOptional = camera->getRenderTarget();
+	std::optional<engine::rendering::TextureHandle> cpuTarget = std::nullopt;
+	if (targetOptional.has_value())
+	{
+		cpuTarget = targetOptional.value();
+	}
+
+	// Render to texture
 	m_renderer->renderToTexture(
 		renderCollector,
-		camera->getId()
-		renderTarget,
-		frameUniforms,
-		targetOptional
+		camera->getId(),
+		camera->getViewport(),
+		camera->getClearFlags(),
+		camera->getBackgroundColor(),
+		cpuTarget,
+		frameUniforms
 	);
 }
 

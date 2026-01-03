@@ -61,6 +61,29 @@ cmake -S . -B ./bin/Windows -DCMAKE_BUILD_TYPE=Release -DWEBGPU_BACKEND=WGPU -DW
 cmake --build ./bin/Windows --config Release
 ```
 
+#### Generating Visual Studio Solution for Debugging
+
+To debug in Visual Studio (recommended for catching crashes and low-level debugging):
+
+```shell
+# Generate Visual Studio solution for the entire project (includes all examples)
+cmake -S . -B build_vs -G "Visual Studio 17 2022" -A x64 -DWEBGPU_BACKEND=WGPU -DWEBGPU_BUILD_FROM_SOURCE=OFF -DBUILD_EXAMPLES=ON
+
+# Open the solution in Visual Studio
+start build_vs/WebGPU_Engine.sln
+```
+
+Once in Visual Studio:
+1. In Solution Explorer, find the example you want to debug (e.g., **MainDemo**)
+2. Right-click the example project → **Set as Startup Project**
+3. Set configuration to **Debug | x64** (top toolbar)
+4. Enable exception breaking: **Debug → Windows → Exception Settings** (Ctrl+Alt+E), check **C++ Exceptions** and **Win32 Exceptions**
+5. Press **F5** to start debugging
+
+This is especially useful for debugging crashes that occur before `main()` or during static initialization.
+
+**Note:** The Visual Studio solution includes the engine library and all dependencies (SDL2, WebGPU, etc.), so everything is built together.
+
 ### Building WebGPU Dawn
 
 ToDo

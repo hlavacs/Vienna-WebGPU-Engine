@@ -48,7 +48,7 @@ bool ImGuiManager::initialize(SDL_Window* window, std::shared_ptr<engine::render
 	wgpu::Device device = context->getDevice();
 	WGPUDevice wgpuDevice = device;
 	WGPUTextureFormat rtFormat = static_cast<WGPUTextureFormat>(context->getSwapChainFormat());
-	WGPUTextureFormat depthFormat = WGPUTextureFormat_Depth24Plus;
+	WGPUTextureFormat depthFormat = WGPUTextureFormat_Undefined; // No depth for UI rendering
 	
 	ImGui_ImplWGPU_Init(wgpuDevice, 3, rtFormat, depthFormat);
 

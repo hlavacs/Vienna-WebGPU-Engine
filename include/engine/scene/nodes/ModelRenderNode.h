@@ -1,7 +1,6 @@
 #pragma once
 
 #include "engine/rendering/Model.h"
-#include "engine/rendering/RenderCollector.h"
 #include "engine/scene/nodes/RenderNode.h"
 #include "engine/scene/nodes/SpatialNode.h"
 
@@ -36,19 +35,25 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 	virtual ~ModelRenderNode() = default;
 
 	/**
-	 * @brief Collects this model for rendering.
-	 * @param collector The render collector to add this model to.
+	 * @brief Collects render proxies for this model.
+	 * @param outProxies Vector to append RenderProxy objects to.
 	 */
-	void onRenderCollect(engine::rendering::RenderCollector &collector) override
+	void collectRenderProxies(std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies) override
 	{
 		if (m_modelHandle.valid() && getTransform())
 		{
-			// Add model with world transform to the collector
-			collector.addModel(
+			// Use node ID as object ID for bind group caching
+			uint64_t objectID = getId();
+
+			// Create a ModelRenderProxy with this model's data
+			auto proxy = std::make_shared<engine::rendering::ModelRenderProxy>(
 				m_modelHandle,
 				getTransform()->getWorldMatrix(),
-				m_renderLayer
+				m_renderLayer,
+				engine::core::Handle<engine::rendering::Material>(), // No material override
+				objectID
 			);
+			outProxies.push_back(proxy);
 		}
 	}
 

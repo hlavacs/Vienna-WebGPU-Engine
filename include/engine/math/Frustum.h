@@ -16,12 +16,12 @@ struct Frustum
 		glm::vec3 normal;
 		float d;
 	};
-	Plane left;
-	Plane right;
-	Plane bottom;
-	Plane top;
-	Plane near;
-	Plane far;
+	Plane leftPlane;
+	Plane rightPlane;
+	Plane bottomPlane;
+	Plane topPlane;
+	Plane nearPlane;
+	Plane farPlane;
 
 	/**
 	 * @brief Returns the frustum planes as an array.
@@ -30,7 +30,7 @@ struct Frustum
 	std::array<const Plane *, 6> asArray() const
 	{
 		return std::array<const Plane *, 6>(
-			{&left, &right, &bottom, &top, &near, &far}
+			{&leftPlane, &rightPlane, &bottomPlane, &topPlane, &nearPlane, &farPlane}
 		);
 	}
 
@@ -38,10 +38,10 @@ struct Frustum
 	 * @brief Returns the frustum planes as an array.
 	 * @return Span of 6 planes.
 	 */
-	std::array<Plane *, 6> &asArray()
+	std::array<Plane *, 6> asArray()
 	{
 		return std::array<Plane *, 6>(
-			{&left, &right, &bottom, &top, &near, &far}
+			{&leftPlane, &rightPlane, &bottomPlane, &topPlane, &nearPlane, &farPlane}
 		);
 	}
 };

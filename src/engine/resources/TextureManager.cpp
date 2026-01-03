@@ -9,7 +9,7 @@ std::optional<TextureManager::TexturePtr> TextureManager::createImageTexture(
 	std::optional<std::filesystem::path> filePath
 )
 {
-	if (!image)
+	if (image == nullptr)
 		return std::nullopt;
 
 	std::string key;
@@ -30,13 +30,12 @@ std::optional<TextureManager::TexturePtr> TextureManager::createImageTexture(
 		}
 	}
 
-	auto texture = std::make_shared<engine::rendering::Texture>(
-		engine::rendering::Texture::Type::Image,
-		image->getWidth(),
-		image->getHeight(),
-		image->getChannelCount(),
-		std::move(image),
-		filePath.value_or(std::filesystem::path{})
+	auto texture = std::shared_ptr<engine::rendering::Texture>(
+		new engine::rendering::Texture(
+			engine::rendering::Texture::Type::Image,
+			std::move(image),
+			filePath.value_or(std::filesystem::path{})
+		)
 	);
 
 	auto handleOpt = add(texture);
@@ -57,13 +56,14 @@ std::optional<TextureManager::TexturePtr> TextureManager::createDepthTexture(
 	uint32_t height
 )
 {
-	auto texture = std::make_shared<engine::rendering::Texture>(
-		engine::rendering::Texture::Type::DepthStencil,
-		width,
-		height,
-		1, // single channel, placeholder
-		nullptr,
-		std::filesystem::path{}
+	auto texture = std::shared_ptr<engine::rendering::Texture>(
+		new engine::rendering::Texture(
+			engine::rendering::Texture::Type::DepthStencil,
+			width,
+			height,
+			1, // single channel, placeholder
+			std::filesystem::path{}
+		)
 	); // no file path
 
 	texture->setName("DepthStencilTexture");
@@ -81,13 +81,14 @@ std::optional<TextureManager::TexturePtr> TextureManager::createSurfaceTexture(
 	uint32_t channels
 )
 {
-	auto texture = std::make_shared<engine::rendering::Texture>(
-		engine::rendering::Texture::Type::Surface,
-		width,
-		height,
-		channels,
-		nullptr,
-		std::filesystem::path{}
+	auto texture = std::shared_ptr<engine::rendering::Texture>(
+		new engine::rendering::Texture(
+			engine::rendering::Texture::Type::Surface,
+			width,
+			height,
+			channels,
+			std::filesystem::path{}
+		)
 	); // no file path
 
 	texture->setName("SurfaceTexture");
@@ -119,9 +120,10 @@ std::optional<TextureManager::TexturePtr> TextureManager::createTextureFromFile(
 			auto it = m_imageCache.find(key);
 			if (it != m_imageCache.end())
 			{
-				auto cached = get(it->second);
-				if (cached && *cached)
-					return *cached;
+				// Access map directly to avoid deadlock (we already hold the mutex)
+				auto resIt = m_resources.find(it->second);
+				if (resIt != m_resources.end() && resIt->second)
+					return resIt->second;
 			}
 		}
 	}
@@ -151,7 +153,12 @@ std::optional<TextureManager::TexturePtr> TextureManager::getTextureByPath(
 	if (it == m_imageCache.end())
 		return std::nullopt;
 
-	return get(it->second);
+	// Access map directly to avoid deadlock (we already hold the mutex)
+	auto resIt = m_resources.find(it->second);
+	if (resIt != m_resources.end())
+		return resIt->second;
+
+	return std::nullopt;
 }
 
 } // namespace engine::resources

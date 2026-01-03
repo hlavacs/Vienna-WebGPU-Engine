@@ -15,16 +15,6 @@ class WebGPUBuffer;
 namespace engine::rendering
 {
 
-ENUM_BEGIN_WRAPPED(
-	DebugPrimitiveKind,
-	4,
-	Line,
-	Disk,
-	AABB,
-	Arrow
-)
-ENUM_END()
-
 /**
  * @brief GPU-compatible debug primitive structure.
  *
@@ -33,6 +23,14 @@ ENUM_END()
  */
 struct alignas(16) DebugPrimitive
 {
+	enum class Type : uint32_t
+	{
+		Line = 0,
+		Disk = 1,
+		AABB = 2,
+		Arrow = 3
+	};
+
 	float padding1[3]; // Align to 16 bytes
 	uint32_t type;	   // DebugPrimitiveKind
 	glm::vec4 color;   // RGBA color

@@ -1,4 +1,5 @@
 #include "engine/scene/nodes/CameraNode.h"
+#include "engine/rendering/RenderProxies.h"
 #include "engine/resources/ResourceManager.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
@@ -130,10 +131,10 @@ void CameraNode::setFov(float fovDegrees)
 	m_dirtyProjection = m_dirtyFrustum = true;
 }
 
-void CameraNode::setNearFar(float near, float far)
+void CameraNode::setNearFar(float _near, float _far)
 {
-	m_near = near;
-	m_far = far;
+	m_near = _near;
+	m_far = _far;
 	m_dirtyProjection = m_dirtyFrustum = true;
 }
 
@@ -165,6 +166,16 @@ void CameraNode::preRender()
 	// This is where matrices can be updated before being used by the renderer
 	updateMatrices();
 	updateFrustumPlanes();
+}
+
+void CameraNode::collectRenderProxies(std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies)
+{
+	// Create a CameraRenderProxy to register this camera with the scene
+	auto cameraProxy = std::make_shared<engine::rendering::CameraRenderProxy>(
+		std::dynamic_pointer_cast<CameraNode>(shared_from_this()),
+		0 // Cameras typically render at layer 0
+	);
+	outProxies.push_back(cameraProxy);
 }
 
 void CameraNode::updateMatrices() const
@@ -235,28 +246,26 @@ void CameraNode::updateFrustumPlanes() const
 	glm::mat4 vp = m_viewProjectionMatrix;
 
 	// Left
-	m_frustum.left.normal = glm::vec3(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0]);
-	m_frustum.left.d = vp[3][3] + vp[3][0];
+	m_frustum.leftPlane.normal = glm::vec3(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0]);
+	m_frustum.leftPlane.d = vp[3][3] + vp[3][0];
 
 	// Right
-	m_frustum.right.normal = glm::vec3(vp[0][3] - vp[0][0], vp[1][3] - vp[1][0], vp[2][3] - vp[2][0]);
-	m_frustum.right.d = vp[3][3] - vp[3][0];
+	m_frustum.rightPlane.normal = glm::vec3(vp[0][3] - vp[0][0], vp[1][3] - vp[1][0], vp[2][3] - vp[2][0]);
+	m_frustum.rightPlane.d = vp[3][3] - vp[3][0];
 
 	// Bottom
-	m_frustum.bottom.normal = glm::vec3(vp[0][3] + vp[0][1], vp[1][3] + vp[1][1], vp[2][3] + vp[2][1]);
-	m_frustum.bottom.d = vp[3][3] + vp[3][1];
-
+	m_frustum.bottomPlane.normal = glm::vec3(vp[0][3] + vp[0][1], vp[1][3] + vp[1][1], vp[2][3] + vp[2][1]);
+	m_frustum.bottomPlane.d = vp[3][3] + vp[3][1];
 	// Top
-	m_frustum.top.normal = glm::vec3(vp[0][3] - vp[0][1], vp[1][3] - vp[1][1], vp[2][3] - vp[2][1]);
-	m_frustum.top.d = vp[3][3] - vp[3][1];
+	m_frustum.topPlane.normal = glm::vec3(vp[0][3] - vp[0][1], vp[1][3] - vp[1][1], vp[2][3] - vp[2][1]);
+	m_frustum.topPlane.d = vp[3][3] - vp[3][1];
 
 	// Near
-	m_frustum.near.normal = glm::vec3(vp[0][3] + vp[0][2], vp[1][3] + vp[1][2], vp[2][3] + vp[2][2]);
-	m_frustum.near.d = vp[3][3] + vp[3][2];
-
+	m_frustum.nearPlane.normal = glm::vec3(vp[0][3] + vp[0][2], vp[1][3] + vp[1][2], vp[2][3] + vp[2][2]);
+	m_frustum.nearPlane.d = vp[3][3] + vp[3][2];
 	// Far
-	m_frustum.far.normal = glm::vec3(vp[0][3] - vp[0][2], vp[1][3] - vp[1][2], vp[2][3] - vp[2][2]);
-	m_frustum.far.d = vp[3][3] - vp[3][2];
+	m_frustum.farPlane.normal = glm::vec3(vp[0][3] - vp[0][2], vp[1][3] - vp[1][2], vp[2][3] - vp[2][2]);
+	m_frustum.farPlane.d = vp[3][3] - vp[3][2];
 
 	// Normalize
 	for (auto &p : m_frustum.asArray())

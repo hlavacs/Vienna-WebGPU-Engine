@@ -155,7 +155,7 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 	);
 
 	// Assign submeshes & materials
-	if (m_materialManager && !gltfData.materials.empty())
+	if (m_materialManager && gltfData.materialContext && !gltfData.materialContext->materials.empty())
 	{
 		std::filesystem::path textureBasePath = std::filesystem::path(gltfData.filePath).parent_path();
 		for (size_t i = 0; i < gltfData.primitives.size(); ++i)
@@ -169,11 +169,16 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 			submesh.indexCount = prim.indexCount;
 
 			int matId = prim.materialId;
-			if (matId >= 0 && matId < static_cast<int>(gltfData.materials.size()))
+			if (matId >= 0 && matId < static_cast<int>(gltfData.materialContext->materials.size()))
 			{
-				auto matOpt = m_materialManager->createMaterial(gltfData.materials[matId], textureBasePath.string() + "/");
-				if (matOpt && *matOpt)
-					submesh.material = (*matOpt)->getHandle();
+				auto matOpt = m_materialManager->createMaterial(
+					gltfData.materialContext->materials[matId],
+					gltfData.materialContext->textures,
+					gltfData.materialContext->images,
+					textureBasePath.string() + "/"
+				);
+				if (matOpt && matOpt.value())
+					submesh.material = matOpt.value()->getHandle();
 			}
 
 			model->addSubmesh(submesh);

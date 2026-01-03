@@ -34,19 +34,20 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	virtual ~LightNode() = default;
 
 	/**
-	 * @brief Collects this light for rendering.
-	 * @param collector The render collector to add this light to.
+	 * @brief Collects render proxies for this light.
+	 * @param outProxies Vector to append RenderProxy objects to.
 	 */
-	void onRenderCollect(engine::rendering::RenderCollector &collector) override
+	void collectRenderProxies(std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies) override
 	{
 		if (getTransform())
 		{
 			// Update light transform from node's world transform
 			m_light.transform = getTransform()->getWorldMatrix();
 		}
-		
-		// Add light to the collector
-		collector.addLight(m_light);
+
+		// Create a LightRenderProxy
+		auto proxy = std::make_shared<engine::rendering::LightRenderProxy>(m_light, 0);
+		outProxies.push_back(proxy);
 	}
 
 	/**
