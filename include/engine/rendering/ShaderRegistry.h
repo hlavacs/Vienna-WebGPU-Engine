@@ -20,6 +20,8 @@ namespace shader::default
 	constexpr const char *DEBUG = "Debug_Shader";
 	constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_Shader";
 	constexpr const char *MIPMAP_BLIT = "Mipmap_Blit_Shader";
+	constexpr const char *SHADOW = "Shadow_Shader";
+	constexpr const char *SHADOW_CUBE = "Shadow_Cube_Shader"; // TODO: Implement cube shadow shader
 } // namespace shader::default
 
 
@@ -80,6 +82,8 @@ class ShaderRegistry
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createDebugShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createFullscreenQuadShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createMipmapBlitShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createShadowShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createCubeShadowShader();
 };
 
 } // namespace engine::rendering

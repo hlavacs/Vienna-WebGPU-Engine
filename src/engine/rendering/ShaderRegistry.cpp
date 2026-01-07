@@ -8,11 +8,14 @@
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/ObjectUniforms.h"
+#include "engine/rendering/RenderingConstants.h"
+#include "engine/rendering/ShadowUniforms.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
 namespace engine::rendering
 {
 
+// ToDo: Add Texture vs Add Texture Binding so that we can have optional textures amd BindGroup layouts that match
 ShaderRegistry::ShaderRegistry(webgpu::WebGPUContext &context) : m_context(context)
 {
 }
@@ -54,6 +57,22 @@ bool ShaderRegistry::initializeDefaultShaders()
 		return false;
 	}
 	registerShader(mipmapBlitShader);
+
+	auto shadowShader = createShadowShader();
+	if (!shadowShader || !shadowShader->isValid())
+	{
+		spdlog::error("Failed to create Shadow shader");
+		return false;
+	}
+	registerShader(shadowShader);
+
+	auto shadowCubeShader = createCubeShadowShader();
+	if (!shadowCubeShader || !shadowCubeShader->isValid())
+	{
+		spdlog::error("Failed to create Shadow Cube shader");
+		return false;
+	}
+	registerShader(shadowCubeShader);
 
 	spdlog::info("Default shaders initialized successfully");
 	return true;
@@ -218,6 +237,8 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 				WGPUShaderStage_Fragment,
 				glm::vec3(0.0f, 0.0f, 0.0f) // default black for emission
 			)
+			// Group 4: Shadow mapping (sampler, 2D array, cube array, storage buffers)
+			.addShadowUniforms(4, constants::MAX_SHADOW_MAPS_2D, constants::MAX_SHADOW_MAPS_CUBE)
 			.build();
 
 	return shaderInfo;
@@ -233,7 +254,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 
 	auto shaderInfo =
 		m_context.shaderFactory()
-			.begin(shader::default::DEBUG, ShaderType::Debug, "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
+			.begin(shader::default ::DEBUG, ShaderType::Debug, "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
 			.addFrameUniforms(0) // View-projection matrix from frame uniforms
 			.addStorageBuffer(
 				"uDebugPrimitives",
@@ -295,7 +316,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createMipmapBlitShader
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
-				shader::default::MIPMAP_BLIT,
+				shader::default ::MIPMAP_BLIT,
 				ShaderType::Unlit,
 				"vs_main",
 				"fs_main",
@@ -319,6 +340,66 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createMipmapBlitShader
 				1, // binding
 				wgpu::SamplerBindingType::Filtering,
 				WGPUShaderStage_Fragment
+			)
+			.build();
+
+	return shaderInfo;
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowShader()
+{
+	// Create shadow mapping shader - renders depth from light's perspective
+	//
+	// shadow2d.wgsl structure:
+	// @group(0) @binding(0) var<uniform> uShadow: ShadowUniforms;
+
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin(
+				shader::default ::SHADOW,
+				ShaderType::Unlit,
+				"vs_shadow",
+				"fs_shadow",
+				engine::core::PathProvider::getResource("shadow2d.wgsl")
+			)
+			.setVertexLayout(engine::rendering::VertexLayout::Position)
+			// Group 0: Shadow uniforms (light view-projection matrix)
+			.addCustomUniform(
+				"uShadow",
+				sizeof(ShadowUniforms),
+				0, // group
+				0, // binding
+				WGPUShaderStage_Vertex
+			)
+			.build();
+
+	return shaderInfo;
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCubeShadowShader()
+{
+	// Create shadow mapping shader - renders depth from point light's perspective
+	//
+	// shadow3d.wgsl structure:
+	// @group(0) @binding(0) var<uniform> uShadowCube: ShadowCubeUniforms;
+
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin(
+				shader::default ::SHADOW_CUBE,
+				ShaderType::Unlit,
+				"vs_shadow_cube",
+				"fs_shadow_cube",
+				engine::core::PathProvider::getResource("shadow3d.wgsl")
+			)
+			.setVertexLayout(engine::rendering::VertexLayout::Position)
+			// Group 0: Shadow cube uniforms (light position and far plane)
+			.addCustomUniform(
+				"uShadowCube",
+				sizeof(ShadowCubeUniforms),
+				0, // group
+				0, // binding
+				WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
 			)
 			.build();
 

@@ -67,6 +67,56 @@ bool WebGPUTexture::resize(WebGPUContext &context, uint32_t newWidth, uint32_t n
 	return true;
 }
 
+wgpu::TextureView WebGPUTexture::createLayerView(uint32_t arrayLayer, const char *label) const
+{
+	if (!m_texture)
+	{
+		spdlog::error("WebGPUTexture::createLayerView: Cannot create layer view from null texture.");
+		return nullptr;
+	}
+	wgpu::TextureViewDescriptor viewDesc{};
+	viewDesc.label = label ? label : "Texture Layer View";
+	viewDesc.format = m_textureDesc.format;
+	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
+	viewDesc.baseMipLevel = 0;
+	viewDesc.mipLevelCount = 1;
+	viewDesc.baseArrayLayer = arrayLayer;
+	viewDesc.arrayLayerCount = 1;
+	viewDesc.aspect = m_textureDesc.format == wgpu::TextureFormat::Depth24Plus
+							  || m_textureDesc.format == wgpu::TextureFormat::Depth32Float
+							  || m_textureDesc.format == wgpu::TextureFormat::Depth24PlusStencil8
+							  || m_textureDesc.format == wgpu::TextureFormat::Depth32FloatStencil8
+						  ? wgpu::TextureAspect::DepthOnly
+						  : wgpu::TextureAspect::All;
+	
+	return wgpuTextureCreateView(m_texture, &viewDesc); // Use C API to create the view because of const correctness
+}
+
+wgpu::TextureView WebGPUTexture::createCubeView(uint32_t cubeIndex, const char *label) const
+{
+	if (!m_texture)
+	{
+		spdlog::error("WebGPUTexture::createCubeView: Cannot create cube view from null texture.");
+		return nullptr;
+	}
+	wgpu::TextureViewDescriptor  viewDesc{};
+	viewDesc.label = label ? label : "Texture Cube Face View";
+	viewDesc.format = m_textureDesc.format;
+	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
+	viewDesc.baseMipLevel = 0;
+	viewDesc.mipLevelCount = 1;
+	viewDesc.baseArrayLayer = cubeIndex * 6; // Each cube face consists of 6 layers
+	viewDesc.arrayLayerCount = 6;			 // View for one cube face
+	viewDesc.aspect = m_textureDesc.format == wgpu::TextureFormat::Depth24Plus
+							  || m_textureDesc.format == wgpu::TextureFormat::Depth32Float
+							  || m_textureDesc.format == wgpu::TextureFormat::Depth24PlusStencil8
+							  || m_textureDesc.format == wgpu::TextureFormat::Depth32FloatStencil8
+						  ? wgpu::TextureAspect::DepthOnly
+						  : wgpu::TextureAspect::All;
+	
+	return wgpuTextureCreateView(m_texture, &viewDesc); // Use C API to create the view because of const correctness
+}
+
 std::future<bool> WebGPUTexture::readbackToCPUAsync(WebGPUContext &context, std::shared_ptr<Texture> outTexture)
 {
 	// Capture necessary data by value for async lambda

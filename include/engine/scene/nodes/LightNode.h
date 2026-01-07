@@ -1,8 +1,8 @@
 #pragma once
 
-#include "engine/rendering/LightUniforms.h"
-#include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/Light.h"
+#include "engine/rendering/RenderCollector.h"
 #include "engine/scene/nodes/RenderNode.h"
 #include "engine/scene/nodes/SpatialNode.h"
 
@@ -14,6 +14,7 @@ namespace engine::scene::nodes
  * 
  * Automatically adds its light data to the RenderCollector during scene traversal.
  * Inherits from SpatialNode to have a transform for positioning the light.
+ * Uses the new Light class with variant-based type system for easier access to type-specific properties.
  */
 class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 {
@@ -21,33 +22,30 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	using Ptr = std::shared_ptr<LightNode>;
 
 	/**
-	 * @brief Constructs a light node with default settings.
+	 * @brief Constructs a light node with default ambient light.
 	 */
 	LightNode()
 	{
 		addNodeType(nodes::NodeType::Light);
-		m_light.color = glm::vec3(1.0f, 1.0f, 1.0f);
-		m_light.intensity = 1.0f;
-		m_light.light_type = 0; // Ambient by default
+		m_light = engine::rendering::Light(engine::rendering::AmbientLight{});
 	}
 
 	virtual ~LightNode() = default;
 
 	/**
-	 * @brief Collects render proxies for this light.
-	 * @param outProxies Vector to append RenderProxy objects to.
+	 * @brief Add this light to the render collector.
+	 * @param collector The render collector to add light data to.
 	 */
-	void collectRenderProxies(std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies) override
+	void onRenderCollect(engine::rendering::RenderCollector &collector) override
 	{
 		if (getTransform())
 		{
 			// Update light transform from node's world transform
-			m_light.transform = getTransform()->getWorldMatrix();
+			m_light.setTransform(getTransform()->getWorldMatrix());
 		}
 
-		// Create a LightRenderProxy
-		auto proxy = std::make_shared<engine::rendering::LightRenderProxy>(m_light, 0);
-		outProxies.push_back(proxy);
+		// Add light directly to collector
+		collector.addLight(m_light);
 	}
 
 	/**
@@ -62,10 +60,16 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 		auto worldMatrix = getTransform()->getWorldMatrix();
 		glm::vec3 position = glm::vec3(worldMatrix[3]);
 		glm::vec3 direction = -glm::vec3(worldMatrix[2]); // Forward direction
-		glm::vec4 color = glm::vec4(m_light.color, 1.0f);
+
+		// Get color from light (using visitor pattern)
+		glm::vec3 lightColor = std::visit(
+			[](const auto& light) -> glm::vec3 { return light.color; },
+			m_light.getData()
+		);
+		glm::vec4 color = glm::vec4(lightColor, 1.0f);
 
 		// Light type: 0=ambient, 1=directional, 2=point, 3=spot
-		switch (m_light.light_type)
+		switch (m_light.getLightType())
 		{
 		case 0: // Ambient - no debug visualization
 			break;
@@ -101,97 +105,119 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	}
 
 	/**
-	 * @brief Sets the light color.
+	 * @brief Sets the light data.
+	 * @param light Light object with type-specific data.
+	 */
+	void setLight(const engine::rendering::Light& light)
+	{
+		m_light = light;
+	}
+
+	/**
+	 * @brief Gets the light object.
+	 * @return Reference to the light.
+	 */
+	engine::rendering::Light& getLight()
+	{
+		return m_light;
+	}
+
+	/**
+	 * @brief Gets the light object (const).
+	 * @return Const reference to the light.
+	 */
+	const engine::rendering::Light& getLight() const
+	{
+		return m_light;
+	}
+
+	/**
+	 * @brief Sets the light color (works for all light types).
 	 * @param color RGB color values.
 	 */
 	void setColor(const glm::vec3 &color)
 	{
-		m_light.color = color;
+		std::visit(
+			[&color](auto& light) { light.color = color; },
+			m_light.getData()
+		);
 	}
 
 	/**
-	 * @brief Gets the light color.
+	 * @brief Gets the light color (works for all light types).
 	 * @return The current RGB color.
 	 */
-	const glm::vec3 &getColor() const
+	glm::vec3 getColor() const
 	{
-		return m_light.color;
+		return std::visit(
+			[](const auto& light) -> glm::vec3 { return light.color; },
+			m_light.getData()
+		);
 	}
 
 	/**
-	 * @brief Sets the light intensity.
+	 * @brief Sets the light intensity (works for all light types).
 	 * @param intensity The intensity value.
 	 */
 	void setIntensity(float intensity)
 	{
-		m_light.intensity = intensity;
+		std::visit(
+			[intensity](auto& light) { light.intensity = intensity; },
+			m_light.getData()
+		);
 	}
 
 	/**
-	 * @brief Gets the light intensity.
+	 * @brief Gets the light intensity (works for all light types).
 	 * @return The current intensity.
 	 */
 	float getIntensity() const
 	{
-		return m_light.intensity;
-	}
-
-	/**
-	 * @brief Sets the light type.
-	 * @param type 0=ambient, 1=directional, 2=point, 3=spot
-	 */
-	void setLightType(uint32_t type)
-	{
-		m_light.light_type = type;
+		return std::visit(
+			[](const auto& light) -> float { return light.intensity; },
+			m_light.getData()
+		);
 	}
 
 	/**
 	 * @brief Gets the light type.
-	 * @return The current light type.
+	 * @return The current light type (0=ambient, 1=directional, 2=point, 3=spot).
 	 */
 	uint32_t getLightType() const
 	{
-		return m_light.light_type;
+		return m_light.getLightType();
 	}
 
 	/**
-	 * @brief Sets the spotlight angle (for spot lights).
-	 * @param angle The angle in radians.
+	 * @brief Sets whether this light casts shadows (only for directional, point, spot).
+	 * @param castShadows True to enable shadow casting.
 	 */
-	void setSpotAngle(float angle)
+	void setCastShadows(bool castShadows)
 	{
-		m_light.spot_angle = angle;
+		std::visit(
+			[castShadows](auto& light)
+			{
+				using T = std::decay_t<decltype(light)>;
+				if constexpr (!std::is_same_v<T, engine::rendering::AmbientLight>)
+				{
+					light.castShadows = castShadows;
+				}
+			},
+			m_light.getData()
+		);
 	}
 
 	/**
-	 * @brief Sets the spotlight softness (for spot lights).
-	 * @param softness The softness value.
+	 * @brief Gets whether this light casts shadows.
+	 * @return True if the light can cast shadows.
 	 */
-	void setSpotSoftness(float softness)
+	bool getCastShadows() const
 	{
-		m_light.spot_softness = softness;
-	}
-
-	/**
-	 * @brief Gets the underlying light structure.
-	 * @return Reference to the light data.
-	 */
-	engine::rendering::LightStruct &getLightData()
-	{
-		return m_light;
-	}
-
-	/**
-	 * @brief Gets the underlying light structure (const).
-	 * @return Const reference to the light data.
-	 */
-	const engine::rendering::LightStruct &getLightData() const
-	{
-		return m_light;
+		return m_light.canCastShadows();
 	}
 
   private:
-	engine::rendering::LightStruct m_light;
+	engine::rendering::Light m_light;
 };
 
 } // namespace engine::scene::nodes

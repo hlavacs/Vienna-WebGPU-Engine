@@ -192,8 +192,14 @@ Most factories inherit from this template base class:
 
 1. **WebGPUTextureFactory** (`include/engine/rendering/webgpu/WebGPUTextureFactory.h`)
    - `createFromHandle(handle)` - Create from Texture handle
-   - `createFromColor(color, width, height)` - Create solid color texture
-   - `createFromDescriptors(textureDesc, viewDesc)` - Create from raw descriptors
+   - `createFromColor(color, width, height, colorSpace)` - Create solid color texture
+   - `createFromDescriptors(textureDesc, viewDesc)` - Create from raw descriptors (useful for custom textures like shadow maps, depth arrays)
+   - `createRenderTarget(id, width, height, format)` - Create cached render target
+   - `getWhiteTexture()` - Get default white 1x1 texture
+   - `getBlackTexture()` - Get default black 1x1 texture
+   - `getDefaultNormalTexture()` - Get default normal map (0.5, 0.5, 1.0)
+   - `generateMipmaps(gpuTexture, format, width, height, mipLevelCount)` - Generate mipmap chain for a texture
+   - **Use Case**: Shadow maps, depth textures, texture arrays - use `createFromDescriptors()` for full control over texture/view dimensions
 
 2. **WebGPUMaterialFactory** (`include/engine/rendering/webgpu/WebGPUMaterialFactory.h`)
    - `createFromHandle(handle)` - Create GPU material with bind groups from CPU Material
@@ -235,7 +241,9 @@ Most factories inherit from this template base class:
 
 9. **WebGPUDepthTextureFactory** (`include/engine/rendering/webgpu/WebGPUDepthTextureFactory.h`)
    - `createDefault(width, height, format)` - Create default depth texture
-   - `create(width, height, format, mipLevels, arrayLayers, sampleCount, usage)` - Fully configurable
+   - `create(width, height, format, mipLevels, arrayLayers, sampleCount, usage)` - Fully configurable depth texture
+   - **Use Case**: Regular depth buffers for render passes
+   - **Note**: For shadow maps, use `WebGPUTextureFactory::createFromDescriptors()` instead for better control over texture arrays and view dimensions
 
 10. **WebGPUSamplerFactory** (`include/engine/rendering/webgpu/WebGPUSamplerFactory.h`)
     - `createDefaultSampler()` - Create default texture sampler

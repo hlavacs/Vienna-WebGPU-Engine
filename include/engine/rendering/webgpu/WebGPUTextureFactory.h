@@ -111,6 +111,28 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	std::shared_ptr<WebGPUTexture> getDefaultNormalTexture();
 
 	/**
+	 * @brief Create a 2D shadow map texture array for directional/spot lights.
+	 * @param size The size of each shadow map (width and height).
+	 * @param arrayLayers The number of shadow maps in the array.
+	 * @return Shared pointer to WebGPUTexture configured as shadow map 2D array.
+	 */
+	std::shared_ptr<WebGPUTexture> createShadowMap2DArray(
+		uint32_t size,
+		uint32_t arrayLayers
+	);
+
+	/**
+	 * @brief Create a cube shadow map texture array for point lights.
+	 * @param size The size of each cube face (width and height).
+	 * @param arrayLayers The number of cube shadow maps (each cube has 6 faces).
+	 * @return Shared pointer to WebGPUTexture configured as cube shadow map array.
+	 */
+	std::shared_ptr<WebGPUTexture> createShadowMapCubeArray(
+		uint32_t size,
+		uint32_t numCubes
+	);
+
+	/**
 	 * @brief Generate mipmaps for a texture.
 	 * @param gpuTexture The WebGPU texture to generate mipmaps for.
 	 * @param format The texture format.

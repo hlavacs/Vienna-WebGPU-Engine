@@ -350,13 +350,21 @@ void GameEngine::renderFrame(float deltaTime)
 		}
 	);
 
+	engine::rendering::RenderCollector renderCollector;
+	// Collect render data directly from scene graph
+	scene->collectRenderData(renderCollector);
+	// Sort render items by material for batching
+	renderCollector.sort();
+
 	m_renderer->startFrame();
+
+	m_renderer->renderShadowMaps(renderCollector);
 
 	std::vector<uint64_t> cameraIds;
 
 	for (auto &camera : cameras)
 	{
-		renderCamera(scene, camera);
+		renderCamera(renderCollector, scene, camera);
 		cameraIds.push_back(camera->getId());
 	}
 
@@ -367,6 +375,7 @@ void GameEngine::renderFrame(float deltaTime)
 }
 
 void GameEngine::renderCamera(
+	engine::rendering::RenderCollector& renderCollector, 
 	const std::shared_ptr<engine::scene::Scene> &scene,
 	const std::shared_ptr<engine::scene::nodes::CameraNode> &camera
 )
@@ -381,82 +390,15 @@ void GameEngine::renderCamera(
 	frameUniforms.cameraWorldPosition = camera->getPosition();
 	frameUniforms.time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
 
-	// Collect render proxies from scene graph
-	std::vector<std::shared_ptr<engine::rendering::RenderProxy>> renderProxies;
-	std::vector<engine::rendering::LightStruct> lights;
-	scene->collectRenderProxies(renderProxies, lights);
-
 	// Get or create render collector for this camera (cached across frames)
-	uint64_t cameraId = camera->getId();
+	/* uint64_t cameraId = camera->getId();
 	auto it = m_cameraCollectors.find(cameraId);
 	if (it == m_cameraCollectors.end())
 	{
-		// Create new collector for this camera
-		auto result = m_cameraCollectors.emplace(
-			std::piecewise_construct,
-			std::forward_as_tuple(cameraId),
-			std::forward_as_tuple(
-				camera->getViewMatrix(),
-				camera->getProjectionMatrix(),
-				camera->getPosition(),
-				camera->getFrustum(),
-				m_renderer->getWebGPUContext()
-			)
-		);
+		// Create new collector for this camera (default construction, no camera data)
+		auto result = m_cameraCollectors.emplace(cameraId, engine::rendering::RenderCollector{});
 		it = result.first;
-		
-		// Set the object bind group layout for the new collector
-		it->second.setObjectBindGroupLayout(m_renderer->getObjectBindGroupLayout());
-	}
-	
-	engine::rendering::RenderCollector &renderCollector = it->second;
-	
-	// Clear previous frame's render items (but keep bind group cache)
-	renderCollector.clear();
-	// Update camera-dependent data for this frame
-	renderCollector.updateCameraData(
-		camera->getViewMatrix(),
-		camera->getProjectionMatrix(),
-		camera->getPosition(),
-		camera->getFrustum()
-	);
-
-	// Process render proxies and populate the render collector
-	spdlog::debug("renderCamera: Processing {} render proxies for camera id={}", renderProxies.size(), camera->getId());
-
-	for (const auto &proxy : renderProxies)
-	{
-		// Check proxy type and process accordingly
-		if (auto modelProxy = std::dynamic_pointer_cast<engine::rendering::ModelRenderProxy>(proxy))
-		{
-			spdlog::debug("  - Adding ModelRenderProxy: objectID={}", modelProxy->objectID);
-			// Add model to render collector with object ID for bind group caching
-			// If material override is provided, use it; otherwise model will use its default materials
-			renderCollector.addModel(
-				modelProxy->model,
-				modelProxy->transform,
-				modelProxy->layer,
-				modelProxy->objectID  // Pass object ID for efficient bind group caching
-			);
-		}
-		else if (auto uiProxy = std::dynamic_pointer_cast<engine::rendering::UIRenderProxy>(proxy))
-		{
-			// TODO: Handle UI rendering when UI system is implemented
-			// uiRenderer->addUIElement(uiProxy);
-		}
-		else if (auto debugProxy = std::dynamic_pointer_cast<engine::rendering::DebugRenderProxy>(proxy))
-		{
-			// TODO: Handle debug rendering when debug system is implemented
-			// debugCollector.addPrimitive(debugProxy);
-		} else if(auto lightProxy = std::dynamic_pointer_cast<engine::rendering::LightRenderProxy>(proxy))
-		{
-			// Add light to render collector
-			renderCollector.addLight(lightProxy->lightData);
-		}
-	}
-
-	// Sort render items by material for batching
-	renderCollector.sort();
+	} */
 
 	// Get render target if specified
 	auto targetOptional = camera->getRenderTarget();

@@ -101,6 +101,7 @@ class GameEngine
 	void updateScene(float deltaTime);
 	void renderFrame(float deltaTime);
 	void renderCamera(
+		engine::rendering::RenderCollector &renderCollector,
 		const std::shared_ptr<engine::scene::Scene> &scene,
 		const std::shared_ptr<engine::scene::nodes::CameraNode> &camera
 	);

@@ -1,11 +1,6 @@
 #include "engine/rendering/RenderCollector.h"
 
 #include <algorithm>
-#include <functional>
-
-#include "engine/rendering/ObjectUniforms.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
-#include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 
 namespace engine::rendering
 {
@@ -20,73 +15,37 @@ void RenderCollector::addModel(
 	auto modelOpt = modelHandle.get();
 	if (!modelOpt.has_value())
 		return;
+
 	auto model = modelOpt.value();
 	auto meshHandle = model->getMesh();
 	auto meshOpt = meshHandle.get();
 	if (!meshOpt.has_value())
 		return;
+
 	auto mesh = meshOpt.value();
+
+	// Calculate world-space AABB for later culling
 	engine::math::AABB worldBounds = mesh->getBoundingBox().transformed(transform);
 
-	if (!isAABBVisible(worldBounds))
-		return;
+	// NO culling here - just collect unconditionally
+	// Culling happens on-demand via extractVisible() / extractForLight()
 
-	// Create or retrieve cached object bind group using objectID
-	std::shared_ptr<webgpu::WebGPUBindGroup> objectBindGroup = nullptr;
-
-	if (m_context && m_objectBindGroupLayout)
-	{
-		if (objectID == 0)
-		{
-			spdlog::warn("RenderCollector::addModel called with objectID=0 for model {}. Bind group caching will not work efficiently.", modelHandle.id());
-			return;
-		}
-
-		// Use objectID directly as cache key for static objects
-		// This allows bind groups to persist across frames for the same object
-		uint64_t cacheKey = objectID;
-
-		// Check if bind group already exists in cache
-		auto it = m_objectBindGroupCache.find(cacheKey);
-		if (it != m_objectBindGroupCache.end())
-		{
-			// Found cached bind group - update uniforms if transform changed
-			objectBindGroup = it->second;
-			
-			ObjectUniforms objectUniforms;
-			objectUniforms.modelMatrix = transform;
-			objectUniforms.normalMatrix = glm::transpose(glm::inverse(transform));
-			objectBindGroup->updateBuffer(0, &objectUniforms, sizeof(ObjectUniforms), 0, m_context->getQueue());
-		}
-		else
-		{
-			// Create new bind group and cache it
-			ObjectUniforms objectUniforms;
-			objectUniforms.modelMatrix = transform;
-			objectUniforms.normalMatrix = glm::transpose(glm::inverse(transform));
-
-			objectBindGroup = m_context->bindGroupFactory().createBindGroup(m_objectBindGroupLayout);
-			objectBindGroup->updateBuffer(0, &objectUniforms, sizeof(ObjectUniforms), 0, m_context->getQueue());
-
-			// Cache for future frames
-			m_objectBindGroupCache[cacheKey] = objectBindGroup;
-		}
-	}
-
+	// Create CPU-only render items for each submesh
 	for (const auto &submesh : model->getSubmeshes())
 	{
-		RenderItem item;
+		RenderItemCPU item;
 		item.modelHandle = modelHandle;
 		item.submesh = submesh;
 		item.worldTransform = transform;
+		item.worldBounds = worldBounds;
 		item.renderLayer = layer;
-		item.objectBindGroup = objectBindGroup;
+		item.objectID = objectID;
 
 		m_renderItems.push_back(item);
 	}
 }
 
-void RenderCollector::addLight(const LightStruct &light)
+void RenderCollector::addLight(const Light &light)
 {
 	m_lights.push_back(light);
 }
@@ -96,9 +55,8 @@ void RenderCollector::sort()
 	std::sort(
 		m_renderItems.begin(),
 		m_renderItems.end(),
-		[](const RenderItem &a, const RenderItem &b)
+		[](const RenderItemCPU &a, const RenderItemCPU &b)
 		{
-			// extract to method for clarity
 			return a < b;
 		}
 	);
@@ -108,37 +66,133 @@ void RenderCollector::clear()
 {
 	m_renderItems.clear();
 	m_lights.clear();
-	// NOTE: Do NOT clear m_objectBindGroupCache - it persists across frames for efficient bind group reuse
 }
 
-void RenderCollector::updateCameraData(
-	const glm::mat4 &viewMatrix,
-	const glm::mat4 &projMatrix,
-	const glm::vec3 &cameraPosition,
+std::vector<LightStruct> RenderCollector::extractLightUniforms() const
+{
+	std::vector<LightStruct> uniforms;
+	uniforms.reserve(m_lights.size());
+
+	for (const auto &light : m_lights)
+	{
+		uniforms.push_back(light.toUniforms());
+	}
+
+	return uniforms;
+}
+
+std::vector<size_t> RenderCollector::extractVisible(const engine::math::Frustum &frustum) const
+{
+	std::vector<size_t> visibleIndices;
+	visibleIndices.reserve(m_renderItems.size());
+
+	for (size_t i = 0; i < m_renderItems.size(); ++i)
+	{
+		if (isAABBVisibleInFrustum(m_renderItems[i].worldBounds, frustum))
+		{
+			visibleIndices.push_back(i);
+		}
+	}
+
+	return visibleIndices;
+}
+
+std::vector<size_t> RenderCollector::extractForLightFrustum(const engine::math::Frustum &lightFrustum) const
+{
+	std::vector<size_t> visibleIndices;
+	visibleIndices.reserve(m_renderItems.size());
+
+	for (size_t i = 0; i < m_renderItems.size(); ++i)
+	{
+		if (isAABBVisibleInFrustum(m_renderItems[i].worldBounds, lightFrustum))
+		{
+			visibleIndices.push_back(i);
+		}
+	}
+
+	return visibleIndices;
+}
+
+std::vector<size_t> RenderCollector::extractForPointLight(const glm::vec3 &lightPosition, float lightRange) const
+{
+	std::vector<size_t> visibleIndices;
+	visibleIndices.reserve(m_renderItems.size());
+
+	for (size_t i = 0; i < m_renderItems.size(); ++i)
+	{
+		if (isAABBInSphere(m_renderItems[i].worldBounds, lightPosition, lightRange))
+		{
+			visibleIndices.push_back(i);
+		}
+	}
+
+	return visibleIndices;
+}
+
+std::vector<LightStruct> RenderCollector::extractLightUniformsWithShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const
+{
+	std::vector<LightStruct> uniforms;
+	uniforms.reserve(m_lights.size());
+
+	uint32_t shadow2DIndex = 0;
+	uint32_t shadowCubeIndex = 0;
+
+	for (auto &light : m_lights)
+	{
+		LightStruct u = light.toUniforms();
+
+		// Assign shadow indices only if the light casts shadows
+		if (light.canCastShadows())
+		{
+			switch (light.getLightType())
+			{
+			case 1: // directional
+			case 3: // spot
+				if (shadow2DIndex < maxShadow2D)
+				{
+					u.shadowIndex = shadow2DIndex++;
+				}
+				else
+				{
+					u.shadowIndex = -1; // exceeded max, disable shadows
+				}
+				break;
+			case 2: // point
+				if (shadowCubeIndex < maxShadowCube)
+				{
+					u.shadowIndex = shadowCubeIndex++;
+				}
+				else
+				{
+					u.shadowIndex = -1;
+				}
+				break;
+			default:
+				u.shadowIndex = -1; // ambient or unsupported
+				break;
+			}
+		}
+
+		uniforms.push_back(u);
+	}
+
+	return uniforms;
+}
+
+bool RenderCollector::isAABBVisibleInFrustum(
+	const engine::math::AABB &aabb,
 	const engine::math::Frustum &frustum
 )
 {
-	m_viewMatrix = viewMatrix;
-	m_projMatrix = projMatrix;
-	m_cameraPosition = cameraPosition;
-	m_frustum = frustum;
-}
-
-bool RenderCollector::isAABBVisible(
-	const engine::math::AABB &aabb
-) const
-{
-	const auto &planes = m_frustum.asArray();
+	const auto &planes = frustum.asArray();
 
 	const glm::vec3 center = aabb.center();
 	const float radius = glm::length(aabb.extent());
 
-	// Fast Radar test
+	// Fast sphere test
 	for (const auto &plane : planes)
 	{
-		const float distance =
-			glm::dot(plane->normal, center) + plane->d;
-
+		const float distance = glm::dot(plane->normal, center) + plane->d;
 		if (distance < -radius)
 			return false;
 	}
@@ -160,6 +214,21 @@ bool RenderCollector::isAABBVisible(
 	}
 
 	return true;
+}
+
+bool RenderCollector::isAABBInSphere(
+	const engine::math::AABB &aabb,
+	const glm::vec3 &center,
+	float radius
+)
+{
+	// Find the closest point on the AABB to the sphere center
+	glm::vec3 closestPoint = glm::clamp(center, aabb.min, aabb.max);
+
+	// Check if the closest point is within the sphere
+	glm::vec3 diff = closestPoint - center;
+	float distanceSquared = glm::dot(diff, diff);
+	return distanceSquared <= (radius * radius);
 }
 
 } // namespace engine::rendering

@@ -34,6 +34,7 @@ bool Renderer::initialize()
 {
 	spdlog::info("Initializing Renderer");
 
+	// Create depth buffer
 	m_depthBuffer = m_context->depthTextureFactory().createDefault(
 		m_context->surfaceManager().currentConfig().width,
 		m_context->surfaceManager().currentConfig().height,
@@ -46,77 +47,41 @@ bool Renderer::initialize()
 		return false;
 	}
 
-	m_frameBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("frameUniforms");
-	if (m_frameBindGroupLayout == nullptr)
+	// Initialize rendering passes
+	m_shadowPass = std::make_unique<ShadowPass>(m_context);
+	if (!m_shadowPass->initialize())
 	{
-		spdlog::error("Failed to get global bind group layout for frameUniforms");
-		return false;
-	}
-	m_lightBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("lightUniforms");
-	if (m_lightBindGroupLayout == nullptr)
-	{
-		spdlog::error("Failed to get global bind group layout for lightUniforms");
-		return false;
-	}
-	m_lightBindGroup = m_context->bindGroupFactory().createBindGroup(m_lightBindGroupLayout);
-
-	m_objectBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("objectUniforms");
-	if (m_objectBindGroupLayout == nullptr)
-	{
-		spdlog::error("Failed to get global bind group layout for objectUniforms");
+		spdlog::error("Failed to initialize ShadowPass");
 		return false;
 	}
 
-	wgpu::SamplerDescriptor samplerDesc{};
-	samplerDesc.addressModeU = wgpu::AddressMode::ClampToEdge;
-	samplerDesc.addressModeV = wgpu::AddressMode::ClampToEdge;
-	samplerDesc.addressModeW = wgpu::AddressMode::ClampToEdge;
-	samplerDesc.magFilter = wgpu::FilterMode::Linear;
-	samplerDesc.minFilter = wgpu::FilterMode::Linear;
-	samplerDesc.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-	samplerDesc.maxAnisotropy = 1;
-	m_fullscreenQuadSampler = m_context->getDevice().createSampler(samplerDesc);
+	m_meshPass = std::make_unique<MeshPass>(m_context);
+	if (!m_meshPass->initialize())
+	{
+		spdlog::error("Failed to initialize MeshPass");
+		return false;
+	}
+
+	m_compositePass = std::make_unique<CompositePass>(m_context);
+	if (!m_compositePass->initialize())
+	{
+		spdlog::error("Failed to initialize CompositePass");
+		return false;
+	}
+	if (!initializeShadowResources())
+	{
+		spdlog::error("Failed to initialize shadow resources");
+		return false;
+	}
 
 	spdlog::info("Renderer initialized successfully");
 	return true;
 }
 
-void Renderer::updateLights(const std::vector<LightStruct> &lights)
-{
-	// Always write the header, even if there are no lights (count = 0)
-	LightsBuffer header;
-	header.count = static_cast<uint32_t>(lights.size());
-
-	// Write header to the global lights buffer at offset 0
-	m_lightBindGroup->updateBuffer(0, &header, sizeof(LightsBuffer), 0, m_context->getQueue());
-
-	// Write light data if any lights exist at offset sizeof(LightsBuffer)
-	if (!lights.empty())
-	{
-		m_lightBindGroup->updateBuffer(0, lights.data(), lights.size() * sizeof(LightStruct), sizeof(LightsBuffer), m_context->getQueue());
-	}
-}
-
-void Renderer::bindFrameUniforms(wgpu::RenderPassEncoder renderPass, uint64_t cameraId, const FrameUniforms &frameUniforms)
-{
-	auto &frameBindGroup = m_frameBindGroupCache[cameraId];
-	if (!frameBindGroup)
-	{
-		frameBindGroup = m_context->bindGroupFactory().createBindGroup(m_frameBindGroupLayout);
-	}
-
-	frameBindGroup->updateBuffer(0, &frameUniforms, sizeof(FrameUniforms), 0, m_context->getQueue());
-	renderPass.setBindGroup(0, frameBindGroup->getBindGroup(), 0, nullptr);
-}
-
-void Renderer::bindLightUniforms(wgpu::RenderPassEncoder renderPass)
-{
-	renderPass.setBindGroup(1, m_lightBindGroup->getBindGroup(), 0, nullptr);
-}
-
 void Renderer::startFrame()
 {
 	m_surfaceTexture = m_context->surfaceManager().acquireNextTexture();
+	m_gpuRenderItems.clear(); // Clear GPU render items at the start of each frame
 }
 
 std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
@@ -166,6 +131,113 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 	return gpuTexture;
 }
 
+void Renderer::renderShadowMaps(const RenderCollector &collector)
+{
+    auto shadowLights = collector.extractLightUniformsWithShadows(
+        constants::MAX_SHADOW_MAPS_2D,
+        constants::MAX_SHADOW_MAPS_CUBE
+    );
+
+    if (shadowLights.empty())
+        return;
+
+    // Prepare buffers if necessary
+    std::vector<Shadow2D> shadow2DData(constants::MAX_SHADOW_MAPS_2D);
+    std::vector<ShadowCube> shadowCubeData(constants::MAX_SHADOW_MAPS_CUBE);
+
+    for (size_t lightIdx = 0; lightIdx < shadowLights.size(); ++lightIdx)
+    {
+        const auto &light = shadowLights[lightIdx];
+        std::vector<size_t> visibleIndices;
+        glm::mat4 lightVP = glm::mat4(1.0f);
+
+        glm::vec3 position = glm::vec3(light.transform[3]);
+        glm::vec3 direction = glm::normalize(glm::vec3(light.transform * glm::vec4(0, 0, -1, 0)));
+
+        switch (light.light_type)
+        {
+        case 1: // Directional
+        {
+            float nearPlane = 0.0f;
+            float farPlane = light.range * 2.0f;
+            float halfWidth = light.range;
+            float halfHeight = light.range;
+
+            visibleIndices = collector.extractForLightFrustum(
+                engine::math::Frustum::orthographic(position, direction, halfWidth, halfHeight, nearPlane, farPlane)
+            );
+
+            glm::vec3 up = glm::abs(glm::dot(direction, glm::vec3(0, 1, 0))) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+            lightVP = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, nearPlane, farPlane)
+                    * glm::lookAt(position - direction * farPlane, position, up);
+
+            shadow2DData[lightIdx].lightViewProjection = lightVP;
+            shadow2DData[lightIdx].bias = 0.005f;
+            shadow2DData[lightIdx].normalBias = 0.01f;
+            shadow2DData[lightIdx].texelSize = 1.0f / 2048.0f;
+            shadow2DData[lightIdx].pcfKernel = 1;
+            break;
+        }
+        case 2: // Point
+        {
+            visibleIndices = collector.extractForPointLight(position, light.range);
+
+            shadowCubeData[lightIdx].lightPosition = position;
+            shadowCubeData[lightIdx].bias = 0.005f;
+            shadowCubeData[lightIdx].texelSize = 1.0f / 1024.0f;
+            shadowCubeData[lightIdx].pcfKernel = 1;
+            break;
+        }
+        case 3: // Spot
+        {
+            float aspect = 1.0f;
+            float nearPlane = 0.1f;
+            float farPlane = light.range;
+
+            visibleIndices = collector.extractForLightFrustum(
+                engine::math::Frustum::perspective(position, direction, light.spot_angle * 2.0f, aspect, nearPlane, farPlane)
+            );
+
+            glm::vec3 up = glm::abs(glm::dot(direction, glm::vec3(0, 1, 0))) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+            lightVP = glm::perspective(glm::radians(light.spot_angle * 2.0f), aspect, nearPlane, farPlane)
+                    * glm::lookAt(position, position + direction, up);
+
+            shadow2DData[lightIdx].lightViewProjection = lightVP;
+            shadow2DData[lightIdx].bias = 0.005f;
+            shadow2DData[lightIdx].normalBias = 0.01f;
+            shadow2DData[lightIdx].texelSize = 1.0f / 2048.0f;
+            shadow2DData[lightIdx].pcfKernel = 1;
+            break;
+        }
+        default:
+            continue;
+        }
+
+        auto gpuItems = prepareGPUResources(collector, visibleIndices);
+
+        if (light.light_type == 2)
+            m_shadowPass->renderShadowCube(gpuItems, visibleIndices, *m_shadowResources.shadowCubeArray,
+                                           static_cast<uint32_t>(lightIdx), position, light.range);
+        else
+            m_shadowPass->renderShadow2D(gpuItems, visibleIndices, *m_shadowResources.shadow2DArray,
+                                         static_cast<uint32_t>(lightIdx), lightVP);
+    }
+
+    // After all lights, write the data to GPU buffers
+    if (!shadow2DData.empty())
+        m_shadowResources.bindGroup->updateBuffer(3, shadow2DData.data(),
+                                                  shadow2DData.size() * sizeof(Shadow2D), 0,
+                                                  m_context->getQueue());
+    if (!shadowCubeData.empty())
+        m_shadowResources.bindGroup->updateBuffer(4, shadowCubeData.data(),
+                                                  shadowCubeData.size() * sizeof(ShadowCube), 0,
+                                                  m_context->getQueue());
+
+    // Then give the bind group to mesh pass
+    m_meshPass->setShadowBindGroup(m_shadowResources.bindGroup);
+}
+
+
 void Renderer::renderToTexture(
 	const RenderCollector &collector,
 	uint64_t renderTargetId,
@@ -178,10 +250,7 @@ void Renderer::renderToTexture(
 {
 	spdlog::debug("renderToTexture called: targetId={}, renderItems={}, lights={}", renderTargetId, collector.getRenderItems().size(), collector.getLights().size());
 
-	updateLights(collector.getLights());
-
 	RenderTarget &target = m_renderTargets[renderTargetId];
-
 	target.viewport = viewport;
 	target.clearFlags = clearFlags;
 	target.backgroundColor = backgroundColor;
@@ -204,34 +273,28 @@ void Renderer::renderToTexture(
 		return;
 	}
 
-	wgpu::CommandEncoderDescriptor encoderDesc{};
-	encoderDesc.label = ("RenderTarget_" + std::to_string(renderTargetId) + "_Encoder").c_str();
-	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
-
+	// Create render pass context
 	auto renderPassContext = m_context->renderPassFactory().createForTexture(
 		target.gpuTexture,
 		m_depthBuffer,
 		clearFlags,
 		backgroundColor
 	);
-	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
 
-	bindFrameUniforms(renderPass, renderTargetId, frameUniforms);
-	bindLightUniforms(renderPass);
+	auto cameraFrustum = engine::math::Frustum::fromViewProjection(frameUniforms.viewProjectionMatrix);
 
-	spdlog::debug("About to call renderItems with {} items", collector.getRenderItems().size());
-	renderItems(encoder, renderPass, collector, renderPassContext);
-	spdlog::debug("Returned from renderItems");
+	std::vector<size_t> visibleIndices = collector.extractVisible(cameraFrustum);
 
-	renderPass.end();
-	renderPass.release();
+	// Prepare GPU resources once for this frame
+	spdlog::debug("Preparing GPU resources for {} render items", visibleIndices.size());
+	auto gpuItems = prepareGPUResources(collector, visibleIndices);
 
-	wgpu::CommandBufferDescriptor cmdBufferDesc{};
-	cmdBufferDesc.label = ("RenderTarget_" + std::to_string(renderTargetId) + "_CommandBuffer").c_str();
-	wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
-	encoder.release();
-	m_context->getQueue().submit(commands);
-	commands.release();
+	// Extract light uniforms from Light objects
+	auto lightUniforms = collector.extractLightUniforms();
+
+	// Render using MeshPass
+	spdlog::debug("Rendering {} GPU items using MeshPass", gpuItems.size());
+	m_meshPass->render(gpuItems, visibleIndices, lightUniforms, renderPassContext, frameUniforms, renderTargetId);
 
 	// Check if CPU readback was requested
 	if (cpuTarget.has_value() && cpuTarget->valid())
@@ -252,48 +315,43 @@ void Renderer::compositeTexturesToSurface(
 )
 {
 	spdlog::debug("compositeTexturesToSurface called with {} target IDs", targetIds.size());
-	for (auto id : targetIds)
-	{
-		spdlog::debug("  - Target ID: {}", id);
-	}
 
-	wgpu::CommandEncoderDescriptor encoderDesc{};
-	encoderDesc.label = "Composite Command Encoder";
-	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
-
-	// Create render pass WITHOUT depth buffer for compositing (no depth testing needed)
-	auto mainPass = m_context->renderPassFactory().createDefault(m_surfaceTexture, nullptr);
-	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(mainPass->getRenderPassDescriptor());
-
-	std::vector<std::pair<std::shared_ptr<webgpu::WebGPUTexture>, glm::vec4>> texturesWithViewports;
+	// Composite each render target to surface using CompositePass
 	for (uint64_t targetId : targetIds)
 	{
 		auto it = m_renderTargets.find(targetId);
 		if (it != m_renderTargets.end() && it->second.gpuTexture)
 		{
-			texturesWithViewports.emplace_back(it->second.gpuTexture, it->second.viewport);
+			// Create render pass context for surface
+			auto renderPassContext = m_context->renderPassFactory().createDefault(m_surfaceTexture, nullptr);
+
+			// Composite the texture to surface
+			m_compositePass->render(renderPassContext, it->second.gpuTexture);
 		}
 	}
 
-	if (!texturesWithViewports.empty())
-	{
-		drawFullscreenQuads(renderPass, texturesWithViewports);
-	}
-
+	// If UI callback is provided, render UI in a separate pass
 	if (uiCallback)
 	{
+		wgpu::CommandEncoderDescriptor encoderDesc{};
+		encoderDesc.label = "UI Command Encoder";
+		wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
+
+		auto uiPassContext = m_context->renderPassFactory().createDefault(m_surfaceTexture, nullptr);
+		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(uiPassContext->getRenderPassDescriptor());
+
 		uiCallback(renderPass);
+
+		renderPass.end();
+		renderPass.release();
+
+		wgpu::CommandBufferDescriptor cmdBufferDesc{};
+		cmdBufferDesc.label = "UI Command Buffer";
+		wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
+		encoder.release();
+		m_context->getQueue().submit(commands);
+		commands.release();
 	}
-
-	renderPass.end();
-	renderPass.release();
-
-	wgpu::CommandBufferDescriptor cmdBufferDesc{};
-	cmdBufferDesc.label = "Composite Command Buffer";
-	wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
-	encoder.release();
-	m_context->getQueue().submit(commands);
-	commands.release();
 
 	m_context->getSurface().present();
 	m_surfaceTexture.reset();
@@ -314,225 +372,23 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 		}
 	}
 
-	m_frameBindGroupCache.clear();
-	m_fullscreenQuadBindGroupCache.clear();
-	m_fullscreenQuadPipeline.reset();
+	// Clear pass caches
+	if (m_meshPass)
+	{
+		m_meshPass->clearFrameBindGroupCache();
+	}
+
+	if (m_compositePass)
+	{
+		m_compositePass->clearCache();
+	}
+
+	if (m_shadowPass)
+	{
+		m_shadowPass->clearPipelineCache();
+	}
 
 	spdlog::info("Renderer resized to {}x{}", width, height);
-}
-
-std::shared_ptr<webgpu::WebGPUModel> Renderer::getOrCreateWebGPUModel(
-	const engine::core::Handle<engine::rendering::Model> &modelHandle
-)
-{
-	if (!modelHandle.valid())
-	{
-		spdlog::error("Invalid model handle");
-		return nullptr;
-	}
-
-	// Check if we already have this model cached
-	auto it = m_modelCache.find(modelHandle);
-	if (it != m_modelCache.end())
-	{
-		return it->second;
-	}
-
-	// Create new WebGPUModel using the factory
-	auto webgpuModel = m_context->modelFactory().createFromHandle(modelHandle);
-	if (!webgpuModel)
-	{
-		spdlog::error("Failed to create WebGPUModel from handle");
-		return nullptr;
-	}
-
-	// Cache it for future use
-	m_modelCache[modelHandle] = webgpuModel;
-
-	return webgpuModel;
-}
-
-void Renderer::renderItems(
-	wgpu::CommandEncoder &encoder,
-	wgpu::RenderPassEncoder renderPass,
-	const RenderCollector &collector,
-	const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext
-)
-{
-	// Set viewport and scissor for the render pass
-	auto colorTexture = renderPassContext->getColorTexture(0);
-	if (colorTexture)
-	{
-		uint32_t width = colorTexture->getWidth();
-		uint32_t height = colorTexture->getHeight();
-
-		renderPass.setViewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f);
-		renderPass.setScissorRect(0, 0, width, height);
-
-		spdlog::debug("Set viewport and scissor: {}x{}", width, height);
-	}
-
-	// Track current state to avoid redundant binding
-	uint64_t currentModelId = 0;
-	uint64_t currentMaterialId = 0;
-	std::shared_ptr<webgpu::WebGPUPipeline> currentPipeline = nullptr;
-
-	spdlog::debug("renderItems: Processing {} render items", collector.getRenderItems().size());
-
-	// Each RenderItem represents a specific submesh to render
-	for (const auto &item : collector.getRenderItems())
-	{
-		spdlog::debug("Processing render item with modelHandle id={}", item.modelHandle.id());
-
-		// Get the GPU model
-		auto gpuModel = getOrCreateWebGPUModel(item.modelHandle);
-		if (!gpuModel)
-		{
-			spdlog::warn("Failed to get/create GPU model, skipping");
-			continue;
-		}
-
-		// Update GPU resources from CPU (lazy update based on version)
-		gpuModel->update();
-
-		auto mesh = gpuModel->getMesh();
-		if (!mesh)
-		{
-			spdlog::warn("GPU model has no mesh, skipping");
-			continue;
-		}
-
-		// Update mesh GPU resources if needed
-		mesh->update();
-
-		uint64_t modelId = item.modelHandle.id();
-
-		// When model changes: update vertex/index buffers
-		if (modelId != currentModelId)
-		{
-			currentModelId = modelId;
-
-			spdlog::debug("Binding vertex/index buffers for model id={}", modelId);
-
-			// Set vertex and index buffers for this mesh
-			renderPass.setVertexBuffer(0, mesh->getVertexBuffer(), 0, mesh->getVertexCount() * sizeof(Vertex));
-
-			if (mesh->isIndexed())
-			{
-				renderPass.setIndexBuffer(mesh->getIndexBuffer(), wgpu::IndexFormat::Uint32, 0, mesh->getIndexCount() * sizeof(uint32_t));
-			}
-		}
-
-		// ALWAYS update object uniforms (group 2) for each render item
-		// Even if multiple items share the same model, they have different world transforms!
-		if (item.objectBindGroup)
-		{
-			renderPass.setBindGroup(2, item.objectBindGroup->getBindGroup(), 0, nullptr);
-		}
-		else
-		{
-			spdlog::warn("RenderItem missing objectBindGroup, skipping");
-			continue;
-		}
-
-		// Get the material for this specific submesh
-		const auto &submesh = item.submesh;
-		if (!submesh.material.valid())
-		{
-			spdlog::warn("RenderItem submesh has no valid material, skipping");
-			continue;
-		}
-
-		uint64_t materialId = submesh.material.id();
-
-		// When material changes: rebind material and get pipeline
-		if (materialId != currentMaterialId)
-		{
-			currentMaterialId = materialId;
-
-			spdlog::debug("Material changed to id={}, creating GPU material", materialId);
-
-			// Get or create GPU material
-			auto gpuMaterial = m_context->materialFactory().createFromHandle(submesh.material);
-			if (!gpuMaterial)
-			{
-				spdlog::warn("Failed to create GPU material, skipping");
-				continue;
-			}
-
-			// Update GPU resources from CPU (lazy update based on version)
-			gpuMaterial->update();
-
-			// Bind material bind group (group 3)
-			gpuMaterial->bind(renderPass);
-
-			// Get material's CPU handle to access shader info
-			auto materialOpt = submesh.material.get();
-			if (!materialOpt.has_value())
-			{
-				spdlog::warn("Failed to resolve material handle");
-				continue;
-			}
-
-			auto material = materialOpt.value();
-
-			// Get the model's CPU handle to access mesh
-			auto modelOpt = item.modelHandle.get();
-			if (!modelOpt.has_value())
-			{
-				spdlog::warn("Failed to resolve model handle");
-				continue;
-			}
-
-			auto model = modelOpt.value();
-			auto meshHandle = model->getMesh();
-			auto meshOpt = meshHandle.get();
-			if (!meshOpt.has_value())
-			{
-				spdlog::warn("Model has no mesh");
-				continue;
-			}
-
-			auto cpuMesh = meshOpt.value();
-
-			spdlog::debug("Getting pipeline for material id={}", materialId);
-
-			// Get or create render pipeline for this material/mesh combination
-			auto newPipeline = m_pipelineManager->getOrCreatePipeline(
-				cpuMesh,
-				material,
-				renderPassContext
-			);
-
-			if (!newPipeline || !newPipeline->isValid())
-			{
-				spdlog::error("Failed to get/create render pipeline");
-				continue;
-			}
-
-			// Only set pipeline if it actually changed
-			if (newPipeline != currentPipeline)
-			{
-				currentPipeline = newPipeline;
-				renderPass.setPipeline(currentPipeline->getPipeline());
-				spdlog::debug("Pipeline changed, setting new pipeline");
-			}
-		}
-
-		// Draw this specific submesh
-		spdlog::debug("Drawing submesh: indexCount={}, indexOffset={}, indexed={}", submesh.indexCount, submesh.indexOffset, mesh->isIndexed());
-
-		if (mesh->isIndexed())
-		{
-			renderPass.drawIndexed(submesh.indexCount, 1, submesh.indexOffset, 0, 0);
-		}
-		else
-		{
-			renderPass.draw(submesh.indexCount, 1, submesh.indexOffset, 0);
-		}
-	}
-
-	spdlog::debug("renderItems: Finished processing all items");
 }
 
 void Renderer::renderDebugPrimitives(
@@ -543,132 +399,133 @@ void Renderer::renderDebugPrimitives(
 	// ToDo: Implement debug primitive rendering (shader, pipeline, bind groups)
 }
 
-void Renderer::drawFullscreenQuads(
-	wgpu::RenderPassEncoder renderPass,
-	const std::vector<std::pair<std::shared_ptr<webgpu::WebGPUTexture>, glm::vec4>> &texturesWithViewports
+std::vector<std::optional<RenderItemGPU>> Renderer::prepareGPUResources(
+	const RenderCollector &collector,
+	const std::vector<size_t> &indicesToPrepare
 )
 {
-	if (texturesWithViewports.empty())
+	// Make sure the local GPU item cache matches CPU items
+	if (m_gpuRenderItems.size() != collector.getRenderItems().size())
+		m_gpuRenderItems.resize(collector.getRenderItems().size());
+
+	auto objectBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("objectUniforms");
+	if (!objectBindGroupLayout)
 	{
-		return;
+		spdlog::error("Failed to get objectUniforms bind group layout");
+		return m_gpuRenderItems;
 	}
 
-	if (!m_fullscreenQuadPipeline)
+	const auto &cpuItems = collector.getRenderItems();
+	for (size_t idx : indicesToPrepare)
 	{
-		auto shaderInfo = m_context->shaderRegistry().getShader(shader::default ::FULLSCREEN_QUAD);
-		if (!shaderInfo || !shaderInfo->isValid())
+		// Skip if already prepared
+		if (m_gpuRenderItems[idx].has_value())
+			continue;
+
+		const auto &cpuItem = cpuItems[idx];
+
+		// Create GPU model (factory caches internally)
+		auto gpuModel = m_context->modelFactory().createFromHandle(cpuItem.modelHandle);
+		if (!gpuModel)
 		{
-			spdlog::error("Fullscreen quad shader not found or invalid");
-			return;
-		}
-
-		m_fullscreenQuadPipeline = m_context->pipelineFactory().createRenderPipeline(
-			shaderInfo,
-			shaderInfo,
-			m_context->surfaceManager().currentConfig().format,
-			wgpu::TextureFormat::Undefined,
-			Topology::Triangles,
-			wgpu::CullMode::None,
-			1
-		);
-
-		if (!m_fullscreenQuadPipeline || !m_fullscreenQuadPipeline->isValid())
-		{
-			spdlog::error("Failed to create fullscreen quad pipeline");
-			return;
-		}
-	}
-
-	auto shaderInfo = m_context->shaderRegistry().getShader(shader::default ::FULLSCREEN_QUAD);
-	auto bindGroupLayout = shaderInfo->getBindGroupLayout(0);
-	if (!bindGroupLayout)
-	{
-		spdlog::error("Fullscreen quad shader has no bind group layout at group 0");
-		return;
-	}
-
-	uint32_t surfaceWidth = m_surfaceTexture->getWidth();
-	uint32_t surfaceHeight = m_surfaceTexture->getHeight();
-
-	renderPass.setPipeline(m_fullscreenQuadPipeline->getPipeline());
-
-	// Cache bind groups per texture to avoid creating/releasing every frame
-	for (const auto &[texture, viewport] : texturesWithViewports)
-	{
-		if (!texture)
-		{
+			spdlog::warn("Failed to create GPU model for handle {}", cpuItem.modelHandle.id());
 			continue;
 		}
 
-		// Use texture pointer as cache key
-		uint64_t cacheKey = reinterpret_cast<uint64_t>(texture.get());
+		gpuModel->syncIfNeeded();
 
-		// Check if we already have a bind group for this texture
-		auto it = m_fullscreenQuadBindGroupCache.find(cacheKey);
-		std::shared_ptr<webgpu::WebGPUBindGroup> cachedBindGroup;
-
-		if (it == m_fullscreenQuadBindGroupCache.end())
+		// Get GPU mesh
+		auto gpuMesh = gpuModel->getMesh().get();
+		if (!gpuMesh)
 		{
-			// Create new bind group for this texture
-			std::vector<wgpu::BindGroupEntry> entries;
-			entries.reserve(bindGroupLayout->getEntries().size());
+			spdlog::warn("Failed to get GPU mesh from model {}", cpuItem.modelHandle.id());
+			continue;
+		}
 
-			for (const auto &layoutEntry : bindGroupLayout->getEntries())
-			{
-				wgpu::BindGroupEntry entry{};
-				entry.binding = layoutEntry.binding;
+		gpuMesh->syncIfNeeded();
 
-				if (layoutEntry.texture.sampleType != wgpu::TextureSampleType::Undefined)
-				{
-					entry.textureView = texture->getTextureView();
-				}
-				else if (layoutEntry.sampler.type != wgpu::SamplerBindingType::Undefined)
-				{
-					entry.sampler = m_fullscreenQuadSampler;
-				}
+		// Get GPU material
+		auto materialHandle = cpuItem.submesh.material;
+		auto gpuMaterial = m_context->materialFactory().createFromHandle(materialHandle);
+		if (!gpuMaterial)
+		{
+			spdlog::warn("Failed to create GPU material for submesh");
+			continue;
+		}
 
-				entries.push_back(entry);
-			}
+		gpuMaterial->syncIfNeeded();
 
-			wgpu::BindGroup rawBindGroup = m_context->bindGroupFactory().createBindGroup(
-				bindGroupLayout->getLayout(),
-				entries
-			);
-
-			// Wrap in WebGPUBindGroup and cache
-			cachedBindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
-				rawBindGroup,
-				bindGroupLayout,
-				std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{} // No buffers for texture-only bind groups
-			);
-			m_fullscreenQuadBindGroupCache[cacheKey] = cachedBindGroup;
+		// Get or create object bind group
+		std::shared_ptr<webgpu::WebGPUBindGroup> objectBindGroup;
+		auto it = m_objectBindGroupCache.find(cpuItem.objectID);
+		if (it != m_objectBindGroupCache.end())
+		{
+			objectBindGroup = it->second;
 		}
 		else
 		{
-			// Reuse cached bind group
-			cachedBindGroup = it->second;
+			objectBindGroup = m_context->bindGroupFactory().createBindGroup(objectBindGroupLayout);
+			if (cpuItem.objectID != 0)
+				m_objectBindGroupCache[cpuItem.objectID] = objectBindGroup;
 		}
 
-		uint32_t vpX = static_cast<uint32_t>(viewport.x * surfaceWidth);
-		uint32_t vpY = static_cast<uint32_t>(viewport.y * surfaceHeight);
-		uint32_t vpWidth = static_cast<uint32_t>(viewport.z * surfaceWidth);
-		uint32_t vpHeight = static_cast<uint32_t>(viewport.w * surfaceHeight);
+		// Fill GPU render item
+		RenderItemGPU gpuItem;
+		gpuItem.gpuModel = gpuModel;
+		gpuItem.gpuMesh = gpuMesh;
+		gpuItem.gpuMaterial = gpuMaterial;
+		gpuItem.objectBindGroup = objectBindGroup;
+		gpuItem.submesh = cpuItem.submesh;
+		gpuItem.worldTransform = cpuItem.worldTransform;
+		gpuItem.renderLayer = cpuItem.renderLayer;
+		gpuItem.objectID = cpuItem.objectID;
 
-		renderPass.setViewport(
-			static_cast<float>(vpX),
-			static_cast<float>(vpY),
-			static_cast<float>(vpWidth),
-			static_cast<float>(vpHeight),
-			0.0f,
-			1.0f
-		);
-
-		renderPass.setScissorRect(vpX, vpY, vpWidth, vpHeight);
-
-		// Bind and draw (bind group stays alive in cache)
-		renderPass.setBindGroup(0, cachedBindGroup->getBindGroup(), 0, nullptr);
-		renderPass.draw(3, 1, 0, 0);
+		m_gpuRenderItems[idx] = gpuItem;
 	}
+
+	spdlog::debug("Prepared GPU resources: {}/{} items", std::count_if(m_gpuRenderItems.begin(), m_gpuRenderItems.end(), [](auto &i)
+																	   { return i.has_value(); }),
+				  collector.getRenderItems().size());
+
+	return m_gpuRenderItems;
+}
+
+bool Renderer::initializeShadowResources()
+{
+	if (m_shadowResources.initialized)
+		return true;
+
+	m_shadowResources.shadowSampler = m_context->samplerFactory().getShadowComparisonSampler();
+
+	// Create 2D shadow map array
+	m_shadowResources.shadow2DArray = m_context->textureFactory().createShadowMap2DArray(
+		constants::DEFAULT_SHADOW_MAP_SIZE,
+		constants::MAX_SHADOW_MAPS_2D
+	);
+
+	// Create cube shadow map array
+	m_shadowResources.shadowCubeArray = m_context->textureFactory().createShadowMapCubeArray(
+		constants::DEFAULT_CUBE_SHADOW_MAP_SIZE,
+		constants::MAX_SHADOW_MAPS_CUBE
+	);
+
+	auto shadowLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("shadowMaps");
+	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> resources = {
+		{{4, 0}, webgpu::BindGroupResource(m_shadowResources.shadowSampler)},
+		{{4, 1}, webgpu::BindGroupResource(m_shadowResources.shadow2DArray)},
+		{{4, 2}, webgpu::BindGroupResource(m_shadowResources.shadowCubeArray)}
+	};
+
+	// Create bind group (sampler + textures + storage buffers)
+	m_shadowResources.bindGroup = m_context->bindGroupFactory().createBindGroup(
+		shadowLayout,
+		resources,
+		nullptr,
+		"ShadowMaps"
+	);
+
+	m_shadowResources.initialized = true;
+	return true;
 }
 
 } // namespace engine::rendering

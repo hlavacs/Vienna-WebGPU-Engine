@@ -3,7 +3,7 @@
 #include "engine/rendering/Model.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
 #include "engine/rendering/webgpu/WebGPUMesh.h"
-#include "engine/rendering/webgpu/WebGPURenderObject.h"
+#include "engine/rendering/webgpu/WebGPUSyncObject.h"
 #include <memory>
 
 namespace engine::rendering::webgpu
@@ -20,7 +20,7 @@ struct WebGPUModelOptions
  * @class WebGPUModel
  * @brief GPU-side model: combines WebGPUMesh and WebGPUMaterial for rendering.
  */
-class WebGPUModel : public WebGPURenderObject<engine::rendering::Model>
+class WebGPUModel : public WebGPUSyncObject<engine::rendering::Model>
 {
   public:
 	/**
@@ -38,19 +38,6 @@ class WebGPUModel : public WebGPURenderObject<engine::rendering::Model>
 	);
 
 	/**
-	 * @brief Render the model.
-	 * @param encoder The command encoder.
-	 * @param renderPass The render pass.
-	 */
-	void render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass);
-
-
-	void bind(wgpu::RenderPassEncoder &renderPass) const override
-	{
-		// Models typically don't bind directly; their meshes and materials handle binding.
-	}
-
-	/**
 	 * @brief Get the GPU-side mesh.
 	 * @return Shared pointer to WebGPUMesh.
 	 */
@@ -64,9 +51,9 @@ class WebGPUModel : public WebGPURenderObject<engine::rendering::Model>
 
   protected:
 	/**
-	 * @brief Update GPU resources when CPU model changes.
+	 * @brief Sync GPU resources from CPU model.
 	 */
-	void updateGPUResources() override;
+	void syncFromCPU(const Model &cpuModel) override;
 
   private:
 	std::shared_ptr<WebGPUMesh> m_mesh;

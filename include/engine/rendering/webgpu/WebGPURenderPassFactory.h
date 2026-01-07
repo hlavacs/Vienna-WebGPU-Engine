@@ -1,9 +1,9 @@
 #pragma once
-#include <glm/glm.hpp>
-#include <webgpu/webgpu.hpp>
+#include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/webgpu/WebGPURenderPassContext.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
-#include "engine/rendering/ClearFlags.h"
+#include <glm/glm.hpp>
+#include <webgpu/webgpu.hpp>
 
 namespace engine::rendering::webgpu
 {
@@ -20,7 +20,7 @@ class WebGPURenderPassFactory
 	 * @brief Constructs a new WebGPURenderPassFactory with a given WebGPU context.
 	 * @param context Pointer to the WebGPUContext.
 	 */
-	explicit WebGPURenderPassFactory(WebGPUContext& context);
+	explicit WebGPURenderPassFactory(WebGPUContext &context);
 
 	/**
 	 * @brief Creates a default render pass buffer using provided color and depth textures.
@@ -48,19 +48,32 @@ class WebGPURenderPassFactory
 		const glm::vec4 &backgroundColor
 	);
 
-		/**
-		 * @brief Creates a fully configurable render pass buffer with custom textures and descriptor.
-		 *        Asserts that the number of color textures matches the descriptor's colorAttachmentCount.
-		 * @param colorTextures Vector of shared pointers to color textures.
-		 * @param depthTexture Shared pointer to depth texture.
-		 * @param descriptor Custom RenderPassDescriptor with attachments configured.
-		 * @return Shared pointer to WebGPURenderPassContext with all resources and descriptors set.
-		 */
-		std::shared_ptr<WebGPURenderPassContext> createCustom(
-			const std::vector<std::shared_ptr<WebGPUTexture>> &colorTextures,
-			const std::shared_ptr<WebGPUDepthTexture> &depthTexture,
-			const wgpu::RenderPassDescriptor &descriptor
-		);
+	/**
+	 * @brief Creates a depth-only render pass (no color attachment) for shadow maps.
+	 * @param depthTextureView The depth texture view to render to (e.g., specific array layer).
+	 * @param clearDepth Whether to clear the depth buffer (default true).
+	 * @param clearValue The depth clear value (default 1.0).
+	 * @return Shared pointer to WebGPURenderPassContext configured for depth-only rendering.
+	 */
+	std::shared_ptr<WebGPURenderPassContext> createDepthOnly(
+		wgpu::TextureView depthTextureView,
+		bool clearDepth = true,
+		float clearValue = 1.0f
+	);
+
+	/**
+	 * @brief Creates a fully configurable render pass buffer with custom textures and descriptor.
+	 *        Asserts that the number of color textures matches the descriptor's colorAttachmentCount.
+	 * @param colorTextures Vector of shared pointers to color textures.
+	 * @param depthTexture Shared pointer to depth texture.
+	 * @param descriptor Custom RenderPassDescriptor with attachments configured.
+	 * @return Shared pointer to WebGPURenderPassContext with all resources and descriptors set.
+	 */
+	std::shared_ptr<WebGPURenderPassContext> createCustom(
+		const std::vector<std::shared_ptr<WebGPUTexture>> &colorTextures,
+		const std::shared_ptr<WebGPUDepthTexture> &depthTexture,
+		const wgpu::RenderPassDescriptor &descriptor
+	);
 
   private:
 	WebGPUContext &m_context;

@@ -2,6 +2,7 @@
 #include "engine/math/Frustum.h"
 #include "engine/math/Rect.h"
 #include "engine/rendering/ClearFlags.h"
+#include "engine/rendering/Texture.h"
 #include "engine/scene/Transform.h"
 #include "engine/scene/nodes/Node.h"
 #include "engine/scene/nodes/RenderNode.h"
@@ -289,14 +290,13 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	void preRender() override;
 
 	/**
-	 * @brief Collect render proxies for this camera.
-	 *
-	 * Creates a CameraRenderProxy to register this camera with the scene
-	 * during the render proxy collection phase.
-	 *
-	 * @param outProxies Vector to append render proxies to.
+	 * @brief Camera nodes don't add themselves to the render collector.
+	 * They are tracked separately by the scene as active cameras.
 	 */
-	void collectRenderProxies(std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies) override;
+	void onRenderCollect(engine::rendering::RenderCollector &collector) override
+	{
+		// Cameras don't add themselves to the collector - they're managed by the scene
+	}
 
 	void CameraNode::onRenderAreaChanged(uint32_t width, uint32_t height)
 	{

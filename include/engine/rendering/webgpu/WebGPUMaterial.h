@@ -9,7 +9,7 @@
 #include "engine/rendering/Material.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
-#include "engine/rendering/webgpu/WebGPURenderObject.h"
+#include "engine/rendering/webgpu/WebGPUSyncObject.h"
 
 namespace engine::rendering::webgpu
 {
@@ -29,7 +29,7 @@ struct WebGPUMaterialOptions
  * Uses a dictionary-based texture system that matches texture slot names from the CPU Material
  * to GPU WebGPUTexture instances. This allows flexible, modular material definitions.
  */
-class WebGPUMaterial : public WebGPURenderObject<engine::rendering::Material>, public std::enable_shared_from_this<WebGPUMaterial>
+class WebGPUMaterial : public WebGPUSyncObject<engine::rendering::Material>, public std::enable_shared_from_this<WebGPUMaterial>
 {
   public:
 	/**
@@ -52,7 +52,7 @@ class WebGPUMaterial : public WebGPURenderObject<engine::rendering::Material>, p
 	 * @brief Bind the material for rendering.
 	 * @param renderPass The render pass encoder.
 	 */
-    void bind(wgpu::RenderPassEncoder &renderPass) const override;
+    void bind(wgpu::RenderPassEncoder &renderPass) const;
 
 	/**
 	 * @brief Get the material textures dictionary.
@@ -93,17 +93,34 @@ class WebGPUMaterial : public WebGPURenderObject<engine::rendering::Material>, p
 	 */
 	const std::string &getShaderName() const { return m_shaderName; }
 
+  protected:
 	/**
-	 * @brief Update GPU resources from CPU data.
-	 * Public so that materials can be updated from external code (e.g., factories, renderers).
+	 * @brief Check if synchronization is needed.
+	 * Checks material version and all texture versions.
 	 */
-	void updateGPUResources();
+	bool needsSync(const Material &cpuMaterial) const override;
+
+	/**
+	 * @brief Sync GPU resources from CPU material.
+	 * Updates material properties and recreates bind groups if textures changed.
+	 */
+	void syncFromCPU(const Material &cpuMaterial) override;
 
   private:
+	/**
+	 * @brief Cache texture versions for dependency tracking.
+	 */
+	void cacheTextureVersions(const Material &cpuMaterial);
+
 	/**
 	 * @brief Texture dictionary mapping slot names to GPU textures.
 	 */
 	std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> m_textures;
+
+	/**
+	 * @brief Cached texture versions for dependency tracking.
+	 */
+	std::unordered_map<std::string, uint64_t> m_textureVersions;
 
 	/**
 	 * @brief Options used for this WebGPUMaterial.

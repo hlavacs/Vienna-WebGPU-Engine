@@ -181,12 +181,14 @@ void MainDemoImGuiUI::renderLightsSection()
 		if (ImGui::Button("Add Light"))
 		{
 			auto newLight = std::make_shared<engine::scene::nodes::LightNode>();
-			uint32_t lightType = m_lightNodes.empty() ? 1 : 2;
-			newLight->setLightType(lightType);
-			newLight->setColor(glm::vec3(1.0f));
-			newLight->setIntensity(1.0f);
-			if (lightType == 1)
+			// Default to directional light if first, point light otherwise
+			if (m_lightNodes.empty())
 			{
+				engine::rendering::DirectionalLight directionalData;
+				directionalData.color = glm::vec3(1.0f);
+				directionalData.intensity = 1.0f;
+				newLight->getLight().setData(directionalData);
+				
 				float pitch = 140.0f, yaw = -30.0f, roll = 0.0f;
 				glm::quat rot = glm::quat(glm::radians(glm::vec3(pitch, yaw, roll)));
 				newLight->getTransform()->setLocalRotation(rot);
@@ -194,6 +196,11 @@ void MainDemoImGuiUI::renderLightsSection()
 			}
 			else
 			{
+				engine::rendering::PointLight pointData;
+				pointData.color = glm::vec3(1.0f);
+				pointData.intensity = 1.0f;
+				pointData.position = glm::vec3(0.0f, 2.0f, 0.0f);
+				newLight->getLight().setData(pointData);
 				newLight->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 0.0f));
 			}
 			m_rootNode->addChild(newLight);
@@ -222,7 +229,44 @@ void MainDemoImGuiUI::renderLightsSection()
 				int currentType = static_cast<int>(light->getLightType());
 				if (ImGui::Combo("Type", &currentType, lightTypeNames, 4))
 				{
-					light->setLightType(static_cast<uint32_t>(currentType));
+					// Change light type by creating new light data
+					switch (currentType)
+					{
+					case 0: // Ambient
+					{
+						engine::rendering::AmbientLight ambientData;
+						ambientData.color = light->getColor();
+						ambientData.intensity = light->getIntensity();
+						light->getLight().setData(ambientData);
+						break;
+					}
+					case 1: // Directional
+					{
+						engine::rendering::DirectionalLight directionalData;
+						directionalData.color = light->getColor();
+						directionalData.intensity = light->getIntensity();
+						light->getLight().setData(directionalData);
+						break;
+					}
+					case 2: // Point
+					{
+						engine::rendering::PointLight pointData;
+						pointData.color = light->getColor();
+						pointData.intensity = light->getIntensity();
+						pointData.position = light->getTransform() ? light->getTransform()->getLocalPosition() : glm::vec3(0.0f);
+						light->getLight().setData(pointData);
+						break;
+					}
+					case 3: // Spot
+					{
+						engine::rendering::SpotLight spotData;
+						spotData.color = light->getColor();
+						spotData.intensity = light->getIntensity();
+						spotData.position = light->getTransform() ? light->getTransform()->getLocalPosition() : glm::vec3(0.0f);
+						light->getLight().setData(spotData);
+						break;
+					}
+					}
 				}
 				glm::vec3 color = light->getColor();
 				if (ImGui::ColorEdit3("Color", glm::value_ptr(color)))
@@ -262,16 +306,27 @@ void MainDemoImGuiUI::renderLightsSection()
 					}
 					if (light->getLightType() == 3)
 					{
-						float spotAngle = light->getLightData().spot_angle;
-						float spotAngleDegrees = glm::degrees(spotAngle);
+						// Access spot light data directly
+						auto& spotData = light->getLight().asSpot();
+						float spotAngleDegrees = glm::degrees(spotData.spotAngle);
 						if (ImGui::SliderFloat("Cone Angle (degrees)", &spotAngleDegrees, 1.0f, 120.0f))
 						{
-							light->setSpotAngle(glm::radians(spotAngleDegrees));
+							spotData.spotAngle = glm::radians(spotAngleDegrees);
 						}
-						float spotSoftness = light->getLightData().spot_softness;
+						float spotSoftness = spotData.spotSoftness;
 						if (ImGui::SliderFloat("Edge Softness", &spotSoftness, 0.0f, 0.99f, "%.2f"))
 						{
-							light->setSpotSoftness(spotSoftness);
+							spotData.spotSoftness = spotSoftness;
+						}
+					}
+					
+					// Shadow casting controls (for directional, point, and spot lights)
+					if (light->getLightType() >= 1 && light->getLightType() <= 3)
+					{
+						bool castShadows = light->getCastShadows();
+						if (ImGui::Checkbox("Cast Shadows", &castShadows))
+						{
+							light->setCastShadows(castShadows);
 						}
 					}
 				}

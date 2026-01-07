@@ -4,7 +4,7 @@
 
 #include "engine/rendering/Mesh.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
-#include "engine/rendering/webgpu/WebGPURenderObject.h"
+#include "engine/rendering/webgpu/WebGPUSyncObject.h"
 
 namespace engine::rendering::webgpu
 {
@@ -19,7 +19,7 @@ struct WebGPUMeshOptions
  * @class WebGPUMesh
  * @brief GPU-side mesh: wraps vertex and index buffers for a mesh.
  */
-class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
+class WebGPUMesh : public WebGPUSyncObject<engine::rendering::Mesh>
 {
   public:
 	struct WebGPUSubmesh
@@ -50,7 +50,7 @@ class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 		std::vector<WebGPUSubmesh> submeshes = {},
 		WebGPUMeshOptions options = {}
 	) :
-		WebGPURenderObject<engine::rendering::Mesh>(context, meshHandle, Type::Mesh),
+		WebGPUSyncObject<engine::rendering::Mesh>(context, meshHandle),
 		m_vertexBuffer(vertexBuffer),
 		m_indexBuffer(indexBuffer),
 		m_vertexCount(vertexCount),
@@ -61,16 +61,11 @@ class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 	}
 
 	/**
-	 * @brief Render the mesh.
-	 * @param encoder The command encoder.
-	 * @param renderPass The render pass.
+	 * @brief Set vertex and index buffers for rendering.
+	 * @param renderPass The render pass encoder.
+	 * @param layout The vertex layout to use for stride calculation.
 	 */
-	void render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass);
-
-	void bind(wgpu::RenderPassEncoder &renderPass) const override
-	{
-		// Meshes typically don't bind directly; their materials handle binding.
-	}
+	void bindBuffers(wgpu::RenderPassEncoder &renderPass, VertexLayout layout) const;
 
 	/**
 	 * @brief Get the vertex buffer.
@@ -125,17 +120,18 @@ class WebGPUMesh : public WebGPURenderObject<engine::rendering::Mesh>
 
   protected:
 	/**
-	 * @brief Update GPU resources when CPU mesh changes.
+	 * @brief Sync GPU resources from CPU mesh.
+	 * For immutable meshes, this typically does nothing.
 	 */
-	void updateGPUResources() override;
+	void syncFromCPU(const Mesh &cpuMesh) override;
 
-  private:
-	wgpu::Buffer m_vertexBuffer;
-	wgpu::Buffer m_indexBuffer;
-	uint32_t m_vertexCount;
-	uint32_t m_indexCount;
-	std::vector<WebGPUSubmesh> m_submeshes;
-	WebGPUMeshOptions m_options;
+	private:
+		wgpu::Buffer m_vertexBuffer;
+		wgpu::Buffer m_indexBuffer;
+		uint32_t m_vertexCount;
+		uint32_t m_indexCount;
+		std::vector<WebGPUSubmesh> m_submeshes;
+		WebGPUMeshOptions m_options;
 };
 
 } // namespace engine::rendering::webgpu
