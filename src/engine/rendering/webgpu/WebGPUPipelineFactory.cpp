@@ -36,93 +36,88 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	uint32_t sampleCount
 )
 {
-	if (vertexShader == nullptr)
+	if (!vertexShader)
 	{
-		throw std::runtime_error("Vertex shader must be provided to create render pipeline descriptor");
+		spdlog::error("Vertex shader is required to create a render pipeline");
+		return nullptr;
 	}
-	bool enableDepth = vertexShader->isDepthEnabled()
-					   && (fragmentShader && fragmentShader->isDepthEnabled())
-					   && depthFormat != wgpu::TextureFormat::Undefined;
-	wgpu::PrimitiveTopology primitiveTopology = convertTopology(topology);
 
+	bool hasFragmentShader = fragmentShader && fragmentShader->getModule();
+	bool enableDepth = vertexShader->isDepthEnabled() && (!fragmentShader || fragmentShader->isDepthEnabled()) && depthFormat != wgpu::TextureFormat::Undefined;
+
+	wgpu::PrimitiveTopology primitiveTopology = convertTopology(topology);
 	auto vertexLayout = vertexShader->getVertexLayout();
 
+	// Vertex buffers
 	std::vector<wgpu::VertexAttribute> vertexAttributes;
 	auto vertexBufferLayout = createVertexLayoutFromEnum(vertexLayout, vertexAttributes);
 
+	// Color target (optional for depth-only)
 	wgpu::ColorTargetState colorTarget{};
-	colorTarget.format = colorFormat;
-	colorTarget.blend = fragmentShader->isBlendEnabled() ? &m_defaultBlendState : nullptr;
-	colorTarget.writeMask = wgpu::ColorWriteMask::All;
+	wgpu::FragmentState fragmentState{};
+	if (hasFragmentShader && colorFormat != wgpu::TextureFormat::Undefined)
+	{
+		colorTarget.format = colorFormat;
+		colorTarget.blend = fragmentShader->isBlendEnabled() ? &m_defaultBlendState : nullptr;
+		colorTarget.writeMask = wgpu::ColorWriteMask::All;
 
-	wgpu::RenderPipelineDescriptor desc = {};
-	desc.vertex.module = vertexShader->getModule();
-	desc.vertex.entryPoint = vertexShader->getVertexEntryPoint().c_str();
-	
-	// Only set vertex buffer if layout is not None (procedural vertex generation)
-	if (vertexLayout != engine::rendering::VertexLayout::None)
-	{
-		desc.vertex.bufferCount = 1;
-		desc.vertex.buffers = &vertexBufferLayout;
-	}
-	else
-	{
-		desc.vertex.bufferCount = 0;
-		desc.vertex.buffers = nullptr;
-	}
-	
-	desc.vertex.constantCount = 0;
-	desc.vertex.constants = nullptr;
-	desc.primitive.topology = primitiveTopology;
-	desc.primitive.stripIndexFormat =
-		primitiveTopology == wgpu::PrimitiveTopology::TriangleStrip
-				|| primitiveTopology == wgpu::PrimitiveTopology::LineStrip
-			? wgpu::IndexFormat::Uint32
-			: wgpu::IndexFormat::Undefined;
-	desc.primitive.frontFace = wgpu::FrontFace::CCW;
-	desc.primitive.cullMode = cullMode;
-	desc.multisample.count = sampleCount;
-	desc.multisample.mask = ~0u;
-	desc.multisample.alphaToCoverageEnabled = false;
-
-	wgpu::FragmentState fragmentState = {};
-	if (fragmentShader && fragmentShader->getModule())
-	{
 		fragmentState.module = fragmentShader->getModule();
 		fragmentState.entryPoint = fragmentShader->getFragmentEntryPoint().c_str();
 		fragmentState.targetCount = 1;
 		fragmentState.targets = &colorTarget;
 		fragmentState.constantCount = 0;
 		fragmentState.constants = nullptr;
-		desc.fragment = &fragmentState;
-	} else {
-		desc.fragment = nullptr;
 	}
 
-	wgpu::DepthStencilState depthStencil = {};
+	// Pipeline descriptor
+	wgpu::RenderPipelineDescriptor desc{};
+	desc.vertex.module = vertexShader->getModule();
+	desc.vertex.entryPoint = vertexShader->getVertexEntryPoint().c_str();
+	desc.vertex.bufferCount = (vertexLayout != engine::rendering::VertexLayout::None) ? 1 : 0;
+	desc.vertex.buffers = (vertexLayout != engine::rendering::VertexLayout::None) ? &vertexBufferLayout : nullptr;
+	desc.vertex.constantCount = 0;
+	desc.vertex.constants = nullptr;
+
+	desc.primitive.topology = primitiveTopology;
+	desc.primitive.stripIndexFormat =
+		(primitiveTopology == wgpu::PrimitiveTopology::TriangleStrip || primitiveTopology == wgpu::PrimitiveTopology::LineStrip)
+			? wgpu::IndexFormat::Uint32
+			: wgpu::IndexFormat::Undefined;
+	desc.primitive.frontFace = wgpu::FrontFace::CCW;
+	desc.primitive.cullMode = cullMode;
+
+	desc.multisample.count = sampleCount;
+	desc.multisample.mask = ~0u;
+	desc.multisample.alphaToCoverageEnabled = false;
+
+	// Only set fragment if a color attachment exists
+	desc.fragment = (hasFragmentShader && colorFormat != wgpu::TextureFormat::Undefined) ? &fragmentState : nullptr;
+
+	// Depth-stencil
+	wgpu::DepthStencilState depthStencil{};
 	if (enableDepth)
 	{
-		depthStencil;
 		depthStencil.format = depthFormat;
 		depthStencil.depthWriteEnabled = true;
 		depthStencil.depthCompare = wgpu::CompareFunction::Less;
 		depthStencil.stencilReadMask = 0;
 		depthStencil.stencilWriteMask = 0;
-
 		depthStencil.stencilFront.compare = wgpu::CompareFunction::Always;
 		depthStencil.stencilFront.failOp = wgpu::StencilOperation::Keep;
 		depthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
 		depthStencil.stencilFront.passOp = wgpu::StencilOperation::Keep;
 		depthStencil.stencilBack = depthStencil.stencilFront;
 		desc.depthStencil = &depthStencil;
-	} else {
+	}
+	else
+	{
 		desc.depthStencil = nullptr;
 	}
 
+	// Bind group layouts
 	auto layouts = vertexShader->getBindGroupLayoutVector();
 	if (fragmentShader && fragmentShader != vertexShader)
 	{
-		// Only add fragment shader layouts if it's a different shader
 		auto fragLayouts = fragmentShader->getBindGroupLayoutVector();
 		layouts.insert(layouts.end(), fragLayouts.begin(), fragLayouts.end());
 	}
@@ -134,29 +129,28 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	wgpu::PipelineLayout layout = createPipelineLayout(layoutArray.data(), layoutArray.size());
 	desc.layout = layout;
 
+	// Create pipeline
 	wgpu::RenderPipeline pipeline = m_context.getDevice().createRenderPipeline(desc);
 	if (!pipeline)
 	{
-		std::cerr << "Failed to create render pipeline" << std::endl;
+		spdlog::error("Failed to create render pipeline");
 		layout.release();
 		return nullptr;
 	}
 
-	// Wrap in WebGPUPipeline with shader info (layout ownership transferred)
-	auto pipelinePtr = std::make_shared<WebGPUPipeline>(
+	// Wrap in WebGPUPipeline
+	return std::make_shared<WebGPUPipeline>(
 		pipeline,
 		layout,
 		std::move(desc),
 		std::move(vertexAttributes),
 		std::move(vertexBufferLayout),
-		std::move(colorTarget),
-		std::move(depthStencil),
-		std::move(fragmentState),
+		(hasFragmentShader && colorFormat != wgpu::TextureFormat::Undefined) ? std::move(colorTarget) : wgpu::ColorTargetState{},
+		enableDepth ? std::move(depthStencil) : wgpu::DepthStencilState{},
+		(hasFragmentShader && colorFormat != wgpu::TextureFormat::Undefined) ? std::move(fragmentState) : wgpu::FragmentState{},
 		vertexShader,
 		fragmentShader
 	);
-
-	return pipelinePtr;
 }
 
 wgpu::PipelineLayout WebGPUPipelineFactory::createPipelineLayout(const wgpu::BindGroupLayout *layouts, uint32_t layoutCount)

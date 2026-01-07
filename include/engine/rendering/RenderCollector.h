@@ -6,31 +6,30 @@
 #include <vector>
 
 #include "engine/core/Handle.h"
+#include "engine/math/AABB.h"
 #include "engine/math/Frustum.h"
+#include "engine/rendering/Light.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Model.h"
-
-namespace engine::rendering::webgpu
-{
-class WebGPUBindGroup;
-struct WebGPUBindGroupLayoutInfo;
-} // namespace engine::rendering::webgpu
 
 namespace engine::rendering
 {
 
 /**
- * @brief Single renderable item collected for rendering.
+ * @brief CPU-only renderable item collected for rendering.
+ * Contains no GPU objects - those are created during renderer preparation.
+ * Stores world-space AABB for deferred culling.
  */
-struct RenderItem
+struct RenderItemCPU
 {
 	engine::rendering::Model::Handle modelHandle;
 	engine::rendering::Submesh submesh;
 	glm::mat4 worldTransform;
+	engine::math::AABB worldBounds; // World-space bounding box for culling
 	uint32_t renderLayer = 0;
-	std::shared_ptr<webgpu::WebGPUBindGroup> objectBindGroup; // Bind group for object uniforms (group 2)
+	uint64_t objectID = 0; // Unique object ID for bind group caching
 
-	bool operator<(const RenderItem &other) const
+	bool operator<(const RenderItemCPU &other) const
 	{
 		if (renderLayer != other.renderLayer)
 			return renderLayer < other.renderLayer;
@@ -48,31 +47,22 @@ struct RenderItem
 };
 
 /**
- * @brief Collects render items and lights from the scene graph.
+ * @brief Collects CPU-side render items and lights from the scene graph.
  *
- * Used during scene traversal to gather all renderable objects
- * and lights for submission to the renderer.
+ * This is a CPU-only collector - it does not create or reference any GPU objects.
+ * GPU object creation and bind group management happens in the Renderer during prepareRenderItems().
+ *
+ * IMPORTANT: addModel() does NOT perform frustum culling. Culling happens on-demand
+ * via extractVisible() and extractForLight() query methods.
  */
 class RenderCollector
 {
   public:
 	RenderCollector() = default;
-	RenderCollector(
-		glm::mat4 viewMatrix,
-		glm::mat4 projMatrix,
-		glm::vec3 cameraPosition,
-		engine::math::Frustum frustum = {},
-		webgpu::WebGPUContext *context = nullptr
-	) : m_viewMatrix(viewMatrix),
-		m_projMatrix(projMatrix),
-		m_cameraPosition(cameraPosition),
-		m_frustum(frustum),
-		m_context(context)
-	{
-	}
 
 	/**
 	 * @brief Adds a model to be rendered with object ID for bind group caching.
+	 * Does NOT perform culling - items are collected unconditionally.
 	 * @param model Handle to the model resource.
 	 * @param transform World-space transform matrix.
 	 * @param layer Render layer for sorting.
@@ -87,9 +77,9 @@ class RenderCollector
 
 	/**
 	 * @brief Adds a light to the scene.
-	 * @param light Light data structure.
+	 * @param light Light object with type-specific data.
 	 */
-	void addLight(const LightStruct &light);
+	void addLight(const Light &light);
 
 	/**
 	 * @brief Sorts render items by layer, then by material for batching.
@@ -102,30 +92,52 @@ class RenderCollector
 	void clear();
 
 	/**
-	 * @brief Updates camera-dependent data for a new frame.
-	 * @param viewMatrix New view matrix.
-	 * @param projMatrix New projection matrix.
-	 * @param cameraPosition New camera position.
-	 * @param frustum New view frustum.
+	 * @brief Extracts items visible from a camera frustum.
+	 * @param frustum View frustum for culling.
+	 * @return Indices of visible items.
 	 */
-	void updateCameraData(
-		const glm::mat4 &viewMatrix,
-		const glm::mat4 &projMatrix,
-		const glm::vec3 &cameraPosition,
-		const engine::math::Frustum &frustum
-	);
+	std::vector<size_t> extractVisible(const engine::math::Frustum &frustum) const;
+
+	/**
+	 * @brief Extracts items visible from a directional/spot light (frustum-based).
+	 * @param lightFrustum Light's frustum (orthographic for directional, perspective for spot).
+	 * @return Indices of visible items.
+	 */
+	std::vector<size_t> extractForLightFrustum(const engine::math::Frustum &lightFrustum) const;
+
+	/**
+	 * @brief Extracts items visible from a point light (sphere-based).
+	 * @param lightPosition Light's world position.
+	 * @param lightRange Light's maximum range.
+	 * @return Indices of visible items.
+	 */
+	std::vector<size_t> extractForPointLight(const glm::vec3 &lightPosition, float lightRange) const;
+
+	/**
+	 * @brief Assigns shadow indices to lights and extracts their GPU-friendly uniforms.
+	 * @param maxShadow2D Maximum number of 2D shadow maps.
+	 * @param maxShadowCube Maximum number of cube shadow maps.
+	 * @return Vector of LightStruct uniforms with shadow indices assigned.
+	 */
+	std::vector<LightStruct> extractLightUniformsWithShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const;
 
 	/**
 	 * @brief Gets all collected render items.
 	 * @return Const reference to render items vector.
 	 */
-	const std::vector<RenderItem> &getRenderItems() const { return m_renderItems; };
+	const std::vector<RenderItemCPU> &getRenderItems() const { return m_renderItems; };
 
 	/**
 	 * @brief Gets all collected lights.
 	 * @return Const reference to lights vector.
 	 */
-	const std::vector<LightStruct> &getLights() const { return m_lights; };
+	const std::vector<Light> &getLights() const { return m_lights; };
+
+	/**
+	 * @brief Extracts light uniforms for GPU rendering.
+	 * @return Vector of LightStruct uniforms ready for GPU upload.
+	 */
+	std::vector<LightStruct> extractLightUniforms() const;
 
 	/**
 	 * @brief Gets the number of collected render items.
@@ -139,32 +151,26 @@ class RenderCollector
 	 */
 	size_t getLightCount() const { return m_lights.size(); }
 
-	/**
-	 * @brief Sets the object bind group layout for creating per-instance bind groups.
-	 * @param layout The bind group layout for object uniforms (group 2).
-	 */
-	void setObjectBindGroupLayout(std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> layout)
-	{
-		m_objectBindGroupLayout = layout;
-	}
-
   private:
-	bool isAABBVisible(
-		const engine::math::AABB &aabb
-	) const;
+	/**
+	 * @brief Tests if an AABB is visible in a frustum.
+	 */
+	static bool isAABBVisibleInFrustum(
+		const engine::math::AABB &aabb,
+		const engine::math::Frustum &frustum
+	);
 
-	std::vector<RenderItem> m_renderItems;
-	std::vector<LightStruct> m_lights;
+	/**
+	 * @brief Tests if an AABB intersects a sphere.
+	 */
+	static bool isAABBInSphere(
+		const engine::math::AABB &aabb,
+		const glm::vec3 &center,
+		float radius
+	);
 
-	glm::mat4 m_viewMatrix;
-	glm::mat4 m_projMatrix;
-	glm::vec3 m_cameraPosition;
-	engine::math::Frustum m_frustum;
-
-	webgpu::WebGPUContext *m_context;
-	// Cache object bind groups by a unique key (modelHandle.id() + transform hash)
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_objectBindGroupCache;
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_objectBindGroupLayout;
+	std::vector<RenderItemCPU> m_renderItems;
+	std::vector<Light> m_lights;
 };
 
 } // namespace engine::rendering

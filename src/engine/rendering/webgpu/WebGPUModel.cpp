@@ -11,25 +11,14 @@ WebGPUModel::WebGPUModel(
 	std::shared_ptr<WebGPUMesh> mesh,
 	WebGPUModelOptions options
 ) :
-	WebGPURenderObject<engine::rendering::Model>(context, modelHandle, Type::Model),
+	WebGPUSyncObject<engine::rendering::Model>(context, modelHandle),
 	m_mesh(std::move(mesh)),
 	m_options(std::move(options)) {}
 
-void WebGPUModel::render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass)
+void WebGPUModel::syncFromCPU(const Model &cpuModel)
 {
-	if (m_mesh)
-	{
-		m_mesh->render(encoder, renderPass);
-	}
-}
-
-void WebGPUModel::updateGPUResources()
-{
-	// Update mesh if it has changed
-	if (m_mesh)
-	{
-		m_mesh->update();
-	}
+	// Models typically don't have mutable GPU data after creation
+	// If you need to support dynamic models, implement updates here
 }
 
 } // namespace engine::rendering::webgpu

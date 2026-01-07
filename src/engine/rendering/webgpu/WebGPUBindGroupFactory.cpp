@@ -65,84 +65,108 @@ wgpu::BindGroupLayoutEntry WebGPUBindGroupFactory::createTextureBindGroupLayoutE
 }
 
 std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
-	const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo,
-	const std::shared_ptr<WebGPUMaterial> &material
+	const std::shared_ptr<WebGPUBindGroupLayoutInfo>& layoutInfo,
+	const std::map<BindGroupBindingKey, BindGroupResource>& resources,
+	const std::shared_ptr<WebGPUMaterial>& material,
+	const char* label
 )
 {
-
-	auto globalKey = layoutInfo->getKey();
-	if (layoutInfo->isGlobal() && globalKey.has_value())
-	{
-		auto globalBindGroup = getGlobalBindGroup(globalKey.value());
-		if (globalBindGroup)
-		{
-			spdlog::debug("Reusing cached global bind group '{}'", globalKey.value());
-			return globalBindGroup;
-		}
-	}
 	std::vector<std::shared_ptr<WebGPUBuffer>> groupBuffers;
 	std::vector<wgpu::BindGroupEntry> entries;
-	bool hasTextures = false;
-	bool hasSamplers = false;
-	bool hasBuffers = false;
+	entries.reserve(layoutInfo->getEntries().size());
 
 	bool allReady = true;
+
 	for (auto entryLayout : layoutInfo->getEntries())
 	{
 		wgpu::BindGroupEntry entry{};
 		entry.binding = entryLayout.binding;
 
-		if (entryLayout.buffer.type != wgpu::BufferBindingType::Undefined)
-		{
-			auto buffer = m_context.bufferFactory().createBufferFromLayoutEntry(
-				*layoutInfo,
-				entryLayout.binding,
-				"BindGroupBuffer_" + std::to_string(entryLayout.binding),
-				entryLayout.buffer.minBindingSize
+		// Check if this binding has an override in the resources map
+		// Note: We don't know the group index from layoutInfo, so we check all keys with matching binding
+		auto resourceIt = std::find_if(resources.begin(), resources.end(),
+			[&entryLayout](const auto& pair) {
+				return std::get<1>(pair.first) == entryLayout.binding;
+			});
+		bool hasOverride = (resourceIt != resources.end());
 
-			);
-			groupBuffers.push_back(buffer);
-			if (!buffer)
-			{
-				allReady = false;
-				continue;
-			}
-			entry.buffer = buffer->getBuffer();
-			entry.offset = 0;
-			entry.size = entryLayout.buffer.minBindingSize;
-		}
-		else if (entryLayout.texture.sampleType != wgpu::TextureSampleType::Undefined)
+		if (hasOverride)
 		{
-			if (!material)
-			{
-				allReady = false;
-				spdlog::debug("Bind group requires material for texture bindings");
-				break;
-			}
-			std::string slotName = layoutInfo->getMaterialSlotName(entryLayout.binding);
-			auto tex = material->getTexture(slotName);
-			if (tex)
-			{
-				entry.textureView = tex->getTextureView();
-			}
-			else
-			{
-				auto fallbackColor = layoutInfo->getFallbackColor(entryLayout.binding);
-				if (fallbackColor.has_value())
+			// Use the provided override resource
+			const auto& bindResource = resourceIt->second;
+			std::visit([&entry](const auto& resource) {
+				using T = std::decay_t<decltype(resource)>;
+				
+				if constexpr (std::is_same_v<T, std::shared_ptr<WebGPUTexture>>)
 				{
-					entry.textureView = m_context.textureFactory().createFromColor(fallbackColor.value())->getTextureView();
+					entry.textureView = resource->getTextureView();
+				}
+				else if constexpr (std::is_same_v<T, wgpu::Sampler>)
+				{
+					entry.sampler = resource;
+				}
+				else if constexpr (std::is_same_v<T, std::shared_ptr<WebGPUBuffer>>)
+				{
+					entry.buffer = resource->getBuffer();
+					entry.offset = 0;
+					entry.size = resource->getSize();
+				}
+			}, bindResource.resource);
+		}
+		else
+		{
+			// No override - create resource automatically based on layout
+			if (entryLayout.buffer.type != wgpu::BufferBindingType::Undefined)
+			{
+				auto buffer = m_context.bufferFactory().createBufferFromLayoutEntry(
+					*layoutInfo,
+					entryLayout.binding,
+					"BindGroupBuffer_" + std::to_string(entryLayout.binding),
+					entryLayout.buffer.minBindingSize
+				);
+				groupBuffers.push_back(buffer);
+				if (!buffer)
+				{
+					allReady = false;
+					continue;
+				}
+				entry.buffer = buffer->getBuffer();
+				entry.offset = 0;
+				entry.size = entryLayout.buffer.minBindingSize;
+			}
+			else if (entryLayout.texture.sampleType != wgpu::TextureSampleType::Undefined)
+			{
+				if (!material)
+				{
+					allReady = false;
+					spdlog::warn("Bind group requires material for texture bindings");
+					break;
+				}
+				std::string slotName = layoutInfo->getMaterialSlotName(entryLayout.binding);
+				auto tex = material->getTexture(slotName);
+				if (tex)
+				{
+					entry.textureView = tex->getTextureView();
 				}
 				else
 				{
-					allReady = false;
-					spdlog::debug("Texture for slot '{}' not ready", slotName);
-					continue;
+					auto fallbackColor = layoutInfo->getFallbackColor(entryLayout.binding);
+					if (fallbackColor.has_value())
+					{
+						entry.textureView = m_context.textureFactory().createFromColor(fallbackColor.value())->getTextureView();
+					}
+					else
+					{
+						allReady = false;
+						spdlog::warn("Texture for slot '{}' not ready", slotName);
+						continue;
+					}
 				}
 			}
-		}
-		else if (entryLayout.sampler.type != wgpu::SamplerBindingType::Undefined)
-		{
-			entry.sampler = m_context.samplerFactory().getDefaultSampler();
+			else if (entryLayout.sampler.type != wgpu::SamplerBindingType::Undefined)
+			{
+				entry.sampler = m_context.samplerFactory().getDefaultSampler();
+			}
 		}
 
 		entries.push_back(entry);
@@ -150,23 +174,24 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 
 	if (!allReady)
 	{
-		spdlog::debug("Bind group not ready - missing resources");
+		spdlog::warn("Bind group not ready - missing resources");
 		return nullptr;
 	}
 
-	const char* baseLabel = layoutInfo->getLayoutDescriptor().label;
-	std::string labelStr = baseLabel ? (std::string(baseLabel)) : "BindGroup";
-	wgpu::BindGroupDescriptor desc = createBindGroupDescriptor(layoutInfo->getLayout(), entries);
+	std::string labelStr = label ? std::string(label) : "BindGroup";
+	wgpu::BindGroupDescriptor desc{};
+	desc.layout = layoutInfo->getLayout();
+	desc.entryCount = static_cast<uint32_t>(entries.size());
+	desc.entries = entries.data();
 	desc.label = labelStr.c_str();
-	wgpu::BindGroup rawBindGroup = createBindGroupFromDescriptor(desc);
+
+	wgpu::BindGroup rawBindGroup = m_context.getDevice().createBindGroup(desc);
 
 	auto bindGroup = std::make_shared<WebGPUBindGroup>(
 		rawBindGroup,
 		layoutInfo,
 		groupBuffers
 	);
-	if (layoutInfo->isGlobal() && globalKey.has_value())
-		storeGlobalBindGroup(globalKey.value(), bindGroup);
 
 	return bindGroup;
 }

@@ -170,6 +170,15 @@ class WebGPUShaderFactory
 		 */
 		WebGPUShaderBuilder &addLightUniforms(uint32_t groupIndex, size_t maxLights = 16);
 
+		/**
+		 * @brief Adds shadow mapping uniforms (light view-proj matrix, cascade info).
+		 * @param groupIndex Bind group index (typically 2).
+		 * @param maxShadows Maximum number of 2D shadow maps (default 16).
+		 * @param maxShadowCubes Maximum number of cube shadow maps (default 4).
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &addShadowUniforms(uint32_t groupIndex, size_t maxShadows = 16, size_t maxShadowCubes = 4);
+
 		// === Custom Uniforms ===
 
 		/**

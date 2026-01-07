@@ -127,6 +127,37 @@ struct Vertex
 			return VertexLayout::DebugPositionColor;
 		return VertexLayout::DebugPosition;
 	}
+
+	/**
+	 * @brief Get the stride (size in bytes) for a given vertex layout.
+	 * @param layout The vertex layout.
+	 * @return The stride in bytes.
+	 */
+	static inline constexpr size_t getStride(VertexLayout layout)
+	{
+		switch (layout)
+		{
+		case VertexLayout::None:
+			return 0;
+		case VertexLayout::Position:
+			return sizeof(glm::vec3); // 12 bytes
+		case VertexLayout::PositionNormal:
+			return sizeof(glm::vec3) * 2; // 24 bytes
+		case VertexLayout::PositionNormalUV:
+			return sizeof(glm::vec3) * 2 + sizeof(glm::vec2); // 32 bytes
+		case VertexLayout::PositionNormalUVColor:
+			return sizeof(glm::vec3) * 2 + sizeof(glm::vec2) + sizeof(glm::vec4); // 48 bytes
+		case VertexLayout::PositionNormalUVTangent:
+			return sizeof(glm::vec3) * 5 + sizeof(glm::vec2); // 68 bytes
+		case VertexLayout::PositionNormalUVTangentColor:
+			return sizeof(Vertex); // Full vertex: 84 bytes
+		case VertexLayout::DebugPosition:
+			return sizeof(glm::vec3); // 12 bytes
+		case VertexLayout::DebugPositionColor:
+			return sizeof(glm::vec3) + sizeof(glm::vec4); // 28 bytes
+		}
+		return sizeof(Vertex); // Default to full vertex
+	}
 };
 
 // Stream output

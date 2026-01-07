@@ -40,19 +40,22 @@ struct Light {
 	// 0 = ambient, 1 = directional, 2 = point, 3 = spot
 	spot_angle: f32,
 	spot_softness: f32,
-	_pad: f32,
+	range: f32,
+	// < 0 = no shadows, >= 0 = index in shadow map array based on light type
+	shadowIndex: i32,
+	_pad1: f32,
+	_pad2: f32,
+	_pad3: f32,
 }
 
 ;
 
 struct LightsBuffer {
 	count: u32,
+	// Paddings to align to 16 bytes
 	_pad1: f32,
-	// Padding to align to 16 bytes
 	_pad2: f32,
-	// Padding to align to 16 bytes
 	_pad3: f32,
-	// Padding to align to 16 bytes
 	lights: array<Light>,
 }
 
@@ -83,6 +86,25 @@ struct MaterialUniforms {
 
 ;
 
+struct Shadow2DUniform {
+	lightViewProjection: mat4x4f,
+	bias: f32,
+	normalBias: f32,
+	texelSize: f32,
+	pcfKernel: u32,
+}
+
+;
+
+struct ShadowCubeUniform {
+	lightPosition: vec3f,
+	bias: f32,
+	texelSize: f32,
+	pcfKernel: u32,
+}
+
+;
+
 @group(0) @binding(0)
 var<uniform> uFrame: FrameUniforms;
 
@@ -108,6 +130,17 @@ var roughnessTexture: texture_2d<f32>;
 var metallicTexture: texture_2d<f32>;
 @group(3) @binding(7)
 var emissionTexture: texture_2d<f32>;
+
+@group(4) @binding(0)
+var shadowSampler: sampler_comparison;
+@group(4) @binding(1)
+var shadowMaps2D: texture_depth_2d_array;
+@group(4) @binding(2)
+var shadowMapsCube: texture_depth_cube_array;
+@group(4) @binding(3)
+var<storage, read> uShadow2D: array<Shadow2DUniform>;
+@group(4) @binding(4)
+var<storage, read> uShadowCube: array<ShadowCubeUniform>;
 
 const PI: f32 = 3.141592653589793;
 
@@ -170,6 +203,61 @@ fn getPositionFromTransform(transform: mat4x4f) -> vec3f {
 }
 
 // ------------------------------------------------------------
+// Shadow Mapping
+// ------------------------------------------------------------
+fn calculateShadow(worldPos: vec3f, normal: vec3f, light: Light) -> f32 {
+	if (light.shadowIndex < 0) {
+		return 1.0;
+	}
+	if (light.light_type == 1u || light.light_type == 3u) {
+		let shadow = uShadow2D[u32(light.shadowIndex)];
+
+		// Transform to light clip space
+		let lightSpacePos = shadow.lightViewProjection * vec4f(worldPos, 1.0);
+		var projCoords = lightSpacePos.xyz / lightSpacePos.w;
+		projCoords = projCoords * 0.5 + 0.5;
+
+		// Outside shadow map bounds
+		if (projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0 || projCoords.z < 0.0 || projCoords.z > 1.0) {
+			return 1.0;
+		}
+
+		// Apply bias
+		let lightDir = normalize(- light.transform[2].xyz);
+		let bias = max(shadow.bias * (1.0 - dot(normal, lightDir)), shadow.normalBias);
+		let currentDepth = projCoords.z - bias;
+
+		// PCF sampling
+		var visibility = 0.0;
+		let kernel = i32(shadow.pcfKernel);
+		let texelSize = shadow.texelSize;
+		var samples = 0.0;
+
+		for (var x = - kernel; x <= kernel; x = x + 1) {
+			for (var y = - kernel; y <= kernel; y = y + 1) {
+				let offset = vec2f(f32(x), f32(y)) * texelSize;
+				let uv = projCoords.xy + offset;
+				visibility += textureSampleCompare(shadowMaps2D, shadowSampler, uv, u32(light.shadowIndex), currentDepth);
+				samples += 1.0;
+			}
+		}
+
+		return visibility / samples;
+	}
+	else if (light.light_type == 2u) {
+		let shadow = uShadowCube[u32(light.shadowIndex)];
+		let toLight = worldPos - shadow.lightPosition;
+		let currentDepth = length(toLight) - shadow.bias;
+
+		// Currently sampling once, can extend with PCF using offsets in 3D if desired
+		return textureSampleCompare(shadowMapsCube, shadowSampler, toLight, u32(light.shadowIndex), currentDepth);
+	}
+
+	// Ambient or unsupported types
+	return 1.0;
+}
+
+// ------------------------------------------------------------
 // Fragment
 // ------------------------------------------------------------
 @fragment
@@ -181,7 +269,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
 	let TBN = mat3x3f(T, B, N);
 	let n: vec3f = textureSample(normalTexture, textureSampler, in.uv).rgb * 2.0 - 1.0;
-	let scaledN = clamp(n.xy * uMaterial.normalStrength, vec2<f32>(-2.0, -2.0), vec2<f32>(2.0, 2.0));
+	let scaledN = clamp(n.xy * uMaterial.normalStrength, vec2<f32>(- 2.0, - 2.0), vec2<f32>(2.0, 2.0));
 	let normal = normalize(TBN * vec3<f32>(scaledN.x, scaledN.y, n.z));
 
 	let V = normalize(in.viewDirection);
@@ -238,7 +326,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 			let cosOuter = cos(light.spot_angle);
 			let cosInner = cos(light.spot_angle * innerRatio);
 			let spotEffect = smoothstep(cosOuter, cosInner, cosTheta);
-			attenuation = select(0.0, spotEffect / (1.0 + 0.1 * dist + 0.01 * dist * dist), cosTheta > cosOuter);
+			
+			// Distance attenuation with range
+			let distAttenuation = 1.0 / max(dist * dist, 0.01);
+			let rangeFactor = 1.0 - smoothstep(light.range * 0.75, light.range, dist);
+			
+			attenuation = select(0.0, spotEffect * distAttenuation * rangeFactor, cosTheta > cosOuter);
 		}
 
 		let H = normalize(V + L);
@@ -247,6 +340,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 		if (NdotL <= 0.0) {
 			continue;
 		}
+
+		// Calculate shadow factor
+		let shadow = calculateShadow(worldPos, normal, light);
 
 		let D = distributionGGX(normal, H, roughness);
 		let G = geometrySmith(normal, V, L, roughness);
@@ -260,13 +356,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 		let kD = (vec3f(1.0) - kS) * (1.0 - metallic);
 
 		let radiance = light.color * light.intensity * attenuation;
-		Lo += (kD * baseColor / PI + specular) * radiance * NdotL;
+		Lo += (kD * baseColor / PI + specular) * radiance * NdotL * shadow;
 	}
 
 	// ---- Emission ----
 	let color = Lo + emission;
 
-	return vec4f(color, uMaterial.diffuse.w);
+	// return vec4f(color, uMaterial.diffuse.w);
+	return vec4f(1.0, 0.0, 1.0, 1.0);
 }
 
 

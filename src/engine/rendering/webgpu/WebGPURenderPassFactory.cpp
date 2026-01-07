@@ -1,4 +1,6 @@
 #include "engine/rendering/webgpu/WebGPURenderPassFactory.h"
+
+#include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
 namespace engine::rendering::webgpu
@@ -77,6 +79,7 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createForTextu
 	depthAttachment.view = depthTexture ? depthTexture->getTextureView() : nullptr;
 	depthAttachment.depthClearValue = 1.0f;
 	depthAttachment.depthLoadOp = hasFlag(clearFlags, ClearFlags::Depth) ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
+	depthAttachment.depthLoadOp = hasFlag(clearFlags, ClearFlags::Depth) ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
 	depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
 	depthAttachment.depthReadOnly = false;
 	depthAttachment.stencilClearValue = 0;
@@ -98,6 +101,43 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createForTextu
 		std::vector<std::shared_ptr<WebGPUTexture>>{colorTexture},
 		depthTexture,
 		renderPassDesc
+	);
+}
+
+std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createDepthOnly(
+	wgpu::TextureView depthTextureView,
+	bool clearDepth,
+	float clearValue
+)
+{
+	wgpu::RenderPassDepthStencilAttachment depthAttachment{};
+	depthAttachment.view = depthTextureView;
+	depthAttachment.depthLoadOp = clearDepth ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
+	depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
+	depthAttachment.depthClearValue = clearValue;
+	depthAttachment.depthReadOnly = false;
+	depthAttachment.stencilClearValue = 0;
+#ifdef WEBGPU_BACKEND_WGPU
+	depthAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
+	depthAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
+#else
+	depthAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
+	depthAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
+#endif
+	depthAttachment.stencilReadOnly = true;
+
+	wgpu::RenderPassDescriptor renderPassDesc{};
+	renderPassDesc.colorAttachmentCount = 0;
+	renderPassDesc.colorAttachments = nullptr;
+	renderPassDesc.depthStencilAttachment = &depthAttachment;
+
+	// No color textures for depth-only pass
+	return std::shared_ptr<WebGPURenderPassContext>(
+		new WebGPURenderPassContext(
+			std::vector<std::shared_ptr<WebGPUTexture>>{},
+			nullptr,
+			renderPassDesc
+		)
 	);
 }
 

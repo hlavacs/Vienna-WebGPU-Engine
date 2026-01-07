@@ -1,8 +1,13 @@
 #pragma once
 #include "engine/scene/nodes/Node.h"
-#include "engine/rendering/RenderProxies.h"
 #include <vector>
 #include <memory>
+
+// Forward declare RenderCollector to avoid circular dependency
+namespace engine::rendering
+{
+class RenderCollector;
+}
 
 namespace engine::scene::nodes
 {
@@ -10,9 +15,7 @@ namespace engine::scene::nodes
  * @brief Node with preRender, render, and postRender methods for the rendering cycle.
  * Uses virtual inheritance to prevent diamond inheritance issues.
  * 
- * RenderNodes produce RenderProxy objects during scene traversal, completely
- * decoupling the scene graph from the rendering system. The renderer processes
- * these proxies to create GPU resources and submit draw calls.
+ * RenderNodes add themselves to the RenderCollector during scene traversal.
  */
 class RenderNode : public virtual Node
 {
@@ -32,13 +35,10 @@ class RenderNode : public virtual Node
 	virtual void postRender() {}
 
 	/**
-	 * @brief Collect render proxies for this node.
+	 * @brief Add this node's renderable data to the collector.
 	 * 
-	 * Nodes produce RenderProxy objects (ModelRenderProxy, UIRenderProxy, DebugRenderProxy)
-	 * that contain all data needed for rendering, without coupling to GPU/renderer internals.
-	 * 
-	 * @param outProxies Vector to append RenderProxy objects to.
+	 * @param collector The render collector to add items to.
 	 */
-	virtual void collectRenderProxies(std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies) {}
+	virtual void onRenderCollect(engine::rendering::RenderCollector &collector) {}
 };
 } // namespace engine::scene::nodes

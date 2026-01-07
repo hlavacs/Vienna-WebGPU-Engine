@@ -32,6 +32,9 @@ wgpu::Sampler WebGPUSamplerFactory::getSampler(const std::string &name)
 	if (name == SamplerNames::REPEAT_LINEAR)
 		return createRepeatLinearSampler();
 
+	if (name == SamplerNames::SHADOW_COMPARISON)
+		return createShadowComparisonSampler();
+
 	return getSampler(SamplerNames::DEFAULT);
 }
 
@@ -84,6 +87,11 @@ wgpu::Sampler WebGPUSamplerFactory::getClampLinearSampler()
 wgpu::Sampler WebGPUSamplerFactory::getRepeatLinearSampler()
 {
 	return getSampler(SamplerNames::REPEAT_LINEAR);
+}
+
+wgpu::Sampler WebGPUSamplerFactory::getShadowComparisonSampler()
+{
+	return getSampler(SamplerNames::SHADOW_COMPARISON);
 }
 
 void WebGPUSamplerFactory::cleanup()
@@ -164,6 +172,24 @@ wgpu::Sampler WebGPUSamplerFactory::createRepeatLinearSampler()
 	samplerDesc.maxAnisotropy = 1;
 
 	return createSampler(SamplerNames::REPEAT_LINEAR, samplerDesc);
+}
+
+wgpu::Sampler WebGPUSamplerFactory::createShadowComparisonSampler()
+{
+	wgpu::SamplerDescriptor shadowSamplerDesc{};
+	// Shadow comparison sampler (clamp to edge, linear filtering, depth comparison)
+	shadowSamplerDesc.addressModeU = AddressMode::ClampToEdge;
+	shadowSamplerDesc.addressModeV = AddressMode::ClampToEdge;
+	shadowSamplerDesc.addressModeW = AddressMode::ClampToEdge;
+	shadowSamplerDesc.magFilter = FilterMode::Linear;
+	shadowSamplerDesc.minFilter = FilterMode::Linear;
+	shadowSamplerDesc.mipmapFilter = MipmapFilterMode::Linear;
+	shadowSamplerDesc.compare = CompareFunction::LessEqual; // This enables depth comparison
+	shadowSamplerDesc.lodMinClamp = 0.0f;
+	shadowSamplerDesc.lodMaxClamp = 8.0f;
+	shadowSamplerDesc.maxAnisotropy = 1;
+
+	return createSampler(SamplerNames::SHADOW_COMPARISON, shadowSamplerDesc);
 }
 
 } // namespace engine::rendering::webgpu

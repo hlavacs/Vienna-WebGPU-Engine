@@ -120,6 +120,68 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	return *this;
 }
 
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addShadowUniforms(uint32_t groupIndex, size_t maxShadows, size_t maxShadowCubes)
+{
+	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);
+	bindGroupBuilder.key = "shadowMaps";
+	bindGroupBuilder.isGlobal = true; // shadows are global
+
+	// Binding 0: Shadow comparison sampler
+	ShaderBinding samplerBinding;
+	samplerBinding.type = BindingType::Sampler;
+	samplerBinding.name = "shadowSampler";
+	samplerBinding.binding = 0;
+	samplerBinding.visibility = WGPUShaderStage_Fragment;
+	samplerBinding.samplerType = wgpu::SamplerBindingType::Comparison;
+	bindGroupBuilder.bindings.push_back(samplerBinding);
+
+	// Binding 1: 2D shadow map array (for directional & spot lights)
+	ShaderBinding shadowMaps2D;
+	shadowMaps2D.type = BindingType::Texture;
+	shadowMaps2D.name = "shadowMaps2D";
+	shadowMaps2D.binding = 1;
+	shadowMaps2D.visibility = WGPUShaderStage_Fragment;
+	shadowMaps2D.textureSampleType = wgpu::TextureSampleType::Depth;
+	shadowMaps2D.textureViewDimension = wgpu::TextureViewDimension::_2DArray;
+	shadowMaps2D.textureMultisampled = false;
+	bindGroupBuilder.bindings.push_back(shadowMaps2D);
+
+	// Binding 2: Cube shadow map array (for point lights)
+	ShaderBinding shadowMapsCube;
+	shadowMapsCube.type = BindingType::Texture;
+	shadowMapsCube.name = "shadowMapsCube";
+	shadowMapsCube.binding = 2;
+	shadowMapsCube.visibility = WGPUShaderStage_Fragment;
+	shadowMapsCube.textureSampleType = wgpu::TextureSampleType::Depth;
+	shadowMapsCube.textureViewDimension = wgpu::TextureViewDimension::CubeArray;
+	shadowMapsCube.textureMultisampled = false;
+	bindGroupBuilder.bindings.push_back(shadowMapsCube);
+
+	// Binding 3: Shadow2D data storage buffer
+	ShaderBinding shadow2DBuffer;
+	shadow2DBuffer.type = BindingType::StorageBuffer;
+	shadow2DBuffer.name = "uShadow2D";
+	shadow2DBuffer.binding = 3;
+	shadow2DBuffer.size = maxShadows * sizeof(engine::rendering::Shadow2D);
+	shadow2DBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+	shadow2DBuffer.visibility = WGPUShaderStage_Fragment;
+	shadow2DBuffer.readOnly = true;
+	bindGroupBuilder.bindings.push_back(shadow2DBuffer);
+
+	// Binding 4: ShadowCube data storage buffer
+	ShaderBinding shadowCubeBuffer;
+	shadowCubeBuffer.type = BindingType::StorageBuffer;
+	shadowCubeBuffer.name = "uShadowCube";
+	shadowCubeBuffer.binding = 4;
+	shadowCubeBuffer.size = maxShadowCubes * sizeof(engine::rendering::ShadowCube);
+	shadowCubeBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+	shadowCubeBuffer.visibility = WGPUShaderStage_Fragment;
+	shadowCubeBuffer.readOnly = true;
+	bindGroupBuilder.bindings.push_back(shadowCubeBuffer);
+
+	return *this;
+}
+
 WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addObjectUniforms(uint32_t groupIndex)
 {
 	auto &bindGroupBuilder = getOrCreateBindGroup(groupIndex);

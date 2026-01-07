@@ -86,15 +86,12 @@ void Scene::lateUpdate(float deltaTime)
 	processLateUpdateNodes(m_root, deltaTime);
 }
 
-void Scene::collectRenderProxies(
-	std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies,
-	std::vector<engine::rendering::LightStruct> &outLights
-)
+void Scene::collectRenderData(engine::rendering::RenderCollector &collector)
 {
 	if (!m_root)
 		return;
 
-	// Process all RenderNodes in the scene graph to collect render proxies
+	// Process all RenderNodes in the scene graph
 	std::function<void(nodes::Node::Ptr)> processRenderNodes;
 	processRenderNodes = [&](nodes::Node::Ptr node)
 	{
@@ -105,8 +102,8 @@ void Scene::collectRenderProxies(
 				auto renderNode = node->asRenderNode();
 				if (renderNode)
 				{
-					// Collect render proxies (models, lights, UI, debug)
-					renderNode->collectRenderProxies(outProxies);
+					// Let the render node add itself to the collector
+					renderNode->onRenderCollect(collector);
 				}
 			}
 
@@ -119,33 +116,6 @@ void Scene::collectRenderProxies(
 
 	// Start traversal from root
 	processRenderNodes(m_root);
-
-	// Sort proxies by layer (lower layers render first)
-	std::sort(
-		outProxies.begin(),
-		outProxies.end(),
-		[](const auto &a, const auto &b)
-		{
-			return a->getLayer() < b->getLayer();
-		}
-	);
-
-	// Extract lights from LightRenderProxies
-	for (const auto &proxy : outProxies)
-	{
-		if (auto lightProxy = std::dynamic_pointer_cast<engine::rendering::LightRenderProxy>(proxy))
-		{
-			outLights.push_back(lightProxy->lightData);
-		}
-		else if (auto cameraProxy = std::dynamic_pointer_cast<engine::rendering::CameraRenderProxy>(proxy))
-		{
-			// Register camera with scene if it's not already registered
-			if (cameraProxy->camera)
-			{
-				addCamera(cameraProxy->camera);
-			}
-		}
-	}
 }
 
 void Scene::collectDebugData()

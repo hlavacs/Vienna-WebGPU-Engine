@@ -13,16 +13,42 @@ WebGPUMaterial::WebGPUMaterial(
 	const engine::rendering::Material::Handle &materialHandle,
 	std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> textures,
 	WebGPUMaterialOptions options
-) : WebGPURenderObject<engine::rendering::Material>(context, materialHandle, Type::Material),
+) : WebGPUSyncObject<engine::rendering::Material>(context, materialHandle),
 	m_textures(std::move(textures)),
 	m_options(std::move(options))
 {
+	// Cache initial texture versions
+	const auto &cpuMaterial = getCPUObject();
+	cacheTextureVersions(cpuMaterial);
 }
 
-void WebGPUMaterial::updateGPUResources()
+bool WebGPUMaterial::needsSync(const Material &cpuMaterial) const
 {
-	const auto &cpuMaterial = getCPUObject();
+	// Check material version
+	if (cpuMaterial.getVersion() > m_lastSyncedVersion)
+		return true;
 
+	// Check if any texture versions changed
+	for (const auto &[slotName, textureSlot] : cpuMaterial.getTextureSlots())
+	{
+		if (!textureSlot.handle.valid()) continue;
+		
+		auto texOpt = textureSlot.handle.get();
+		if (!texOpt.has_value()) continue;
+		
+		auto &tex = texOpt.value();
+		
+		// Check cached texture version
+		auto it = m_textureVersions.find(slotName);
+		if (it == m_textureVersions.end() || it->second < tex->getVersion())
+			return true;
+	}
+
+	return false;
+}
+
+void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
+{
 	// Determine shader type and custom shader
 	const std::string &shaderName = cpuMaterial.getShader();
 	bool shaderChanged = shaderName != m_shaderName;
@@ -48,9 +74,10 @@ void WebGPUMaterial::updateGPUResources()
 
 	if (!m_materialBindGroup)
 	{
-		m_materialBindGroup = m_context.bindGroupFactory().createBindGroup(layout, shared_from_this());
+		m_materialBindGroup = m_context.bindGroupFactory().createBindGroup(layout, {}, shared_from_this());
 	}
 
+	// Update material properties buffer
 	m_materialBindGroup->updateBuffer(
 		0, // binding 0 for material properties
 		reinterpret_cast<const uint8_t *>(&cpuMaterial.getProperties()),
@@ -58,6 +85,9 @@ void WebGPUMaterial::updateGPUResources()
 		0,
 		m_context.getQueue()
 	);
+
+	// Update cached texture versions
+	cacheTextureVersions(cpuMaterial);
 }
 
 void WebGPUMaterial::bind(wgpu::RenderPassEncoder &pass) const
@@ -67,6 +97,18 @@ void WebGPUMaterial::bind(wgpu::RenderPassEncoder &pass) const
 
 	// Always bind at group 3
 	pass.setBindGroup(3, m_materialBindGroup->getBindGroup(), 0, nullptr);
+}
+
+void WebGPUMaterial::cacheTextureVersions(const Material &cpuMaterial)
+{
+	m_textureVersions.clear();
+	for (const auto &[slotName, textureSlot] : cpuMaterial.getTextureSlots())
+	{
+		if (!textureSlot.handle.valid()) continue;
+		auto texOpt = textureSlot.handle.get();
+		if (!texOpt.has_value()) continue;
+		m_textureVersions[slotName] = texOpt.value()->getVersion();
+	}
 }
 
 } // namespace engine::rendering::webgpu

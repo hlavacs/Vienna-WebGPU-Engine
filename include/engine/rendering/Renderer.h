@@ -6,12 +6,16 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/ClearFlags.h"
+#include "engine/rendering/CompositePass.h"
 #include "engine/rendering/DebugCollector.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
+#include "engine/rendering/MeshPass.h"
 #include "engine/rendering/Model.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderPassManager.h"
+#include "engine/rendering/RenderingConstants.h"
+#include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/Texture.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -27,6 +31,22 @@ class GameEngine; // forward declaration
 
 namespace engine::rendering
 {
+
+/**
+ * @brief GPU-side render item prepared for actual rendering.
+ * Contains GPU resources created once and reused across multiple passes.
+ */
+struct RenderItemGPU
+{
+	std::shared_ptr<webgpu::WebGPUModel> gpuModel;
+	webgpu::WebGPUMesh *gpuMesh;
+	std::shared_ptr<webgpu::WebGPUMaterial> gpuMaterial;
+	std::shared_ptr<webgpu::WebGPUBindGroup> objectBindGroup;
+	engine::rendering::Submesh submesh;
+	glm::mat4 worldTransform;
+	uint32_t renderLayer;
+	uint64_t objectID;
+};
 
 struct RenderTarget
 {
@@ -56,6 +76,17 @@ struct RenderTarget
 	uint64_t m_cameraId;					// associated camera ID
 };
 
+struct ShadowResources
+{
+	std::shared_ptr<webgpu::WebGPUTexture> shadow2DArray;
+	std::shared_ptr<webgpu::WebGPUTexture> shadowCubeArray;
+    std::shared_ptr<webgpu::WebGPUBuffer> shadowUniforms2D;
+    std::shared_ptr<webgpu::WebGPUBuffer> shadowUniformsCube;
+    wgpu::Sampler shadowSampler = nullptr;
+	std::shared_ptr<webgpu::WebGPUBindGroup> bindGroup;
+	bool initialized = false;
+};
+
 /**
  * @brief Central renderer that orchestrates the rendering pipeline.
  *
@@ -79,6 +110,7 @@ class Renderer
   protected:
 	void startFrame();
 
+	void renderShadowMaps(const RenderCollector &collector);
 	void renderToTexture(
 		const RenderCollector &collector,
 		uint64_t renderTargetId, // eindeutige ID für das RenderTarget
@@ -117,15 +149,6 @@ class Renderer
 	 */
 	webgpu::WebGPUContext *getWebGPUContext() const { return m_context.get(); }
 
-	/**
-	 * @brief Gets the object bind group layout for creating per-instance bind groups.
-	 * @return Shared pointer to object bind group layout.
-	 */
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> getObjectBindGroupLayout() const
-	{
-		return m_objectBindGroupLayout;
-	}
-
   protected:
 	/**
 	 * @brief Gets the pipeline manager.
@@ -139,53 +162,51 @@ class Renderer
 	 */
 	RenderPassManager &renderPassManager() { return *m_renderPassManager; }
 
-	void updateLights(const std::vector<LightStruct> &lights);
-
-	void bindFrameUniforms(wgpu::RenderPassEncoder renderPass, uint64_t cameraId, const FrameUniforms &frameUniforms);
-	void bindLightUniforms(wgpu::RenderPassEncoder renderPass);
-
-	void renderItems(
-		wgpu::CommandEncoder &encoder,
-		wgpu::RenderPassEncoder renderPass,
-		const RenderCollector &collector,
-		const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext
-	);
-
 	void renderDebugPrimitives(
 		wgpu::RenderPassEncoder renderPass,
 		const DebugRenderCollector &debugCollector
 	);
 
-	std::shared_ptr<webgpu::WebGPUModel> getOrCreateWebGPUModel(
-		const engine::core::Handle<engine::rendering::Model> &modelHandle
+	/**
+	 * @brief Prepares GPU resources from CPU render items (done once per frame).
+	 * @param collector The render collector with CPU-side items.
+	 * @return Vector of GPU render items ready for rendering.
+	 */
+	std::vector<std::optional<RenderItemGPU>> prepareGPUResources(
+		const RenderCollector &collector,
+		const std::vector<size_t> &indicesToPrepare
 	);
 
-	void drawFullscreenQuads(
-		wgpu::RenderPassEncoder renderPass,
-		const std::vector<std::pair<std::shared_ptr<webgpu::WebGPUTexture>, glm::vec4>> &texturesWithViewports
-	);
+	/**
+	 * @brief Initializes shadow pass resources.
+	 * @return True if initialization succeeded.
+	 */
+	bool initializeShadowResources();
 
   private:
+	std::vector<Light> m_lights;
+	std::vector<RenderItemGPU> m_gpuItems;
+
+	ShadowResources m_shadowResources;
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
 	std::unique_ptr<webgpu::WebGPUPipelineManager> m_pipelineManager;
 	std::unique_ptr<RenderPassManager> m_renderPassManager;
 
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_lightBindGroupLayout;
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_objectBindGroupLayout;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
+	// Rendering passes
+	std::unique_ptr<ShadowPass> m_shadowPass;
+	std::unique_ptr<MeshPass> m_meshPass;
+	std::unique_ptr<CompositePass> m_compositePass;
+
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_debugBindGroup;
 
 	std::shared_ptr<webgpu::WebGPUDepthTexture> m_depthBuffer;
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 
-	std::unordered_map<Model::Handle, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_frameBindGroupCache;
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_fullscreenQuadBindGroupCache; // Cache per render target
 
-	std::shared_ptr<webgpu::WebGPUPipeline> m_fullscreenQuadPipeline;
-	wgpu::Sampler m_fullscreenQuadSampler = nullptr;
+	// GPU render items cache (prepared once per frame)
+	std::vector<std::optional<RenderItemGPU>> m_gpuRenderItems;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_objectBindGroupCache;
 };
 
 } // namespace engine::rendering

@@ -1,5 +1,4 @@
 #include "engine/scene/nodes/CameraNode.h"
-#include "engine/rendering/RenderProxies.h"
 #include "engine/resources/ResourceManager.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
@@ -166,16 +165,6 @@ void CameraNode::preRender()
 	// This is where matrices can be updated before being used by the renderer
 	updateMatrices();
 	updateFrustumPlanes();
-}
-
-void CameraNode::collectRenderProxies(std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies)
-{
-	// Create a CameraRenderProxy to register this camera with the scene
-	auto cameraProxy = std::make_shared<engine::rendering::CameraRenderProxy>(
-		std::dynamic_pointer_cast<CameraNode>(shared_from_this()),
-		0 // Cameras typically render at layer 0
-	);
-	outProxies.push_back(cameraProxy);
 }
 
 void CameraNode::updateMatrices() const

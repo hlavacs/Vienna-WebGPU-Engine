@@ -2,9 +2,9 @@
 #include "engine/rendering/ColorSpace.h"
 #include "engine/rendering/Texture.h"
 #include "engine/resources/Image.h"
+#include <future>
 #include <memory>
 #include <webgpu/webgpu.hpp>
-#include <future>
 
 namespace engine::rendering::webgpu
 {
@@ -153,6 +153,24 @@ class WebGPUTexture
 	 * @param newHeight The new height in pixels.
 	 */
 	bool resize(WebGPUContext &context, uint32_t newWidth, uint32_t newHeight);
+
+	/**
+	 * @brief Creates a 2D view of a specific array layer for render attachment usage.
+	 *        Useful for rendering to individual layers of texture arrays or cube faces.
+	 * @param arrayLayer The array layer index to create a view for.
+	 * @param label Optional label for debugging.
+	 * @return A WebGPU texture view for the specified layer.
+	 */
+	wgpu::TextureView createLayerView(uint32_t arrayLayer, const char *label = nullptr) const;
+
+	/**
+	 * @brief Creates a cube map view for a specific cube face index.
+	 *        Useful for rendering to individual faces of a cube map texture.
+	 * @param cubeIndex The cube face index (0-5) to create a view for.
+	 * @param label Optional label for debugging.
+	 * @return A WebGPU texture view for the specified cube face.
+	 */
+	wgpu::TextureView createCubeView(uint32_t cubeIndex, const char *label = nullptr) const;
 
 	/**
 	 * @brief Maps an ImageFormat::Type to a WebGPU texture format.

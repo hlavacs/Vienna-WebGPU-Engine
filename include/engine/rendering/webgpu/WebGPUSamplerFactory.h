@@ -19,6 +19,7 @@ inline constexpr const char *DEFAULT = "default";
 inline constexpr const char *MIPMAP_LINEAR = "mipmap_linear";
 inline constexpr const char *CLAMP_LINEAR = "clamp_linear";
 inline constexpr const char *REPEAT_LINEAR = "repeat_linear";
+inline constexpr const char *SHADOW_COMPARISON = "shadow_comparison";
 } // namespace SamplerNames
 
 class WebGPUSamplerFactory : public debug::Loggable
@@ -80,6 +81,12 @@ class WebGPUSamplerFactory : public debug::Loggable
 	wgpu::Sampler getRepeatLinearSampler();
 
 	/**
+	 * @brief Get or create shadow comparison sampler (clamp to edge, linear, depth comparison).
+	 * @return WebGPU sampler with comparison enabled for shadow mapping.
+	 */
+	wgpu::Sampler getShadowComparisonSampler();
+
+	/**
 	 * @brief Clear all cached samplers.
 	 */
 	void cleanup();
@@ -92,5 +99,6 @@ class WebGPUSamplerFactory : public debug::Loggable
 	wgpu::Sampler createMipmapSampler();
 	wgpu::Sampler createClampLinearSampler();
 	wgpu::Sampler createRepeatLinearSampler();
+	wgpu::Sampler createShadowComparisonSampler();
 };
 } // namespace engine::rendering::webgpu

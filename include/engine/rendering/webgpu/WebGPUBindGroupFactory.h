@@ -2,16 +2,45 @@
 
 #include <memory>
 #include <vector>
+#include <map>
+#include <variant>
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
+#include "engine/rendering/webgpu/WebGPUBuffer.h"
 
 namespace engine::rendering::webgpu
 {
 
 class WebGPUContext;
+
+/**
+ * @brief Resource variant for bind group entries.
+ * Can hold a texture, sampler, or buffer.
+ */
+struct BindGroupResource
+{
+	std::variant<
+		std::shared_ptr<WebGPUTexture>,  // Texture resource
+		wgpu::Sampler,                    // Sampler resource
+		std::shared_ptr<WebGPUBuffer>     // Buffer resource
+	> resource;
+
+	// Convenience constructors
+	BindGroupResource(const std::shared_ptr<WebGPUTexture>& tex) : resource(tex) {}
+	BindGroupResource(const wgpu::Sampler& sampler) : resource(sampler) {}
+	BindGroupResource(const std::shared_ptr<WebGPUBuffer>& buffer) : resource(buffer) {}
+};
+
+/**
+ * @brief Key for identifying a bind group binding: (groupIndex, bindingIndex).
+ * - groupIndex: The bind group index (e.g., 0, 1, 2, 3).
+ * - bindingIndex: The binding index within that group (e.g., 0, 1, 2).
+ */
+using BindGroupBindingKey = std::tuple<uint32_t, uint32_t>;
 
 /**
  * @brief Factory for creating and managing WebGPU bind groups and layouts.
@@ -151,14 +180,32 @@ class WebGPUBindGroupFactory
 	);
 
 	/**
-	 * @brief Create a WebGPUBindGroup from layout info and optional material.
+	 * @brief Create a bind group from a resource map with explicit binding assignments.
+	 * 
+	 * This method is useful for passes like shadow or composite that need to bind specific
+	 * textures, samplers, and buffers at specific binding points within a specific group.
+	 * 
 	 * @param layoutInfo The bind group layout info.
-	 * @param material Optional material for per-material resources.
-	 * @return Shared pointer to the created WebGPUBindGroup, or nullptr if not ready.
+	 * @param resourceOverrides Map of (groupIndex, bindingIndex) tuple to resource (texture, sampler, or buffer) that should be used instead of defaults.
+	 * @param material Optional material for per-material resources. (TextureBindings taken from material if not overridden)
+	 * @param label Optional label for the bind group (for debugging).
+	 * @return Created bind group.
+	 * 
+	 * @example
+	 * ```cpp
+	 * // For group 4
+	 * std::map<BindGroupBindingKey, BindGroupResource> resources;
+	 * resources[{4, 0}] = shadowMapTexture;  // Group 4, Binding 0: Texture
+	 * resources[{4, 1}] = sampler;           // Group 4, Binding 1: Sampler
+	 * resources[{4, 2}] = uniformBuffer;     // Group 4, Binding 2: Buffer
+	 * auto bindGroup = factory.createBindGroup(layout, layoutInfo, resources, nullptr, "ShadowBindGroup");
+	 * ```
 	 */
 	std::shared_ptr<WebGPUBindGroup> createBindGroup(
-		const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo,
-		const std::shared_ptr<WebGPUMaterial> &material = nullptr
+		const std::shared_ptr<WebGPUBindGroupLayoutInfo>& layoutInfo,
+		const std::map<BindGroupBindingKey, BindGroupResource>& resourceOverrides = {},
+		const std::shared_ptr<WebGPUMaterial>& material = nullptr,
+		const char* label = nullptr
 	);
 
 	/**

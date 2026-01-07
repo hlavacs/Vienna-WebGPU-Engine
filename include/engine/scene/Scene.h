@@ -6,7 +6,6 @@
 
 #include "engine/rendering/DebugCollector.h"
 #include "engine/rendering/RenderCollector.h"
-#include "engine/rendering/RenderProxies.h"
 #include "engine/scene/nodes/CameraNode.h"
 #include "engine/scene/nodes/Node.h"
 
@@ -96,18 +95,14 @@ class Scene
 	void lateUpdate(float deltaTime);
 
 	/**
-	 * @brief Collect render proxies from scene graph.
+	 * @brief Collect renderable items from scene graph into the RenderCollector.
 	 * 
-	 * Traverses the scene graph and collects RenderProxy objects from all enabled RenderNodes.
-	 * These proxies are then processed by the renderer to populate the RenderCollector.
+	 * Traverses the scene graph and calls onRenderCollect() on all enabled RenderNodes,
+	 * allowing them to add models and lights directly to the RenderCollector.
 	 * 
-	 * @param outProxies Vector to append RenderProxy objects to.
-	 * @param outLights Vector to append light data to (lights are collected separately).
+	 * @param collector The render collector to populate with scene data.
 	 */
-	void collectRenderProxies(
-		std::vector<std::shared_ptr<engine::rendering::RenderProxy>> &outProxies,
-		std::vector<engine::rendering::LightStruct> &outLights
-	);
+	void collectRenderData(engine::rendering::RenderCollector &collector);
 
 	/** @brief Collect debug primitives from nodes with debug enabled */
 	void collectDebugData();

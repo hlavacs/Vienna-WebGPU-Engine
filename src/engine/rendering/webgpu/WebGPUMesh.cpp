@@ -1,48 +1,25 @@
 #include "engine/rendering/webgpu/WebGPUMesh.h"
+#include "engine/rendering/Vertex.h"
 
 namespace engine::rendering::webgpu
 {
 
-void WebGPUMesh::render(wgpu::CommandEncoder &encoder, wgpu::RenderPassEncoder &renderPass)
+void WebGPUMesh::bindBuffers(wgpu::RenderPassEncoder &renderPass, VertexLayout layout) const
 {
-	renderPass.setVertexBuffer(0, m_vertexBuffer, 0, m_vertexCount * sizeof(uint32_t));
+	size_t vertexStride = Vertex::getStride(layout);
+	renderPass.setVertexBuffer(0, m_vertexBuffer, 0, m_vertexCount * vertexStride);
 
 	if (isIndexed())
 	{
 		renderPass.setIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint32, 0, m_indexCount * sizeof(uint32_t));
 	}
-
-	for (auto &sub : m_submeshes)
-	{
-		if (sub.material)
-			sub.material->bind(renderPass);
-
-		if (isIndexed())
-			renderPass.drawIndexed(sub.indexCount, 1, sub.indexOffset, 0, 0);
-		else
-			renderPass.draw(sub.indexCount, 1, sub.indexOffset, 0);
-	}
 }
 
-void WebGPUMesh::updateGPUResources()
+void WebGPUMesh::syncFromCPU(const Mesh &cpuMesh)
 {
-	try
-	{
-		const auto &mesh = getCPUObject();
-
-
-		// Optionally update submeshes if CPU mesh exposes them (not shown here)
-		// If submesh material pointers need to be updated, do so here
-		for (auto &sub : m_submeshes) {
-			if (sub.material) {
-				sub.material->updateGPUResources();
-			}
-		}
-	}
-	catch (const std::exception &e)
-	{
-		// Log error or handle invalid mesh
-	}
+	// This would update vertex/index buffers if mesh data changed
+	// For now, meshes are typically immutable after creation
+	// But if you want to support dynamic meshes, implement buffer updates here
 }
 
 } // namespace engine::rendering::webgpu

@@ -50,17 +50,22 @@ int main(int argc, char **argv)
 	orbitState.azimuth = 0.0f;
 	orbitState.elevation = 0.3f;
 
-	// Create directional light
+	// Create ambient light
 	auto ambientLightNode = std::make_shared<engine::scene::nodes::LightNode>();
-	ambientLightNode->setLightType(0); // Ambient
-	ambientLightNode->setColor(glm::vec3(0.2f, 0.2f, 0.2f));
+	engine::rendering::AmbientLight ambientData;
+	ambientData.color = glm::vec3(0.2f, 0.2f, 0.2f);
+	ambientData.intensity = 1.0f;
+	ambientLightNode->getLight().setData(ambientData);
 
 	rootNode->addChild(std::static_pointer_cast<engine::scene::nodes::Node>(ambientLightNode));
 
+	// Create directional light
 	auto lightNode = std::make_shared<engine::scene::nodes::LightNode>();
-	lightNode->setLightType(1); // Directional
-	lightNode->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
-	lightNode->setIntensity(1.0f);
+	engine::rendering::DirectionalLight directionalData;
+	directionalData.color = glm::vec3(1.0f, 1.0f, 1.0f);
+	directionalData.intensity = 1.0f;
+	directionalData.castShadows = true;
+	lightNode->getLight().setData(directionalData);
 
 	// Set default direction angles (in degrees)
 	float pitchDegrees = 140.0f;
