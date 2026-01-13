@@ -36,6 +36,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	uint32_t sampleCount
 )
 {
+	cullMode = wgpu::CullMode::None; // ToDo: remove debug
 	if (!vertexShader)
 	{
 		spdlog::error("Vertex shader is required to create a render pipeline");
@@ -100,6 +101,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 		depthStencil.format = depthFormat;
 		depthStencil.depthWriteEnabled = true;
 		depthStencil.depthCompare = wgpu::CompareFunction::Less;
+		depthStencil.depthCompare = wgpu::CompareFunction::Always; // ToDo: remove debug
 		depthStencil.stencilReadMask = 0;
 		depthStencil.stencilWriteMask = 0;
 		depthStencil.stencilFront.compare = wgpu::CompareFunction::Always;

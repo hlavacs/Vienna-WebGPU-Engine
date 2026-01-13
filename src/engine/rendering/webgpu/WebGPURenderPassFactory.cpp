@@ -8,57 +8,7 @@ namespace engine::rendering::webgpu
 
 WebGPURenderPassFactory::WebGPURenderPassFactory(WebGPUContext &context) : m_context(context) {}
 
-std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createDefault(
-	const std::shared_ptr<WebGPUTexture> &colorTexture,
-	const std::shared_ptr<WebGPUDepthTexture> &depthTexture
-)
-{
-	wgpu::RenderPassColorAttachment renderPassColorAttachment{};
-	renderPassColorAttachment.view = colorTexture ? colorTexture->getTextureView() : nullptr;
-	renderPassColorAttachment.resolveTarget = nullptr;
-#ifdef __EMSCRIPTEN__
-	renderPassColorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
-	renderPassColorAttachment.loadOp = wgpu::LoadOp::Clear;
-	renderPassColorAttachment.storeOp = wgpu::StoreOp::Store;
-	renderPassColorAttachment.clearValue = wgpu::Color{0.05, 0.05, 0.05, 1.0};
-
-	wgpu::RenderPassDepthStencilAttachment depthStencilAttachment;
-	wgpu::RenderPassDepthStencilAttachment *depthStencilAttachmentPtr = nullptr;
-
-	// Only create depth attachment if depth texture is provided
-	if (depthTexture)
-	{
-		depthStencilAttachment.view = depthTexture->getTextureView();
-		depthStencilAttachment.depthClearValue = 1.0f;
-		depthStencilAttachment.depthLoadOp = wgpu::LoadOp::Clear;
-		depthStencilAttachment.depthStoreOp = wgpu::StoreOp::Store;
-		depthStencilAttachment.depthReadOnly = false;
-		depthStencilAttachment.stencilClearValue = 0;
-#ifdef WEBGPU_BACKEND_WGPU
-		depthStencilAttachment.stencilLoadOp = wgpu::LoadOp::Clear;
-		depthStencilAttachment.stencilStoreOp = wgpu::StoreOp::Store;
-#else
-		depthStencilAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
-		depthStencilAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
-#endif
-		depthStencilAttachment.stencilReadOnly = true;
-		depthStencilAttachmentPtr = &depthStencilAttachment;
-	}
-
-	wgpu::RenderPassDescriptor renderPassDesc{};
-	renderPassDesc.colorAttachmentCount = 1;
-	renderPassDesc.colorAttachments = &renderPassColorAttachment;
-	renderPassDesc.depthStencilAttachment = depthStencilAttachmentPtr;
-
-	return std::make_shared<WebGPURenderPassContext>(
-		std::vector<std::shared_ptr<WebGPUTexture>>{colorTexture},
-		depthTexture,
-		renderPassDesc
-	);
-}
-
-std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createForTexture(
+std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::create(
 	const std::shared_ptr<WebGPUTexture> &colorTexture,
 	const std::shared_ptr<WebGPUDepthTexture> &depthTexture,
 	engine::rendering::ClearFlags clearFlags,
@@ -75,27 +25,33 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createForTextu
 	colorAttachment.storeOp = wgpu::StoreOp::Store;
 	colorAttachment.clearValue = wgpu::Color{backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a};
 
-	wgpu::RenderPassDepthStencilAttachment depthAttachment{};
-	depthAttachment.view = depthTexture ? depthTexture->getTextureView() : nullptr;
-	depthAttachment.depthClearValue = 1.0f;
-	depthAttachment.depthLoadOp = hasFlag(clearFlags, ClearFlags::Depth) ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
-	depthAttachment.depthLoadOp = hasFlag(clearFlags, ClearFlags::Depth) ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
-	depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
-	depthAttachment.depthReadOnly = false;
-	depthAttachment.stencilClearValue = 0;
+	wgpu::RenderPassDepthStencilAttachment depthAttachment;
+	wgpu::RenderPassDepthStencilAttachment *depthAttachmentPtr = nullptr;
+
+	// Only create depth attachment if depth texture is provided
+	if (depthTexture)
+	{
+		depthAttachment.view = depthTexture->getTextureView();
+		depthAttachment.depthClearValue = 1.0f;
+		depthAttachment.depthLoadOp = hasFlag(clearFlags, ClearFlags::Depth) ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
+		depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
+		depthAttachment.depthReadOnly = false;
+		depthAttachment.stencilClearValue = 0;
 #ifdef WEBGPU_BACKEND_WGPU
-	depthAttachment.stencilLoadOp = wgpu::LoadOp::Clear;
-	depthAttachment.stencilStoreOp = wgpu::StoreOp::Store;
+		depthAttachment.stencilLoadOp = wgpu::LoadOp::Clear;
+		depthAttachment.stencilStoreOp = wgpu::StoreOp::Store;
 #else
-	depthAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
-	depthAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
+		depthAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
+		depthAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
 #endif
-	depthAttachment.stencilReadOnly = true;
+		depthAttachment.stencilReadOnly = true;
+		depthAttachmentPtr = &depthAttachment;
+	}
 
 	wgpu::RenderPassDescriptor renderPassDesc{};
 	renderPassDesc.colorAttachmentCount = 1;
 	renderPassDesc.colorAttachments = &colorAttachment;
-	renderPassDesc.depthStencilAttachment = &depthAttachment;
+	renderPassDesc.depthStencilAttachment = depthAttachmentPtr;
 
 	return std::make_shared<WebGPURenderPassContext>(
 		std::vector<std::shared_ptr<WebGPUTexture>>{colorTexture},

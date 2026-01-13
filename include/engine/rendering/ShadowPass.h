@@ -108,7 +108,7 @@ class ShadowPass
 	 * @brief Clear cached pipelines.
 	 * Call this when shaders are reloaded or graphics state changes.
 	 */
-	void clearPipelineCache();
+	void cleanup();
 
   private:
 	/**

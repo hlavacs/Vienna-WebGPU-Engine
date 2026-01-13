@@ -28,6 +28,11 @@ class WebGPUMesh : public WebGPUSyncObject<engine::rendering::Mesh>
 		uint32_t indexCount;
 		std::shared_ptr<WebGPUMaterial> material; // Can be null if no material
 	};
+	struct VertexBufferEntry
+	{
+		wgpu::Buffer buffer = nullptr;
+		uint32_t count;
+	};
 
 	/**
 	 * @brief Construct a WebGPUMesh from a Mesh handle and GPU buffers.
@@ -43,16 +48,12 @@ class WebGPUMesh : public WebGPUSyncObject<engine::rendering::Mesh>
 	WebGPUMesh(
 		WebGPUContext &context,
 		const engine::rendering::Mesh::Handle &meshHandle,
-		wgpu::Buffer vertexBuffer,
-		wgpu::Buffer indexBuffer,
 		uint32_t vertexCount,
 		uint32_t indexCount = 0,
 		std::vector<WebGPUSubmesh> submeshes = {},
 		WebGPUMeshOptions options = {}
 	) :
 		WebGPUSyncObject<engine::rendering::Mesh>(context, meshHandle),
-		m_vertexBuffer(vertexBuffer),
-		m_indexBuffer(indexBuffer),
 		m_vertexCount(vertexCount),
 		m_indexCount(indexCount),
 		m_submeshes(std::move(submeshes)),
@@ -68,16 +69,12 @@ class WebGPUMesh : public WebGPUSyncObject<engine::rendering::Mesh>
 	void bindBuffers(wgpu::RenderPassEncoder &renderPass, VertexLayout layout) const;
 
 	/**
-	 * @brief Get the vertex buffer.
-	 * @return The vertex buffer.
+	 * @brief Ensure the mesh has a vertex buffer for the specified layout.
+	 * @param layout The vertex layout.
+	 * @param cpuMesh The CPU-side mesh to sync from if needed.
+	 * @return The vertex buffer entry for the layout.
 	 */
-	wgpu::Buffer getVertexBuffer() const { return m_vertexBuffer; }
-
-	/**
-	 * @brief Get the index buffer.
-	 * @return The index buffer.
-	 */
-	wgpu::Buffer getIndexBuffer() const { return m_indexBuffer; }
+	const VertexBufferEntry &ensureBufferForLayout(VertexLayout layout) const;
 
 	/**
 	 * @brief Get the vertex count.
@@ -125,13 +122,14 @@ class WebGPUMesh : public WebGPUSyncObject<engine::rendering::Mesh>
 	 */
 	void syncFromCPU(const Mesh &cpuMesh) override;
 
-	private:
-		wgpu::Buffer m_vertexBuffer;
-		wgpu::Buffer m_indexBuffer;
-		uint32_t m_vertexCount;
-		uint32_t m_indexCount;
-		std::vector<WebGPUSubmesh> m_submeshes;
-		WebGPUMeshOptions m_options;
+  private:
+
+	mutable std::unordered_map<VertexLayout, VertexBufferEntry> m_vertexBuffers;
+	uint32_t m_indexCount;
+	wgpu::Buffer m_indexBuffer = nullptr;
+	uint32_t m_vertexCount;
+	std::vector<WebGPUSubmesh> m_submeshes;
+	WebGPUMeshOptions m_options;
 };
 
 } // namespace engine::rendering::webgpu

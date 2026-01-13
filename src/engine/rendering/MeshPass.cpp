@@ -1,6 +1,8 @@
 #include "engine/rendering/MeshPass.h"
 
 #include <spdlog/spdlog.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"
@@ -148,14 +150,6 @@ void MeshPass::drawItems(
 	const std::vector<uint64_t> &indicesToRender
 )
 {
-	if (auto colorTex = renderPassContext->getColorTexture(0))
-	{
-		const uint32_t w = colorTex->getWidth();
-		const uint32_t h = colorTex->getHeight();
-		renderPass.setViewport(0.f, 0.f, float(w), float(h), 0.f, 1.f);
-		renderPass.setScissorRect(0, 0, w, h);
-	}
-
 	webgpu::WebGPUPipeline *currentPipeline = nullptr;
 	webgpu::WebGPUMesh *currentMesh = nullptr;
 
@@ -204,7 +198,14 @@ void MeshPass::drawItems(
 				currentPipeline->getVertexShaderInfo()->getVertexLayout()
 			);
 		}
-
+		auto objectUniforms = ObjectUniforms{item.worldTransform, glm::inverseTranspose(item.worldTransform)};
+		item.objectBindGroup->updateBuffer(
+			0,
+			&objectUniforms,
+			sizeof(ObjectUniforms),
+			0,
+			m_context->getQueue()
+		);
 		// Bind object bind group (group 2)
 		renderPass.setBindGroup(2, item.objectBindGroup->getBindGroup(), 0, nullptr);
 
@@ -212,18 +213,21 @@ void MeshPass::drawItems(
 		item.gpuMaterial->bind(renderPass);
 
 		// Bind shadow bind group (group 4)
-        if (m_shadowBindGroup) {
-            renderPass.setBindGroup(4, m_shadowBindGroup->getBindGroup(), 0, nullptr);
-        }
+		if (m_shadowBindGroup)
+		{
+			renderPass.setBindGroup(4, m_shadowBindGroup->getBindGroup(), 0, nullptr);
+		}
 
 		// Draw submesh
 		item.gpuMesh->isIndexed()
 			? renderPass.drawIndexed(item.submesh.indexCount, 1, item.submesh.indexOffset, 0, 0)
 			: renderPass.draw(item.submesh.indexCount, 1, item.submesh.indexOffset, 0);
+
+		renderPass.draw(3, 1, 0, 0);
 	}
 }
 
-void MeshPass::clearCache()
+void MeshPass::cleanup()
 {
 	m_modelCache.clear();
 	m_frameBindGroupCache.clear();
