@@ -309,7 +309,7 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(
 	return pipeline;
 }
 
-void ShadowPass::clearPipelineCache()
+void ShadowPass::cleanup()
 {
 	m_pipelineCache.clear();
 	m_cubePipelineCache.clear();

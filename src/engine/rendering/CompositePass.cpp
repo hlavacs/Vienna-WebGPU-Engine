@@ -25,7 +25,7 @@ bool CompositePass::initialize()
 	spdlog::info("Initializing CompositePass");
 
 	// Get fullscreen quad shader from registry
-	auto shaderInfo = m_context->shaderRegistry().getShader(shader::default::FULLSCREEN_QUAD);
+	auto shaderInfo = m_context->shaderRegistry().getShader(shader::default ::FULLSCREEN_QUAD);
 	if (!shaderInfo || !shaderInfo->isValid())
 	{
 		spdlog::error("Fullscreen quad shader not found in registry");
@@ -57,108 +57,137 @@ bool CompositePass::initialize()
 }
 
 void CompositePass::render(
-	const std::shared_ptr<webgpu::WebGPURenderPassContext>& renderPassContext,
-	const std::shared_ptr<webgpu::WebGPUTexture>& texture
+	const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext,
+	const std::vector<RenderTarget> &targets
 )
 {
-	if (!texture)
+	if (!renderPassContext || targets.empty())
 	{
-		spdlog::error("CompositePass: Invalid texture");
+		spdlog::error("CompositePass: Invalid render pass context or empty targets");
 		return;
 	}
 
-	// Create command encoder
+	const auto& surfaceTex = renderPassContext->getColorTexture(0);
+    if (!surfaceTex)
+    {
+        spdlog::error("CompositePass: Render pass context has no color texture");
+        return;
+    }
+
+	// --- Create command encoder once ---
 	wgpu::CommandEncoderDescriptor encoderDesc{};
 	encoderDesc.label = "CompositePass Encoder";
 	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
 
-	// Begin render pass
+	// --- Begin render pass once ---
 	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
 
-	// Set viewport and scissor
-	auto colorTexture = renderPassContext->getColorTexture(0);
-	if (colorTexture)
-	{
-		const uint32_t w = colorTexture->getWidth();
-		const uint32_t h = colorTexture->getHeight();
-		renderPass.setViewport(0.f, 0.f, float(w), float(h), 0.f, 1.f);
-		renderPass.setScissorRect(0, 0, w, h);
-	}
-
-	// Bind pipeline
+	// --- Bind pipeline once ---
 	renderPass.setPipeline(m_pipeline->getPipeline());
 
-	// Get or create bind group for this texture
-	uint64_t cacheKey = reinterpret_cast<uint64_t>(texture.get());
-	auto it = m_bindGroupCache.find(cacheKey);
-	std::shared_ptr<webgpu::WebGPUBindGroup> bindGroup;
 
-    // ToDo: Extract into Factory
-	if (it == m_bindGroupCache.end())
-	{
-		// Create new bind group
-		auto shaderInfo = m_context->shaderRegistry().getShader(shader::default::FULLSCREEN_QUAD);
-		auto bindGroupLayout = shaderInfo->getBindGroupLayout(0);
-		
-		std::vector<wgpu::BindGroupEntry> entries;
-		entries.reserve(bindGroupLayout->getEntries().size());
+    const uint32_t surfaceW = surfaceTex->getWidth();	
+    const uint32_t surfaceH = surfaceTex->getHeight();
 
-		for (const auto& layoutEntry : bindGroupLayout->getEntries())
-		{
-			wgpu::BindGroupEntry entry{};
-			entry.binding = layoutEntry.binding;
+	// --- Draw all textures ---
+	 for (const auto& target : targets)
+    {
+        if (!target.gpuTexture)
+            continue;
 
-			if (layoutEntry.texture.sampleType != wgpu::TextureSampleType::Undefined)
-			{
-				entry.textureView = texture->getTextureView();
-			}
-			else if (layoutEntry.sampler.type != wgpu::SamplerBindingType::Undefined)
-			{
-				entry.sampler = m_sampler;
-			}
+        // --- Compute viewport in pixels based on target.viewport [0..1] ---
+        const float vx = target.viewport.x * surfaceW;
+        const float vy = target.viewport.y * surfaceH;
+        const float vw = target.viewport.z * surfaceW;
+        const float vh = target.viewport.w * surfaceH;
 
-			entries.push_back(entry);
-		}
+        renderPass.setViewport(vx, vy, vw, vh, 0.f, 1.f);
+        renderPass.setScissorRect(uint32_t(vx), uint32_t(vy), uint32_t(vw), uint32_t(vh));
 
-		wgpu::BindGroup rawBindGroup = m_context->bindGroupFactory().createBindGroup(
-			bindGroupLayout->getLayout(),
-			entries
-		);
+        // --- Get or create bind group for this texture ---
+        auto bindGroup = getOrCreateBindGroup(target.gpuTexture);
+        if (!bindGroup)
+        {
+            spdlog::warn("CompositePass: Failed to create bind group for texture");
+            continue;
+        }
 
-		bindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
-			rawBindGroup,
-			bindGroupLayout,
-			std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{}
-		);
-		m_bindGroupCache[cacheKey] = bindGroup;
-	}
-	else
-	{
-		bindGroup = it->second;
-	}
+        // --- Bind the texture bind group (group 0) ---
+        renderPass.setBindGroup(0, bindGroup->getBindGroup(), 0, nullptr);
 
-	// Bind texture bind group (group 0)
-	renderPass.setBindGroup(0, bindGroup->getBindGroup(), 0, nullptr);
+        // --- Draw fullscreen triangle constrained by viewport ---
+        renderPass.draw(3, 1, 0, 0);
+    }
 
-	// Draw fullscreen triangle (3 vertices, no vertex buffer needed)
-	renderPass.draw(3, 1, 0, 0);
+    // --- End render pass ---
+    renderPass.end();
+    renderPass.release();
 
-	// End render pass
-	renderPass.end();
-	renderPass.release();
-
-	// Submit commands
+    // --- Submit commands once ---
 	wgpu::CommandBufferDescriptor cmdBufferDesc{};
 	cmdBufferDesc.label = "CompositePass Commands";
 	wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
-	encoder.release();
-	m_context->getQueue().submit(commands);
-	commands.release();
+    encoder.release();
+    m_context->getQueue().submit(commands);
+    commands.release();
 }
 
-void CompositePass::clearCache()
+void CompositePass::cleanup()
 {
 	m_bindGroupCache.clear();
+}
+
+std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
+	const std::shared_ptr<webgpu::WebGPUTexture>& texture
+)
+{
+	if (!texture)
+		return nullptr;
+
+	uint64_t cacheKey = reinterpret_cast<uint64_t>(texture.get());
+	
+	auto it = m_bindGroupCache.find(cacheKey);
+	if (it != m_bindGroupCache.end())
+		return it->second;
+
+	// Create new bind group
+	auto shaderInfo = m_context->shaderRegistry().getShader(shader::default::FULLSCREEN_QUAD);
+	if (!shaderInfo)
+		return nullptr;
+
+	auto bindGroupLayout = shaderInfo->getBindGroupLayout(0);
+	if (!bindGroupLayout)
+		return nullptr;
+
+	std::vector<wgpu::BindGroupEntry> entries;
+	entries.reserve(bindGroupLayout->getEntries().size());
+
+	for (const auto& layoutEntry : bindGroupLayout->getEntries())
+	{
+		wgpu::BindGroupEntry entry{};
+		entry.binding = layoutEntry.binding;
+
+		if (layoutEntry.texture.sampleType != wgpu::TextureSampleType::Undefined)
+			entry.textureView = texture->getTextureView();
+		else if (layoutEntry.sampler.type != wgpu::SamplerBindingType::Undefined)
+			entry.sampler = m_sampler;
+
+		entries.push_back(entry);
+	}
+
+	wgpu::BindGroup rawBindGroup = m_context->bindGroupFactory().createBindGroup(
+		bindGroupLayout->getLayout(),
+		entries
+	);
+
+	auto bindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
+		rawBindGroup,
+		bindGroupLayout,
+		std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{}
+	);
+
+	m_bindGroupCache[cacheKey] = bindGroup;
+	return bindGroup;
 }
 
 } // namespace engine::rendering

@@ -23,29 +23,18 @@ class WebGPURenderPassFactory
 	explicit WebGPURenderPassFactory(WebGPUContext &context);
 
 	/**
-	 * @brief Creates a default render pass buffer using provided color and depth textures.
-	 * @param colorTexture Reference to the color WebGPUTexture.
-	 * @param depthTexture Reference to the depth WebGPUDepthTexture.
-	 * @return Shared pointer to WebGPURenderPassContext with textures, views, and descriptors.
-	 */
-	std::shared_ptr<WebGPURenderPassContext> createDefault(
-		const std::shared_ptr<WebGPUTexture> &colorTexture,
-		const std::shared_ptr<WebGPUDepthTexture> &depthTexture
-	);
-
-	/**
-	 * @brief Creates a render pass for a specific texture with custom clear flags and background color.
+	 * @brief Creates a render pass with optional clear flags and background color.
 	 * @param colorTexture The color texture to render to.
-	 * @param depthTexture The depth texture to use.
-	 * @param clearFlags Flags indicating which buffers to clear.
-	 * @param backgroundColor The background color to clear to.
+	 * @param depthTexture The depth texture to use (optional).
+	 * @param clearFlags Flags indicating which buffers to clear (default: clear color and depth).
+	 * @param backgroundColor The background color to clear to (default: dark gray).
 	 * @return Shared pointer to WebGPURenderPassContext.
 	 */
-	std::shared_ptr<WebGPURenderPassContext> createForTexture(
+	std::shared_ptr<WebGPURenderPassContext> create(
 		const std::shared_ptr<WebGPUTexture> &colorTexture,
-		const std::shared_ptr<WebGPUDepthTexture> &depthTexture,
-		engine::rendering::ClearFlags clearFlags,
-		const glm::vec4 &backgroundColor
+		const std::shared_ptr<WebGPUDepthTexture> &depthTexture = nullptr,
+		engine::rendering::ClearFlags clearFlags = ClearFlags::SolidColor | ClearFlags::Depth,
+		const glm::vec4 &backgroundColor = glm::vec4(0.05f, 0.05f, 0.05f, 1.0f)
 	);
 
 	/**

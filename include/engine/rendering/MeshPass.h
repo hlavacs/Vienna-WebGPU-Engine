@@ -75,7 +75,7 @@ class MeshPass
 	/**
 	 * @brief Clear cached resources (call on scene changes or major updates).
 	 */
-	void clearCache();
+	void cleanup();
 
 	/**
 	 * @brief Clear frame-specific bind group cache.

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <ostream>
+#include "engine/core/Enum.h"
 
 namespace engine::rendering
 {
@@ -21,15 +22,8 @@ enum class VertexAttribute : uint32_t
 	UV = 1 << 5,
 };
 
-inline constexpr VertexAttribute operator|(VertexAttribute a, VertexAttribute b)
-{
-	return static_cast<VertexAttribute>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-}
-
-inline constexpr VertexAttribute operator&(VertexAttribute a, VertexAttribute b)
-{
-	return static_cast<VertexAttribute>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
-}
+ENUM_BIT_OPERATORS(VertexAttribute)
+ENUM_BIT_FLAGS_HAS(VertexAttribute)
 
 /**
  * @brief Predefined vertex layouts.
@@ -158,6 +152,43 @@ struct Vertex
 		}
 		return sizeof(Vertex); // Default to full vertex
 	}
+
+	
+static std::vector<uint8_t> repackVertices(const std::vector<Vertex> &vertices, VertexLayout layout)
+{
+	size_t stride = Vertex::getStride(layout);
+	std::vector<uint8_t> packed(vertices.size() * stride);
+
+	auto vertexAttributes = Vertex::requiredAttributes(layout);
+	for (size_t i = 0; i < vertices.size(); ++i)
+	{
+		uint8_t *dst = packed.data() + i * stride;
+
+		if (hasFlag(vertexAttributes, VertexAttribute::Position))
+			memcpy(dst, &vertices[i].position, sizeof(glm::vec3));
+		dst += sizeof(glm::vec3);
+
+		if (hasFlag(vertexAttributes, VertexAttribute::Normal))
+			memcpy(dst, &vertices[i].normal, sizeof(glm::vec3));
+		dst += sizeof(glm::vec3);
+
+		if (hasFlag(vertexAttributes, VertexAttribute::Tangent))
+			memcpy(dst, &vertices[i].tangent, sizeof(glm::vec3));
+		dst += sizeof(glm::vec3);
+		if (hasFlag(vertexAttributes, VertexAttribute::Bitangent))
+			memcpy(dst, &vertices[i].bitangent, sizeof(glm::vec3));
+		dst += sizeof(glm::vec3);
+		if (hasFlag(vertexAttributes, VertexAttribute::UV))
+			memcpy(dst, &vertices[i].uv, sizeof(glm::vec2));
+		dst += sizeof(glm::vec2);
+
+		if (hasFlag(vertexAttributes, VertexAttribute::Color))
+			memcpy(dst, &vertices[i].color, sizeof(glm::vec4));
+		dst += sizeof(glm::vec4);
+	}
+
+	return packed;
+}
 };
 
 // Stream output
