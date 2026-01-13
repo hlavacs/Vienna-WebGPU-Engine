@@ -1,5 +1,9 @@
 #include "engine/resources/MaterialManager.h"
+
+#include <filesystem>
+
 #include "engine/core/Handle.h"
+#include "engine/resources/Image.h"
 
 namespace engine::resources
 {
@@ -218,7 +222,6 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	props.metallic = static_cast<float>(gltfMat.pbrMetallicRoughness.metallicFactor);
 	props.roughness = static_cast<float>(gltfMat.pbrMetallicRoughness.roughnessFactor);
 	props.normalTextureScale = gltfMat.normalTexture.scale;
-	
 
 	// Emission
 	if (gltfMat.emissiveFactor.size() == 3)
@@ -301,6 +304,54 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 std::shared_ptr<TextureManager> MaterialManager::getTextureManager() const
 {
 	return m_textureManager;
+}
+
+MaterialManager::MaterialHandle MaterialManager::getDefaultMaterial() const
+{
+	if (m_defaultMaterial.valid())
+		return m_defaultMaterial;
+	std::scoped_lock lock(m_mutex);
+
+	auto mat = std::make_shared<Material>();
+
+	engine::rendering::PBRProperties props{};
+	// Magenta / error fallback
+	props.diffuse[0] = 1.0f;
+	props.diffuse[1] = 0.0f;
+	props.diffuse[2] = 1.0f;
+	props.diffuse[3] = 1.0f; // opaque
+	props.emission[0] = 0.0f;
+	props.emission[1] = 0.0f;
+	props.emission[2] = 0.0f;
+	props.emission[3] = 1.0f;
+	props.metallic = 0.0f;
+	props.roughness = 1.0f;
+	props.ior = 1.45f;
+
+	mat->setProperties(props);
+	mat->setName("Default_Magenta");
+	mat->setShader(engine::rendering::shader::default ::PBR); // ToDo: Unlit shader?
+
+	if (m_textureManager)
+	{
+		// 1x1 magenta texture
+		std::vector<uint8_t> pixels = {255, 0, 255, 255};
+		auto tex = m_textureManager->createImageTexture(
+			std::make_shared<Image>(1u, 1u, ImageFormat::Type::LDR_RGBA8, std::move(pixels)),
+			std::filesystem::path("Default_Magenta_Texture") // Will be used as key
+		);
+		if (!tex.has_value())
+		{
+			logError("Failed to create default magenta texture");
+			return {};
+		}
+		mat->setDiffuseTexture(tex.value()->getHandle());
+	}
+	auto handle = mat->getHandle();
+	m_defaultMaterial = handle;
+	m_resources[m_defaultMaterial] = mat;
+
+	return m_defaultMaterial;
 }
 
 } // namespace engine::resources

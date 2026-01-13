@@ -70,7 +70,10 @@ class MaterialManager : public ResourceManagerBase<engine::rendering::Material>
 	[[nodiscard]]
 	std::shared_ptr<TextureManager> getTextureManager() const;
 
+	MaterialHandle getDefaultMaterial() const;
+
   private:
+	mutable MaterialHandle m_defaultMaterial;
 	std::shared_ptr<TextureManager> m_textureManager;
 };
 

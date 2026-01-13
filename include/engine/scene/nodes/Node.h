@@ -1,9 +1,9 @@
 #pragma once
+#include "engine/core/Enum.h"
+#include "engine/core/Identifiable.h"
 #include <cstdint>
 #include <memory>
 #include <vector>
-#include "engine/core/Identifiable.h"
-#include "engine/core/Enum.h"
 
 namespace engine
 {
@@ -52,7 +52,6 @@ enum class NodeType : uint32_t
 	Model = 1 << 7,	  // Model render node
 };
 
-
 ENUM_BIT_OPERATORS(NodeType)
 
 /**
@@ -69,8 +68,8 @@ class Node : public engine::core::Identifiable<Node>, public std::enable_shared_
 	friend class engine::scene::Scene;
 	friend class engine::scene::SceneManager;
 
-	Node();
-	virtual ~Node();
+	Node(std::optional<std::string> name = std::nullopt) : Identifiable<Node>(name) {}
+	virtual ~Node() { onDestroy(); }
 
 	/** @brief Start the node (called once when enabled for the first time). */
 	virtual void start();

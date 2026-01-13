@@ -86,12 +86,7 @@ void Transform::updateWorldMatrix() const
 		_worldMatrixCache = getLocalMatrix();
 	}
 	_dirty = false;
-	// Propagate to children
-	for (const auto &child : _children)
-	{
-		if (child)
-			child->markDirty();
-	}
+	// Note: Children propagation is handled by SpatialNode hierarchy
 }
 
 glm::vec3 Transform::forward() const
@@ -162,20 +157,14 @@ void Transform::lookAt(const glm::vec3 &target, const glm::vec3 &worldUp)
 	markDirty();
 }
 
-void Transform::setParent(Ptr parent, bool keepWorld)
+void Transform::setParentInternal(Ptr parent, bool keepWorld)
 {
 	if (_parent == parent)
 		return;
+
 	glm::mat4 world = getWorldMatrix();
-	if (_parent)
-	{
-		_parent->_children.erase(std::remove(_parent->_children.begin(), _parent->_children.end(), shared_from_this()), _parent->_children.end());
-	}
 	_parent = parent;
-	if (_parent)
-	{
-		_parent->_children.push_back(shared_from_this());
-	}
+
 	if (keepWorld)
 	{
 		glm::mat4 invParent = _parent ? glm::inverse(_parent->getWorldMatrix()) : glm::mat4(1.0f);
@@ -188,16 +177,11 @@ void Transform::setParent(Ptr parent, bool keepWorld)
 }
 
 Transform::Ptr Transform::getParent() const { return _parent; }
-const std::vector<Transform::Ptr> &Transform::getChildren() const { return _children; }
 
 void Transform::markDirty()
 {
 	_dirty = true;
-	for (const auto &child : _children)
-	{
-		if (child)
-			child->markDirty();
-	}
+	// Note: Children propagation is handled by SpatialNode hierarchy
 }
 
 } // namespace engine::scene

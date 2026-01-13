@@ -14,9 +14,9 @@ std::optional<TextureManager::TexturePtr> TextureManager::createImageTexture(
 
 	std::string key;
 	if (filePath.has_value())
+	{
 		key = filePath->string();
 
-	{
 		std::scoped_lock lock(m_mutex);
 		if (!key.empty())
 		{

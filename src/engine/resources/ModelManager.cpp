@@ -10,7 +10,6 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 	const engine::math::CoordinateSystem::Cartesian dstCoordSys
 )
 {
-	// Check if model already exists
 	std::string modelName = name.value_or(filePath);
 	auto existing = getByName(modelName);
 	if (existing.has_value())
@@ -104,6 +103,15 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 
 			model->addSubmesh(submesh);
 		}
+	}
+
+	if (model->getSubmeshCount() == 0)
+	{
+		engine::rendering::Submesh submesh;
+		submesh.indexOffset = 0;
+		submesh.indexCount  = static_cast<uint32_t>(objData.indices.size());
+		submesh.material    = m_materialManager ? m_materialManager->getDefaultMaterial() : engine::rendering::MaterialHandle{};
+		model->addSubmesh(submesh);
 	}
 
 	auto handleOpt = add(model);

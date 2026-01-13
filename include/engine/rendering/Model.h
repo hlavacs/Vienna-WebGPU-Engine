@@ -69,6 +69,12 @@ struct Model : public engine::core::Identifiable<Model>, public engine::core::Ve
 	std::vector<Submesh> &getSubmeshes() { return m_submeshes; }
 
 	/**
+	 * @brief Get the number of submeshes in the model.
+	 * @return Number of submeshes.
+	 */
+	size_t getSubmeshCount() const { return m_submeshes.size(); }
+
+	/**
 	 * @brief Get the file path of the model.
 	 * @return The file path as a string.
 	 */

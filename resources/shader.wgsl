@@ -362,8 +362,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 	// ---- Emission ----
 	let color = Lo + emission;
 
-	// return vec4f(color, uMaterial.diffuse.w);
-	return vec4f(1.0, 0.0, 1.0, 1.0);
+	return vec4f(color, uMaterial.diffuse.w);
 }
 
 

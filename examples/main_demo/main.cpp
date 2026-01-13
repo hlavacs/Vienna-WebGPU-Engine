@@ -2,8 +2,8 @@
  * Vienna WebGPU Engine - Main Entry Point
  * Using GameEngine with SceneManager for declarative scene setup
  */
-#include <windows.h>
 #include "engine/EngineMain.h"
+#include <windows.h>
 // ^ This has to be on top to define SDL_MAIN_HANDLED ^
 #include "MainDemoImGuiUI.h"
 #include "OrbitCamera.h"
@@ -40,7 +40,7 @@ int main(int argc, char **argv)
 		cameraNode->setPerspective(true);
 		cameraNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
 		cameraNode->lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        cameraNode->setBackgroundColor(glm::vec4(0.1f, 0.1f, 0.1f, 1.0f));
+		cameraNode->setBackgroundColor(glm::vec4(0.1f, 0.1f, 0.1f, 1.0f));
 		// IMPORTANT: Clear both color and depth buffers every frame
 	}
 
@@ -83,41 +83,28 @@ int main(int argc, char **argv)
 	lightDirectionsUI[0] = glm::vec3(pitchDegrees, yawDegrees, rollDegrees);
 
 	// Load model (CPU-side only, GPU resources will be created by the renderer)
-	engine::rendering::Model::Handle modelHandleFourareen;
-	engine::rendering::Model::Handle modelHandleCylinder;
+	engine::rendering::Model::Handle fourareenModleHandle;
+	engine::rendering::Model::Handle planeModelHandle;
 	auto maybeModelFourareen = resourceManager->m_modelManager->createModel("fourareen.obj");
-	auto maybeModelCylinder = resourceManager->m_modelManager->createModel("cylinder.obj");
+	auto maybeModelPlane = resourceManager->m_modelManager->createModel("plane.obj");
 	if (!maybeModelFourareen.has_value())
 	{
 		spdlog::error("Failed to load fourareen.obj model");
 		return -1;
 	}
-	if (!maybeModelCylinder.has_value())
+	if (!maybeModelPlane.has_value())
 	{
-		spdlog::error("Failed to load cylinder.obj model");
+		spdlog::error("Failed to load plane.obj model");
 		return -1;
 	}
-	spdlog::info("Loaded fourareen.obj model");
-	spdlog::info("Loaded cylinder.obj model");
-	modelHandleFourareen = maybeModelFourareen.value()->getHandle();
-	modelHandleCylinder = maybeModelCylinder.value()->getHandle();
 
-	auto modelNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(modelHandleFourareen);
-	modelNode->getTransform()->setLocalPosition(glm::vec3(-2.0f, 0.0f, -0.0f));
+	auto modelNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelFourareen.value());
+	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 1.0f, 0.0f));
 	rootNode->addChild(modelNode);
 
-	modelNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(modelHandleCylinder);
+	modelNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelPlane.value());
 	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-	// Because the cylinder model is lying flat, rotate it upright
-	modelNode->getTransform()->rotate(glm::vec3(90.0f, 0.0f, 0.0f));
 	rootNode->addChild(modelNode);
-
-	modelNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(modelHandleFourareen);
-	modelNode->getTransform()->setLocalPosition(glm::vec3(2.0f, 0.0f, 0.0f));
-	rootNode->addChild(modelNode);
-
-	// Load the scene (makes it active)
-	sceneManager->loadScene("Main");
 
 	// Create an UpdateNode to handle orbit camera input
 	auto orbitCameraController = std::make_shared<demo::OrbitCameraController>(orbitState, cameraNode);
@@ -133,6 +120,9 @@ int main(int argc, char **argv)
 	imguiManager->addFrame([&]()
 						   { mainDemoImGuiUI.renderPerformanceWindow(); });
 
+	// Load the scene (makes it active)
+	sceneManager->loadScene("Main");
+	
 	// Run the engine (blocks until window closed)
 	engine.run();
 

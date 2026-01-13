@@ -5,16 +5,23 @@
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
 #include <memory>
-#include <vector>
 
 namespace engine::scene
 {
-// ToDo: Move to math and move parenting to nodes
+namespace nodes
+{
+class SpatialNode; // Forward declaration for friend access
+}
+
 /**
- * @brief Represents a position, rotation, and scale in 3D space with support for hierarchical transforms.
+ * @brief Represents a position, rotation, and scale in 3D space.
+ * Transform is hierarchy-agnostic - it only knows its parent, not its children.
+ * The Node hierarchy is the single source of truth for the scene graph.
  */
 class Transform : public std::enable_shared_from_this<Transform>
 {
+	// Only SpatialNode can modify parent relationships
+	friend class nodes::SpatialNode;
   public:
 	using Ptr = std::shared_ptr<Transform>;
 
@@ -153,33 +160,20 @@ class Transform : public std::enable_shared_from_this<Transform>
 	void rotate(const glm::vec3 &eulerDegrees, bool local = true);
 
 	/**
-	 * @brief Rotates the transform to face a target position.
-	 * @param target The point to look at.
+	 * @brief Rotates the transform to face a target position in world space.
+	 * @param target The point to look at (world space).
 	 * @param up The up direction (default is world up).
-	 * @param worldSpace If true, target is in world space; if false, in local space.
 	 */
 	void lookAt(const glm::vec3 &target, const glm::vec3 &up = glm::vec3(0, 1, 0));
 
-	// --- Parenting ---
-
-	/**
-	 * @brief Sets the parent of this transform.
-	 * @param parent The new parent transform.
-	 * @param keepWorld If true, keeps the current world-space transform.
-	 */
-	void setParent(Ptr parent, bool keepWorld = true);
+	// --- Parenting (Read-Only) ---
 
 	/**
 	 * @brief Gets the parent transform.
 	 * @return Parent transform or nullptr if root.
+	 * @note Parent can only be set by SpatialNode during hierarchy updates.
 	 */
 	Ptr getParent() const;
-
-	/**
-	 * @brief Gets all children of this transform.
-	 * @return Const reference to the children list.
-	 */
-	const std::vector<Ptr> &getChildren() const;
 
   private:
 	// Local transform data
@@ -191,12 +185,11 @@ class Transform : public std::enable_shared_from_this<Transform>
 	mutable glm::mat4 _worldMatrixCache = glm::mat4(1.0f);
 	mutable bool _dirty = true;
 
-	// Hierarchy
+	// Hierarchy (parent only - children are managed by Node hierarchy)
 	Ptr _parent = nullptr;
-	std::vector<Ptr> _children;
 
 	/**
-	 * @brief Marks this transform and its children as needing matrix recomputation.
+	 * @brief Marks this transform as needing matrix recomputation.
 	 */
 	void markDirty();
 
@@ -204,6 +197,14 @@ class Transform : public std::enable_shared_from_this<Transform>
 	 * @brief Updates the world matrix cache if dirty.
 	 */
 	void updateWorldMatrix() const;
+
+	/**
+	 * @brief Internal method to set parent transform.
+	 * Only accessible by SpatialNode via friend access.
+	 * @param parent The new parent transform.
+	 * @param keepWorld If true, keeps the current world-space transform.
+	 */
+	void setParentInternal(Ptr parent, bool keepWorld = true);
 };
 
 } // namespace engine::scene
