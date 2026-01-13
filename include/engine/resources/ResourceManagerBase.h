@@ -237,8 +237,8 @@ class ResourceManagerBase : public engine::debug::Loggable
 	}
 
   protected:
-	mutable std::mutex m_mutex;						 ///< Mutex for thread-safe access.
-	std::unordered_map<HandleType, Ptr> m_resources; ///< Map of handles to resources.
+	mutable std::mutex m_mutex;								 ///< Mutex for thread-safe access.
+	mutable std::unordered_map<HandleType, Ptr> m_resources; ///< Map of handles to resources.
 };
 
 } // namespace engine::resources

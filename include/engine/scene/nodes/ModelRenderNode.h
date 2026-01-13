@@ -26,9 +26,22 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 	 * @param layer Render layer for sorting (default: 0).
 	 */
 	explicit ModelRenderNode(
-		const engine::core::Handle<engine::rendering::Model> &modelHandle,
+		const engine::rendering::Model::Handle &modelHandle,
 		uint32_t layer = 0
 	) : m_modelHandle(modelHandle), m_renderLayer(layer)
+	{
+		addNodeType(NodeType::Model);
+	}
+
+	/**
+	 * @brief Constructs a model render node.
+	 * @param model Shared pointer to the model resource to render.
+	 * @param layer Render layer for sorting (default: 0).
+	 */
+	explicit ModelRenderNode(
+		const engine::rendering::Model::Ptr model,
+		uint32_t layer = 0
+	) : m_modelHandle(model->getHandle()), m_renderLayer(layer)
 	{
 		addNodeType(NodeType::Model);
 	}

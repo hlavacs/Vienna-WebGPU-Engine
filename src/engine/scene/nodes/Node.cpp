@@ -9,9 +9,6 @@
 namespace engine::scene::nodes
 {
 
-Node::Node() {}
-Node::~Node() { onDestroy(); }
-
 void Node::start()
 {
 	if (!enabled || started)
@@ -97,6 +94,17 @@ void Node::addChild(Ptr child)
 	child->parent = this;
 	child->setEngineContext(m_engineContext); // Propagate context to child
 	children.push_back(child);
+	
+	// Update Transform hierarchy if child is spatial
+	if (child->isSpatial())
+	{
+		auto spatialChild = std::dynamic_pointer_cast<SpatialNode>(child);
+		if (spatialChild)
+		{
+			spatialChild->updateTransformParent(true); // Keep world transform
+		}
+	}
+	
 	if (enabled && child->isEnabled())
 		child->start();
 }
@@ -108,6 +116,16 @@ void Node::removeChild(Ptr child)
 	children.erase(std::remove(children.begin(), children.end(), child), children.end());
 	child->parent = nullptr;
 	child->setEngineContext(nullptr); // Clear context when removed
+	
+	// Clear Transform parent if child is spatial
+	if (child->isSpatial())
+	{
+		auto spatialChild = std::dynamic_pointer_cast<SpatialNode>(child);
+		if (spatialChild)
+		{
+			spatialChild->updateTransformParent(true); // Keep world transform
+		}
+	}
 }
 
 void Node::setEngineContext(engine::EngineContext *context)

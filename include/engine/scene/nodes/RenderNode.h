@@ -22,7 +22,7 @@ class RenderNode : public virtual Node
   public:
 	using Ptr = std::shared_ptr<RenderNode>;
 	
-	RenderNode() {
+	RenderNode(std::optional<std::string> name = std::nullopt) : Node(name){
 		addNodeType(NodeType::Render);
 	}
 	
