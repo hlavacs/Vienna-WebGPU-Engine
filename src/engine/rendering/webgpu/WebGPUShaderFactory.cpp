@@ -28,31 +28,68 @@ WebGPUShaderFactory::WebGPUShaderBuilder WebGPUShaderFactory::begin(
 	const std::optional<std::filesystem::path> &shaderPath
 )
 {
-	// Reset state for new shader
-	auto shaderInfo = std::make_shared<WebGPUShaderInfo>(
+	// Create builder with accumulated state (shader not created yet)
+	return WebGPUShaderFactory::WebGPUShaderBuilder(
+		*this,
 		name,
-		shaderPath ? shaderPath->string() : "",
 		type,
 		vertexEntry,
-		fragmentEntry
+		fragmentEntry,
+		shaderPath
 	);
-
-	return WebGPUShaderFactory::WebGPUShaderBuilder(*this, shaderInfo);
 }
 
-void WebGPUShaderFactory::reloadShader(const std::shared_ptr<WebGPUShaderInfo> &shaderInfo)
+bool WebGPUShaderFactory::reloadShader(const std::string &shaderName)
 {
-	std::string shaderPath = shaderInfo->getPath();
+	auto currentShaderInfo = m_context.shaderRegistry().getShader(shaderName);
+	if (!currentShaderInfo)
+	{
+		spdlog::error("WebGPUShaderFactory::reloadShader() - Shader '{}' not found in registry", shaderName);
+		return false;
+	}
 
+	return reloadShader(currentShaderInfo);
+}
+
+bool WebGPUShaderFactory::reloadShader(std::shared_ptr<WebGPUShaderInfo> shaderInfo)
+{
+	if (!shaderInfo || shaderInfo->getPath().empty())
+	{
+		spdlog::error("WebGPUShaderFactory::reloadShader() - Invalid shader info or has no path");
+		return nullptr;
+	}
+
+	std::string shaderPath = shaderInfo->getPath();
 	auto shaderModule = loadShaderModule(shaderPath);
 
 	if (!shaderModule)
 	{
-		spdlog::error("WebGPUShaderFactory::reloadShader() - Failed to reload shader from '{}'", shaderPath);
-		return;
+		spdlog::error("WebGPUShaderFactory::reloadShader() - Failed to reload shader module from '{}'", shaderPath);
+		return nullptr;
 	}
 
-	shaderInfo->setModule(shaderModule);
+	// Create a new immutable WebGPUShaderInfo with the reloaded module
+	auto newShaderInfo = std::make_shared<WebGPUShaderInfo>(
+		shaderInfo->getName(),
+		shaderInfo->getPath(),
+		shaderInfo->getShaderType(),
+		shaderModule,
+		shaderInfo->getVertexEntryPoint(),
+		shaderInfo->getFragmentEntryPoint(),
+		shaderInfo->getVertexLayout(),
+		shaderInfo->getShaderFeatures(),
+		shaderInfo->isDepthEnabled(),
+		shaderInfo->isBlendEnabled(),
+		shaderInfo->isBackFaceCullingEnabled()
+	);
+
+	// Copy bind group layouts from old shader to new one
+	for (const auto &[groupIndex, layoutInfo] : shaderInfo->getBindGroupLayouts())
+	{
+		newShaderInfo->addBindGroupLayout(groupIndex, layoutInfo);
+	}
+
+	return m_context.shaderRegistry().registerShader(newShaderInfo, true);
 }
 
 WebGPUShaderFactory::BindGroupBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::getOrCreateBindGroup(uint32_t groupIndex)
@@ -62,19 +99,20 @@ WebGPUShaderFactory::BindGroupBuilder &WebGPUShaderFactory::WebGPUShaderBuilder:
 
 WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::setShaderModule(wgpu::ShaderModule module)
 {
-	m_shaderInfo->setModule(module);
+	// Store module temporarily in builder (will be used at build time)
+	m_shaderModule = module;
 	return *this;
 }
 
 WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::setVertexLayout(engine::rendering::VertexLayout layout)
 {
-	m_shaderInfo->setVertexLayout(layout);
+	m_vertexLayout = layout;
 	return *this;
 }
 
 WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::disableDepth()
 {
-	m_shaderInfo->setEnableDepth(false);
+	m_depthEnabled = false;
 	return *this;
 }
 
@@ -305,28 +343,46 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::WebGPUShaderBuilder::build()
 {
 	// Load shader module if not already set and path provided
-	if (!m_shaderInfo->getModule() && !m_shaderInfo->getPath().empty())
+	wgpu::ShaderModule shaderModule = m_shaderModule;  // Use stored module or load from path
+	if (!shaderModule && !m_shaderPath.empty())
 	{
-		auto shaderModule = m_factory.loadShaderModule(m_shaderInfo->getPath());
+		shaderModule = m_factory.loadShaderModule(m_shaderPath);
 		if (!shaderModule)
 		{
+			spdlog::error("WebGPUShaderFactory::build() - Failed to load shader from '{}'", m_shaderPath);
 			return nullptr;
 		}
-		m_shaderInfo->setModule(shaderModule);
 	}
 
 	// Validate shader module exists
-	if (!m_shaderInfo->getModule())
+	if (!shaderModule)
 	{
-		spdlog::error("WebGPUShaderFactory::build() - No shader module set for shader '{}'", m_shaderInfo->getName());
+		spdlog::error("WebGPUShaderFactory::build() - No shader module set for shader '{}'", m_name);
 		return nullptr;
 	}
 
-	m_factory.createBindGroupLayouts(m_shaderInfo, m_bindGroupsBuilder);
+	// Create a new immutable WebGPUShaderInfo with accumulated configuration and loaded module
+	// This is the ONLY place where WebGPUShaderInfo is constructed with a module
+	auto builtShaderInfo = std::make_shared<WebGPUShaderInfo>(
+		m_name,
+		m_shaderPath,
+		m_type,
+		shaderModule,
+		m_vertexEntry,
+		m_fragmentEntry,
+		m_vertexLayout,
+		engine::rendering::ShaderFeature::Flag(m_shaderFeatures), // ToDo: Allow to specify in builder
+		m_depthEnabled,
+		m_blendEnabled,
+		m_backFaceCullingEnabled
+	);
 
-	spdlog::info("WebGPUShaderFactory: Built shader '{}' with {} bind groups", m_shaderInfo->getName(), m_shaderInfo->getBindGroupLayouts().size());
+	// Apply accumulated bind group layouts
+	m_factory.createBindGroupLayouts(builtShaderInfo, m_bindGroupsBuilder);
 
-	return m_shaderInfo;
+	spdlog::info("WebGPUShaderFactory: Built shader '{}' with {} bind groups", builtShaderInfo->getName(), builtShaderInfo->getBindGroupLayouts().size());
+
+	return builtShaderInfo;
 }
 
 void WebGPUShaderFactory::createBindGroupLayouts(

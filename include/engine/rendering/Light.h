@@ -23,10 +23,11 @@ struct DirectionalLight
 	glm::vec3 color = glm::vec3(1.0f);
 	float intensity = 1.0f;
 	glm::vec3 direction = glm::vec3(0.0f, -1.0f, 0.0f); // World-space direction
-	float range = 100.0f; // Shadow influence area (culling radius from light position)
+	float range = 100.0f; // Shadow influence area 
 	bool castShadows = false;
 	float shadowBias = 0.005f;
 	float shadowNormalBias = 0.01f;
+	uint32_t shadowMapSize = 4096; // Shadow map resolution
 	uint32_t shadowPCFKernel = 1; // PCF kernel size (1 = 3x3, 2 = 5x5)
 };
 
@@ -41,6 +42,7 @@ struct PointLight
 	float range = 10.0f; // Effective range for culling
 	bool castShadows = false;
 	float shadowBias = 0.005f;
+	uint32_t shadowMapSize = 1024; // Shadow cube map resolution per face
 	uint32_t shadowPCFKernel = 1;
 };
 
@@ -59,6 +61,7 @@ struct SpotLight
 	bool castShadows = false;
 	float shadowBias = 0.005f;
 	float shadowNormalBias = 0.01f;
+	uint32_t shadowMapSize = 2048; // Shadow map resolution
 	uint32_t shadowPCFKernel = 1;
 };
 
@@ -73,16 +76,24 @@ class Light
   public:
 	using LightData = std::variant<AmbientLight, DirectionalLight, PointLight, SpotLight>;
 
+	enum class Type : uint32_t
+	{
+		Ambient = 0,
+		Directional = 1,
+		Point = 2,
+		Spot = 3
+	};
+
 	/**
 	 * @brief Constructs an ambient light by default.
 	 */
-	Light() : m_data(AmbientLight{}), m_transform(glm::mat4(1.0f)), m_shadowIndex(-1) {}
+	Light() : m_data(AmbientLight{}), m_transform(glm::mat4(1.0f)) {}
 
 	/**
 	 * @brief Constructs a light with specific data.
 	 * @param data Light-specific data (AmbientLight, DirectionalLight, etc.)
 	 */
-	explicit Light(const LightData& data) : m_data(data), m_transform(glm::mat4(1.0f)), m_shadowIndex(-1) {}
+	explicit Light(const LightData& data) : m_data(data), m_transform(glm::mat4(1.0f)) {}
 
 	/**
 	 * @brief Sets the light data.
@@ -115,18 +126,6 @@ class Light
 	const glm::mat4& getTransform() const { return m_transform; }
 
 	/**
-	 * @brief Sets the shadow index (assigned by renderer during shadow pass setup).
-	 * @param index Index in shadow map array, or -1 if no shadows.
-	 */
-	void setShadowIndex(int32_t index) { m_shadowIndex = index; }
-
-	/**
-	 * @brief Gets the shadow index.
-	 * @return Index in shadow map array, or -1 if no shadows.
-	 */
-	int32_t getShadowIndex() const { return m_shadowIndex; }
-
-	/**
 	 * @brief Checks if this light type can cast shadows.
 	 * @return True if the light has castShadows enabled.
 	 */
@@ -149,9 +148,9 @@ class Light
 	 * @brief Gets the light type as an integer (0=ambient, 1=directional, 2=point, 3=spot).
 	 * @return Light type identifier.
 	 */
-	uint32_t getLightType() const
+	Light::Type getLightType() const
 	{
-		return static_cast<uint32_t>(m_data.index());
+		return static_cast<Light::Type>(m_data.index());
 	}
 
 	/**
@@ -162,8 +161,8 @@ class Light
 	{
 		LightStruct uniforms;
 		uniforms.transform = m_transform;
-		uniforms.light_type = getLightType();
-		uniforms.shadowIndex = m_shadowIndex;
+		uniforms.light_type = static_cast<uint32_t>(getLightType());
+		uniforms.shadowIndex = -1; // Default to no shadows
 
 		std::visit(
 			[&uniforms](const auto& light)
@@ -201,29 +200,33 @@ class Light
 	 */
 	const AmbientLight& asAmbient() const { return std::get<AmbientLight>(m_data); }
 	AmbientLight& asAmbient() { return std::get<AmbientLight>(m_data); }
+	bool isAmbient() const { return std::holds_alternative<AmbientLight>(m_data); }
 
 	/**
 	 * @brief Helper to get directional light data (throws if not directional).
 	 */
 	const DirectionalLight& asDirectional() const { return std::get<DirectionalLight>(m_data); }
 	DirectionalLight& asDirectional() { return std::get<DirectionalLight>(m_data); }
+	bool isDirectional() const { return std::holds_alternative<DirectionalLight>(m_data); }
 
 	/**
 	 * @brief Helper to get point light data (throws if not point).
 	 */
 	const PointLight& asPoint() const { return std::get<PointLight>(m_data); }
 	PointLight& asPoint() { return std::get<PointLight>(m_data); }
+	bool isPoint() const { return std::holds_alternative<PointLight>(m_data); }
 
 	/**
 	 * @brief Helper to get spot light data (throws if not spot).
 	 */
 	const SpotLight& asSpot() const { return std::get<SpotLight>(m_data); }
 	SpotLight& asSpot() { return std::get<SpotLight>(m_data); }
+	bool isSpot() const { return std::holds_alternative<SpotLight>(m_data); }
 
   private:
+
 	LightData m_data;
 	glm::mat4 m_transform; // World-space transform (for positions/directions)
-	int32_t m_shadowIndex; // Index in shadow map array (-1 = no shadows)
 };
 
 } // namespace engine::rendering

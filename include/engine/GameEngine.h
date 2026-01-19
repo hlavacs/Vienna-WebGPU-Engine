@@ -100,11 +100,6 @@ class GameEngine
 	void onWindowResize(int width, int height);
 	void updateScene(float deltaTime);
 	void renderFrame(float deltaTime);
-	void renderCamera(
-		engine::rendering::RenderCollector &renderCollector,
-		const std::shared_ptr<engine::scene::Scene> &scene,
-		const std::shared_ptr<engine::scene::nodes::CameraNode> &camera
-	);
 	void updateFrameStats(float frameDelta, double frameStartTime);
 	void limitFrameRate(double frameStartTime);
 

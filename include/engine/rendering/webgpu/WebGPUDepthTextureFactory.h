@@ -2,7 +2,8 @@
 #include <cassert>
 #include <iostream>
 #include <webgpu/webgpu.hpp>
-#include "engine/rendering/webgpu/WebGPUDepthTexture.h"
+
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 
 namespace engine::rendering::webgpu
 {
@@ -36,10 +37,10 @@ class WebGPUDepthTextureFactory
 	 * @brief Create a default depth texture and view for the given size.
 	 * @param width Framebuffer width
 	 * @param height Framebuffer height
-	 * @param format Depth texture format (default: Depth24Plus)
-	 * @return WebGPUDepthTexture containing the created texture and view
+	 * @param format Depth texture format (default: Depth32Float)
+	 * @return WebGPUTexture containing the created texture and view
 	 */
-	std::shared_ptr<WebGPUDepthTexture> createDefault(uint32_t width, uint32_t height, wgpu::TextureFormat format = wgpu::TextureFormat::Depth24Plus);
+	std::shared_ptr<WebGPUTexture> createDefault(uint32_t width, uint32_t height, wgpu::TextureFormat format = wgpu::TextureFormat::Depth32Float);
 
 	/**
 	 * @brief Create a fully configurable depth texture and view.
@@ -50,9 +51,9 @@ class WebGPUDepthTextureFactory
 	 * @param arrayLayerCount Number of array layers
 	 * @param sampleCount Multisample count
 	 * @param usage Texture usage flags
-	 * @return WebGPUDepthTexture containing the created texture and view
+	 * @return WebGPUTexture containing the created texture and view
 	 */
-	std::shared_ptr<WebGPUDepthTexture> create(uint32_t width, uint32_t height, wgpu::TextureFormat format, uint32_t mipLevelCount, uint32_t arrayLayerCount, uint32_t sampleCount, wgpu::TextureUsage usage);
+	std::shared_ptr<WebGPUTexture> create(uint32_t width, uint32_t height, wgpu::TextureFormat format, uint32_t mipLevelCount, uint32_t arrayLayerCount, uint32_t sampleCount, wgpu::TextureUsage usage);
 
   private:
 	/**

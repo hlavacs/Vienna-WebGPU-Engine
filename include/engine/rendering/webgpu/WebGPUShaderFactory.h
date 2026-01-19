@@ -114,8 +114,17 @@ class WebGPUShaderFactory
 	  protected:
 		WebGPUShaderBuilder(
 			WebGPUShaderFactory &factory,
-			const std::shared_ptr<WebGPUShaderInfo> &shaderInfo
-		) : m_factory(factory), m_shaderInfo(shaderInfo)
+			const std::string &name,
+			const ShaderType type,
+			const std::string &vertexEntry,
+			const std::string &fragmentEntry,
+			const std::optional<std::filesystem::path> &shaderPath
+		) : m_factory(factory),
+			m_name(name),
+			m_type(type),
+			m_vertexEntry(vertexEntry),
+			m_fragmentEntry(fragmentEntry),
+			m_shaderPath(shaderPath ? shaderPath->string() : "")
 		{
 		}
 
@@ -279,16 +288,44 @@ class WebGPUShaderFactory
 		 */
 		BindGroupBuilder &getOrCreateBindGroup(uint32_t groupIndex);
 
-		std::shared_ptr<WebGPUShaderInfo> m_shaderInfo;
+		// Shader metadata - accumulated during building, used to construct shader at build() time
+		std::string m_name;
+		ShaderType m_type;
+		std::string m_vertexEntry;
+		std::string m_fragmentEntry;
+		std::string m_shaderPath;
+		wgpu::ShaderModule m_shaderModule = nullptr;
+
+		// Configuration - accumulated during building
+		engine::rendering::VertexLayout m_vertexLayout = engine::rendering::VertexLayout::None;
+		bool m_depthEnabled = true;
+		bool m_blendEnabled = true;
+		bool m_backFaceCullingEnabled = true;
+		uint32_t m_shaderFeatures = 0;
+
+		// Bind groups - accumulated during building
 		std::map<uint32_t, BindGroupBuilder> m_bindGroupsBuilder;
+
 		WebGPUShaderFactory &m_factory;
 	};
 
 	/**
-	 * @brief Reloads the shader module from file and updates the shader info.
-	 * @param shaderInfo Shared pointer to existing shader info to reload.
+	 * @brief Reloads a specific shader by name from the registry.
+	 * This reconstructs the shader info with current data.
+	 * @note This will update the shader registry with the reloaded shader.
+	 * @param shaderName The name of the shader to reload.
+	 * @return True if the shader was successfully reloaded, false otherwise.
 	 */
-	void reloadShader(const std::shared_ptr<WebGPUShaderInfo> &shaderInfo);
+	bool reloadShader(const std::string &shaderName);
+
+	/**
+	 * @brief Reloads a specific shader info by reconstructing it with current data.
+	 * This does not modify the existing shader info, but creates a new one.
+	 * @note This will update the shader registry with the reloaded shader.
+	 * @param shaderInfo The shader info to reload (used to get path and metadata).
+	 * @return True if the shader was successfully reloaded, false otherwise.
+	 */
+	bool reloadShader(std::shared_ptr<WebGPUShaderInfo> shaderInfo);
 
   private:
 	/**

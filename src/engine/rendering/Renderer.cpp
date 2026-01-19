@@ -1,6 +1,9 @@
 #include "engine/rendering/Renderer.h"
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <spdlog/spdlog.h>
+#include <limits>
 
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/FrameUniforms.h"
@@ -23,7 +26,6 @@ namespace engine::rendering
 
 Renderer::Renderer(std::shared_ptr<webgpu::WebGPUContext> context) :
 	m_context(context),
-	m_pipelineManager(std::make_unique<webgpu::WebGPUPipelineManager>(*context)),
 	m_renderPassManager(std::make_unique<RenderPassManager>(*context))
 {
 }
@@ -38,7 +40,7 @@ bool Renderer::initialize()
 	m_depthBuffer = m_context->depthTextureFactory().createDefault(
 		m_context->surfaceManager().currentConfig().width,
 		m_context->surfaceManager().currentConfig().height,
-		wgpu::TextureFormat::Depth24Plus
+		wgpu::TextureFormat::Depth32Float
 	);
 
 	if (!m_depthBuffer)
@@ -75,6 +77,37 @@ bool Renderer::initialize()
 	}
 
 	spdlog::info("Renderer initialized successfully");
+	return true;
+}
+
+bool Renderer::renderFrame(
+	FrameCache &frameCache,
+	const RenderCollector &renderCollector,
+	std::function<void(wgpu::RenderPassEncoder)> uiCallback
+)
+{
+	if (frameCache.renderTargets.empty())
+	{
+		spdlog::warn("renderFrame called with no render targets");
+		return false;
+	}
+
+	startFrame();
+	renderShadowMaps(renderCollector);
+
+	std::vector<uint64_t> cameraIds;
+
+	for (const auto &target : frameCache.renderTargets)
+	{
+		renderCameraInternal(renderCollector, target, frameCache.time);
+		cameraIds.push_back(target.cameraId);
+	}
+
+	compositeTexturesToSurface(cameraIds, uiCallback);
+
+	// Clear frame cache after rendering
+	frameCache.clear();
+
 	return true;
 }
 
@@ -141,72 +174,80 @@ void Renderer::renderShadowMaps(const RenderCollector &collector)
 	if (shadowLights.empty())
 		return;
 
+	// Get the actual Light objects to access shadow configuration
+	const auto &lights = collector.getLights();
+
 	// Prepare buffers if necessary
 	std::vector<Shadow2D> shadow2DData(constants::MAX_SHADOW_MAPS_2D);
 	std::vector<ShadowCube> shadowCubeData(constants::MAX_SHADOW_MAPS_CUBE);
 
 	for (size_t lightIdx = 0; lightIdx < shadowLights.size(); ++lightIdx)
 	{
-		const auto &light = shadowLights[lightIdx];
+		const auto &lightUniform = shadowLights[lightIdx];
+		const auto &light = lights[lightIdx];
+		
+		if (lightUniform.shadowIndex < 0) // No need to render shadow map if index is invalid
+			continue;
+
 		std::vector<size_t> visibleIndices;
-		glm::mat4 lightVP = glm::mat4(1.0f);
+		glm::mat4 lightVP(1.0f);
+		glm::vec3 position = glm::vec3(lightUniform.transform[3]);
+		glm::vec3 direction = -glm::normalize(glm::vec3(lightUniform.transform * glm::vec4(0, 0, -1, 0)));
+		glm::vec3 up = glm::abs(glm::dot(direction, glm::vec3(0, 1, 0))) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
 
-		glm::vec3 position = glm::vec3(light.transform[3]);
-		glm::vec3 direction = glm::normalize(glm::vec3(light.transform * glm::vec4(0, 0, -1, 0)));
-
-		switch (light.light_type)
+		switch (lightUniform.light_type)
 		{
 		case 1: // Directional
 		{
-			float nearPlane = 0.0f;
-			float farPlane = light.range * 2.0f;
-			float halfWidth = light.range;
-			float halfHeight = light.range;
-
-			visibleIndices = collector.extractForLightFrustum(
-				engine::math::Frustum::orthographic(position, direction, halfWidth, halfHeight, nearPlane, farPlane)
-			);
-
-			glm::vec3 up = glm::abs(glm::dot(direction, glm::vec3(0, 1, 0))) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+			const auto &dirLight = light.asDirectional();
+			float nearPlane = -dirLight.range;
+			float farPlane = dirLight.range;
+			float halfWidth = dirLight.range;
+			float halfHeight = dirLight.range;
+			
 			lightVP = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, nearPlane, farPlane)
-					  * glm::lookAt(position - direction * farPlane, position, up);
-
-			shadow2DData[lightIdx].lightViewProjection = lightVP;
-			shadow2DData[lightIdx].bias = 0.005f;
-			shadow2DData[lightIdx].normalBias = 0.01f;
-			shadow2DData[lightIdx].texelSize = 1.0f / 2048.0f;
-			shadow2DData[lightIdx].pcfKernel = 1;
+					  * glm::lookAt(position - direction * farPlane / 2.0f, position, up);
+			
+			visibleIndices = collector.extractForLightFrustum(engine::math::Frustum::fromViewProjection(lightVP));
+			
+			auto &shadow = shadow2DData[lightUniform.shadowIndex];
+			shadow.lightViewProjection = lightVP;
+			shadow.bias = dirLight.shadowBias;
+			shadow.normalBias = dirLight.shadowNormalBias;
+			shadow.texelSize = 1.0f / static_cast<float>(dirLight.shadowMapSize);
+			shadow.pcfKernel = dirLight.shadowPCFKernel;
 			break;
 		}
 		case 2: // Point
 		{
-			visibleIndices = collector.extractForPointLight(position, light.range);
-
-			shadowCubeData[lightIdx].lightPosition = position;
-			shadowCubeData[lightIdx].bias = 0.005f;
-			shadowCubeData[lightIdx].texelSize = 1.0f / 1024.0f;
-			shadowCubeData[lightIdx].pcfKernel = 1;
+			const auto &pointLight = light.asPoint();
+			visibleIndices = collector.extractForPointLight(position, pointLight.range);
+			
+			auto &shadow = shadowCubeData[lightUniform.shadowIndex];
+			shadow.lightPosition = position;
+			shadow.bias = pointLight.shadowBias;
+			shadow.texelSize = 1.0f / static_cast<float>(pointLight.shadowMapSize);
+			shadow.pcfKernel = pointLight.shadowPCFKernel;
 			break;
 		}
 		case 3: // Spot
 		{
+			const auto &spotLight = light.asSpot();
+			float nearPlane = 0.01f;
+			float farPlane = spotLight.range;
 			float aspect = 1.0f;
-			float nearPlane = 0.1f;
-			float farPlane = light.range;
-
-			visibleIndices = collector.extractForLightFrustum(
-				engine::math::Frustum::perspective(position, direction, light.spot_angle * 2.0f, aspect, nearPlane, farPlane)
-			);
-
-			glm::vec3 up = glm::abs(glm::dot(direction, glm::vec3(0, 1, 0))) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
-			lightVP = glm::perspective(glm::radians(light.spot_angle * 2.0f), aspect, nearPlane, farPlane)
+			
+			lightVP = glm::perspective(spotLight.spotAngle * 2.0f, aspect, nearPlane, farPlane)
 					  * glm::lookAt(position, position + direction, up);
-
-			shadow2DData[lightIdx].lightViewProjection = lightVP;
-			shadow2DData[lightIdx].bias = 0.005f;
-			shadow2DData[lightIdx].normalBias = 0.01f;
-			shadow2DData[lightIdx].texelSize = 1.0f / 2048.0f;
-			shadow2DData[lightIdx].pcfKernel = 1;
+			
+			visibleIndices = collector.extractForLightFrustum(engine::math::Frustum::fromViewProjection(lightVP));
+			
+			auto &shadow = shadow2DData[lightUniform.shadowIndex];
+			shadow.lightViewProjection = lightVP;
+			shadow.bias = spotLight.shadowBias;
+			shadow.normalBias = spotLight.shadowNormalBias;
+			shadow.texelSize = 1.0f / static_cast<float>(spotLight.shadowMapSize);
+			shadow.pcfKernel = spotLight.shadowPCFKernel;
 			break;
 		}
 		default:
@@ -215,10 +256,10 @@ void Renderer::renderShadowMaps(const RenderCollector &collector)
 
 		auto gpuItems = prepareGPUResources(collector, visibleIndices);
 
-		if (light.light_type == 2)
-			m_shadowPass->renderShadowCube(gpuItems, visibleIndices, *m_shadowResources.shadowCubeArray, static_cast<uint32_t>(lightIdx), position, light.range);
+		if (lightUniform.light_type == 2)
+			m_shadowPass->renderShadowCube(gpuItems, visibleIndices, m_shadowResources.shadowCubeArray, static_cast<uint32_t>(lightUniform.shadowIndex), position, lightUniform.range);
 		else
-			m_shadowPass->renderShadow2D(gpuItems, visibleIndices, *m_shadowResources.shadow2DArray, static_cast<uint32_t>(lightIdx), lightVP);
+			m_shadowPass->renderShadow2D(gpuItems, visibleIndices, m_shadowResources.shadow2DArray, static_cast<uint32_t>(lightUniform.shadowIndex), lightVP);
 	}
 
 	// After all lights, write the data to GPU buffers
@@ -250,7 +291,7 @@ void Renderer::renderToTexture(
 	target.cpuTarget = cpuTarget;
 
 	target.gpuTexture = updateRenderTexture(
-		target.m_cameraId,
+		target.cameraId,
 		target.gpuTexture,
 		cpuTarget,
 		viewport,
@@ -283,7 +324,10 @@ void Renderer::renderToTexture(
 	auto gpuItems = prepareGPUResources(collector, visibleIndices);
 
 	// Extract light uniforms from Light objects
-	auto lightUniforms = collector.extractLightUniforms();
+	auto lightUniforms = collector.extractLightUniformsWithShadows(
+		constants::MAX_SHADOW_MAPS_2D,
+		constants::MAX_SHADOW_MAPS_CUBE
+	);
 
 	// Render using MeshPass
 	spdlog::debug("Rendering {} GPU items using MeshPass", gpuItems.size());
@@ -302,6 +346,24 @@ void Renderer::renderToTexture(
 	}
 }
 
+void Renderer::renderCameraInternal(
+	const RenderCollector &renderCollector,
+	const RenderTarget &target,
+	float frameTime
+)
+{
+	// Render to texture
+	renderToTexture(
+		renderCollector,
+		target.cameraId,
+		target.viewport,
+		target.clearFlags,
+		target.backgroundColor,
+		target.cpuTarget,
+		target.getFrameUniforms(frameTime)
+	);
+}
+
 void Renderer::compositeTexturesToSurface(
 	const std::vector<uint64_t> &targetIds,
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
@@ -317,6 +379,12 @@ void Renderer::compositeTexturesToSurface(
 		auto it = m_renderTargets.find(targetId);
 		if (it != m_renderTargets.end() && it->second.gpuTexture)
 		{
+			/* it->second.gpuTexture = m_context->textureFactory().createRenderTarget(
+				-1,
+				2048,
+				2048,
+				wgpu::TextureFormat::RGBA8Unorm
+			); */
 			renderTargetsToComposite.push_back(it->second);
 		}
 	}
@@ -357,6 +425,9 @@ void Renderer::compositeTexturesToSurface(
 
 	m_context->getSurface().present();
 	m_surfaceTexture.reset();
+
+	// Process any pending pipeline reloads after frame is complete
+	m_context->pipelineManager().processPendingReloads();
 }
 
 void Renderer::onResize(uint32_t width, uint32_t height)
@@ -471,6 +542,15 @@ std::vector<std::optional<RenderItemGPU>> Renderer::prepareGPUResources(
 			if (cpuItem.objectID != 0)
 				m_objectBindGroupCache[cpuItem.objectID] = objectBindGroup;
 		}
+
+		auto objectUniforms = ObjectUniforms{cpuItem.worldTransform, glm::inverseTranspose(cpuItem.worldTransform)};
+		objectBindGroup->updateBuffer(
+			0,
+			&objectUniforms,
+			sizeof(ObjectUniforms),
+			0,
+			m_context->getQueue()
+		);
 
 		// Fill GPU render item
 		RenderItemGPU gpuItem;

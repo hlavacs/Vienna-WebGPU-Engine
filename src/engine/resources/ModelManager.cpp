@@ -99,6 +99,9 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 				auto matOpt = m_materialManager->createMaterial(objData.materials[matId], textureBasePath.string() + "/");
 				if (matOpt && *matOpt)
 					submesh.material = (*matOpt)->getHandle();
+			} else {
+				// Use default material if no valid material assigned
+				submesh.material = m_materialManager->getDefaultMaterial();
 			}
 
 			model->addSubmesh(submesh);
@@ -187,10 +190,22 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 				);
 				if (matOpt && matOpt.value())
 					submesh.material = matOpt.value()->getHandle();
+			} else {
+				// Use default material if no valid material assigned
+				submesh.material = m_materialManager->getDefaultMaterial();
 			}
 
 			model->addSubmesh(submesh);
 		}
+	}
+
+	if (model->getSubmeshCount() == 0)
+	{
+		engine::rendering::Submesh submesh;
+		submesh.indexOffset = 0;
+		submesh.indexCount  = static_cast<uint32_t>(gltfData.indices.size());
+		submesh.material    = m_materialManager ? m_materialManager->getDefaultMaterial() : engine::rendering::MaterialHandle{};
+		model->addSubmesh(submesh);
 	}
 
 	auto handleOpt = add(model);

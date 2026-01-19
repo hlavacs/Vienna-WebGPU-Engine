@@ -131,7 +131,7 @@ bool ShadowPass::initialize()
 void ShadowPass::renderShadow2D(
 	const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 	const std::vector<size_t> &indicesToRender, // only items visible to this light
-	const webgpu::WebGPUTexture &shadowTexture,
+	const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
 	uint32_t arrayLayer,
 	const glm::mat4 &lightViewProjection
 )
@@ -140,18 +140,28 @@ void ShadowPass::renderShadow2D(
 	ShadowUniforms shadowUniforms;
 	shadowUniforms.lightViewProjectionMatrix = lightViewProjection;
 
+	uint32_t shadowMapSize = shadowTexture->getWidth();
 	// Update uniforms using the reusable bind group
 	m_shadowBindGroup->updateBuffer(0, &shadowUniforms, sizeof(ShadowUniforms), 0, m_context->getQueue());
 
-	wgpu::TextureView layerView = shadowTexture.createLayerView(arrayLayer, "Shadow2D Layer");
-
-	// Create render pass using factory
-	auto renderPassContext = m_context->renderPassFactory().createDepthOnly(
-		layerView,
-		true,
-		1.0f
+	auto shadowDebugingTexture = m_context->textureFactory().createRenderTarget(
+		-1,
+		shadowMapSize,
+		shadowMapSize,
+		wgpu::TextureFormat::RGBA8Unorm
 	);
 
+	// Create render pass using factory
+	// auto renderPassContext = m_context->renderPassFactory().createDepthOnly(shadowTexture, arrayLayer);
+	// ToDo: Remove Debug
+	auto renderPassContext = m_context->renderPassFactory().create(
+		shadowDebugingTexture,
+		shadowTexture,
+		ClearFlags::Depth | ClearFlags::SolidColor,
+		glm::vec4(0.0f, 1.0f, 0.0f, 1.0f), // Debug: Clear to green
+		-1,
+		arrayLayer
+	);
 	// Create command encoder
 	wgpu::CommandEncoderDescriptor encoderDesc{};
 	encoderDesc.label = "Shadow 2D Encoder";
@@ -160,8 +170,6 @@ void ShadowPass::renderShadow2D(
 	// Begin render pass
 	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
 
-	// Set viewport and scissor
-	uint32_t shadowMapSize = shadowTexture.getWidth();
 	renderPass.setViewport(0.0f, 0.0f, static_cast<float>(shadowMapSize), static_cast<float>(shadowMapSize), 0.0f, 1.0f);
 	renderPass.setScissorRect(0, 0, shadowMapSize, shadowMapSize);
 
@@ -182,13 +190,12 @@ void ShadowPass::renderShadow2D(
 
 	commands.release();
 	encoder.release();
-	layerView.release();
 }
 
 void ShadowPass::renderShadowCube(
 	const std::vector<std::optional<RenderItemGPU>> &items,
 	const std::vector<size_t> &indicesToRender,
-	const webgpu::WebGPUTexture &shadowTexture,
+	const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
 	uint32_t cubeIndex,
 	const glm::vec3 &lightPosition,
 	float farPlane
@@ -224,17 +231,12 @@ void ShadowPass::renderShadowCube(
 
 		uint32_t layerIndex = cubeIndex * 6 + face.faceIndex;
 		std::string faceLabel = "Shadow Cube Face " + std::to_string(face.faceIndex);
-		wgpu::TextureView depthView = shadowTexture.createLayerView(layerIndex, faceLabel.c_str());
-
-		auto renderPassContext = m_context->renderPassFactory().createDepthOnly(
-			depthView,
-			true, // clearDepth
-			1.0f
-		);
+		
+		auto renderPassContext = m_context->renderPassFactory().createDepthOnly(shadowTexture, layerIndex);
 
 		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
 
-		uint32_t cubeMapSize = shadowTexture.getWidth();
+		uint32_t cubeMapSize = shadowTexture->getWidth();
 		renderPass.setViewport(0.0f, 0.0f, static_cast<float>(cubeMapSize), static_cast<float>(cubeMapSize), 0.0f, 1.0f);
 		renderPass.setScissorRect(0, 0, cubeMapSize, cubeMapSize);
 
@@ -245,7 +247,6 @@ void ShadowPass::renderShadowCube(
 
 		renderPass.end();
 		renderPass.release();
-		depthView.release();
 	}
 
 	// Submit all faces in one go
@@ -270,11 +271,20 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(
 	// Use different cache for cube shadows
 	auto &cache = isCubeShadow ? m_cubePipelineCache : m_pipelineCache;
 
-	// Check cache
+	// Check cache and validate weak_ptr
 	auto it = cache.find(cacheKey);
 	if (it != cache.end())
 	{
-		return it->second;
+		auto pipeline = it->second.lock(); // Try to convert weak_ptr to shared_ptr
+		if (pipeline && pipeline->isValid())
+		{
+			return pipeline; // Cache hit, pipeline still valid
+		}
+		else
+		{
+			// Cache miss: pipeline was released, remove stale entry
+			cache.erase(it);
+		}
 	}
 
 	// Get appropriate shadow shader
@@ -287,13 +297,12 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(
 	}
 
 	// Create pipeline for depth-only rendering
-	auto pipeline = m_context->pipelineFactory().createRenderPipeline(
-		shadowShader,					  // Vertex shader
-		shadowShader,					  // Fragment shader (depth-only)
-		wgpu::TextureFormat::Undefined,	  // No color attachment
-		wgpu::TextureFormat::Depth24Plus, // Depth format
+	auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
+		shadowShader,					  // Shader
+		wgpu::TextureFormat::RGBA8Unorm,	  // Color format (debug) // ToDo: Remove Debug
+		wgpu::TextureFormat::Depth32Float, // Depth format
 		topology,						  // Topology from mesh
-		wgpu::CullMode::Back,			  // Cull back faces for shadows
+		wgpu::CullMode::None,			  // Cull mode
 		1								  // Sample count
 	);
 
@@ -303,8 +312,8 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(
 		return nullptr;
 	}
 
-	// Cache pipeline (by topology type, not per-mesh instance)
-	cache[cacheKey] = pipeline;
+	// Cache pipeline as weak_ptr (by topology type, not per-mesh instance)
+	cache[cacheKey] = pipeline; // implicit conversion: shared_ptr to weak_ptr
 
 	return pipeline;
 }
@@ -324,6 +333,8 @@ void ShadowPass::renderItems(
 {
 	const webgpu::WebGPUPipeline *currentPipeline = nullptr;
 	const webgpu::WebGPUMesh *currentMesh = nullptr;
+
+	int renderedCount = 0;
 
 	for (const auto &index : indicesToRender)
 	{
@@ -355,11 +366,13 @@ void ShadowPass::renderItems(
 			renderPass.setPipeline(currentPipeline->getPipeline());
 		}
 
+		renderPass.setBindGroup(1, gpuItem.objectBindGroup->getBindGroup(), 0, nullptr);
+
 		// Bind vertex/index buffers if mesh changed
 		if (gpuItem.gpuMesh != currentMesh)
 		{
 			currentMesh = gpuItem.gpuMesh;
-			gpuItem.gpuMesh->bindBuffers(renderPass, currentPipeline->getVertexShaderInfo()->getVertexLayout());
+			gpuItem.gpuMesh->bindBuffers(renderPass, currentPipeline->getVertexLayout());
 		}
 
 		// Draw submesh
@@ -371,6 +384,17 @@ void ShadowPass::renderItems(
 		{
 			renderPass.draw(gpuItem.submesh.indexCount, 1, gpuItem.submesh.indexOffset, 0);
 		}
+
+		renderedCount++;
+	}
+
+	if (renderedCount > 0)
+	{
+		spdlog::debug("Shadow pass rendered {} items", renderedCount);
+	}
+	else
+	{
+		spdlog::warn("Shadow pass rendered 0 items!");
 	}
 }
 

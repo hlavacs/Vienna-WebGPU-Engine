@@ -11,7 +11,6 @@
 #include "engine/rendering/Model.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
-#include "engine/rendering/webgpu/WebGPUDepthTexture.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
 #include "engine/rendering/webgpu/WebGPUMesh.h"
 #include "engine/rendering/webgpu/WebGPUModel.h"

@@ -274,7 +274,7 @@ void MainDemoImGuiUI::renderLightsSection()
 					light->setColor(color);
 				}
 				float intensity = light->getIntensity();
-				if (ImGui::SliderFloat("Intensity", &intensity, 0.0f, 5.0f))
+				if (ImGui::SliderFloat("Intensity", &intensity, 0.0f, 100.0f))
 				{
 					light->setIntensity(intensity);
 				}
@@ -284,19 +284,23 @@ void MainDemoImGuiUI::renderLightsSection()
 					glm::vec3 position = transform->getLocalPosition();
 					if (m_lightDirectionsUI.find(i) == m_lightDirectionsUI.end())
 					{
+						// We store Euler angles separately for ImGui.
+						// Converting from quaternion every frame is unstable because
+						// Euler representations are not unique and can cause angle jumps
+						// and slider jitter in the UI.
 						glm::quat rotation = transform->getRotation();
 						glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
 						m_lightDirectionsUI[i] = eulerAngles;
 					}
 					glm::vec3 &angles = m_lightDirectionsUI[i];
-					if (light->getLightType() > 1)
+					if (!light->getLight().isAmbient() && !light->getLight().isDirectional())
 					{
 						if (ImGui::DragFloat3("Position", glm::value_ptr(position), 0.1f))
 						{
 							transform->setLocalPosition(position);
 						}
 					}
-					if (light->getLightType() == 1 || light->getLightType() == 3)
+					if (light->getLight().isDirectional() || light->getLight().isSpot())
 					{
 						if (ImGui::DragFloat3("Direction (degrees)", glm::value_ptr(angles), 0.5f))
 						{
@@ -304,14 +308,14 @@ void MainDemoImGuiUI::renderLightsSection()
 							transform->setLocalRotation(rot);
 						}
 					}
-					if (light->getLightType() == 3)
+					if (light->getLight().isSpot())
 					{
 						// Access spot light data directly
 						auto& spotData = light->getLight().asSpot();
-						float spotAngleDegrees = glm::degrees(spotData.spotAngle);
-						if (ImGui::SliderFloat("Cone Angle (degrees)", &spotAngleDegrees, 1.0f, 120.0f))
+						float spotAngleDegrees = glm::degrees(spotData.spotAngle) * 2.0f; // Full cone angle
+						if (ImGui::SliderFloat("Cone Angle (degrees)", &spotAngleDegrees, 1.0f, 180.0f))
 						{
-							spotData.spotAngle = glm::radians(spotAngleDegrees);
+							spotData.spotAngle = glm::radians(spotAngleDegrees / 2.0f);
 						}
 						float spotSoftness = spotData.spotSoftness;
 						if (ImGui::SliderFloat("Edge Softness", &spotSoftness, 0.0f, 0.99f, "%.2f"))
@@ -321,7 +325,7 @@ void MainDemoImGuiUI::renderLightsSection()
 					}
 					
 					// Shadow casting controls (for directional, point, and spot lights)
-					if (light->getLightType() >= 1 && light->getLightType() <= 3)
+					if (!light->getLight().isAmbient())
 					{
 						bool castShadows = light->getCastShadows();
 						if (ImGui::Checkbox("Cast Shadows", &castShadows))

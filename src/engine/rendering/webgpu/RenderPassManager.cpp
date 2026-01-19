@@ -58,7 +58,7 @@ std::shared_ptr<webgpu::WebGPURenderPassContext> RenderPassManager::getPassConte
 void RenderPassManager::updatePassAttachments(
     uint64_t passId,
 	const std::shared_ptr<webgpu::WebGPUTexture> &surfaceTexture,
-    std::shared_ptr<webgpu::WebGPUDepthTexture> depthBuffer)
+    std::shared_ptr<webgpu::WebGPUTexture> depthBuffer)
 {
     auto it = m_passes.find(passId);
     if (it == m_passes.end())

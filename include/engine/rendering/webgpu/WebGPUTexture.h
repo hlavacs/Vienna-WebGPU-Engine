@@ -4,6 +4,7 @@
 #include "engine/resources/Image.h"
 #include <future>
 #include <memory>
+#include <unordered_map>
 #include <webgpu/webgpu.hpp>
 
 namespace engine::rendering::webgpu
@@ -54,19 +55,9 @@ class WebGPUTexture
 	/**
 	 * @brief Destructor that cleans up WebGPU resources.
 	 *
-	 * Releases the texture view and texture to prevent memory leaks.
+	 * Releases the texture view, texture, and cached layer views to prevent memory leaks.
 	 */
-	~WebGPUTexture()
-	{
-		if (m_textureView)
-		{
-			m_textureView.release();
-		}
-		if (m_texture)
-		{
-			m_texture.release();
-		}
-	}
+	~WebGPUTexture();
 
 	/**
 	 * @brief Checks if the buffer matches the given size and format.
@@ -155,13 +146,13 @@ class WebGPUTexture
 	bool resize(WebGPUContext &context, uint32_t newWidth, uint32_t newHeight);
 
 	/**
-	 * @brief Creates a 2D view of a specific array layer for render attachment usage.
-	 *        Useful for rendering to individual layers of texture arrays or cube faces.
+	 * @brief Gets or creates a 2D view of a specific array layer for render attachment usage.
+	 *        Views are cached and reused. Useful for rendering to individual layers of texture arrays or cube faces.
 	 * @param arrayLayer The array layer index to create a view for.
 	 * @param label Optional label for debugging.
 	 * @return A WebGPU texture view for the specified layer.
 	 */
-	wgpu::TextureView createLayerView(uint32_t arrayLayer, const char *label = nullptr) const;
+	wgpu::TextureView getLayerView(uint32_t arrayLayer, const char *label = nullptr) const;
 
 	/**
 	 * @brief Creates a cube map view for a specific cube face index.
@@ -255,6 +246,8 @@ class WebGPUTexture
 	wgpu::TextureView m_textureView;				//< The view of the WebGPU texture.
 	wgpu::TextureDescriptor m_textureDesc;			//< Descriptor used to create the texture.
 	wgpu::TextureViewDescriptor m_viewDesc;			//< Descriptor used to create the texture view.
+	
+	mutable std::unordered_map<uint32_t, wgpu::TextureView> m_layerViews; //< Cached layer views for array layers.
 };
 
 } // namespace engine::rendering::webgpu

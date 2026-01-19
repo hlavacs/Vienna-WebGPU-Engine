@@ -82,12 +82,12 @@ void ShaderRegistry::reloadAllShaders()
 {
 	spdlog::info("Reloading all shaders in ShaderRegistry...");
 
-	// Reload default shaders
-	for (auto &[name, shaderInfo] : m_shaders)
+	// Reload default shaders using the WebGPUShaderInfo overload (less reloading)#
+	auto shaders = m_shaders; // Copy to avoid modification during iteration
+	for (auto &[name, shaderInfo] : shaders)
 	{
 		if (shaderInfo)
 		{
-			auto name = shaderInfo->getName();
 			spdlog::info("Reloading shader '{}'", name);
 			m_context.shaderFactory().reloadShader(shaderInfo);
 		}
@@ -106,9 +106,9 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getShader(const std::s
 	return nullptr;
 }
 
-bool ShaderRegistry::registerShader(std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo)
+bool ShaderRegistry::registerShader(std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo, bool replaceIfExists)
 {
-	if (m_shaders.find(shaderInfo->getName()) != m_shaders.end())
+	if (!replaceIfExists && m_shaders.find(shaderInfo->getName()) != m_shaders.end())
 	{
 		spdlog::warn("Shader '{}' already registered", shaderInfo->getName());
 		return false;
@@ -121,8 +121,34 @@ bool ShaderRegistry::registerShader(std::shared_ptr<webgpu::WebGPUShaderInfo> sh
 	}
 
 	m_shaders[shaderInfo->getName()] = shaderInfo;
-	spdlog::info("Registered custom shader '{}'", shaderInfo->getName());
+	if(replaceIfExists)
+	{
+		spdlog::info("Replaced existing shader '{}'", shaderInfo->getName());
+	}
+	else
+	{
+		spdlog::info("Registered shader '{}'", shaderInfo->getName());
+	}
 	return true;
+}
+
+bool ShaderRegistry::unregisterShader(const std::string &name)
+{
+	auto it = m_shaders.find(name);
+	if (it != m_shaders.end())
+	{
+		m_shaders.erase(it);
+		spdlog::info("Unregistered shader '{}'", name);
+		return true;
+	}
+	spdlog::warn("Shader '{}' not found for unregistration", name);
+	return false;
+}
+
+void ShaderRegistry::unregisterAll()
+{
+	spdlog::info("Unregistering all {} shaders", m_shaders.size());
+	m_shaders.clear();
 }
 
 bool ShaderRegistry::hasShader(const std::string &name) const
@@ -132,9 +158,9 @@ bool ShaderRegistry::hasShader(const std::string &name) const
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 {
-	// Create the standard PBR lit shader matching shader.wgsl
+	// Create the standard PBR lit shader matching PBR_Lit_Shader.wgsl
 	//
-	// shader.wgsl structure:
+	// PBR_Lit_Shader.wgsl structure:
 	// @group(0) @binding(0) var<uniform> uFrame: FrameUniforms;
 	// @group(1) @binding(0) var<storage, read> uLights: LightsBuffer;
 	// @group(2) @binding(0) var<uniform> uObject: ObjectUniforms;
@@ -146,10 +172,16 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 	// @group(3) @binding(5) var roughnessTexture: texture_2d<f32>;
 	// @group(3) @binding(6) var metallicTexture: texture_2d<f32>;
 	// @group(3) @binding(7) var emissionTexture: texture_2d<f32>;
+	// @group(4) @binding(0) var shadowSampler: sampler;
+	// @group(4) @binding(1) var shadowMap2DArray:
+	// @group(4) @binding(2) var shadowMapCubeArray:
+	// @group(4) @binding(3) var<storage, read> uShadowData2D: ShadowData2DBuffer;
+	// @group(4) @binding(4) var<storage, read> uShadowDataCube: ShadowDataCubeBuffer;
 
 	auto shaderInfo =
 		m_context.shaderFactory()
-			.begin(shader::default ::PBR, ShaderType::Lit, "vs_main", "fs_main", engine::core::PathProvider::getResource("shader.wgsl"))
+			.begin(shader::default ::PBR, ShaderType::Lit, "vs_main", "fs_main", engine::core::PathProvider::getResource("PBR_Lit_Shader.wgsl"))
+			.setVertexLayout(VertexLayout::PositionNormalUVTangentColor)
 			// Group 0: Frame uniforms (camera, time)
 			.addFrameUniforms(0)
 			// Group 1: Lighting data (storage buffer with max 16 lights)
@@ -371,6 +403,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowShader()
 				0, // binding
 				WGPUShaderStage_Vertex
 			)
+			.addObjectUniforms(1) // Group 1: Object uniforms (model matrix, normal matrix)
 			.build();
 
 	return shaderInfo;

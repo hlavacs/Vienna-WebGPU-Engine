@@ -19,7 +19,6 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
 	m_textureFactory = std::make_unique<WebGPUTextureFactory>(*this);
 	m_materialFactory = std::make_unique<WebGPUMaterialFactory>(*this);
 	m_bindGroupFactory = std::make_unique<WebGPUBindGroupFactory>(*this);
-	m_pipelineFactory = std::make_unique<WebGPUPipelineFactory>(*this);
 	m_samplerFactory = std::make_unique<WebGPUSamplerFactory>(*this);
 	// m_swapChainFactory = std::make_unique<WebGPUSwapChainFactory>(*this);
 	m_depthTextureFactory = std::make_unique<WebGPUDepthTextureFactory>(*this);
@@ -212,15 +211,6 @@ WebGPUMaterialFactory &WebGPUContext::materialFactory()
 		throw std::runtime_error("WebGPUMaterialFactory not initialized!");
 	}
 	return *m_materialFactory;
-}
-
-WebGPUPipelineFactory &WebGPUContext::pipelineFactory()
-{
-	if (!m_pipelineFactory)
-	{
-		throw std::runtime_error("WebGPUPipelineFactory not initialized!");
-	}
-	return *m_pipelineFactory;
 }
 
 WebGPUSamplerFactory &WebGPUContext::samplerFactory()

@@ -84,7 +84,7 @@ struct PBRProperties
 	float diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // RGBA
 	float emission[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float transmittance[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-	float ambient[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	float ambient[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
 	float roughness = 0.5f;
 	float metallic = 0.0f;

@@ -98,6 +98,9 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	if (enableDepth)
 	{
 		depthStencil.format = depthFormat;
+		depthStencil.depthBias = 0;
+		depthStencil.depthBiasClamp = 0.01f;
+		depthStencil.depthBiasSlopeScale = 1.5f;
 		depthStencil.depthWriteEnabled = true;
 		depthStencil.depthCompare = wgpu::CompareFunction::Less;
 		depthStencil.stencilReadMask = 0;
@@ -138,7 +141,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 		return nullptr;
 	}
 
-	// Wrap in WebGPUPipeline
+	// Wrap in WebGPUPipeline (pass vertex layout, not shader info)
 	return std::make_shared<WebGPUPipeline>(
 		pipeline,
 		layout,
@@ -148,8 +151,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 		(hasFragmentShader && colorFormat != wgpu::TextureFormat::Undefined) ? std::move(colorTarget) : wgpu::ColorTargetState{},
 		enableDepth ? std::move(depthStencil) : wgpu::DepthStencilState{},
 		(hasFragmentShader && colorFormat != wgpu::TextureFormat::Undefined) ? std::move(fragmentState) : wgpu::FragmentState{},
-		vertexShader,
-		fragmentShader
+		vertexShader->getVertexLayout()
 	);
 }
 

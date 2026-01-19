@@ -3,6 +3,8 @@
 #include <memory>
 #include <webgpu/webgpu.hpp>
 
+#include "engine/rendering/Vertex.h"
+
 namespace engine::rendering::webgpu
 {
 
@@ -32,8 +34,7 @@ class WebGPUPipeline
 	 * @param colorTarget Color target state used in the pipeline.
 	 * @param depthStencil Depth stencil state used in the pipeline.
 	 * @param fragmentState Fragment state used in the pipeline.
-	 * @param vertexShader Optional shader info for bind group layout access.
-	 * @param fragmentShader Optional shader info for bind group layout access.
+	 * @param vertexLayout The vertex layout (baked-in from shader, stored for reference).
 	 *
 	 * @throws Assertion failure if pipeline is invalid.
 	 */
@@ -46,8 +47,7 @@ class WebGPUPipeline
 		wgpu::ColorTargetState colorTarget,
 		wgpu::DepthStencilState depthStencil,
 		wgpu::FragmentState fragmentState,
-		std::shared_ptr<WebGPUShaderInfo> vertexShader = nullptr,
-		std::shared_ptr<WebGPUShaderInfo> fragmentShader = nullptr
+		engine::rendering::VertexLayout vertexLayout
 	) : m_pipeline(pipeline),
 		m_layout(layout),
 		m_descriptor(desc),
@@ -56,19 +56,10 @@ class WebGPUPipeline
 		m_colorTarget(std::move(colorTarget)),
 		m_depthStencil(std::move(depthStencil)),
 		m_fragmentState(std::move(fragmentState)),
-		m_vertexShader(std::move(vertexShader)),
-		m_fragmentShader(std::move(fragmentShader))
+		m_vertexLayout(vertexLayout)
 	{
 		assert(m_pipeline && "Pipeline must be valid");
 		assert(m_layout && "Pipeline layout must be valid");
-		/*
-		assert(m_descriptor.depthStencil[0] == m_depthStencil && "Depth stencil state must match descriptor");
-		assert(m_descriptor.fragment == m_fragmentState && "Fragment state must match descriptor");
-		assert(m_descriptor.vertex.bufferCount > 0 && "Vertex buffer count must be greater than zero");
-		assert(m_descriptor.vertex.buffers[0] == m_vertexBufferLayout && "Vertex buffer layout must match descriptor");
-		assert(m_descriptor.fragment->targetCount > 0 && "Color target count must be greater than zero");
-		assert(m_descriptor.fragment->targets[0] == m_colorTarget && "Color target state must match descriptor");
-		 */
 	}
 
 	/**
@@ -86,6 +77,10 @@ class WebGPUPipeline
 		{
 			m_layout.release();
 		}
+		if (!m_vertexAttributes.empty())
+		{
+			m_vertexAttributes.clear();
+		}
 	}
 
 	// Delete copy constructor and assignment
@@ -96,7 +91,13 @@ class WebGPUPipeline
 	WebGPUPipeline(WebGPUPipeline &&other) noexcept
 		: m_pipeline(other.m_pipeline),
 		  m_layout(other.m_layout),
-		  m_descriptor(other.m_descriptor)
+		  m_descriptor(other.m_descriptor),
+		  m_vertexAttributes(std::move(other.m_vertexAttributes)),
+		  m_vertexBufferLayout(std::move(other.m_vertexBufferLayout)),
+		  m_colorTarget(std::move(other.m_colorTarget)),
+		  m_depthStencil(std::move(other.m_depthStencil)),
+		  m_fragmentState(std::move(other.m_fragmentState)),
+		  m_vertexLayout(other.m_vertexLayout)
 	{
 		other.m_pipeline = nullptr;
 		other.m_layout = nullptr;
@@ -106,15 +107,29 @@ class WebGPUPipeline
 	{
 		if (this != &other)
 		{
+			// Release current resources
 			if (m_pipeline)
+			{
 				m_pipeline.release();
+			}
 			if (m_layout)
+			{
 				m_layout.release();
+			}
+			m_vertexAttributes.clear();
 
+			// Move from other
 			m_pipeline = other.m_pipeline;
 			m_layout = other.m_layout;
 			m_descriptor = other.m_descriptor;
+			m_vertexAttributes = std::move(other.m_vertexAttributes);
+			m_vertexBufferLayout = std::move(other.m_vertexBufferLayout);
+			m_colorTarget = std::move(other.m_colorTarget);
+			m_depthStencil = std::move(other.m_depthStencil);
+			m_fragmentState = std::move(other.m_fragmentState);
+			m_vertexLayout = other.m_vertexLayout;
 
+			// Clear source
 			other.m_pipeline = nullptr;
 			other.m_layout = nullptr;
 		}
@@ -146,16 +161,10 @@ class WebGPUPipeline
 	bool isValid() const { return m_pipeline != nullptr; }
 
 	/**
-	 * @brief Gets the shader info associated with this pipeline.
-	 * @return Shared pointer to WebGPUShaderInfo, or nullptr if not set.
+	 * @brief Gets the vertex layout baked into this pipeline.
+	 * @return The vertex layout enum.
 	 */
-	std::shared_ptr<WebGPUShaderInfo> getVertexShaderInfo() const { return m_vertexShader; }
-
-	/**
-	 * @brief Gets the fragment shader info associated with this pipeline.
-	 * @return Shared pointer to WebGPUShaderInfo, or nullptr if not set.
-	 */
-	std::shared_ptr<WebGPUShaderInfo> getFragmentShaderInfo() const { return m_fragmentShader; }
+	engine::rendering::VertexLayout getVertexLayout() const { return m_vertexLayout; }
 
 	/**
 	 * @brief Implicit conversion to wgpu::RenderPipeline for convenience.
@@ -166,9 +175,8 @@ class WebGPUPipeline
 	wgpu::RenderPipeline m_pipeline;
 	wgpu::PipelineLayout m_layout;
 	wgpu::RenderPipelineDescriptor m_descriptor;
-	std::shared_ptr<WebGPUShaderInfo> m_vertexShader;
-	std::shared_ptr<WebGPUShaderInfo> m_fragmentShader;
 	std::vector<wgpu::VertexAttribute> m_vertexAttributes;
+	engine::rendering::VertexLayout m_vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor;
 
 	wgpu::VertexBufferLayout m_vertexBufferLayout = {};
 	wgpu::ColorTargetState m_colorTarget = {};

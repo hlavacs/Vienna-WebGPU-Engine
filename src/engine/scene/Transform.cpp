@@ -60,6 +60,54 @@ glm::vec3 Transform::getEulerAngles() const
 	return glm::degrees(glm::eulerAngles(getRotation()));
 }
 
+void Transform::setWorldPosition(const glm::vec3 &position)
+{
+	if (_parent)
+	{
+		// Convert world position to local space
+		glm::mat4 invParentWorld = glm::inverse(_parent->getWorldMatrix());
+		glm::vec3 localPos = glm::vec3(invParentWorld * glm::vec4(position, 1.0f));
+		setLocalPosition(localPos);
+	}
+	else
+	{
+		// No parent, world = local
+		setLocalPosition(position);
+	}
+}
+
+void Transform::setWorldRotation(const glm::quat &rotation)
+{
+	if (_parent)
+	{
+		// Convert world rotation to local space
+		glm::quat parentRotation = _parent->getRotation();
+		glm::quat localRot = glm::inverse(parentRotation) * rotation;
+		setLocalRotation(localRot);
+	}
+	else
+	{
+		// No parent, world = local
+		setLocalRotation(rotation);
+	}
+}
+
+void Transform::setWorldScale(const glm::vec3 &scale)
+{
+	if (_parent)
+	{
+		// Convert world scale to local space by dividing by parent scale
+		glm::vec3 parentScale = _parent->getScale();
+		glm::vec3 localScale = scale / parentScale;
+		setLocalScale(localScale);
+	}
+	else
+	{
+		// No parent, world = local
+		setLocalScale(scale);
+	}
+}
+
 glm::mat4 Transform::getLocalMatrix() const
 {
 	glm::mat4 T = glm::translate(glm::mat4(1.0f), _localPosition);

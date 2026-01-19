@@ -356,68 +356,39 @@ void GameEngine::renderFrame(float deltaTime)
 	// Sort render items by material for batching
 	renderCollector.sort();
 
-	m_renderer->startFrame();
+	// Create and populate FrameCache with all frame-wide rendering data
+	engine::rendering::FrameCache frameCache{};
+	frameCache.time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
+	frameCache.renderTargets.reserve(cameras.size());
 
-	m_renderer->renderShadowMaps(renderCollector);
+	// Extract lights from render collector
+	frameCache.lights = renderCollector.getLights();
 
-	std::vector<uint64_t> cameraIds;
-
+	// Extract RenderTarget from each camera
 	for (auto &camera : cameras)
 	{
-		renderCamera(renderCollector, scene, camera);
-		cameraIds.push_back(camera->getId());
+		camera->preRender();
+
+		engine::rendering::RenderTarget target{};
+		target.cameraId = camera->getId();
+		target.viewMatrix = camera->getViewMatrix();
+		target.projectionMatrix = camera->getProjectionMatrix();
+		target.viewProjectionMatrix = camera->getViewProjectionMatrix();
+		target.cameraPosition = camera->getPosition();
+		target.viewport = camera->getViewport();
+		target.clearFlags = camera->getClearFlags();
+		target.backgroundColor = camera->getBackgroundColor();
+		target.cpuTarget = camera->getRenderTarget();
+		target.gpuTexture = nullptr;  // Will be set by renderer
+
+		frameCache.renderTargets.push_back(target);
 	}
 
+	// Single call to renderer with frame cache
 	auto uiCallback = createUICallback();
-	m_renderer->compositeTexturesToSurface(cameraIds, uiCallback);
+	m_renderer->renderFrame(frameCache, renderCollector, uiCallback);
 
 	scene->postRender();
-}
-
-void GameEngine::renderCamera(
-	engine::rendering::RenderCollector& renderCollector, 
-	const std::shared_ptr<engine::scene::Scene> &scene,
-	const std::shared_ptr<engine::scene::nodes::CameraNode> &camera
-)
-{
-	camera->preRender();
-
-	// Prepare per-camera uniforms
-	engine::rendering::FrameUniforms frameUniforms{};
-	frameUniforms.viewMatrix = camera->getViewMatrix();
-	frameUniforms.projectionMatrix = camera->getProjectionMatrix();
-	frameUniforms.viewProjectionMatrix = camera->getViewProjectionMatrix();
-	frameUniforms.cameraWorldPosition = camera->getPosition();
-	frameUniforms.time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
-
-	// Get or create render collector for this camera (cached across frames)
-	/* uint64_t cameraId = camera->getId();
-	auto it = m_cameraCollectors.find(cameraId);
-	if (it == m_cameraCollectors.end())
-	{
-		// Create new collector for this camera (default construction, no camera data)
-		auto result = m_cameraCollectors.emplace(cameraId, engine::rendering::RenderCollector{});
-		it = result.first;
-	} */
-
-	// Get render target if specified
-	auto targetOptional = camera->getRenderTarget();
-	std::optional<engine::rendering::TextureHandle> cpuTarget = std::nullopt;
-	if (targetOptional.has_value())
-	{
-		cpuTarget = targetOptional.value();
-	}
-
-	// Render to texture
-	m_renderer->renderToTexture(
-		renderCollector,
-		camera->getId(),
-		camera->getViewport(),
-		camera->getClearFlags(),
-		camera->getBackgroundColor(),
-		cpuTarget,
-		frameUniforms
-	);
 }
 
 std::function<void(wgpu::RenderPassEncoder)> GameEngine::createUICallback()

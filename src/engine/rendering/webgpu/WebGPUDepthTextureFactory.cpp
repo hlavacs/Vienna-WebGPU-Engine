@@ -4,16 +4,16 @@
 namespace engine::rendering::webgpu
 {
 
-WebGPUDepthTextureFactory::WebGPUDepthTextureFactory(WebGPUContext& context) : m_context(context)
+WebGPUDepthTextureFactory::WebGPUDepthTextureFactory(WebGPUContext &context) : m_context(context)
 {
 }
 
-std::shared_ptr<WebGPUDepthTexture> WebGPUDepthTextureFactory::createDefault(uint32_t width, uint32_t height, wgpu::TextureFormat format)
+std::shared_ptr<WebGPUTexture> WebGPUDepthTextureFactory::createDefault(uint32_t width, uint32_t height, wgpu::TextureFormat format)
 {
 	return create(width, height, format, 1, 1, 1, wgpu::TextureUsage::RenderAttachment);
 }
 
-std::shared_ptr<WebGPUDepthTexture> WebGPUDepthTextureFactory::create(
+std::shared_ptr<WebGPUTexture> WebGPUDepthTextureFactory::create(
 	uint32_t width,
 	uint32_t height,
 	wgpu::TextureFormat format,
@@ -53,11 +53,25 @@ std::shared_ptr<WebGPUDepthTexture> WebGPUDepthTextureFactory::create(
 	wgpu::TextureView view = texture.createView(viewDesc);
 	assert(view);
 
-	return std::make_shared<WebGPUDepthTexture>(
+	Texture::Type type;
+	if (format == wgpu::TextureFormat::Depth24Plus || format == wgpu::TextureFormat::Depth32Float || format == wgpu::TextureFormat::Depth16Unorm)
+	{
+		type = Texture::Type::Depth;
+	}
+	else if (format == wgpu::TextureFormat::Depth24PlusStencil8 || format == wgpu::TextureFormat::Depth32FloatStencil8)
+	{
+		type = Texture::Type::DepthStencil;
+	} else {
+		spdlog::error("WebGPUDepthTextureFactory: Unsupported format for depth texture");
+		return nullptr;
+	}
+
+	return std::make_shared<WebGPUTexture>(
 		texture,
 		view,
 		desc,
-		viewDesc
+		viewDesc,
+		type
 	);
 }
 

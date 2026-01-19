@@ -13,6 +13,16 @@ struct Frustum
 	{
 		glm::vec3 normal;
 		float d;
+
+		void normalize()
+		{
+			float length = glm::length(normal);
+			if (length > 0.0f)
+			{
+				normal /= length;
+				d /= length;
+			}
+		}
 	};
 
 	Plane leftPlane;
@@ -32,117 +42,106 @@ struct Frustum
 		return {&leftPlane, &rightPlane, &bottomPlane, &topPlane, &nearPlane, &farPlane};
 	}
 
-	static Frustum fromViewProjection(const glm::mat4 &viewProj)
+	void normalizeAll()
+	{
+		for (auto *plane : asArray())
+		{
+			plane->normalize();
+		}
+	}
+
+private:
+	static Frustum extractFromMatrix(const glm::mat4 &clip)
 	{
 		Frustum f;
-		const glm::mat4 &clip = viewProj;
-
-		f.leftPlane = {glm::vec3(clip[0][3] + clip[0][0], clip[1][3] + clip[1][0], clip[2][3] + clip[2][0]), clip[3][3] + clip[3][0]};
-		f.rightPlane = {glm::vec3(clip[0][3] - clip[0][0], clip[1][3] - clip[1][0], clip[2][3] - clip[2][0]), clip[3][3] - clip[3][0]};
-		f.bottomPlane = {glm::vec3(clip[0][3] + clip[0][1], clip[1][3] + clip[1][1], clip[2][3] + clip[2][1]), clip[3][3] + clip[3][1]};
-		f.topPlane = {glm::vec3(clip[0][3] - clip[0][1], clip[1][3] - clip[1][1], clip[2][3] - clip[2][1]), clip[3][3] - clip[3][1]};
-		f.nearPlane = {glm::vec3(clip[0][3] + clip[0][2], clip[1][3] + clip[1][2], clip[2][3] + clip[2][2]), clip[3][3] + clip[3][2]};
-		f.farPlane = {glm::vec3(clip[0][3] - clip[0][2], clip[1][3] - clip[1][2], clip[2][3] - clip[2][2]), clip[3][3] - clip[3][2]};
-
+		
+		// Extract planes using Gribb-Hartmann method
+		f.leftPlane = {
+			glm::vec3(clip[0][3] + clip[0][0], clip[1][3] + clip[1][0], clip[2][3] + clip[2][0]),
+			clip[3][3] + clip[3][0]
+		};
+		f.rightPlane = {
+			glm::vec3(clip[0][3] - clip[0][0], clip[1][3] - clip[1][0], clip[2][3] - clip[2][0]),
+			clip[3][3] - clip[3][0]
+		};
+		f.bottomPlane = {
+			glm::vec3(clip[0][3] + clip[0][1], clip[1][3] + clip[1][1], clip[2][3] + clip[2][1]),
+			clip[3][3] + clip[3][1]
+		};
+		f.topPlane = {
+			glm::vec3(clip[0][3] - clip[0][1], clip[1][3] - clip[1][1], clip[2][3] - clip[2][1]),
+			clip[3][3] - clip[3][1]
+		};
+		f.nearPlane = {
+			glm::vec3(clip[0][3] + clip[0][2], clip[1][3] + clip[1][2], clip[2][3] + clip[2][2]),
+			clip[3][3] + clip[3][2]
+		};
+		f.farPlane = {
+			glm::vec3(clip[0][3] - clip[0][2], clip[1][3] - clip[1][2], clip[2][3] - clip[2][2]),
+			clip[3][3] - clip[3][2]
+		};
+		
+		f.normalizeAll();
 		return f;
+	}
+
+	static glm::vec3 computeUpVector(const glm::vec3 &dir)
+	{
+		return glm::abs(glm::dot(dir, glm::vec3(0, 1, 0))) > 0.99f 
+			? glm::vec3(1, 0, 0) 
+			: glm::vec3(0, 1, 0);
+	}
+
+public:
+	static Frustum fromViewProjection(const glm::mat4 &viewProj)
+	{
+		return extractFromMatrix(viewProj);
 	}
 
 	/**
 	 * @brief Creates a perspective frustum (for spot lights)
 	 * @param pos Light position
-	 * @param dir Light direction (normalized)
+	 * @param dir Light direction (should be normalized)
 	 * @param fovDegrees Full cone angle in degrees
 	 * @param aspectRatio Aspect ratio (width/height)
-	 * @param nearPlane Distance to near plane
-	 * @param farPlane Distance to far plane
+	 * @param nearPlaneDist Distance to near plane
+	 * @param farPlaneDist Distance to far plane
 	 */
-	static Frustum perspective(const glm::vec3 &pos, const glm::vec3 &dir, float fovDegrees, float aspectRatio, float nearPlaneDist, float farPlaneDist)
+	static Frustum perspective(
+		const glm::vec3 &pos,
+		const glm::vec3 &dir,
+		float fovDegrees,
+		float aspectRatio,
+		float nearPlaneDist,
+		float farPlaneDist)
 	{
-		Frustum f;
-
-		// Build a lookAt matrix from light position
-		glm::vec3 up = glm::abs(glm::dot(dir, glm::vec3(0, 1, 0))) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+		glm::vec3 up = computeUpVector(dir);
 		glm::mat4 view = glm::lookAt(pos, pos + dir, up);
-		glm::mat4 proj = glm::perspective(glm::radians(fovDegrees), aspectRatio, nearPlaneDist, farPlaneDist); // square aspect ratio
-
-		glm::mat4 clip = proj * view;
-
-		// Extract planes from clip matrix
-		// Left
-		f.leftPlane.normal.x = clip[0][3] + clip[0][0];
-		f.leftPlane.normal.y = clip[1][3] + clip[1][0];
-		f.leftPlane.normal.z = clip[2][3] + clip[2][0];
-		f.leftPlane.d = clip[3][3] + clip[3][0];
-
-		// Right
-		f.rightPlane.normal.x = clip[0][3] - clip[0][0];
-		f.rightPlane.normal.y = clip[1][3] - clip[1][0];
-		f.rightPlane.normal.z = clip[2][3] - clip[2][0];
-		f.rightPlane.d = clip[3][3] - clip[3][0];
-
-		// Bottom
-		f.bottomPlane.normal.x = clip[0][3] + clip[0][1];
-		f.bottomPlane.normal.y = clip[1][3] + clip[1][1];
-		f.bottomPlane.normal.z = clip[2][3] + clip[2][1];
-		f.bottomPlane.d = clip[3][3] + clip[3][1];
-
-		// Top
-		f.topPlane.normal.x = clip[0][3] - clip[0][1];
-		f.topPlane.normal.y = clip[1][3] - clip[1][1];
-		f.topPlane.normal.z = clip[2][3] - clip[2][1];
-		f.topPlane.d = clip[3][3] - clip[3][1];
-
-		// Near
-		f.nearPlane.normal.x = clip[0][3] + clip[0][2];
-		f.nearPlane.normal.y = clip[1][3] + clip[1][2];
-		f.nearPlane.normal.z = clip[2][3] + clip[2][2];
-		f.nearPlane.d = clip[3][3] + clip[3][2];
-
-		// Far
-		f.farPlane.normal.x = clip[0][3] - clip[0][2];
-		f.farPlane.normal.y = clip[1][3] - clip[1][2];
-		f.farPlane.normal.z = clip[2][3] - clip[2][2];
-		f.farPlane.d = clip[3][3] - clip[3][2];
-
-		return f;
+		glm::mat4 proj = glm::perspective(glm::radians(fovDegrees), aspectRatio, nearPlaneDist, farPlaneDist);
+		return extractFromMatrix(proj * view);
 	}
 
 	/**
 	 * @brief Creates an orthographic frustum (for directional lights)
 	 * @param center Center point to focus on
-	 * @param dir Light direction
+	 * @param dir Light direction (should be normalized)
 	 * @param halfWidth Half-width of ortho box
 	 * @param halfHeight Half-height
-	 * @param nearPlane Near distance
-	 * @param farPlane Far distance
+	 * @param nearPlaneDist Near distance
+	 * @param farPlaneDist Far distance
 	 */
-	static Frustum orthographic(const glm::vec3 &center, const glm::vec3 &dir, float halfWidth, float halfHeight, float nearPlaneDist, float farPlaneDist)
+	static Frustum orthographic(
+		const glm::vec3 &center,
+		const glm::vec3 &dir,
+		float halfWidth,
+		float halfHeight,
+		float nearPlaneDist,
+		float farPlaneDist)
 	{
-		Frustum f;
-
-		glm::vec3 up = glm::abs(glm::dot(dir, glm::vec3(0, 1, 0))) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+		glm::vec3 up = computeUpVector(dir);
 		glm::mat4 view = glm::lookAt(center - dir * farPlaneDist, center, up);
 		glm::mat4 proj = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, nearPlaneDist, farPlaneDist);
-
-		glm::mat4 clip = proj * view;
-
-		// same plane extraction as above
-		auto extractPlane = [&](Plane &plane, int row, int signX, int signY, int signZ)
-		{
-			plane.normal.x = clip[0][3] + signX * clip[0][row];
-			plane.normal.y = clip[1][3] + signX * clip[1][row];
-			plane.normal.z = clip[2][3] + signX * clip[2][row];
-			plane.d = clip[3][3] + signX * clip[3][row];
-		};
-
-		f.leftPlane = {glm::vec3(clip[0][3] + clip[0][0], clip[1][3] + clip[1][0], clip[2][3] + clip[2][0]), clip[3][3] + clip[3][0]};
-		f.rightPlane = {glm::vec3(clip[0][3] - clip[0][0], clip[1][3] - clip[1][0], clip[2][3] - clip[2][0]), clip[3][3] - clip[3][0]};
-		f.bottomPlane = {glm::vec3(clip[0][3] + clip[0][1], clip[1][3] + clip[1][1], clip[2][3] + clip[2][1]), clip[3][3] + clip[3][1]};
-		f.topPlane = {glm::vec3(clip[0][3] - clip[0][1], clip[1][3] - clip[1][1], clip[2][3] - clip[2][1]), clip[3][3] - clip[3][1]};
-		f.nearPlane = {glm::vec3(clip[0][3] + clip[0][2], clip[1][3] + clip[1][2], clip[2][3] + clip[2][2]), clip[3][3] + clip[3][2]};
-		f.farPlane = {glm::vec3(clip[0][3] - clip[0][2], clip[1][3] - clip[1][2], clip[2][3] - clip[2][2]), clip[3][3] - clip[3][2]};
-
-		return f;
+		return extractFromMatrix(proj * view);
 	}
 
 	/**
@@ -152,20 +151,14 @@ struct Frustum
 	 */
 	static Frustum fromSphere(const glm::vec3 &center, float radius)
 	{
-		// This is a loose approximation using AABB around the sphere
+		// Axis-aligned bounding box around sphere (already normalized)
 		Frustum f;
-		f.leftPlane.normal = glm::vec3(1, 0, 0);
-		f.leftPlane.d = -(center.x - radius);
-		f.rightPlane.normal = glm::vec3(-1, 0, 0);
-		f.rightPlane.d = center.x + radius;
-		f.bottomPlane.normal = glm::vec3(0, 1, 0);
-		f.bottomPlane.d = -(center.y - radius);
-		f.topPlane.normal = glm::vec3(0, -1, 0);
-		f.topPlane.d = center.y + radius;
-		f.nearPlane.normal = glm::vec3(0, 0, 1);
-		f.nearPlane.d = -(center.z - radius);
-		f.farPlane.normal = glm::vec3(0, 0, -1);
-		f.farPlane.d = center.z + radius;
+		f.leftPlane = {glm::vec3(1, 0, 0), -(center.x - radius)};
+		f.rightPlane = {glm::vec3(-1, 0, 0), center.x + radius};
+		f.bottomPlane = {glm::vec3(0, 1, 0), -(center.y - radius)};
+		f.topPlane = {glm::vec3(0, -1, 0), center.y + radius};
+		f.nearPlane = {glm::vec3(0, 0, 1), -(center.z - radius)};
+		f.farPlane = {glm::vec3(0, 0, -1), center.z + radius};
 		return f;
 	}
 };

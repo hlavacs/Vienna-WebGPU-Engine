@@ -68,19 +68,6 @@ void RenderCollector::clear()
 	m_lights.clear();
 }
 
-std::vector<LightStruct> RenderCollector::extractLightUniforms() const
-{
-	std::vector<LightStruct> uniforms;
-	uniforms.reserve(m_lights.size());
-
-	for (const auto &light : m_lights)
-	{
-		uniforms.push_back(light.toUniforms());
-	}
-
-	return uniforms;
-}
-
 std::vector<size_t> RenderCollector::extractVisible(const engine::math::Frustum &frustum) const
 {
 	std::vector<size_t> visibleIndices;
@@ -138,42 +125,24 @@ std::vector<LightStruct> RenderCollector::extractLightUniformsWithShadows(uint32
 	uint32_t shadowCubeIndex = 0;
 
 	for (auto &light : m_lights)
-	{
-		LightStruct u = light.toUniforms();
-
-		// Assign shadow indices only if the light casts shadows
+	{ // Assign shadow indices only if the light casts shadows
+		auto lightUniforms = light.toUniforms();
 		if (light.canCastShadows())
 		{
 			switch (light.getLightType())
 			{
-			case 1: // directional
-			case 3: // spot
-				if (shadow2DIndex < maxShadow2D)
-				{
-					u.shadowIndex = shadow2DIndex++;
-				}
-				else
-				{
-					u.shadowIndex = -1; // exceeded max, disable shadows
-				}
+			case engine::rendering::Light::Type::Directional: // directional
+			case engine::rendering::Light::Type::Spot: // spot
+				lightUniforms.shadowIndex = shadow2DIndex < maxShadow2D ? shadow2DIndex : -1;
+				shadow2DIndex++;
 				break;
-			case 2: // point
-				if (shadowCubeIndex < maxShadowCube)
-				{
-					u.shadowIndex = shadowCubeIndex++;
-				}
-				else
-				{
-					u.shadowIndex = -1;
-				}
-				break;
-			default:
-				u.shadowIndex = -1; // ambient or unsupported
+			case engine::rendering::Light::Type::Point: // point
+				lightUniforms.shadowIndex = shadowCubeIndex < maxShadowCube ? shadowCubeIndex : -1;
+				shadowCubeIndex++;
 				break;
 			}
 		}
-
-		uniforms.push_back(u);
+		uniforms.push_back(lightUniforms);
 	}
 
 	return uniforms;

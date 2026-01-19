@@ -9,10 +9,9 @@ ENUM_BIT_FLAGS_WRAPPED(
 	Flag,
 	5,
 	None = 0,
-	UsesNormalMap = 1 << 0,
-	AlphaTest = 1 << 1,
-	Skinned = 1 << 2,
-	Instanced = 1 << 3
+	AlphaTest = 1 << 0,
+	Skinned = 1 << 1,
+	Instanced = 1 << 2
 )
 
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "engine/core/Identifiable.h"
-#include "engine/rendering/webgpu/WebGPUDepthTexture.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 #include <memory>
 #include <webgpu/webgpu.hpp>
@@ -21,7 +20,7 @@ struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderP
 {
   protected:
 	std::vector<std::shared_ptr<WebGPUTexture>> m_colorTextures;
-	std::shared_ptr<WebGPUDepthTexture> m_depthTexture;
+	std::shared_ptr<WebGPUTexture> m_depthTexture;
 
 	std::vector<wgpu::RenderPassColorAttachment> m_colorAttachmentCopies;
 	std::optional<wgpu::RenderPassDepthStencilAttachment> m_depthAttachmentCopy;
@@ -43,7 +42,7 @@ struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderP
 	 */
 	WebGPURenderPassContext(
 		std::vector<std::shared_ptr<WebGPUTexture>> colorTextures,
-		std::shared_ptr<WebGPUDepthTexture> depth,
+		std::shared_ptr<WebGPUTexture> depth,
 		const wgpu::RenderPassDescriptor &descriptor
 	) : m_colorTextures(std::move(colorTextures)), m_depthTexture(std::move(depth)), m_renderPassDesc(descriptor)
 	{
@@ -51,16 +50,12 @@ struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderP
 		for (size_t i = 0; i < m_renderPassDesc.colorAttachmentCount; ++i)
 		{
 			m_colorAttachmentCopies[i] = m_renderPassDesc.colorAttachments[i];
-			if (i < m_colorTextures.size() && m_colorTextures[i])
-				m_colorAttachmentCopies[i].view = m_colorTextures[i]->getTextureView();
 		}
 		m_renderPassDesc.colorAttachments = m_colorAttachmentCopies.data();
 
 		if (descriptor.depthStencilAttachment)
 		{
 			m_depthAttachmentCopy = *descriptor.depthStencilAttachment;
-			if (m_depthTexture)
-				m_depthAttachmentCopy->view = m_depthTexture->getTextureView();
 			m_renderPassDesc.depthStencilAttachment = &(*m_depthAttachmentCopy);
 		}
 	}
@@ -79,7 +74,7 @@ struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderP
 	 * @brief Returns the depth texture.
 	 * @return Shared pointer to the depth texture, or nullptr if not set.
 	 */
-	std::shared_ptr<WebGPUDepthTexture> getDepthTexture() const { return m_depthTexture; }
+	std::shared_ptr<WebGPUTexture> getDepthTexture() const { return m_depthTexture; }
 
 	/**
 	 * @brief Returns a mutable reference to the underlying RenderPassDescriptor.
@@ -111,7 +106,7 @@ struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderP
 	 * @param newDepthTexture Optional new depth texture.
 	 * @return True if update succeeded, false if attachment count mismatches or invalid textures.
 	 */
-	bool updateViews(const std::vector<std::shared_ptr<WebGPUTexture>> &newColorTextures, std::shared_ptr<WebGPUDepthTexture> newDepthTexture = nullptr)
+	bool updateViews(const std::vector<std::shared_ptr<WebGPUTexture>> &newColorTextures, std::shared_ptr<WebGPUTexture> newDepthTexture = nullptr)
 	{
 		if (!newColorTextures.empty())
 		{
@@ -146,7 +141,7 @@ struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderP
 	 * @param colorIndex Index of the color attachment to update (default 0).
 	 * @return True if update succeeded, false if index out of range or invalid texture.
 	 */
-	bool updateView(std::shared_ptr<WebGPUTexture> newColorTexture, std::shared_ptr<WebGPUDepthTexture> newDepthTexture = nullptr, size_t colorIndex = 0)
+	bool updateView(std::shared_ptr<WebGPUTexture> newColorTexture, std::shared_ptr<WebGPUTexture> newDepthTexture = nullptr, size_t colorIndex = 0)
 	{
 		if (colorIndex >= m_colorAttachmentCopies.size() || !newColorTexture)
 			return false;
@@ -180,7 +175,7 @@ struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderP
 	 * @param colorIndex Index of the color attachment to update (default 0).
 	 * @return True if update succeeded.
 	 */
-	bool updateViewRaw(wgpu::TextureView newColorView, std::shared_ptr<WebGPUDepthTexture> newDepthTexture = nullptr, size_t colorIndex = 0)
+	bool updateViewRaw(wgpu::TextureView newColorView, std::shared_ptr<WebGPUTexture> newDepthTexture = nullptr, size_t colorIndex = 0)
 	{
 		if (colorIndex >= m_colorAttachmentCopies.size())
 			return false;

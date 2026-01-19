@@ -7,6 +7,29 @@
 namespace engine::rendering::webgpu
 {
 
+WebGPUTexture::~WebGPUTexture()
+{
+	// Release cached layer views
+	for (auto &[layer, view] : m_layerViews)
+	{
+		if (view)
+		{
+			view.release();
+		}
+	}
+	m_layerViews.clear();
+
+	// Release main view and texture
+	if (m_textureView)
+	{
+		m_textureView.release();
+	}
+	if (m_texture)
+	{
+		m_texture.release();
+	}
+}
+
 bool WebGPUTexture::resize(WebGPUContext &context, uint32_t newWidth, uint32_t newHeight)
 {
 	if (newWidth == 0 || newHeight == 0)
@@ -49,6 +72,16 @@ bool WebGPUTexture::resize(WebGPUContext &context, uint32_t newWidth, uint32_t n
 	}
 
 	// Everything succeeded, release old resources and update members
+	// Release cached layer views
+	for (auto &[layer, view] : m_layerViews)
+	{
+		if (view)
+		{
+			view.release();
+		}
+	}
+	m_layerViews.clear();
+
 	if (m_textureView)
 		m_textureView.release();
 	if (m_texture)
@@ -67,13 +100,22 @@ bool WebGPUTexture::resize(WebGPUContext &context, uint32_t newWidth, uint32_t n
 	return true;
 }
 
-wgpu::TextureView WebGPUTexture::createLayerView(uint32_t arrayLayer, const char *label) const
+wgpu::TextureView WebGPUTexture::getLayerView(uint32_t arrayLayer, const char *label) const
 {
+	// Check cache first
+	auto it = m_layerViews.find(arrayLayer);
+	if (it != m_layerViews.end())
+	{
+		return it->second;
+	}
+
+	// Create new view if not cached
 	if (!m_texture)
 	{
-		spdlog::error("WebGPUTexture::createLayerView: Cannot create layer view from null texture.");
+		spdlog::error("WebGPUTexture::getLayerView: Cannot create layer view from null texture.");
 		return nullptr;
 	}
+
 	wgpu::TextureViewDescriptor viewDesc{};
 	viewDesc.label = label ? label : "Texture Layer View";
 	viewDesc.format = m_textureDesc.format;
@@ -88,8 +130,13 @@ wgpu::TextureView WebGPUTexture::createLayerView(uint32_t arrayLayer, const char
 							  || m_textureDesc.format == wgpu::TextureFormat::Depth32FloatStencil8
 						  ? wgpu::TextureAspect::DepthOnly
 						  : wgpu::TextureAspect::All;
-	
-	return wgpuTextureCreateView(m_texture, &viewDesc); // Use C API to create the view because of const correctness
+
+	wgpu::TextureView view = wgpuTextureCreateView(m_texture, &viewDesc); // Use C API to create the view because of const correctness
+
+	// Cache the view
+	m_layerViews.emplace(arrayLayer, view);
+
+	return view;
 }
 
 wgpu::TextureView WebGPUTexture::createCubeView(uint32_t cubeIndex, const char *label) const
@@ -99,7 +146,7 @@ wgpu::TextureView WebGPUTexture::createCubeView(uint32_t cubeIndex, const char *
 		spdlog::error("WebGPUTexture::createCubeView: Cannot create cube view from null texture.");
 		return nullptr;
 	}
-	wgpu::TextureViewDescriptor  viewDesc{};
+	wgpu::TextureViewDescriptor viewDesc{};
 	viewDesc.label = label ? label : "Texture Cube Face View";
 	viewDesc.format = m_textureDesc.format;
 	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
@@ -113,7 +160,7 @@ wgpu::TextureView WebGPUTexture::createCubeView(uint32_t cubeIndex, const char *
 							  || m_textureDesc.format == wgpu::TextureFormat::Depth32FloatStencil8
 						  ? wgpu::TextureAspect::DepthOnly
 						  : wgpu::TextureAspect::All;
-	
+
 	return wgpuTextureCreateView(m_texture, &viewDesc); // Use C API to create the view because of const correctness
 }
 

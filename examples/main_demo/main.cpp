@@ -5,6 +5,7 @@
 #include "engine/EngineMain.h"
 #include <windows.h>
 // ^ This has to be on top to define SDL_MAIN_HANDLED ^
+#include "DayNightCycle.h"
 #include "MainDemoImGuiUI.h"
 #include "OrbitCamera.h"
 #include <set>
@@ -59,28 +60,60 @@ int main(int argc, char **argv)
 
 	rootNode->addChild(std::static_pointer_cast<engine::scene::nodes::Node>(ambientLightNode));
 
-	// Create directional light
-	auto lightNode = std::make_shared<engine::scene::nodes::LightNode>();
-	engine::rendering::DirectionalLight directionalData;
-	directionalData.color = glm::vec3(1.0f, 1.0f, 1.0f);
-	directionalData.intensity = 1.0f;
-	directionalData.castShadows = true;
-	lightNode->getLight().setData(directionalData);
+	// Create sun light (directional)
+	auto sunLightNode = std::make_shared<engine::scene::nodes::LightNode>();
+	engine::rendering::DirectionalLight sunData;
+	sunData.color = glm::vec3(1.0f, 1.0f, 0.95f);
+	sunData.intensity = 1.0f;
+	sunData.castShadows = true;
+	sunData.shadowMapSize = 4096;
+	sunData.shadowBias = 0.005f;
+	sunData.shadowNormalBias = 0.01f;
+	sunData.shadowPCFKernel = 2;
+	sunLightNode->getLight().setData(sunData);
+	rootNode->addChild(std::static_pointer_cast<engine::scene::nodes::Node>(sunLightNode));
 
-	// Set default direction angles (in degrees)
-	float pitchDegrees = 140.0f;
-	float yawDegrees = -30.0f;
-	float rollDegrees = 0.0f;
-	glm::quat rotation = glm::quat(glm::radians(glm::vec3(pitchDegrees, yawDegrees, rollDegrees)));
-	lightNode->getTransform()->setLocalRotation(rotation);
+	// Create moon light (directional, optional)
+	auto moonLightNode = std::make_shared<engine::scene::nodes::LightNode>();
+	engine::rendering::DirectionalLight moonData;
+	moonData.color = glm::vec3(0.7f, 0.8f, 1.0f);
+	moonData.intensity = 0.2f;
+	moonData.castShadows = false; // Disable for performance, or enable for moon shadows
+	moonData.shadowMapSize = 2048;
+	moonLightNode->getLight().setData(moonData);
+	rootNode->addChild(std::static_pointer_cast<engine::scene::nodes::Node>(moonLightNode));
 
-	rootNode->addChild(std::static_pointer_cast<engine::scene::nodes::Node>(lightNode));
+	// Create day-night cycle controller
+	auto dayNightCycle = std::make_shared<demo::DayNightCycle>(sunLightNode, moonLightNode, ambientLightNode);
+	dayNightCycle->setCycleDuration(120.0f); // 2 minutes for full cycle
+	dayNightCycle->setHour(12.0f);			 // noon
+	rootNode->addChild(dayNightCycle);
 
-	// Track all lights and their UI angles
+	auto spotLightNode = std::make_shared<engine::scene::nodes::LightNode>();
+	engine::rendering::SpotLight spotlightData;
+	spotlightData.color = glm::vec3(1.0f, 1.0f, 1.0f);
+	spotlightData.intensity = 35.0f;
+	spotlightData.castShadows = true;
+	spotlightData.range = 100.0f;
+	spotlightData.spotAngle = glm::radians(10.0f);
+	spotlightData.shadowMapSize = 4096;
+	spotlightData.shadowPCFKernel = 4;
+	spotLightNode->getLight().setData(spotlightData);
+	glm::quat spotLightRotation = glm::quat(glm::radians(glm::vec3(0.0f, 90.0f, -90.0f)));
+	spotLightNode->getTransform()->setLocalRotation(spotLightRotation);
+	spotLightNode->getTransform()->setWorldPosition(glm::vec3(0.0f, 9.0f, 0.0f));
+
+	rootNode->addChild(spotLightNode->asNode());
+	auto spotLightNode2 = std::make_shared<engine::scene::nodes::LightNode>();
+	spotLightNode2->getLight().setData(spotlightData);
+	glm::quat spotLightRotation2 = glm::quat(glm::radians(glm::vec3(0.0f, 90.0f, -90.0f)));
+	spotLightNode2->getTransform()->setLocalRotation(spotLightRotation2);
+	spotLightNode2->getTransform()->setWorldPosition(glm::vec3(0.0f, 9.0f, 0.0f));
+	rootNode->addChild(spotLightNode2->asNode());
+
+	// Track all lights and their UI angles (for spot lights)
 	std::vector<std::shared_ptr<engine::scene::nodes::LightNode>> lightNodes;
-	lightNodes.push_back(lightNode);
 	std::map<size_t, glm::vec3> lightDirectionsUI;
-	lightDirectionsUI[0] = glm::vec3(pitchDegrees, yawDegrees, rollDegrees);
 
 	// Load model (CPU-side only, GPU resources will be created by the renderer)
 	engine::rendering::Model::Handle fourareenModleHandle;
@@ -102,8 +135,13 @@ int main(int argc, char **argv)
 	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 1.0f, 0.0f));
 	rootNode->addChild(modelNode);
 
+	modelNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelFourareen.value());
+	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 3.0f, 0.4f));
+	rootNode->addChild(modelNode);
+
 	modelNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelPlane.value());
 	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+	modelNode->getTransform()->setLocalScale(glm::vec3(10.0f, 1.0f, 10.0f));
 	rootNode->addChild(modelNode);
 
 	// Create an UpdateNode to handle orbit camera input
@@ -119,10 +157,29 @@ int main(int argc, char **argv)
 						   { mainDemoImGuiUI.render(); });
 	imguiManager->addFrame([&]()
 						   { mainDemoImGuiUI.renderPerformanceWindow(); });
+	imguiManager->addFrame([&]() {
+		ImGui::Begin("Day-Night Cycle Controls");
+		float hour = dayNightCycle->getHour();
+		if (ImGui::SliderFloat("Hour of Day", &hour, 0.0f, 24.0f))
+		{
+			dayNightCycle->setHour(hour);
+		}
+		bool paused = dayNightCycle->isPaused();
+		if (ImGui::Checkbox("Pause Cycle", &paused))
+		{
+			dayNightCycle->setPaused(paused);
+		}
+		float cycleDuration = dayNightCycle->getCycleDuration();
+		if (ImGui::SliderFloat("Cycle Duration (seconds)", &cycleDuration, 10.0f, 600.0f))
+		{
+			dayNightCycle->setCycleDuration(cycleDuration);
+		}
+		ImGui::End();
+	});
 
 	// Load the scene (makes it active)
 	sceneManager->loadScene("Main");
-	
+
 	// Run the engine (blocks until window closed)
 	engine.run();
 
