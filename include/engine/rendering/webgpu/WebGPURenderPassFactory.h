@@ -28,13 +28,17 @@ class WebGPURenderPassFactory
 	 * @param depthTexture The depth texture to use (optional).
 	 * @param clearFlags Flags indicating which buffers to clear (default: clear color and depth).
 	 * @param backgroundColor The background color to clear to (default: dark gray).
+	 * @param colorTextureLayer Specific layer of the color texture to use (-1 for default view).
+	 * @param depthTextureLayer Specific layer of the depth texture to use (-1 for default view).
 	 * @return Shared pointer to WebGPURenderPassContext.
 	 */
 	std::shared_ptr<WebGPURenderPassContext> create(
 		const std::shared_ptr<WebGPUTexture> &colorTexture,
-		const std::shared_ptr<WebGPUDepthTexture> &depthTexture = nullptr,
+		const std::shared_ptr<WebGPUTexture> &depthTexture = nullptr,
 		engine::rendering::ClearFlags clearFlags = ClearFlags::SolidColor | ClearFlags::Depth,
-		const glm::vec4 &backgroundColor = glm::vec4(0.05f, 0.05f, 0.05f, 1.0f)
+		const glm::vec4 &backgroundColor = glm::vec4(0.05f, 0.05f, 0.05f, 1.0f),
+		int colorTextureLayer = -1,
+		int depthTextureLayer = -1
 	);
 
 	/**
@@ -45,7 +49,8 @@ class WebGPURenderPassFactory
 	 * @return Shared pointer to WebGPURenderPassContext configured for depth-only rendering.
 	 */
 	std::shared_ptr<WebGPURenderPassContext> createDepthOnly(
-		wgpu::TextureView depthTextureView,
+		std::shared_ptr<WebGPUTexture> depthTexture,
+		int arrayLayer = -1,
 		bool clearDepth = true,
 		float clearValue = 1.0f
 	);
@@ -60,7 +65,7 @@ class WebGPURenderPassFactory
 	 */
 	std::shared_ptr<WebGPURenderPassContext> createCustom(
 		const std::vector<std::shared_ptr<WebGPUTexture>> &colorTextures,
-		const std::shared_ptr<WebGPUDepthTexture> &depthTexture,
+		const std::shared_ptr<WebGPUTexture> &depthTexture,
 		const wgpu::RenderPassDescriptor &descriptor
 	);
 

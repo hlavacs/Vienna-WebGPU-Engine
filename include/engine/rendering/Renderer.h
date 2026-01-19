@@ -49,8 +49,6 @@ struct RenderItemGPU
 	uint64_t objectID;
 };
 
-
-
 struct ShadowResources
 {
 	std::shared_ptr<webgpu::WebGPUTexture> shadow2DArray;
@@ -82,18 +80,54 @@ class Renderer
 	 */
 	bool initialize();
 
-  protected:
+	/**
+	 * @brief Main public render frame method. Orchestrates the entire rendering pipeline.
+	 * This is the only public method that should be called from GameEngine.
+	 * Completely decoupled from scene nodes - uses extracted RenderTarget and FrameCache instead.
+	 * @param frameCache Frame-wide data (lights, time, render targets).
+	 * @param renderCollector Pre-collected render data from the scene.
+	 * @param uiCallback Optional callback for rendering UI on top of the scene.
+	 * @return True if frame rendered successfully.
+	 */
+	bool renderFrame(
+		FrameCache &frameCache,
+		const RenderCollector &renderCollector,
+		std::function<void(wgpu::RenderPassEncoder)> uiCallback = nullptr
+	);
+
+	/**
+	 * @brief Gets the WebGPU context.
+	 * @return Pointer to WebGPU context.
+	 */
+	webgpu::WebGPUContext *getWebGPUContext() const { return m_context.get(); }
+
+	/**
+	 * @brief Handles window resize events.
+	 * @param width New width.
+	 * @param height New height.
+	 */
+	void onResize(uint32_t width, uint32_t height);
+
+  private:
+	// Helper methods - all private now
 	void startFrame();
 
 	void renderShadowMaps(const RenderCollector &collector);
+
 	void renderToTexture(
 		const RenderCollector &collector,
-		uint64_t renderTargetId, // eindeutige ID für das RenderTarget
+		uint64_t renderTargetId,
 		const glm::vec4 &viewport,
 		ClearFlags clearFlags,
 		const glm::vec4 &backgroundColor,
 		std::optional<TextureHandle> cpuTarget,
 		const FrameUniforms &frameUniforms
+	);
+
+	void renderCameraInternal(
+		const RenderCollector &renderCollector,
+		const RenderTarget &target,
+		float frameTime
 	);
 
 	void compositeTexturesToSurface(
@@ -109,33 +143,6 @@ class Renderer
 		wgpu::TextureFormat format,
 		wgpu::TextureUsage usageFlags
 	);
-
-	/**
-	 * @brief Handles window resize events.
-	 * @param width New width.
-	 * @param height New height.
-	 */
-	void onResize(uint32_t width, uint32_t height);
-
-  public:
-	/**
-	 * @brief Gets the WebGPU context.
-	 * @return Pointer to WebGPU context.
-	 */
-	webgpu::WebGPUContext *getWebGPUContext() const { return m_context.get(); }
-
-  protected:
-	/**
-	 * @brief Gets the pipeline manager.
-	 * @return Reference to pipeline manager.
-	 */
-	webgpu::WebGPUPipelineManager &pipelineManager() { return *m_pipelineManager; }
-
-	/**
-	 * @brief Gets the render pass manager.
-	 * @return Reference to render pass manager.
-	 */
-	RenderPassManager &renderPassManager() { return *m_renderPassManager; }
 
 	void renderDebugPrimitives(
 		wgpu::RenderPassEncoder renderPass,
@@ -158,28 +165,24 @@ class Renderer
 	 */
 	bool initializeShadowResources();
 
-  private:
-	std::vector<Light> m_lights;
-	std::vector<RenderItemGPU> m_gpuItems;
+	/**
+	 * @brief Gets the render pass manager.
+	 * @return Reference to render pass manager.
+	 */
+	RenderPassManager &renderPassManager() { return *m_renderPassManager; }
 
-	ShadowResources m_shadowResources;
+	// Private member variables
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
-	std::unique_ptr<webgpu::WebGPUPipelineManager> m_pipelineManager;
 	std::unique_ptr<RenderPassManager> m_renderPassManager;
-
-	// Rendering passes
 	std::unique_ptr<ShadowPass> m_shadowPass;
 	std::unique_ptr<MeshPass> m_meshPass;
 	std::unique_ptr<CompositePass> m_compositePass;
 
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_debugBindGroup;
-
-	std::shared_ptr<webgpu::WebGPUDepthTexture> m_depthBuffer;
+	ShadowResources m_shadowResources;
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
+	std::shared_ptr<webgpu::WebGPUTexture> m_depthBuffer;
 
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
-
-	// GPU render items cache (prepared once per frame)
 	std::vector<std::optional<RenderItemGPU>> m_gpuRenderItems;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_objectBindGroupCache;
 };

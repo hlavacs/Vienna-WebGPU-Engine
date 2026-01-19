@@ -8,17 +8,16 @@
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUDepthStencilStateFactory.h"
-#include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
 #include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
 #include "engine/rendering/webgpu/WebGPUMeshFactory.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
-#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
 #include "engine/rendering/webgpu/WebGPUPipelineManager.h"
 #include "engine/rendering/webgpu/WebGPURenderPassFactory.h"
 #include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
 #include "engine/rendering/webgpu/WebGPUShaderFactory.h"
 #include "engine/rendering/webgpu/WebGPUSurfaceManager.h"
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
+#include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -74,7 +73,6 @@ class WebGPUContext
 	WebGPUMeshFactory &meshFactory();
 	WebGPUTextureFactory &textureFactory();
 	WebGPUMaterialFactory &materialFactory();
-	WebGPUPipelineFactory &pipelineFactory();
 	WebGPUSamplerFactory &samplerFactory();
 	WebGPUBufferFactory &bufferFactory();
 	WebGPUBindGroupFactory &bindGroupFactory();
@@ -107,7 +105,6 @@ class WebGPUContext
 	std::unique_ptr<WebGPUMeshFactory> m_meshFactory;
 	std::unique_ptr<WebGPUTextureFactory> m_textureFactory;
 	std::unique_ptr<WebGPUMaterialFactory> m_materialFactory;
-	std::unique_ptr<WebGPUPipelineFactory> m_pipelineFactory;
 	std::unique_ptr<WebGPUSamplerFactory> m_samplerFactory;
 	std::unique_ptr<WebGPUBufferFactory> m_bufferFactory;
 	std::unique_ptr<WebGPUBindGroupFactory> m_bindGroupFactory;

@@ -60,9 +60,22 @@ class ShaderRegistry
 	/**
 	 * @brief Register a shader with its name. Names must be unique.
 	 * @param shaderInfo The shader to register.
+	 * @param replaceIfExists If true, replaces existing shader with the same name.
 	 * @return True if registered successfully, false if name already exists.
 	 */
-	bool registerShader(std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo);
+	bool registerShader(std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo, bool replaceIfExists = false);
+
+	/**
+	 * @brief Unregister and remove a shader by name.
+	 * @param name The shader name to remove.
+	 * @return True if shader was unregistered, false if not found.
+	 */
+	bool unregisterShader(const std::string &name);
+
+	/**
+	 * @brief Unregister all shaders from the registry.
+	 */
+	void unregisterAll();
 
 	/**
 	 * @brief Check if a shader is registered.

@@ -1,8 +1,6 @@
 #include "engine/rendering/MeshPass.h"
 
 #include <spdlog/spdlog.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
 
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"
@@ -195,17 +193,9 @@ void MeshPass::drawItems(
 			currentMesh = item.gpuMesh;
 			currentMesh->bindBuffers(
 				renderPass,
-				currentPipeline->getVertexShaderInfo()->getVertexLayout()
+				currentPipeline->getVertexLayout()
 			);
 		}
-		auto objectUniforms = ObjectUniforms{item.worldTransform, glm::inverseTranspose(item.worldTransform)};
-		item.objectBindGroup->updateBuffer(
-			0,
-			&objectUniforms,
-			sizeof(ObjectUniforms),
-			0,
-			m_context->getQueue()
-		);
 		// Bind object bind group (group 2)
 		renderPass.setBindGroup(2, item.objectBindGroup->getBindGroup(), 0, nullptr);
 
@@ -222,8 +212,6 @@ void MeshPass::drawItems(
 		item.gpuMesh->isIndexed()
 			? renderPass.drawIndexed(item.submesh.indexCount, 1, item.submesh.indexOffset, 0, 0)
 			: renderPass.draw(item.submesh.indexCount, 1, item.submesh.indexOffset, 0);
-
-		renderPass.draw(3, 1, 0, 0);
 	}
 }
 

@@ -112,6 +112,24 @@ class Transform : public std::enable_shared_from_this<Transform>
 	glm::vec3 getEulerAngles() const;
 
 	/**
+	 * @brief Sets the world position, adjusting local transform based on parent.
+	 * @param position World space position.
+	 */
+	void setWorldPosition(const glm::vec3 &position);
+
+	/**
+	 * @brief Sets the world rotation, adjusting local transform based on parent.
+	 * @param rotation World space rotation quaternion.
+	 */
+	void setWorldRotation(const glm::quat &rotation);
+
+	/**
+	 * @brief Sets the world scale, adjusting local transform based on parent.
+	 * @param scale World space scale.
+	 */
+	void setWorldScale(const glm::vec3 &scale);
+
+	/**
 	 * @brief Gets the local transformation matrix.
 	 * @return Local model matrix.
 	 */

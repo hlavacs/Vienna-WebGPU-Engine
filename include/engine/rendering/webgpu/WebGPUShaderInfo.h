@@ -29,31 +29,6 @@ class WebGPUShaderInfo
 	friend class WebGPUShaderFactory;
 
   public:
-	// Constructors
-	WebGPUShaderInfo(
-		std::string name,
-		std::string path,
-		engine::rendering::ShaderType type,
-		std::string vertexEntry,
-		std::string fragmentEntry,
-		engine::rendering::VertexLayout vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor,
-		engine::rendering::ShaderFeature::Flag features = engine::rendering::ShaderFeature::Flag::None,
-		bool enableDepth = true,
-		bool enableBlend = false,
-		bool cullBackFaces = true
-	) : m_name(std::move(name)),
-		m_path(std::move(path)),
-		m_shaderType(type),
-		m_vertexEntryPoint(std::move(vertexEntry)),
-		m_fragmentEntryPoint(std::move(fragmentEntry)),
-		m_vertexLayout(vertexLayout),
-		m_features(features),
-		m_enableDepth(enableDepth),
-		m_enableBlend(enableBlend),
-		m_cullBackFaces(cullBackFaces)
-	{
-	}
-
 	WebGPUShaderInfo(
 		std::string name,
 		std::string path,
@@ -78,6 +53,15 @@ class WebGPUShaderInfo
 		m_enableBlend(enableBlend),
 		m_cullBackFaces(cullBackFaces)
 	{
+	}
+
+	~WebGPUShaderInfo() {
+		if (m_module) {
+			m_module.release();
+		}
+		m_module = nullptr;
+		// Clear bind group layouts to ensure their destructors are called
+		m_bindGroupLayouts.clear();
 	}
 	/**
 	 * @brief Gets the shader name.
@@ -192,12 +176,6 @@ class WebGPUShaderInfo
 	 * @param path The shader file path.
 	 */
 	void setPath(std::string path) { m_path = std::move(path); }
-
-	/**
-	 * @brief Set the shader module.
-	 * @param mod The WebGPU shader module.
-	 */
-	void setModule(wgpu::ShaderModule mod) { m_module = mod; }
 
 	/**
 	 * @brief Set the vertex layout.

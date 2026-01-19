@@ -30,7 +30,7 @@ class MainDemoImGuiUI
 	  OrbitCameraState &m_orbitState;
 
 	  std::vector<std::shared_ptr<engine::scene::nodes::LightNode>> m_lightNodes;
-	  std::map<size_t, glm::vec3> m_lightDirectionsUI;
+	  std::map<size_t, glm::vec3> m_lightDirectionsUI; //< Seperate storage for Euler angles for ImGui because of instability when converting from quaternions every frame.
 	  std::unordered_map<engine::rendering::TextureHandle, ImTextureID> m_imguiTextureCache;
 	  void renderLightingAndCameraControls();
 	  void renderMaterialProperties();

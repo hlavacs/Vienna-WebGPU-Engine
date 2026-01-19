@@ -137,10 +137,10 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 			format = wgpu::TextureFormat::RGBA8UnormSrgb;
 			break;
 		case Texture::Type::DepthStencil:
-			format = wgpu::TextureFormat::Depth24PlusStencil8;
+			format = wgpu::TextureFormat::Depth32FloatStencil8;
 			break;
 		case Texture::Type::Depth:
-			format = wgpu::TextureFormat::Depth24Plus;
+			format = wgpu::TextureFormat::Depth32Float;
 			break;
 		}
 	}
@@ -401,14 +401,14 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createShadowMap2DArray(
 	textureDesc.mipLevelCount = 1;
 	textureDesc.sampleCount = 1;
 	textureDesc.dimension = wgpu::TextureDimension::_2D;
-	textureDesc.format = wgpu::TextureFormat::Depth24Plus;
+	textureDesc.format = wgpu::TextureFormat::Depth32Float;
 	textureDesc.usage = static_cast<WGPUTextureUsage>(
 		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
 	);
 
 	wgpu::TextureViewDescriptor viewDesc{};
 	viewDesc.label = "Shadow Maps 2D Array View";
-	viewDesc.format = wgpu::TextureFormat::Depth24Plus;
+	viewDesc.format = wgpu::TextureFormat::Depth32Float;
 	viewDesc.dimension = wgpu::TextureViewDimension::_2DArray;
 	viewDesc.baseMipLevel = 0;
 	viewDesc.mipLevelCount = 1;
@@ -430,7 +430,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createShadowMapCubeArray(
 	textureDesc.mipLevelCount = 1;
 	textureDesc.sampleCount = 1;
 	textureDesc.dimension = wgpu::TextureDimension::_2D;
-	textureDesc.format = wgpu::TextureFormat::Depth24Plus;
+	textureDesc.format = wgpu::TextureFormat::Depth32Float;
 	textureDesc.usage = static_cast<WGPUTextureUsage>(
 		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
 	);
@@ -438,7 +438,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createShadowMapCubeArray(
 	// DEFAULT VIEW: 2D ARRAY
 	wgpu::TextureViewDescriptor viewDesc{};
 	viewDesc.label = "Shadow Maps Cube Array (2DArray View)";
-	viewDesc.format = wgpu::TextureFormat::Depth24Plus;
+	viewDesc.format = wgpu::TextureFormat::Depth32Float;
 	viewDesc.dimension = wgpu::TextureViewDimension::CubeArray;
 	viewDesc.baseMipLevel = 0;
 	viewDesc.mipLevelCount = 1;
@@ -575,10 +575,9 @@ std::shared_ptr<WebGPUPipeline> WebGPUTextureFactory::getOrCreateMipmapPipeline(
 		return nullptr;
 	}
 
-	// Create render pipeline using the pipeline factory with the specific format
-	auto mipmapPipeline = m_context.pipelineFactory().createRenderPipeline(
-		mipmapShader,					// vertex shader
-		mipmapShader,					// fragment shader (same shader has both)
+	// Create render pipeline using the pipeline manager with the specific format
+	auto mipmapPipeline = m_context.pipelineManager().getOrCreatePipeline(
+		mipmapShader,					// shader
 		format,							// color format (specific to this texture)
 		wgpu::TextureFormat::Undefined, // no depth
 		engine::rendering::Topology::Type::Triangles,

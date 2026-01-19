@@ -134,12 +134,6 @@ class RenderCollector
 	const std::vector<Light> &getLights() const { return m_lights; };
 
 	/**
-	 * @brief Extracts light uniforms for GPU rendering.
-	 * @return Vector of LightStruct uniforms ready for GPU upload.
-	 */
-	std::vector<LightStruct> extractLightUniforms() const;
-
-	/**
 	 * @brief Gets the number of collected render items.
 	 * @return Item count.
 	 */
@@ -170,7 +164,7 @@ class RenderCollector
 	);
 
 	std::vector<RenderItemCPU> m_renderItems;
-	std::vector<Light> m_lights;
+	std::vector<Light> m_lights; // Mutable to allow shadow index assignment in const methods
 };
 
 } // namespace engine::rendering

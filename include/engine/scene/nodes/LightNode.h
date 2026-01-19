@@ -71,11 +71,11 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 		// Light type: 0=ambient, 1=directional, 2=point, 3=spot
 		switch (m_light.getLightType())
 		{
-		case 0: // Ambient - no debug visualization
+		case engine::rendering::Light::Type::Ambient: // Ambient - no debug visualization
 			break;
 
-		case 1: // Directional - draw arrow in light direction
-		case 3: // Spot - draw arrow in light direction
+		case engine::rendering::Light::Type::Directional: // Directional - draw arrow in light direction
+		case engine::rendering::Light::Type::Spot: // Spot - draw arrow in light direction
 		{
 			float arrowLength = 0.5f;
 			float arrowHeadSize = 0.2f;
@@ -84,7 +84,7 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 			break;
 		}
 
-		case 2: // Point - draw 3 orthogonal disks (sphere representation)
+		case engine::rendering::Light::Type::Point: // Point - draw 3 orthogonal disks (sphere representation)
 		{
 			float radius = 0.5f;
 			
@@ -183,7 +183,7 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	 * @brief Gets the light type.
 	 * @return The current light type (0=ambient, 1=directional, 2=point, 3=spot).
 	 */
-	uint32_t getLightType() const
+	engine::rendering::Light::Type getLightType() const
 	{
 		return m_light.getLightType();
 	}

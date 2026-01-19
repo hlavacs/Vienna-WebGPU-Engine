@@ -2,7 +2,9 @@
 
 #include <memory>
 #include <vector>
+
 #include <webgpu/webgpu.hpp>
+#include <spdlog/spdlog.h>
 
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
@@ -58,6 +60,10 @@ class WebGPUBindGroup
 		{
 			m_bindGroup.release();
 		}
+		m_bindGroup = nullptr;
+		m_layoutInfo.reset();
+		m_layoutInfo = nullptr;
+		m_buffers.clear();
 	}
 
 	// Delete copy, enable move
@@ -162,7 +168,7 @@ class WebGPUBindGroup
 	/**
 	 * @brief The underlying WebGPU bind group resource.
 	 */
-	wgpu::BindGroup m_bindGroup;
+	wgpu::BindGroup m_bindGroup = nullptr;
 
 	/**
 	 * @brief Reference to the bind group layout info.

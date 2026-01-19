@@ -33,7 +33,7 @@ static_assert(sizeof(LightsBuffer) % 16 == 0, "LightsBuffer must match WGSL layo
 struct Shadow2D
 {
 	glm::mat4 lightViewProjection = glm::mat4(1.0f);
-	float bias = 0.005f;
+	float bias = 0.001f;
 	float normalBias = 0.01f;
 	float texelSize = 1.0f / 2048.0f; // Assuming 2048x2048 shadow maps
 	uint32_t pcfKernel = 1;			  // PCF kernel size (1 = 3x3, 2 = 5x5, etc.)
@@ -47,7 +47,7 @@ struct ShadowCube
 	float bias = 0.005f;
 	float texelSize = 1.0f / 1024.0f; // Assuming 1024x1024 cube faces
 	uint32_t pcfKernel = 1;			  // PCF kernel size
-	glm::vec2 _pad = glm::vec2(0.0f); // Padding to maintain 16-byte alignment
+	float _pad[2] = {0.0f, 0.0f}; // Padding to maintain 16-byte alignment
 };
 static_assert(sizeof(ShadowCube) % 16 == 0, "ShadowCube must match WGSL layout");
 

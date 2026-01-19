@@ -16,17 +16,24 @@ struct ShadowCubeUniforms {
     farPlane: f32,
 }
 
+struct ObjectUniforms {
+	modelMatrix: mat4x4f,
+	normalMatrix: mat4x4f,
+}
+
 ;
 
 @group(0) @binding(0)
 var<uniform> uShadowCube: ShadowCubeUniforms;
+@group(1) @binding(0)
+var<uniform> uObject: ObjectUniforms;
 
 // The view-projection is implicit: we'll compute vector from light to vertex in fragment
 @vertex
 fn vs_shadow_cube(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     // Pass world position to fragment
-    out.worldPos = in.position;
+    let worldPos = uObject.modelMatrix * vec4f(in.position, 1.0);
     // Position output is required but ignored in depth-only rendering
     out.position = vec4f(0.0, 0.0, 0.0, 1.0);
     return out;

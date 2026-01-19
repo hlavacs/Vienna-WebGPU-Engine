@@ -75,7 +75,7 @@ class ShadowPass
 	void renderShadow2D(
 		const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 		const std::vector<size_t> &indicesToRender, // only items visible to this light
-		const webgpu::WebGPUTexture &shadowTexture,
+		const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
 		uint32_t arrayLayer,
 		const glm::mat4 &lightViewProjection
 	);
@@ -98,7 +98,7 @@ class ShadowPass
 	void renderShadowCube(
 		const std::vector<std::optional<RenderItemGPU>> &items,
 		const std::vector<size_t> &indicesToRender,
-		const webgpu::WebGPUTexture &shadowTexture,
+		const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
 		uint32_t cubeIndex,
 		const glm::vec3 &lightPosition,
 		float farPlane
@@ -150,8 +150,9 @@ class ShadowPass
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowCubeBindGroup; //< For cube shadows
 
 	// Pipeline caching (by topology type, NOT per-mesh instance)
-	std::unordered_map<int, std::shared_ptr<webgpu::WebGPUPipeline>> m_pipelineCache;	  //< 2D shadow pipelines
-	std::unordered_map<int, std::shared_ptr<webgpu::WebGPUPipeline>> m_cubePipelineCache; //< Cube shadow pipelines
+	// Using weak_ptr: if pipeline is released elsewhere, we'll recreate it
+	std::unordered_map<int, std::weak_ptr<webgpu::WebGPUPipeline>> m_pipelineCache;	   //< 2D shadow pipelines
+	std::unordered_map<int, std::weak_ptr<webgpu::WebGPUPipeline>> m_cubePipelineCache; //< Cube shadow pipelines
 };
 
 } // namespace engine::rendering

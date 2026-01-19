@@ -32,9 +32,8 @@ bool CompositePass::initialize()
 		return false;
 	}
 
-	// Create pipeline using the shader
-	m_pipeline = m_context->pipelineFactory().createRenderPipeline(
-		shaderInfo,
+	// Create pipeline using the pipeline manager
+	m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
 		shaderInfo,
 		m_context->surfaceManager().currentConfig().format,
 		wgpu::TextureFormat::Undefined, // No depth
