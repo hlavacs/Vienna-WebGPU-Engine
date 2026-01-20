@@ -35,10 +35,10 @@ struct Light {
     spot_angle: f32,
     spot_softness: f32,
     range: f32,
-    shadow_index: i32, // <0 = no shadows
+    shadow_index: u32,    // FIRST index into u_shadows (0 = no shadow)
+    shadow_count: u32,    // HOW MANY shadow entries (0 = no shadow)
     _pad1: f32,
     _pad2: f32,
-    _pad3: f32,
 };
 
 struct LightsBuffer {
@@ -65,20 +65,16 @@ struct MaterialUniforms {
     normal_strength: f32,
 };
 
-struct Shadow2DUniform {
-    light_view_projection: mat4x4f,
+
+struct ShadowUniform {
+    view_proj: mat4x4f,       // Used for spot + directional + CSM
+    light_pos: vec3f,         // Used for point lights
     bias: f32,
     normal_bias: f32,
     texel_size: f32,
     pcf_kernel: u32,
-};
-
-struct ShadowCubeUniform {
-    light_position: vec3f,
-    bias: f32,
-    texel_size: f32,
-    pcf_kernel: u32,
-    _pad: vec2f,
+    shadow_type: u32,         // 0 = 2D shadow (directional/spot), 1 = cube shadow (point)
+    textureIndex: u32,        // layer in correct texture array
 };
 
 @group(0) @binding(0)
@@ -114,9 +110,7 @@ var shadow_maps_2d: texture_depth_2d_array;
 @group(4) @binding(2)
 var shadow_maps_cube: texture_depth_cube_array;
 @group(4) @binding(3)
-var<storage, read> u_shadow_2d: array<Shadow2DUniform>;
-@group(4) @binding(4)
-var<storage, read> u_shadow_cube: array<ShadowCubeUniform>;
+var<storage, read> u_shadows: array<ShadowUniform>;
 
 const PI: f32 = 3.141592653589793;
 
@@ -182,16 +176,20 @@ fn get_position_from_transform(transform: mat4x4f) -> vec3f {
 // Shadow Mapping
 // ------------------------------------------------------------
 fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
-    if (light.shadow_index < 0) {
+    // No shadow if shadow_count is 0
+    if (light.shadow_count == 0u) {
         return 1.0;
     }
-    if (light.light_type == 1u || light.light_type == 3u) {
-        let shadow = u_shadow_2d[u32(light.shadow_index)];
 
-        let light_space_pos = shadow.light_view_projection * vec4f(world_pos, 1.0);
+    // Handle 2D shadows (directional and spot lights)
+    if (light.light_type == 1u || light.light_type == 3u) {
+        // For now, use only the first shadow (index 0 in the light's shadow range)
+        let shadow = u_shadows[light.shadow_index];
+
+        let light_space_pos = shadow.view_proj * vec4f(world_pos, 1.0);
         var shadow_proj = light_space_pos.xyz / light_space_pos.w;
         var shadow_uv = shadow_proj.xy * 0.5 + vec2f(0.5);
-		shadow_uv.y = 1.0 - shadow_uv.y;
+        shadow_uv.y = 1.0 - shadow_uv.y;
         let shadow_depth = shadow_proj.z;
 
         if (shadow_uv.x < 0.0 || shadow_uv.x > 1.0 ||
@@ -204,13 +202,13 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
         let ndotl = clamp(dot(normal, light_dir), 0.0, 1.0);
         let slope_bias = shadow.normal_bias * (1.0 - ndotl);
         var final_bias = (shadow.bias + slope_bias);
-		if(light.light_type == 3u) {
-        	final_bias *= shadow.texel_size;
-		}
+        if (light.light_type == 3u) {
+            final_bias *= shadow.texel_size;
+        }
         final_bias = clamp(final_bias, 0.0000001, 0.003);
         let current_depth = shadow_depth - final_bias;
-		
-		// =============================
+
+        // =============================
         // Directional horizon stabilization
         // =============================
         var pcf_scale = 1.0;
@@ -218,9 +216,8 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
 
         if (light.light_type == 1u) {
             let sun_dot_up = saturate(dot(light_dir, vec3f(0.0, 1.0, 0.0)));
-
-			shadow_strength = smoothstep(0.0, 0.4, sun_dot_up);
-			pcf_scale = mix(0.5, 1.0, shadow_strength);
+            shadow_strength = smoothstep(0.0, 0.4, sun_dot_up);
+            pcf_scale = mix(0.5, 1.0, shadow_strength);
         }
 
         var visibility = 0.0;
@@ -231,26 +228,28 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
             for (var y = -kernel; y <= kernel; y = y + 1) {
                 let offset = vec2f(f32(x), f32(y)) * shadow.texel_size * pcf_scale;
                 let uv = shadow_uv + offset;
-                // Let the sampler handle out-of-bounds sampling
-                visibility += textureSampleCompare(shadow_maps_2d, shadow_sampler, uv, u32(light.shadow_index), current_depth);
+                // Sample using shadow_index as the layer
+                visibility += textureSampleCompare(shadow_maps_2d, shadow_sampler, uv, shadow.textureIndex, current_depth);
                 samples += 1.0;
             }
         }
-		
-		if (light.light_type == 1u) {
+
+        if (light.light_type == 1u) {
             return mix(1.0, visibility / samples, shadow_strength);
         }
 
         return visibility / samples;
-    } else if (light.light_type == 2u) {
-        let shadow = u_shadow_cube[u32(light.shadow_index)];
+    } 
+    // Handle cube shadows (point lights)
+    else if (light.light_type == 2u) {
+        let shadow = u_shadows[light.shadow_index];
 
         // Linear distance from light to fragment
-        let to_light = world_pos - shadow.light_position;
+        let to_light = world_pos - shadow.light_pos;
         let linear_depth = length(to_light);
 
         let current_depth = linear_depth - shadow.bias; // bias in world units
-	
+
         var visibility = 0.0;
         let kernel = i32(shadow.pcf_kernel);
         var samples = 0.0;
@@ -261,7 +260,7 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
                 for (var z = -kernel; z <= kernel; z = z + 1) {
                     let offset = vec3f(f32(x), f32(y), f32(z)) * shadow.texel_size;
                     let sample_dir = normalize(to_light + offset);
-                    visibility += textureSampleCompare(shadow_maps_cube, shadow_sampler, sample_dir, u32(light.shadow_index), current_depth);
+                    visibility += textureSampleCompare(shadow_maps_cube, shadow_sampler, sample_dir, shadow.textureIndex, current_depth);
                     samples += 1.0;
                 }
             }

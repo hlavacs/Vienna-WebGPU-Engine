@@ -9,6 +9,7 @@
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/Renderer.h"
+#include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
@@ -63,17 +64,16 @@ bool MeshPass::initialize()
 	return true;
 }
 
-void MeshPass::render(
-	const std::vector<std::optional<RenderItemGPU>> &gpuItems,
-	const std::vector<uint64_t> &indicesToRender,
-	const std::vector<LightStruct> &lights,
-	const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext,
-	const FrameUniforms &frameUniforms,
-	uint64_t cameraId
-)
+void MeshPass::render(FrameCache &frameCache)
 {
-	// Update lights
-	updateLights(lights);
+	if (!m_renderPassContext)
+	{
+		spdlog::error("MeshPass::render() called without setting render pass context");
+		return;
+	}
+
+	// Update lights from frame cache
+	updateLights(frameCache.lightUniforms);
 
 	// Create command encoder
 	wgpu::CommandEncoderDescriptor encoderDesc{};
@@ -81,14 +81,14 @@ void MeshPass::render(
 	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
 
 	// Begin render pass
-	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
+	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(m_renderPassContext->getRenderPassDescriptor());
 
 	// Bind frame and light uniforms
-	bindFrameUniforms(renderPass, cameraId, frameUniforms);
+	bindFrameUniforms(renderPass, m_cameraId, m_frameUniforms);
 	bindLightUniforms(renderPass);
 
-	// Draw items
-	drawItems(encoder, renderPass, renderPassContext, gpuItems, indicesToRender);
+	// Draw items from frame cache
+	drawItems(encoder, renderPass, m_renderPassContext, frameCache.gpuRenderItems, m_visibleIndices);
 
 	// End render pass
 	renderPass.end();
@@ -145,7 +145,7 @@ void MeshPass::drawItems(
 	wgpu::RenderPassEncoder renderPass,
 	const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext,
 	const std::vector<std::optional<RenderItemGPU>> &gpuItems,
-	const std::vector<uint64_t> &indicesToRender
+	const std::vector<size_t> &indicesToRender
 )
 {
 	webgpu::WebGPUPipeline *currentPipeline = nullptr;

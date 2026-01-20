@@ -3,9 +3,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <spdlog/spdlog.h>
 
+#include "engine/math/Frustum.h"
 #include "engine/rendering/Mesh.h"
+#include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/Renderer.h"
+#include "engine/rendering/RenderingConstants.h"
+#include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/ShadowUniforms.h"
 #include "engine/rendering/Vertex.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
@@ -71,13 +76,13 @@ bool ShadowPass::initialize()
 	m_shadowUniformsBuffer = m_context->bufferFactory().createUniformBufferWrapped(
 		"Shadow Uniforms Buffer",
 		0,
-		sizeof(ShadowUniforms)
+		sizeof(ShadowPassUniforms2D)
 	);
 
 	m_shadowCubeUniformsBuffer = m_context->bufferFactory().createUniformBufferWrapped(
 		"Shadow Cube Uniforms Buffer",
 		0,
-		sizeof(ShadowCubeUniforms)
+		sizeof(ShadowPassUniformsCube)
 	);
 
 	// Create reusable bind group for 2D shadows
@@ -86,7 +91,7 @@ bool ShadowPass::initialize()
 		entries[0].binding = 0;
 		entries[0].buffer = m_shadowUniformsBuffer->getBuffer();
 		entries[0].offset = 0;
-		entries[0].size = sizeof(ShadowUniforms);
+		entries[0].size = sizeof(ShadowPassUniforms2D);
 
 		wgpu::BindGroupDescriptor bgDesc{};
 		bgDesc.layout = m_shadowBindGroupLayout->getLayout();
@@ -108,7 +113,7 @@ bool ShadowPass::initialize()
 		entries[0].binding = 0;
 		entries[0].buffer = m_shadowCubeUniformsBuffer->getBuffer();
 		entries[0].offset = 0;
-		entries[0].size = sizeof(ShadowCubeUniforms);
+		entries[0].size = sizeof(ShadowPassUniformsCube);
 
 		wgpu::BindGroupDescriptor bgDesc{};
 		bgDesc.layout = m_shadowCubeBindGroupLayout->getLayout();
@@ -128,6 +133,88 @@ bool ShadowPass::initialize()
 	return true;
 }
 
+void ShadowPass::render(FrameCache &frameCache)
+{
+	if (!m_collector || !m_shadowResources)
+	{
+		spdlog::error("ShadowPass::render() called without setting collector or shadow resources");
+		return;
+	}
+
+	// Extract GPU-ready light and shadow uniform data
+	auto lightShadowPairs = m_collector->extractLightsAndShadows(
+		constants::MAX_SHADOW_MAPS_2D,
+		constants::MAX_SHADOW_MAPS_CUBE
+	);
+	frameCache.lightUniforms = std::move(std::get<0>(lightShadowPairs));
+	frameCache.shadowUniforms = std::move(std::get<1>(lightShadowPairs));
+
+	if (frameCache.lightUniforms.empty())
+		return;
+
+	// Render shadow maps for each light
+	for (const auto &lightUniform : frameCache.lightUniforms)
+	{
+		// Skip lights without shadows
+		if (lightUniform.shadowCount == 0)
+			continue;
+
+		// Determine visible objects for this light
+		std::vector<size_t> visibleIndices;
+		if (lightUniform.light_type == 2) // Point light
+		{
+			visibleIndices = m_collector->extractForPointLight(
+				frameCache.shadowUniforms[lightUniform.shadowIndex].lightPos,
+				lightUniform.range
+			);
+		}
+		else // Directional or spot light
+		{
+			visibleIndices = m_collector->extractForLightFrustum(
+				engine::math::Frustum::fromViewProjection(frameCache.shadowUniforms[lightUniform.shadowIndex].viewProj)
+			);
+		}
+
+		// Prepare GPU resources for visible items
+		frameCache.prepareGPUResources(m_context, *m_collector, visibleIndices);
+
+		// Render shadow map based on light type
+		if (frameCache.shadowUniforms[lightUniform.shadowIndex].shadowType == 1) // Cube shadow
+		{
+			renderShadowCube(
+				frameCache.gpuRenderItems,
+				visibleIndices,
+				m_shadowResources->shadowCubeArray,
+				static_cast<uint32_t>(lightUniform.shadowIndex),
+				frameCache.shadowUniforms[lightUniform.shadowIndex].lightPos,
+				lightUniform.range
+			);
+		}
+		else // 2D shadow
+		{
+			renderShadow2D(
+				frameCache.gpuRenderItems,
+				visibleIndices,
+				m_shadowResources->shadow2DArray,
+				static_cast<uint32_t>(lightUniform.shadowIndex),
+				frameCache.shadowUniforms[lightUniform.shadowIndex].viewProj
+			);
+		}
+	}
+
+	// Update GPU shadow uniform buffer
+	if (!frameCache.shadowUniforms.empty())
+	{
+		m_shadowResources->bindGroup->updateBuffer(
+			3,
+			frameCache.shadowUniforms.data(),
+			frameCache.shadowUniforms.size() * sizeof(ShadowUniform),
+			0,
+			m_context->getQueue()
+		);
+	}
+}
+
 void ShadowPass::renderShadow2D(
 	const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 	const std::vector<size_t> &indicesToRender, // only items visible to this light
@@ -137,12 +224,12 @@ void ShadowPass::renderShadow2D(
 )
 {
 	// Prepare shadow uniforms
-	ShadowUniforms shadowUniforms;
+	ShadowPassUniforms2D shadowUniforms;
 	shadowUniforms.lightViewProjectionMatrix = lightViewProjection;
 
 	uint32_t shadowMapSize = shadowTexture->getWidth();
 	// Update uniforms using the reusable bind group
-	m_shadowBindGroup->updateBuffer(0, &shadowUniforms, sizeof(ShadowUniforms), 0, m_context->getQueue());
+	m_shadowBindGroup->updateBuffer(0, &shadowUniforms, sizeof(ShadowPassUniforms2D), 0, m_context->getQueue());
 
 	auto shadowDebugingTexture = m_context->textureFactory().createRenderTarget(
 		-1,
@@ -218,13 +305,13 @@ void ShadowPass::renderShadowCube(
 		glm::mat4 lightVP = projection * view;
 
 		// Update uniforms
-		ShadowCubeUniforms shadowCubeUniforms;
+		ShadowPassUniformsCube shadowCubeUniforms;
 		shadowCubeUniforms.lightPosition = lightPosition;
 		shadowCubeUniforms.farPlane = farPlane;
 		m_shadowCubeBindGroup->updateBuffer(
 			0,
 			&shadowCubeUniforms,
-			sizeof(ShadowCubeUniforms),
+			sizeof(ShadowPassUniformsCube),
 			0,
 			m_context->getQueue()
 		);

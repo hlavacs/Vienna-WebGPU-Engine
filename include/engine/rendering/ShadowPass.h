@@ -1,7 +1,9 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 #include <webgpu/webgpu.hpp>
@@ -18,6 +20,9 @@
 namespace engine::rendering
 {
 struct RenderItemGPU;
+struct FrameCache;
+struct ShadowResources;
+class RenderCollector;
 
 namespace webgpu
 {
@@ -57,6 +62,36 @@ class ShadowPass
 	 * @return True if initialization succeeded.
 	 */
 	bool initialize();
+
+	/**
+	 * @brief Set the render collector containing scene data.
+	 * @param collector The render collector with render items and lights.
+	 */
+	void setRenderCollector(const RenderCollector* collector) { m_collector = collector; }
+
+	/**
+	 * @brief Set shadow resources (textures, bind groups).
+	 * @param resources Shadow textures and bind groups.
+	 */
+	void setShadowResources(const ShadowResources* resources) { m_shadowResources = resources; }
+
+	/**
+	 * @brief Set the WebGPU context.
+	 * @param context WebGPU context for resource creation.
+	 */
+	void setContext(std::shared_ptr<webgpu::WebGPUContext> context) { m_context = context; }
+
+	/**
+	 * @brief Render all shadow maps for all lights.
+	 * Orchestrates the entire shadow rendering process:
+	 * - Extracts lights and shadow uniforms from collector
+	 * - Performs culling for each light
+	 * - Renders shadow maps (2D or cube)
+	 * - Updates frameCache with light and shadow uniforms
+	 * 
+	 * @param frameCache Frame-wide data storage (reads/writes lights, shadows, gpuRenderItems)
+	 */
+	void render(FrameCache &frameCache);
 
 	/**
 	 * @brief Render shadow map for a single directional or spot light (2D shadow map).
@@ -136,6 +171,10 @@ class ShadowPass
 	);
 
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
+
+	// External dependencies (set via setters)
+	const RenderCollector* m_collector = nullptr;
+	const ShadowResources* m_shadowResources = nullptr;
 
 	// Bind group layouts (from shaders)
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_shadowBindGroupLayout;		//< For 2D shadows

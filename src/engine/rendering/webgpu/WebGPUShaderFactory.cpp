@@ -1,5 +1,6 @@
 #include "engine/rendering/webgpu/WebGPUShaderFactory.h"
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <spdlog/spdlog.h>
@@ -195,27 +196,21 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	shadowMapsCube.textureMultisampled = false;
 	bindGroupBuilder.bindings.push_back(shadowMapsCube);
 
-	// Binding 3: Shadow2D data storage buffer
-	ShaderBinding shadow2DBuffer;
-	shadow2DBuffer.type = BindingType::StorageBuffer;
-	shadow2DBuffer.name = "uShadow2D";
-	shadow2DBuffer.binding = 3;
-	shadow2DBuffer.size = maxShadows * sizeof(engine::rendering::Shadow2D);
-	shadow2DBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
-	shadow2DBuffer.visibility = WGPUShaderStage_Fragment;
-	shadow2DBuffer.readOnly = true;
-	bindGroupBuilder.bindings.push_back(shadow2DBuffer);
-
-	// Binding 4: ShadowCube data storage buffer
-	ShaderBinding shadowCubeBuffer;
-	shadowCubeBuffer.type = BindingType::StorageBuffer;
-	shadowCubeBuffer.name = "uShadowCube";
-	shadowCubeBuffer.binding = 4;
-	shadowCubeBuffer.size = maxShadowCubes * sizeof(engine::rendering::ShadowCube);
-	shadowCubeBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
-	shadowCubeBuffer.visibility = WGPUShaderStage_Fragment;
-	shadowCubeBuffer.readOnly = true;
-	bindGroupBuilder.bindings.push_back(shadowCubeBuffer);
+	// Binding 3: Unified ShadowUniform data storage buffer
+	// Replaces separate uShadow2D and uShadowCube buffers
+	// Supports both 2D and cube shadows via shadowType field
+	ShaderBinding shadowUniformBuffer;
+	shadowUniformBuffer.type = BindingType::StorageBuffer;
+	shadowUniformBuffer.name = "uShadows";
+	shadowUniformBuffer.binding = 3;
+	// Use max shadows (which is the max of both 2D and cube, or could be dynamic)
+	// Each ShadowUniform is 128 bytes (due to MSVC mat4 alignment)
+	size_t maxUnifiedShadows = std::max(maxShadows, maxShadowCubes);
+	shadowUniformBuffer.size = maxUnifiedShadows * sizeof(engine::rendering::ShadowUniform);
+	shadowUniformBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+	shadowUniformBuffer.visibility = WGPUShaderStage_Fragment;
+	shadowUniformBuffer.readOnly = true;
+	bindGroupBuilder.bindings.push_back(shadowUniformBuffer);
 
 	return *this;
 }
