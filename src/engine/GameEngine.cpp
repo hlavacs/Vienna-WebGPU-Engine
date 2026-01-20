@@ -356,14 +356,9 @@ void GameEngine::renderFrame(float deltaTime)
 	// Sort render items by material for batching
 	renderCollector.sort();
 
-	// Create and populate FrameCache with all frame-wide rendering data
-	engine::rendering::FrameCache frameCache{};
-	frameCache.time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
-	frameCache.renderTargets.reserve(cameras.size());
+	float time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
 
-	// Extract lights from render collector
-	frameCache.lights = renderCollector.getLights();
-
+	std::vector<engine::rendering::RenderTarget> renderTargets(cameras.size());
 	// Extract RenderTarget from each camera
 	for (auto &camera : cameras)
 	{
@@ -381,12 +376,12 @@ void GameEngine::renderFrame(float deltaTime)
 		target.cpuTarget = camera->getRenderTarget();
 		target.gpuTexture = nullptr;  // Will be set by renderer
 
-		frameCache.renderTargets.push_back(target);
+		renderTargets.push_back(target);
 	}
 
 	// Single call to renderer with frame cache
 	auto uiCallback = createUICallback();
-	m_renderer->renderFrame(frameCache, renderCollector, uiCallback);
+	m_renderer->renderFrame(renderTargets, renderCollector, time, uiCallback);
 
 	scene->postRender();
 }

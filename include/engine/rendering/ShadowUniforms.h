@@ -1,19 +1,42 @@
 #pragma once
+#include <cstdint>
 #include <glm/glm.hpp>
 
 namespace engine::rendering
 {
 
-struct ShadowUniforms
+// Unified shadow model: single buffer for all shadow types (2D and cube)
+// Lights reference shadows via shadowIndex in their uniform
+// Each shadow entry can be either 2D (directional/spot) or cube (point) based on shadowType
+struct ShadowUniform
+{
+	glm::mat4 viewProj = glm::mat4(1.0f); //< 64 bytes - Used for spot, directional, CSM
+	glm::vec3 lightPos = glm::vec3(0.0f); //< 12 bytes - Used for point lights
+	float near = 0.1f;					  //< 4 bytes
+	float far = 100.0f;					  //< 4 bytes
+	float bias = 0.001f;				  //< 4 bytes (total: 80 bytes)
+	float normalBias = 0.01f;			  //< 4 bytes
+	float texelSize = 1.0f / 2048.0f;	  //< 4 bytes
+	uint32_t pcfKernel = 1;				  //< 4 bytes (total: 96 bytes)
+	uint32_t shadowType = 0;			  //< 4 bytes (0 = 2D shadow, 1 = cube shadow)
+	uint32_t textureIndex = 0;			  //< 4 bytes - layer in correct texture array
+	uint32_t _pad1 = 0;					  //< 4 bytes
+};
+static_assert(sizeof(ShadowUniform) % 16 == 0, "ShadowUniform must match WGSL layout");
+
+// Shadow pass specific uniforms for 2D shadow maps (directional/spot lights)
+struct ShadowPassUniforms2D
 {
 	glm::mat4 lightViewProjectionMatrix = glm::mat4(1.0f);
 };
-static_assert(sizeof(ShadowUniforms) % 16 == 0, "ShadowUniforms must match WGSL layout");
+static_assert(sizeof(ShadowPassUniforms2D) % 16 == 0, "ShadowPassUniforms2D must match WGSL layout");
 
-struct ShadowCubeUniforms
+// Shadow pass specific uniforms for cube shadow maps (point lights)
+struct ShadowPassUniformsCube
 {
 	glm::vec3 lightPosition = glm::vec3(0.0f);
 	float farPlane = 100.0f;
 };
-static_assert(sizeof(ShadowCubeUniforms) % 16 == 0, "ShadowCubeUniforms must match WGSL layout");
+static_assert(sizeof(ShadowPassUniformsCube) % 16 == 0, "ShadowPassUniformsCube must match WGSL layout");
+
 } // namespace engine::rendering

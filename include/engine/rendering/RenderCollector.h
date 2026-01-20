@@ -112,14 +112,16 @@ class RenderCollector
 	 * @return Indices of visible items.
 	 */
 	std::vector<size_t> extractForPointLight(const glm::vec3 &lightPosition, float lightRange) const;
-
+	
 	/**
-	 * @brief Assigns shadow indices to lights and extracts their GPU-friendly uniforms.
+	 * @brief Extracts lights and assigns shadow indices.
+	 * @details Lights that can cast shadows are assigned shadow indices
 	 * @param maxShadow2D Maximum number of 2D shadow maps.
 	 * @param maxShadowCube Maximum number of cube shadow maps.
-	 * @return Vector of LightStruct uniforms with shadow indices assigned.
+	 * @return Vector of LightStruct and ShadowUniform for GPU upload.
 	 */
-	std::vector<LightStruct> extractLightUniformsWithShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const;
+	std::tuple<std::vector<LightStruct>, std::vector<ShadowUniform>> extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const;
+
 
 	/**
 	 * @brief Gets all collected render items.

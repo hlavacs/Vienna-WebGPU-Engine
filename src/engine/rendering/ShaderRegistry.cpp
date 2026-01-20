@@ -398,7 +398,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowShader()
 			// Group 0: Shadow uniforms (light view-projection matrix)
 			.addCustomUniform(
 				"uShadow",
-				sizeof(ShadowUniforms),
+				sizeof(ShadowPassUniforms2D),
 				0, // group
 				0, // binding
 				WGPUShaderStage_Vertex
@@ -429,7 +429,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCubeShadowShader
 			// Group 0: Shadow cube uniforms (light position and far plane)
 			.addCustomUniform(
 				"uShadowCube",
-				sizeof(ShadowCubeUniforms),
+				sizeof(ShadowPassUniformsCube),
 				0, // group
 				0, // binding
 				WGPUShaderStage_Vertex | WGPUShaderStage_Fragment

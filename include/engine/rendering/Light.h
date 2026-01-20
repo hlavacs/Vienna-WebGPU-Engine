@@ -162,7 +162,8 @@ class Light
 		LightStruct uniforms;
 		uniforms.transform = m_transform;
 		uniforms.light_type = static_cast<uint32_t>(getLightType());
-		uniforms.shadowIndex = -1; // Default to no shadows
+		uniforms.shadowIndex = 0;  // Will be set by RenderCollector based on shadow assignment
+		uniforms.shadowCount = 0;  // Will be set by RenderCollector based on light type and shadows
 
 		std::visit(
 			[&uniforms](const auto& light)

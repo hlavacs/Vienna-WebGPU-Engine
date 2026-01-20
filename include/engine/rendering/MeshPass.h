@@ -20,13 +20,14 @@
 namespace engine::rendering
 {
 class RenderCollector;
+struct FrameCache;
 
 namespace webgpu
 {
 class WebGPUContext;
 } // namespace webgpu
 
-// Forward declaration - defined in Renderer.h
+// Forward declaration - defined in RenderTarget.h
 struct RenderItemGPU;
 
 /**
@@ -54,22 +55,58 @@ class MeshPass
 	bool initialize();
 
 	/**
-	 * @brief Render meshes from pre-prepared GPU render items.
-	 * @param gpuItems The pre-prepared GPU render items from Renderer.
-	 * @param indicesToRender The indices of items to render.
-	 * @param lights The light data for the frame.
-	 * @param renderPassContext The render pass context to render into.
-	 * @param frameUniforms The frame uniforms (camera, time, etc.).
-	 * @param cameraId The camera ID for bind group caching.
+	 * @brief Set the render pass context to render into.
+	 * @param context Render pass context (color + depth targets, clear flags).
 	 */
-	void render(
-		const std::vector<std::optional<RenderItemGPU>> &gpuItems,
-		const std::vector<uint64_t> &indicesToRender,
-		const std::vector<LightStruct> &lights,
-		const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext,
-		const FrameUniforms &frameUniforms,
-		uint64_t cameraId
-	);
+	void setRenderPassContext(const std::shared_ptr<webgpu::WebGPURenderPassContext> &context) 
+	{ 
+		m_renderPassContext = context; 
+	}
+
+	/**
+	 * @brief Set the frame uniforms (camera matrices, position, time).
+	 * @param uniforms Camera/frame uniforms.
+	 */
+	void setFrameUniforms(const FrameUniforms &uniforms) 
+	{ 
+		m_frameUniforms = uniforms; 
+	}
+
+	/**
+	 * @brief Set the camera ID for bind group caching.
+	 * @param id Camera identifier.
+	 */
+	void setCameraId(uint64_t id) 
+	{ 
+		m_cameraId = id; 
+	}
+
+	/**
+	 * @brief Set visible indices for this render pass.
+	 * @param indices Indices of items visible to the camera.
+	 */
+	void setVisibleIndices(const std::vector<size_t> &indices) 
+	{ 
+		m_visibleIndices = indices; 
+	}
+
+	/**
+	 * @brief Set shadow resources bind group.
+	 * @param bindGroup Shadow uniform and texture bind group.
+	 */
+	void setShadowBindGroup(const std::shared_ptr<webgpu::WebGPUBindGroup> &bindGroup)
+	{
+		m_shadowBindGroup = bindGroup;
+	}
+
+	/**
+	 * @brief Render meshes using data from FrameCache.
+	 * Accesses: frameCache.gpuRenderItems, frameCache.lightUniforms
+	 * Additional data from setters: renderPassContext, frameUniforms, cameraId, visibleIndices, shadowBindGroup
+	 * 
+	 * @param frameCache Frame-wide data (GPU items, lights, etc.)
+	 */
+	void render(FrameCache &frameCache);
 
 	/**
 	 * @brief Clear cached resources (call on scene changes or major updates).
@@ -80,14 +117,6 @@ class MeshPass
 	 * @brief Clear frame-specific bind group cache.
 	 */
 	void clearFrameBindGroupCache();
-
-	/**
-	 * @brief Setter for renderer to provide shadow resources
-	 */
-	void setShadowBindGroup(const std::shared_ptr<webgpu::WebGPUBindGroup> &bindGroup)
-	{
-		m_shadowBindGroup = bindGroup;
-	}
 
   private:
 	/**
@@ -127,7 +156,7 @@ class MeshPass
 		wgpu::RenderPassEncoder renderPass,
 		const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext,
 		const std::vector<std::optional<RenderItemGPU>> &gpuItems,
-		const std::vector<uint64_t> &indicesToRender
+		const std::vector<size_t> &indicesToRender
 	);
 
 	/**
@@ -141,6 +170,13 @@ class MeshPass
 
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
 
+	// External dependencies (set via setters)
+	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
+	FrameUniforms m_frameUniforms{};
+	uint64_t m_cameraId = 0;
+	std::vector<size_t> m_visibleIndices;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowBindGroup;
+
 	// Bind group layouts
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_lightBindGroupLayout;
@@ -152,10 +188,7 @@ class MeshPass
 	// Caching
 	std::unordered_map<Model::Handle, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_frameBindGroupCache;
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_objectBindGroupCache; 
-	
-	
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowBindGroup;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_objectBindGroupCache;
 };
 
 } // namespace engine::rendering

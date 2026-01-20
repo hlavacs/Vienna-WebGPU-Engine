@@ -6,7 +6,6 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/ClearFlags.h"
-#include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/CompositePass.h"
 #include "engine/rendering/DebugCollector.h"
 #include "engine/rendering/FrameUniforms.h"
@@ -15,6 +14,7 @@
 #include "engine/rendering/Model.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderPassManager.h"
+#include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/Texture.h"
@@ -33,29 +33,12 @@ class GameEngine; // forward declaration
 namespace engine::rendering
 {
 
-/**
- * @brief GPU-side render item prepared for actual rendering.
- * Contains GPU resources created once and reused across multiple passes.
- */
-struct RenderItemGPU
-{
-	std::shared_ptr<webgpu::WebGPUModel> gpuModel;
-	webgpu::WebGPUMesh *gpuMesh;
-	std::shared_ptr<webgpu::WebGPUMaterial> gpuMaterial;
-	std::shared_ptr<webgpu::WebGPUBindGroup> objectBindGroup;
-	engine::rendering::Submesh submesh;
-	glm::mat4 worldTransform;
-	uint32_t renderLayer;
-	uint64_t objectID;
-};
-
 struct ShadowResources
 {
 	std::shared_ptr<webgpu::WebGPUTexture> shadow2DArray;
 	std::shared_ptr<webgpu::WebGPUTexture> shadowCubeArray;
-    std::shared_ptr<webgpu::WebGPUBuffer> shadowUniforms2D;
-    std::shared_ptr<webgpu::WebGPUBuffer> shadowUniformsCube;
-    wgpu::Sampler shadowSampler = nullptr;
+	std::shared_ptr<webgpu::WebGPUBuffer> shadowUniforms; // Unified buffer for all shadow types
+	wgpu::Sampler shadowSampler = nullptr;
 	std::shared_ptr<webgpu::WebGPUBindGroup> bindGroup;
 	bool initialized = false;
 };
@@ -86,12 +69,14 @@ class Renderer
 	 * Completely decoupled from scene nodes - uses extracted RenderTarget and FrameCache instead.
 	 * @param frameCache Frame-wide data (lights, time, render targets).
 	 * @param renderCollector Pre-collected render data from the scene.
+	 * @param time Current time in seconds.
 	 * @param uiCallback Optional callback for rendering UI on top of the scene.
 	 * @return True if frame rendered successfully.
 	 */
 	bool renderFrame(
-		FrameCache &frameCache,
+		std::vector<RenderTarget> &renderTargets,
 		const RenderCollector &renderCollector,
+	float time,
 		std::function<void(wgpu::RenderPassEncoder)> uiCallback = nullptr
 	);
 
@@ -109,11 +94,35 @@ class Renderer
 	void onResize(uint32_t width, uint32_t height);
 
   private:
-	// Helper methods - all private now
+	// ========================================
+	// Frame Orchestration (High-Level Flow)
+	// ========================================
+
+	/**
+	 * @brief Acquires surface texture and clears frame cache.
+	 * Called at the start of each frame.
+	 */
 	void startFrame();
 
+	/**
+	 * @brief Delegates shadow rendering to ShadowPass.
+	 * Extracts lights/shadows, culls per-light, renders shadow maps.
+	 * Stores results (lightUniforms, shadowUniforms) in FrameCache.
+	 * @param collector Scene data with lights and render items.
+	 */
 	void renderShadowMaps(const RenderCollector &collector);
 
+	/**
+	 * @brief Renders camera view to a texture.
+	 * Performs frustum culling, prepares GPU resources, delegates to MeshPass.
+	 * @param collector Scene data collector.
+	 * @param renderTargetId Target camera ID.
+	 * @param viewport Normalized viewport [0..1].
+	 * @param clearFlags Clear flags for this render target.
+	 * @param backgroundColor Background color.
+	 * @param cpuTarget Optional CPU readback target.
+	 * @param frameUniforms Camera uniforms (view, projection, etc.).
+	 */
 	void renderToTexture(
 		const RenderCollector &collector,
 		uint64_t renderTargetId,
@@ -124,17 +133,44 @@ class Renderer
 		const FrameUniforms &frameUniforms
 	);
 
+	/**
+	 * @brief Wrapper around renderToTexture for a specific RenderTarget.
+	 * @param renderCollector Scene data collector.
+	 * @param target Render target with camera info.
+	 * @param frameTime Current frame time.
+	 */
 	void renderCameraInternal(
 		const RenderCollector &renderCollector,
 		const RenderTarget &target,
 		float frameTime
 	);
 
+	/**
+	 * @brief Composites multiple render targets onto the surface.
+	 * Delegates to CompositePass, then optionally renders UI.
+	 * @param targets Camera IDs to composite.
+	 * @param uiCallback Optional UI rendering callback.
+	 */
 	void compositeTexturesToSurface(
 		const std::vector<uint64_t> &targets,
 		std::function<void(wgpu::RenderPassEncoder)> uiCallback = nullptr
 	);
 
+	// ========================================
+	// Resource Management
+	// ========================================
+
+	/**
+	 * @brief Creates or resizes render target textures.
+	 * Handles both CPU-backed textures and dynamic viewport-sized targets.
+	 * @param renderTargetId ID for caching.
+	 * @param gpuTexture Existing GPU texture (may be null or outdated).
+	 * @param cpuTarget Optional CPU-side texture source.
+	 * @param viewport Normalized viewport dimensions.
+	 * @param format Texture format.
+	 * @param usageFlags Texture usage flags.
+	 * @return Updated GPU texture.
+	 */
 	std::shared_ptr<webgpu::WebGPUTexture> updateRenderTexture(
 		uint32_t renderTargetId,
 		std::shared_ptr<webgpu::WebGPUTexture> &gpuTexture,
@@ -144,47 +180,39 @@ class Renderer
 		wgpu::TextureUsage usageFlags
 	);
 
+	/**
+	 * @brief Lazily prepares GPU resources for given render item indices.
+	/**
+	 * @brief Initializes shadow resources (textures, bind groups).
+	 * @return True if initialization succeeded.
+	 */
+	bool initializeShadowResources();
+
+	// ========================================
+	// Deprecated / Debug Methods
+	// ========================================
+
 	void renderDebugPrimitives(
 		wgpu::RenderPassEncoder renderPass,
 		const DebugRenderCollector &debugCollector
 	);
 
-	/**
-	 * @brief Prepares GPU resources from CPU render items (done once per frame).
-	 * @param collector The render collector with CPU-side items.
-	 * @return Vector of GPU render items ready for rendering.
-	 */
-	std::vector<std::optional<RenderItemGPU>> prepareGPUResources(
-		const RenderCollector &collector,
-		const std::vector<size_t> &indicesToPrepare
-	);
-
-	/**
-	 * @brief Initializes shadow pass resources.
-	 * @return True if initialization succeeded.
-	 */
-	bool initializeShadowResources();
-
-	/**
-	 * @brief Gets the render pass manager.
-	 * @return Reference to render pass manager.
-	 */
-	RenderPassManager &renderPassManager() { return *m_renderPassManager; }
-
-	// Private member variables
+	// ========================================
+	// Member Variables
+	// ========================================
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
 	std::unique_ptr<RenderPassManager> m_renderPassManager;
 	std::unique_ptr<ShadowPass> m_shadowPass;
 	std::unique_ptr<MeshPass> m_meshPass;
 	std::unique_ptr<CompositePass> m_compositePass;
 
+	FrameCache m_frameCache;
+
 	ShadowResources m_shadowResources;
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 	std::shared_ptr<webgpu::WebGPUTexture> m_depthBuffer;
 
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
-	std::vector<std::optional<RenderItemGPU>> m_gpuRenderItems;
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_objectBindGroupCache;
 };
 
 } // namespace engine::rendering

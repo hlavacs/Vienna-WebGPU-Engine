@@ -55,18 +55,15 @@ bool CompositePass::initialize()
 	return true;
 }
 
-void CompositePass::render(
-	const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext,
-	const std::vector<RenderTarget> &targets
-)
+void CompositePass::render(FrameCache &frameCache)
 {
-	if (!renderPassContext || targets.empty())
+	if (!m_renderPassContext || frameCache.renderTargets.empty())
 	{
 		spdlog::error("CompositePass: Invalid render pass context or empty targets");
 		return;
 	}
 
-	const auto& surfaceTex = renderPassContext->getColorTexture(0);
+	const auto& surfaceTex = m_renderPassContext->getColorTexture(0);
     if (!surfaceTex)
     {
         spdlog::error("CompositePass: Render pass context has no color texture");
@@ -79,7 +76,7 @@ void CompositePass::render(
 	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
 
 	// --- Begin render pass once ---
-	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
+	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(m_renderPassContext->getRenderPassDescriptor());
 
 	// --- Bind pipeline once ---
 	renderPass.setPipeline(m_pipeline->getPipeline());
@@ -89,7 +86,7 @@ void CompositePass::render(
     const uint32_t surfaceH = surfaceTex->getHeight();
 
 	// --- Draw all textures ---
-	 for (const auto& target : targets)
+	 for (const auto& target : frameCache.renderTargets)
     {
         if (!target.gpuTexture)
             continue;

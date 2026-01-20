@@ -116,36 +116,77 @@ std::vector<size_t> RenderCollector::extractForPointLight(const glm::vec3 &light
 	return visibleIndices;
 }
 
-std::vector<LightStruct> RenderCollector::extractLightUniformsWithShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const
+std::tuple<std::vector<LightStruct>, std::vector<ShadowUniform>>
+RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const
 {
-	std::vector<LightStruct> uniforms;
-	uniforms.reserve(m_lights.size());
+	std::vector<LightStruct> lights;
+	std::vector<ShadowUniform> shadows;
 
-	uint32_t shadow2DIndex = 0;
-	uint32_t shadowCubeIndex = 0;
+	lights.reserve(m_lights.size());
+	shadows.reserve(maxShadow2D + maxShadowCube);
 
-	for (auto &light : m_lights)
-	{ // Assign shadow indices only if the light casts shadows
-		auto lightUniforms = light.toUniforms();
+	uint32_t current2DIndex = 0;
+	uint32_t currentCubeIndex = 0;
+
+	for (const auto &light : m_lights)
+	{
+		auto lightUniform = light.toUniforms();
+
+		// Default: no shadow
+		lightUniform.shadowIndex = 0;
+		lightUniform.shadowCount = 0;
+
 		if (light.canCastShadows())
 		{
-			switch (light.getLightType())
-			{
-			case engine::rendering::Light::Type::Directional: // directional
-			case engine::rendering::Light::Type::Spot: // spot
-				lightUniforms.shadowIndex = shadow2DIndex < maxShadow2D ? shadow2DIndex : -1;
-				shadow2DIndex++;
-				break;
-			case engine::rendering::Light::Type::Point: // point
-				lightUniforms.shadowIndex = shadowCubeIndex < maxShadowCube ? shadowCubeIndex : -1;
-				shadowCubeIndex++;
-				break;
-			}
+			ShadowUniform shadow{};
+
+			// Use std::visit to handle the variant
+			std::visit(
+				[&](auto &&specificLight)
+				{
+                using T = std::decay_t<decltype(specificLight)>;
+                
+                if constexpr (std::is_same_v<T, DirectionalLight> || std::is_same_v<T, SpotLight>)
+                {
+                    if (current2DIndex >= maxShadow2D) return;
+
+                    shadow.viewProj = glm::mat4(1.0f); // renderer will fill
+                    shadow.bias = specificLight.shadowBias;
+                    shadow.normalBias = specificLight.shadowNormalBias;
+                    shadow.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+                    shadow.pcfKernel = specificLight.shadowPCFKernel;
+                    shadow.shadowType = 0; // 2D shadow
+
+                    lightUniform.shadowIndex = current2DIndex;
+                    lightUniform.shadowCount = 1;
+
+                    shadows.push_back(shadow);
+                    current2DIndex++;
+                }
+                else if constexpr (std::is_same_v<T, PointLight>)
+                {
+                    if (currentCubeIndex >= maxShadowCube) return;
+
+                    shadow.lightPos = specificLight.position;
+                    shadow.bias = specificLight.shadowBias;
+                    shadow.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+                    shadow.pcfKernel = specificLight.shadowPCFKernel;
+                    shadow.shadowType = 1; // Cube shadow
+
+                    lightUniform.shadowIndex = currentCubeIndex;
+                    lightUniform.shadowCount = 1;
+
+                    shadows.push_back(shadow);
+                    currentCubeIndex++;
+                } },
+				light.getData()
+			);
 		}
-		uniforms.push_back(lightUniforms);
+
+		lights.push_back(lightUniform);
 	}
 
-	return uniforms;
+	return {lights, shadows};
 }
 
 bool RenderCollector::isAABBVisibleInFrustum(
