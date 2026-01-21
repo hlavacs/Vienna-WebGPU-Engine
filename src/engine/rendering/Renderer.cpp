@@ -2,10 +2,11 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
-#include <spdlog/spdlog.h>
 #include <limits>
+#include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
+#include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"
@@ -13,6 +14,7 @@
 #include "engine/rendering/Model.h"
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/RenderCollector.h"
+#include "engine/rendering/RenderItemGPU.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/Vertex.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -70,11 +72,6 @@ bool Renderer::initialize()
 		spdlog::error("Failed to initialize CompositePass");
 		return false;
 	}
-	if (!initializeShadowResources())
-	{
-		spdlog::error("Failed to initialize shadow resources");
-		return false;
-	}
 
 	spdlog::info("Renderer initialized successfully");
 	return true;
@@ -94,23 +91,36 @@ bool Renderer::renderFrame(
 		return false;
 	}
 
-	m_frameCache = FrameCache{};
 	m_frameCache.lights = renderCollector.getLights();
 	m_frameCache.renderTargets = std::move(renderTargets);
 	m_frameCache.time = time;
+	
 
-	renderShadowMaps(renderCollector);
+	m_shadowPass->setRenderCollector(&renderCollector);
+	m_shadowPass->setContext(m_context);
+	m_shadowPass->render(m_frameCache);
 
-	std::vector<uint64_t> cameraIds;
 
 	for (const auto &target : m_frameCache.renderTargets)
 	{
-		renderCameraInternal(renderCollector, target, m_frameCache.time);
-		cameraIds.push_back(target.cameraId);
+		renderToTexture(
+			renderCollector,
+			target.cameraId,
+			target.viewport,
+			target.clearFlags,
+			target.backgroundColor,
+			target.cpuTarget,
+			target.getFrameUniforms(m_frameCache.time)
+		);
 	}
 
-	compositeTexturesToSurface(cameraIds, uiCallback);
+	compositeTexturesToSurface(uiCallback);
 
+	m_context->getSurface().present();
+	m_surfaceTexture.reset();
+
+	// Process any pending pipeline reloads after frame is complete
+	m_context->pipelineManager().processPendingReloads();
 	// Clear frame cache after rendering
 	m_frameCache.clear();
 
@@ -120,20 +130,19 @@ bool Renderer::renderFrame(
 void Renderer::startFrame()
 {
 	m_surfaceTexture = m_context->surfaceManager().acquireNextTexture();
-	
+
 	if (!m_surfaceTexture)
 	{
 		spdlog::error("Failed to acquire surface texture");
 		return;
 	}
-	
+
 	if (m_surfaceTexture->getWidth() == 0 || m_surfaceTexture->getHeight() == 0)
 	{
-		spdlog::warn("Surface texture has invalid dimensions: {}x{}", 
-			m_surfaceTexture->getWidth(), m_surfaceTexture->getHeight());
+		spdlog::warn("Surface texture has invalid dimensions: {}x{}", m_surfaceTexture->getWidth(), m_surfaceTexture->getHeight());
 		return;
 	}
-	
+
 	m_frameCache.gpuRenderItems.clear(); // Clear GPU render items at the start of each frame
 }
 
@@ -190,22 +199,6 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 
 	return gpuTexture;
 }
-
-void Renderer::renderShadowMaps(const RenderCollector &collector)
-{
-	// Set dependencies for ShadowPass
-	m_shadowPass->setRenderCollector(&collector);
-	m_shadowPass->setShadowResources(&m_shadowResources);
-	m_shadowPass->setContext(m_context);
-
-	// Delegate shadow rendering to ShadowPass
-	m_shadowPass->render(m_frameCache);
-
-	// Pass shadow bind group to MeshPass
-	m_meshPass->setShadowBindGroup(m_shadowResources.bindGroup);
-}
-
-
 void Renderer::renderToTexture(
 	const RenderCollector &collector,
 	uint64_t renderTargetId,
@@ -216,16 +209,29 @@ void Renderer::renderToTexture(
 	const FrameUniforms &frameUniforms
 )
 {
-	spdlog::debug("renderToTexture called: targetId={}, renderItems={}, lights={}", renderTargetId, collector.getRenderItems().size(), collector.getLights().size());
+	spdlog::debug("renderToTexture called: cameraId={}, renderItems={}, lights={}", renderTargetId, collector.getRenderItems().size(), collector.getLights().size());
 
-	RenderTarget &target = m_renderTargets[renderTargetId];
-	target.viewport = viewport;
-	target.clearFlags = clearFlags;
-	target.backgroundColor = backgroundColor;
-	target.cpuTarget = cpuTarget;
+	// Find the render target in the frame cache
+	RenderTarget *targetPtr = nullptr;
+	for (auto &target : m_frameCache.renderTargets)
+	{
+		if (target.cameraId == renderTargetId)
+		{
+			targetPtr = &target;
+			break;
+		}
+	}
+
+	if (!targetPtr)
+	{
+		spdlog::error("Render target with cameraId={} not found in frame cache", renderTargetId);
+		return;
+	}
+
+	RenderTarget &target = *targetPtr;
 
 	target.gpuTexture = updateRenderTexture(
-		target.cameraId,
+		renderTargetId,
 		target.gpuTexture,
 		cpuTarget,
 		viewport,
@@ -260,8 +266,9 @@ void Renderer::renderToTexture(
 	// Set dependencies for MeshPass
 	m_meshPass->setRenderPassContext(renderPassContext);
 	m_meshPass->setFrameUniforms(frameUniforms);
-	m_meshPass->setCameraId(renderTargetId);
+	m_meshPass->setCameraId(renderTargetId); // Use renderTargetId (which is the camera ID)
 	m_meshPass->setVisibleIndices(visibleIndices);
+	m_meshPass->setShadowBindGroup(m_shadowPass->getShadowBindGroup());
 
 	// Render using MeshPass with FrameCache
 	spdlog::debug("Rendering {} GPU items using MeshPass", m_frameCache.gpuRenderItems.size());
@@ -280,56 +287,20 @@ void Renderer::renderToTexture(
 	}
 }
 
-void Renderer::renderCameraInternal(
-	const RenderCollector &renderCollector,
-	const RenderTarget &target,
-	float frameTime
-)
-{
-	// Render to texture
-	renderToTexture(
-		renderCollector,
-		target.cameraId,
-		target.viewport,
-		target.clearFlags,
-		target.backgroundColor,
-		target.cpuTarget,
-		target.getFrameUniforms(frameTime)
-	);
-}
-
 void Renderer::compositeTexturesToSurface(
-	const std::vector<uint64_t> &targetIds,
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
 )
 {
-	spdlog::debug("compositeTexturesToSurface called with {} target IDs", targetIds.size());
+	/* m_frameCache.renderTargets[0].gpuTexture = m_context->textureFactory().createRenderTarget(
+		-1, 
+		2048,
+		2048,
+		wgpu::TextureFormat::RGBA8Unorm
+	); */
 
-	// Filter FrameCache render targets by the provided IDs
-	// Create a temporary FrameCache with only the targets we want
-	FrameCache filteredCache;
-	filteredCache.renderTargets.reserve(targetIds.size());
-
-	for (uint64_t targetId : targetIds)
-	{
-		// Find the matching render target in the frame cache
-		for (const auto& target : m_frameCache.renderTargets)
-		{
-			if (target.cameraId == targetId && target.gpuTexture)
-			{
-				filteredCache.renderTargets.push_back(target);
-				break;
-			}
-		}
-	}
-
-	// Composite all textures in one render pass
-	if (!filteredCache.renderTargets.empty())
-	{
-		auto renderPassContext = m_context->renderPassFactory().create(m_surfaceTexture);
-		m_compositePass->setRenderPassContext(renderPassContext);
-		m_compositePass->render(filteredCache);
-	}
+	auto renderPassContext = m_context->renderPassFactory().create(m_surfaceTexture);
+	m_compositePass->setRenderPassContext(renderPassContext);
+	m_compositePass->render(m_frameCache);
 
 	// If UI callback is provided, render UI in a separate pass
 	if (uiCallback)
@@ -343,59 +314,33 @@ void Renderer::compositeTexturesToSurface(
 			nullptr,
 			ClearFlags::None
 		);
-		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(uiPassContext->getRenderPassDescriptor());
-
+		wgpu::RenderPassEncoder renderPass = uiPassContext->begin(encoder);
 		uiCallback(renderPass);
+		uiPassContext->end(renderPass);
 
-		renderPass.end();
-		renderPass.release();
-
-		wgpu::CommandBufferDescriptor cmdBufferDesc{};
-		cmdBufferDesc.label = "UI Command Buffer";
-		wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
-		encoder.release();
-		m_context->getQueue().submit(commands);
-		commands.release();
+		m_context->submitCommandEncoder(encoder, "UI Commands");
 	}
-
-	m_context->getSurface().present();
-	m_surfaceTexture.reset();
-
-	// Process any pending pipeline reloads after frame is complete
-	m_context->pipelineManager().processPendingReloads();
 }
 
 void Renderer::onResize(uint32_t width, uint32_t height)
 {
 	if (m_depthBuffer)
-	{
 		m_depthBuffer->resize(*m_context, width, height);
-	}
 
 	for (auto &[id, target] : m_renderTargets)
 	{
 		if (target.gpuTexture && !target.cpuTarget.has_value())
-		{
 			target.gpuTexture.reset();
-		}
 	}
 
-	// Clear pass caches
-	// ToDo: Consider if we need more granular cache invalidation
 	if (m_meshPass)
-	{
-		m_meshPass->clearFrameBindGroupCache();
-	}
+		m_meshPass->cleanup();
 
 	if (m_compositePass)
-	{
 		m_compositePass->cleanup();
-	}
 
 	if (m_shadowPass)
-	{
 		m_shadowPass->cleanup();
-	}
 
 	spdlog::info("Renderer resized to {}x{}", width, height);
 }
@@ -406,49 +351,6 @@ void Renderer::renderDebugPrimitives(
 )
 {
 	// ToDo: Implement debug primitive rendering (shader, pipeline, bind groups)
-}
-
-bool Renderer::initializeShadowResources()
-{
-	if (m_shadowResources.initialized)
-		return true;
-	auto shadowLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("shadowMaps");
-	if (shadowLayout == nullptr)
-	{
-		spdlog::error("Failed to get shadowMaps bind group layout");
-		return false;
-	}
-
-	m_shadowResources.shadowSampler = m_context->samplerFactory().getShadowComparisonSampler();
-
-	// Create 2D shadow map array
-	m_shadowResources.shadow2DArray = m_context->textureFactory().createShadowMap2DArray(
-		constants::DEFAULT_SHADOW_MAP_SIZE,
-		constants::MAX_SHADOW_MAPS_2D
-	);
-
-	// Create cube shadow map array
-	m_shadowResources.shadowCubeArray = m_context->textureFactory().createShadowMapCubeArray(
-		constants::DEFAULT_CUBE_SHADOW_MAP_SIZE,
-		constants::MAX_SHADOW_MAPS_CUBE
-	);
-
-	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> resources = {
-		{{4, 0}, webgpu::BindGroupResource(m_shadowResources.shadowSampler)},
-		{{4, 1}, webgpu::BindGroupResource(m_shadowResources.shadow2DArray)},
-		{{4, 2}, webgpu::BindGroupResource(m_shadowResources.shadowCubeArray)}
-	};
-
-	// Create bind group (sampler + textures + storage buffers)
-	m_shadowResources.bindGroup = m_context->bindGroupFactory().createBindGroup(
-		shadowLayout,
-		resources,
-		nullptr,
-		"ShadowMaps"
-	);
-
-	m_shadowResources.initialized = true;
-	return true;
 }
 
 } // namespace engine::rendering

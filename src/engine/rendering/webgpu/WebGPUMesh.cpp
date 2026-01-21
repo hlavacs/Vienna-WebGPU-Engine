@@ -17,24 +17,13 @@ const WebGPUMesh::VertexBufferEntry &WebGPUMesh::ensureBufferForLayout(VertexLay
 		}
 		wgpu::Buffer buffer = nullptr;
 		auto vertices = cpuMesh.value()->getVertices();
-		if (layout != VertexLayout::PositionNormalUVTangentColor)
-		{
-			// Repack CPU vertices for this layout
-			auto packed = Vertex::repackVertices(vertices, layout);
+		auto packed = Vertex::repackVertices(vertices, layout);
 
-			// Upload GPU buffer
-			buffer = m_context.bufferFactory().createBufferWithData(
-				packed,
-				wgpu::BufferUsage::Vertex
-			);
-		} else {
-			// Upload GPU buffer
-			buffer = m_context.bufferFactory().createBufferWithData(
-				vertices,
-				wgpu::BufferUsage::Vertex
-			);
-		}
-
+		// Upload GPU buffer
+		buffer = m_context.bufferFactory().createBufferWithData(
+			packed,
+			wgpu::BufferUsage::Vertex
+		);
 		VertexBufferEntry entry{buffer, static_cast<uint32_t>(vertices.size())};
 		m_vertexBuffers[layout] = entry;
 		it = m_vertexBuffers.find(layout);

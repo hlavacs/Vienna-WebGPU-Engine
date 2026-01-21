@@ -186,9 +186,7 @@ class MeshPass
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
 
 	// Caching
-	std::unordered_map<Model::Handle, std::shared_ptr<webgpu::WebGPUModel>> m_modelCache;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_frameBindGroupCache;
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_objectBindGroupCache;
 };
 
 } // namespace engine::rendering

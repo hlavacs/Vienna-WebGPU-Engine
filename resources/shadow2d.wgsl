@@ -7,7 +7,7 @@ struct VertexOutput {
     @location(0) depth: f32, // pass depth to fragment
 };
 
-struct ShadowUniforms {
+struct ShadowPass2DUniforms {
     lightViewProjectionMatrix: mat4x4f,
 };
 
@@ -17,7 +17,7 @@ struct ObjectUniforms {
 };
 
 @group(0) @binding(0)
-var<uniform> uShadow: ShadowUniforms;
+var<uniform> uShadow: ShadowPass2DUniforms;
 @group(1) @binding(0)
 var<uniform> uObject: ObjectUniforms;
 
@@ -31,8 +31,10 @@ fn vs_shadow(in: VertexInput) -> VertexOutput {
     let near: f32 = 0.1;
     let far: f32 = 100.0;
     let viewDepth = clipPos.z; // in view space
-    let linearDepth = clamp((viewDepth - near) / (far - near), 0.0, 1.0);
-    out.depth = linearDepth;
+    let viewPos = uObject.modelMatrix * vec4f(in.position, 1.0);
+    
+    let ndcZ = clipPos.z / clipPos.w;
+    out.depth = ndcZ * 0.5 + 0.5;
     return out;
 }
 

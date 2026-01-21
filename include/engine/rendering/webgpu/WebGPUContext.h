@@ -8,6 +8,7 @@
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUDepthStencilStateFactory.h"
+#include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
 #include "engine/rendering/webgpu/WebGPUMaterialFactory.h"
 #include "engine/rendering/webgpu/WebGPUMeshFactory.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
@@ -17,7 +18,6 @@
 #include "engine/rendering/webgpu/WebGPUShaderFactory.h"
 #include "engine/rendering/webgpu/WebGPUSurfaceManager.h"
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
-#include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -84,6 +84,33 @@ class WebGPUContext
 	WebGPUShaderFactory &shaderFactory();
 	ShaderRegistry &shaderRegistry();
 	WebGPUPipelineManager &pipelineManager();
+
+	/**
+	 * @brief Create a command encoder with an optional label.
+	 * @param label Optional label for debugging.
+	 * @return Created command encoder.
+	 */
+	wgpu::CommandEncoder createCommandEncoder(const char *label = nullptr)
+	{
+		wgpu::CommandEncoderDescriptor desc{};
+		desc.label = label;
+		return getDevice().createCommandEncoder(desc);
+	}
+
+	/**
+	 * @brief Submit a command encoder to the queue and release it.
+	 * @param encoder Command encoder to submit.
+	 * @param label Optional label for the command buffer.
+	 */
+	void submitCommandEncoder(wgpu::CommandEncoder &encoder, const char *label = nullptr)
+	{
+		wgpu::CommandBufferDescriptor cmdDesc{};
+		cmdDesc.label = label;
+		wgpu::CommandBuffer cmdBuffer = encoder.finish(cmdDesc);
+		encoder.release();
+		getQueue().submit(cmdBuffer);
+		cmdBuffer.release();
+	}
 
   private:
 	void initDevice();

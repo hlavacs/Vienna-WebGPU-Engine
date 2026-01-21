@@ -1,7 +1,8 @@
 #pragma once
-#include <variant>
-#include <glm/glm.hpp>
 #include "engine/rendering/LightUniforms.h"
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <variant>
 
 namespace engine::rendering
 {
@@ -23,12 +24,12 @@ struct DirectionalLight
 	glm::vec3 color = glm::vec3(1.0f);
 	float intensity = 1.0f;
 	glm::vec3 direction = glm::vec3(0.0f, -1.0f, 0.0f); // World-space direction
-	float range = 100.0f; // Shadow influence area 
+	float range = 100.0f;								// Shadow influence area
 	bool castShadows = false;
 	float shadowBias = 0.005f;
 	float shadowNormalBias = 0.01f;
 	uint32_t shadowMapSize = 4096; // Shadow map resolution
-	uint32_t shadowPCFKernel = 1; // PCF kernel size (1 = 3x3, 2 = 5x5)
+	uint32_t shadowPCFKernel = 1;  // PCF kernel size (1 = 3x3, 2 = 5x5)
 };
 
 /**
@@ -55,9 +56,9 @@ struct SpotLight
 	float intensity = 1.0f;
 	glm::vec3 position = glm::vec3(0.0f);
 	glm::vec3 direction = glm::vec3(0.0f, -1.0f, 0.0f);
-	float spotAngle = 0.5f; // Inner cone angle (radians)
+	float spotAngle = 0.5f;	   // Inner cone angle (radians)
 	float spotSoftness = 0.2f; // Softness of the cone edge
-	float range = 10.0f; // Effective range for culling and attenuation
+	float range = 10.0f;	   // Effective range for culling and attenuation
 	bool castShadows = false;
 	float shadowBias = 0.005f;
 	float shadowNormalBias = 0.01f;
@@ -67,7 +68,7 @@ struct SpotLight
 
 /**
  * @brief Type-safe light representation using std::variant.
- * 
+ *
  * Provides easier access to type-specific properties and shadow information
  * compared to the raw LightStruct. Can extract uniform data via toUniforms().
  */
@@ -93,37 +94,45 @@ class Light
 	 * @brief Constructs a light with specific data.
 	 * @param data Light-specific data (AmbientLight, DirectionalLight, etc.)
 	 */
-	explicit Light(const LightData& data) : m_data(data), m_transform(glm::mat4(1.0f)) {}
+	explicit Light(const LightData &data) : m_data(data), m_transform(glm::mat4(1.0f)) {}
 
 	/**
 	 * @brief Sets the light data.
 	 * @param data Light-specific data.
 	 */
-	void setData(const LightData& data) { m_data = data; }
+	void setData(const LightData &data)
+	{
+		m_data = data;
+		updateMatrices();
+	}
 
 	/**
 	 * @brief Gets the light data.
 	 * @return Reference to the variant containing light-specific data.
 	 */
-	const LightData& getData() const { return m_data; }
+	const LightData &getData() const { return m_data; }
 
 	/**
 	 * @brief Gets the light data for modification.
 	 * @return Reference to the variant containing light-specific data.
 	 */
-	LightData& getData() { return m_data; }
+	LightData &getData() { return m_data; }
 
 	/**
 	 * @brief Sets the world transform (used for directional/spot directions, point/spot positions).
 	 * @param transform World-space transformation matrix.
 	 */
-	void setTransform(const glm::mat4& transform) { m_transform = transform; }
+	void setTransform(const glm::mat4 &transform)
+	{
+		m_transform = transform;
+		updateMatrices();
+	}
 
 	/**
 	 * @brief Gets the world transform.
 	 * @return World-space transformation matrix.
 	 */
-	const glm::mat4& getTransform() const { return m_transform; }
+	const glm::mat4 &getTransform() const { return m_transform; }
 
 	/**
 	 * @brief Checks if this light type can cast shadows.
@@ -132,7 +141,7 @@ class Light
 	bool canCastShadows() const
 	{
 		return std::visit(
-			[](const auto& light) -> bool
+			[](const auto &light) -> bool
 			{
 				using T = std::decay_t<decltype(light)>;
 				if constexpr (std::is_same_v<T, AmbientLight>)
@@ -162,11 +171,11 @@ class Light
 		LightStruct uniforms;
 		uniforms.transform = m_transform;
 		uniforms.light_type = static_cast<uint32_t>(getLightType());
-		uniforms.shadowIndex = 0;  // Will be set by RenderCollector based on shadow assignment
-		uniforms.shadowCount = 0;  // Will be set by RenderCollector based on light type and shadows
+		uniforms.shadowIndex = 0; // Will be set by RenderCollector based on shadow assignment
+		uniforms.shadowCount = 0; // Will be set by RenderCollector based on light type and shadows
 
 		std::visit(
-			[&uniforms](const auto& light)
+			[&uniforms](const auto &light)
 			{
 				using T = std::decay_t<decltype(light)>;
 
@@ -197,37 +206,95 @@ class Light
 	}
 
 	/**
+	 * @brief Gets the view, projection, and view-projection matrices for shadow mapping.
+	 * @return View matrix.
+	 */
+	const glm::mat4 &getViewMatrix() const { return m_viewMatrix; }
+	/**
+	 * @brief Gets the projection matrix for shadow mapping.
+	 * @return Projection matrix.
+	 */
+	const glm::mat4 &getProjectionMatrix() const { return m_projectionMatrix; }
+	/**
+	 * @brief Gets the combined view-projection matrix for shadow mapping.
+	 * @return View-projection matrix.
+	 */
+	const glm::mat4 &getViewProjMatrix() const { return m_viewProjMatrix; }
+
+	/**
+	 * @brief Gets the view matrix for shadow mapping.
+	 * @return View matrix.
+	 */
+	void updateMatrices()
+	{
+		glm::vec3 dir = -glm::normalize(glm::vec3(m_transform * glm::vec4(0, 0, -1, 0)));
+		switch (getLightType())
+		{
+		case Type::Directional:
+		{
+			auto dLight = asDirectional();
+			dLight.range = 10.0f;
+			// Direction in world space from transform
+			glm::vec3 dir = glm::normalize(glm::vec3(m_transform * glm::vec4(dLight.direction, 0.0f)));
+			glm::vec3 pos = -dir * dLight.range; // "behind" scene
+			m_viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
+			float r = dLight.range;
+			m_projectionMatrix = glm::ortho(-r, r, -r, r, -dLight.range, dLight.range * 2.0f);
+			m_viewProjMatrix = m_projectionMatrix * m_viewMatrix;
+			break;
+		}
+		case Type::Spot:
+		{
+			auto sLight = asSpot();
+			glm::vec3 pos = glm::vec3(m_transform * glm::vec4(sLight.position, 1.0f));
+			m_viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
+			m_projectionMatrix = glm::perspective(sLight.spotAngle * 2.0f, 1.0f, 0.1f, sLight.range);
+			m_viewProjMatrix = m_projectionMatrix * m_viewMatrix;
+			break;
+		}
+		case Type::Point:
+			// For cube maps, 6 faces generated elsewhere
+			break;
+		default:
+			break;
+		}
+	}
+
+	/**
 	 * @brief Helper to get ambient light data (throws if not ambient).
 	 */
-	const AmbientLight& asAmbient() const { return std::get<AmbientLight>(m_data); }
-	AmbientLight& asAmbient() { return std::get<AmbientLight>(m_data); }
+	const AmbientLight &asAmbient() const { return std::get<AmbientLight>(m_data); }
+	AmbientLight &asAmbient() { return std::get<AmbientLight>(m_data); }
 	bool isAmbient() const { return std::holds_alternative<AmbientLight>(m_data); }
 
 	/**
 	 * @brief Helper to get directional light data (throws if not directional).
 	 */
-	const DirectionalLight& asDirectional() const { return std::get<DirectionalLight>(m_data); }
-	DirectionalLight& asDirectional() { return std::get<DirectionalLight>(m_data); }
+	const DirectionalLight &asDirectional() const { return std::get<DirectionalLight>(m_data); }
+	DirectionalLight &asDirectional() { return std::get<DirectionalLight>(m_data); }
 	bool isDirectional() const { return std::holds_alternative<DirectionalLight>(m_data); }
 
 	/**
 	 * @brief Helper to get point light data (throws if not point).
 	 */
-	const PointLight& asPoint() const { return std::get<PointLight>(m_data); }
-	PointLight& asPoint() { return std::get<PointLight>(m_data); }
+	const PointLight &asPoint() const { return std::get<PointLight>(m_data); }
+	PointLight &asPoint() { return std::get<PointLight>(m_data); }
 	bool isPoint() const { return std::holds_alternative<PointLight>(m_data); }
 
 	/**
 	 * @brief Helper to get spot light data (throws if not spot).
 	 */
-	const SpotLight& asSpot() const { return std::get<SpotLight>(m_data); }
-	SpotLight& asSpot() { return std::get<SpotLight>(m_data); }
+	const SpotLight &asSpot() const { return std::get<SpotLight>(m_data); }
+	SpotLight &asSpot() { return std::get<SpotLight>(m_data); }
 	bool isSpot() const { return std::holds_alternative<SpotLight>(m_data); }
 
   private:
-
 	LightData m_data;
 	glm::mat4 m_transform; // World-space transform (for positions/directions)
+
+	glm::mat4 m_viewMatrix;
+	glm::mat4 m_projectionMatrix;
+	glm::mat4 m_viewProjMatrix;
 };
 
 } // namespace engine::rendering

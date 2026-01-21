@@ -89,6 +89,26 @@ struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderP
 	const wgpu::RenderPassDescriptor &getRenderPassDescriptor() const { return m_renderPassDesc; }
 
 	/**
+	 * @brief Begins a render pass using the provided encoder.
+	 * @param encoder Command encoder to use.
+	 * @return The created RenderPassEncoder.
+	 */
+	wgpu::RenderPassEncoder begin(wgpu::CommandEncoder &encoder)
+	{
+		return encoder.beginRenderPass(m_renderPassDesc);
+	}
+
+	/**
+	 * @brief Ends the given render pass encoder and releases it.
+	 * @param pass RenderPassEncoder to end.
+	 */
+	void end(wgpu::RenderPassEncoder &pass)
+	{
+		pass.end();
+		pass.release();
+	}
+
+	/**
 	 * @brief Returns the number of color attachments.
 	 * @return Number of color attachments in the descriptor.
 	 */

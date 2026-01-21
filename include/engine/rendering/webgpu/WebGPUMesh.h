@@ -61,6 +61,26 @@ class WebGPUMesh : public WebGPUSyncObject<engine::rendering::Mesh>
 	{
 	}
 
+	~WebGPUMesh()
+	{
+		for (auto &[layout, entry] : m_vertexBuffers)
+		{
+			if (entry.buffer)
+			{
+				entry.buffer.destroy();
+				entry.buffer.release();
+			}
+		}
+		if (m_indexBuffer)
+		{
+			m_indexBuffer.destroy();
+			m_indexBuffer.release();
+		}
+		if (!m_vertexBuffers.empty())
+			m_vertexBuffers.clear();
+		m_submeshes.clear();
+	}
+
 	/**
 	 * @brief Set vertex and index buffers for rendering.
 	 * @param renderPass The render pass encoder.
@@ -123,7 +143,6 @@ class WebGPUMesh : public WebGPUSyncObject<engine::rendering::Mesh>
 	void syncFromCPU(const Mesh &cpuMesh) override;
 
   private:
-
 	mutable std::unordered_map<VertexLayout, VertexBufferEntry> m_vertexBuffers;
 	uint32_t m_indexCount;
 	wgpu::Buffer m_indexBuffer = nullptr;

@@ -7,8 +7,7 @@ void Mesh::computeTangentsIndexed()
 {
 	for (auto &v : m_vertices)
 	{
-		v.tangent = glm::vec3(0.0f);
-		v.bitangent = glm::vec3(0.0f);
+		v.tangent = glm::vec4(0.0f);
 	}
 
 	incrementVersion();
@@ -20,32 +19,27 @@ void Mesh::computeTangentsIndexed()
 		uint32_t i1 = m_indices[i + 1];
 		uint32_t i2 = m_indices[i + 2];
 
-		Vertex &v0 = m_vertices[i0];
-		Vertex &v1 = m_vertices[i1];
-		Vertex &v2 = m_vertices[i2];
+		Vertex v[3] = {m_vertices[i0], m_vertices[i1], m_vertices[i2]};
 
-		Vertex v[3] = {v0, v1, v2};
+		glm::vec3 faceNormal = glm::normalize(glm::cross(v[1].position - v[0].position, v[2].position - v[0].position));
 
-		glm::vec3 faceNormal = glm::normalize(glm::cross(
-			v[1].position - v[0].position,
-			v[2].position - v[0].position
-		));
+		glm::vec4 faceTangent = Mesh::computeTBN(v, faceNormal);
 
-		glm::mat3 tbn = Mesh::computeTBN(v, faceNormal);
-
-		m_vertices[i0].tangent += tbn[0];
-		m_vertices[i1].tangent += tbn[0];
-		m_vertices[i2].tangent += tbn[0];
-
-		m_vertices[i0].bitangent += tbn[1];
-		m_vertices[i1].bitangent += tbn[1];
-		m_vertices[i2].bitangent += tbn[1];
+		m_vertices[i0].tangent += faceTangent;
+		m_vertices[i1].tangent += faceTangent;
+		m_vertices[i2].tangent += faceTangent;
 	}
 
 	for (auto &v : m_vertices)
 	{
-		v.tangent = glm::normalize(v.tangent - glm::dot(v.tangent, v.normal) * v.normal);
-		v.bitangent = glm::cross(v.normal, v.tangent);
+		glm::vec3 T = glm::vec3(v.tangent);
+		glm::vec3 N = v.normal;
+
+		// Orthonormalize per-vertex
+		T = glm::normalize(T - N * glm::dot(N, T));
+
+		float w = (v.tangent.w >= 0.0f) ? 1.0f : -1.0f;
+		v.tangent = glm::vec4(T, w);
 	}
 }
 
@@ -53,8 +47,7 @@ void Mesh::computeTangentsNonIndexed()
 {
 	for (auto &v : m_vertices)
 	{
-		v.tangent = glm::vec3(0.0f);
-		v.bitangent = glm::vec3(0.0f);
+		v.tangent = glm::vec4(0.0f);
 	}
 
 	incrementVersion();
@@ -64,30 +57,30 @@ void Mesh::computeTangentsNonIndexed()
 	{
 		engine::rendering::Vertex *v = &m_vertices[i];
 
-		glm::vec3 faceNormal = glm::normalize(glm::cross(
-			v[1].position - v[0].position,
-			v[2].position - v[0].position
-		));
+		glm::vec3 faceNormal = glm::normalize(glm::cross(v[1].position - v[0].position, v[2].position - v[0].position));
 
-		glm::mat3 tbn = Mesh::computeTBN(v, faceNormal);
+		glm::vec4 tbn = Mesh::computeTBN(v, faceNormal);
+		glm::vec4 faceTangent = Mesh::computeTBN(v, faceNormal);
 
-		v[0].tangent += tbn[0];
-		v[1].tangent += tbn[0];
-		v[2].tangent += tbn[0];
-
-		v[0].bitangent += tbn[1];
-		v[1].bitangent += tbn[1];
-		v[2].bitangent += tbn[1];
+		m_vertices[0].tangent += faceTangent;
+		m_vertices[1].tangent += faceTangent;
+		m_vertices[2].tangent += faceTangent;
 	}
 
 	for (auto &v : m_vertices)
 	{
-		v.tangent = glm::normalize(v.tangent - glm::dot(v.tangent, v.normal) * v.normal);
-		v.bitangent = glm::cross(v.normal, v.tangent);
+		glm::vec3 T = glm::vec3(v.tangent);
+		glm::vec3 N = v.normal;
+
+		// Orthonormalize per-vertex
+		T = glm::normalize(T - N * glm::dot(N, T));
+
+		float w = (v.tangent.w >= 0.0f) ? 1.0f : -1.0f;
+		v.tangent = glm::vec4(T, w);
 	}
 }
 
-glm::mat3x3 Mesh::computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN)
+glm::vec4 Mesh::computeTBN(const Vertex corners[3], const glm::vec3 &expectedN)
 {
 	// Edge vectors in position space
 	glm::vec3 edge1 = corners[1].position - corners[0].position;
@@ -97,9 +90,8 @@ glm::mat3x3 Mesh::computeTBN(const engine::rendering::Vertex corners[3], const g
 	glm::vec2 deltaUV1 = corners[1].uv - corners[0].uv;
 	glm::vec2 deltaUV2 = corners[2].uv - corners[0].uv;
 
-	// Calculate the denominator of the tangent/bitangent formula
-	float det = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
 	const float EPSILON = 1e-6f;
+	float det = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
 
 	glm::vec3 tangent(0.0f);
 	glm::vec3 bitangent(0.0f);
@@ -107,30 +99,23 @@ glm::mat3x3 Mesh::computeTBN(const engine::rendering::Vertex corners[3], const g
 	if (fabs(det) > EPSILON)
 	{
 		float invDet = 1.0f / det;
-		tangent = glm::normalize((edge1 * deltaUV2.y - edge2 * deltaUV1.y) * invDet);
-		bitangent = glm::normalize((edge2 * deltaUV1.x - edge1 * deltaUV2.x) * invDet);
+		tangent = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * invDet;
+		bitangent = (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * invDet;
 	}
 	else
 	{
-		// Degenerate UV mapping, fallback: create arbitrary orthonormal basis from normal
+		// Degenerate UV, fallback: create tangent perpendicular to normal
 		tangent = glm::normalize(abs(expectedN.x) > 0.99f ? glm::cross(expectedN, glm::vec3(0, 1, 0)) : glm::cross(expectedN, glm::vec3(1, 0, 0)));
 		bitangent = glm::cross(expectedN, tangent);
 	}
 
-	// Fix orientation to match expected normal
-	glm::vec3 N = glm::cross(tangent, bitangent);
-	if (glm::dot(N, expectedN) < 0.0f)
-	{
-		tangent = -tangent;
-		bitangent = -bitangent;
-		N = -N;
-	}
+	// Orthonormalize tangent
+	tangent = glm::normalize(tangent - glm::dot(tangent, expectedN) * expectedN);
 
-	// Orthonormalize tangent with respect to normal
-	tangent = glm::normalize(tangent - dot(tangent, expectedN) * expectedN);
-	bitangent = glm::cross(expectedN, tangent);
-	N = expectedN;
+	// Compute handedness
+	float w = (glm::dot(glm::cross(expectedN, tangent), bitangent) < 0.0f) ? -1.0f : 1.0f;
 
-	return glm::mat3x3(tangent, bitangent, N);
+	return glm::vec4(tangent, w);
 }
+
 } // namespace engine::rendering

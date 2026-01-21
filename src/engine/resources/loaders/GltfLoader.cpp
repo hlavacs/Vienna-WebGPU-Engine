@@ -103,7 +103,7 @@ std::optional<engine::resources::GltfGeometryData> GltfLoader::load(
 				vertex.uv = {uvPtr[0], 1.0f - uvPtr[1]};
 			}
 
-			vertex.color = {1.f, 1.f, 1.f, 1.f};
+			vertex.color = {1.f, 1.f, 1.f};
 			data.vertices.push_back(vertex);
 		}
 

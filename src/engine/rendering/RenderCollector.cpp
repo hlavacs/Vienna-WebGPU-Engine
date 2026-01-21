@@ -135,6 +135,7 @@ RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShado
 		// Default: no shadow
 		lightUniform.shadowIndex = 0;
 		lightUniform.shadowCount = 0;
+		
 
 		if (light.canCastShadows())
 		{
@@ -150,14 +151,15 @@ RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShado
                 {
                     if (current2DIndex >= maxShadow2D) return;
 
-                    shadow.viewProj = glm::mat4(1.0f); // renderer will fill
+                    shadow.viewProj = light.getViewProjMatrix();
                     shadow.bias = specificLight.shadowBias;
                     shadow.normalBias = specificLight.shadowNormalBias;
                     shadow.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
                     shadow.pcfKernel = specificLight.shadowPCFKernel;
                     shadow.shadowType = 0; // 2D shadow
+					shadow.textureIndex = current2DIndex;
 
-                    lightUniform.shadowIndex = current2DIndex;
+                    lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
                     lightUniform.shadowCount = 1;
 
                     shadows.push_back(shadow);
@@ -172,8 +174,8 @@ RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShado
                     shadow.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
                     shadow.pcfKernel = specificLight.shadowPCFKernel;
                     shadow.shadowType = 1; // Cube shadow
-
-                    lightUniform.shadowIndex = currentCubeIndex;
+					shadow.textureIndex = currentCubeIndex;
+                    lightUniform.shadowIndex = currentCubeIndex + current2DIndex;;
                     lightUniform.shadowCount = 1;
 
                     shadows.push_back(shadow);

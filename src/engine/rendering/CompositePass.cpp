@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "engine/rendering/FrameCache.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
@@ -25,16 +26,17 @@ bool CompositePass::initialize()
 	spdlog::info("Initializing CompositePass");
 
 	// Get fullscreen quad shader from registry
-	auto shaderInfo = m_context->shaderRegistry().getShader(shader::default ::FULLSCREEN_QUAD);
-	if (!shaderInfo || !shaderInfo->isValid())
+	m_shaderInfo = m_context->shaderRegistry().getShader(shader::default ::FULLSCREEN_QUAD);
+	if (!m_shaderInfo || !m_shaderInfo->isValid())
 	{
 		spdlog::error("Fullscreen quad shader not found in registry");
 		return false;
 	}
+	
 
 	// Create pipeline using the pipeline manager
 	m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
-		shaderInfo,
+		m_shaderInfo,
 		m_context->surfaceManager().currentConfig().format,
 		wgpu::TextureFormat::Undefined, // No depth
 		Topology::Triangles,
@@ -63,69 +65,45 @@ void CompositePass::render(FrameCache &frameCache)
 		return;
 	}
 
-	const auto& surfaceTex = m_renderPassContext->getColorTexture(0);
-    if (!surfaceTex)
-    {
-        spdlog::error("CompositePass: Render pass context has no color texture");
-        return;
-    }
+	const auto &surfaceTex = m_renderPassContext->getColorTexture(0);
+	if (!surfaceTex)
+	{
+		spdlog::error("CompositePass: Render pass context has no color texture");
+		return;
+	}
 
-	// --- Create command encoder once ---
-	wgpu::CommandEncoderDescriptor encoderDesc{};
-	encoderDesc.label = "CompositePass Encoder";
-	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
-
-	// --- Begin render pass once ---
-	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(m_renderPassContext->getRenderPassDescriptor());
-
-	// --- Bind pipeline once ---
+	auto encoder = m_context->createCommandEncoder("CompositePass Encoder");
+	auto renderPass = m_renderPassContext->begin(encoder);
 	renderPass.setPipeline(m_pipeline->getPipeline());
 
+	const uint32_t surfaceW = surfaceTex->getWidth();
+	const uint32_t surfaceH = surfaceTex->getHeight();
 
-    const uint32_t surfaceW = surfaceTex->getWidth();	
-    const uint32_t surfaceH = surfaceTex->getHeight();
+	for (const auto &target : frameCache.renderTargets)
+	{
+		if (!target.gpuTexture)
+			continue;
 
-	// --- Draw all textures ---
-	 for (const auto& target : frameCache.renderTargets)
-    {
-        if (!target.gpuTexture)
-            continue;
+		glm::vec4 vpPx = target.viewport * glm::vec4(surfaceW, surfaceH, surfaceW, surfaceH);
+		renderPass.setViewport(vpPx.x, vpPx.y, vpPx.z, vpPx.w, 0.f, 1.f);
+		renderPass.setScissorRect(uint32_t(vpPx.x), uint32_t(vpPx.y), uint32_t(vpPx.z), uint32_t(vpPx.w));
 
-        // --- Compute viewport in pixels based on target.viewport [0..1] ---
-        const float vx = target.viewport.x * surfaceW;
-        const float vy = target.viewport.y * surfaceH;
-        const float vw = target.viewport.z * surfaceW;
-        const float vh = target.viewport.w * surfaceH;
+		// --- Get or create bind group for this texture ---
+		auto bindGroup = getOrCreateBindGroup(target.gpuTexture);
+		if (!bindGroup)
+		{
+			spdlog::warn("CompositePass: Failed to create bind group for texture");
+			continue;
+		}
 
-        renderPass.setViewport(vx, vy, vw, vh, 0.f, 1.f);
-        renderPass.setScissorRect(uint32_t(vx), uint32_t(vy), uint32_t(vw), uint32_t(vh));
+		// --- Bind the texture bind group (group 0) ---
+		renderPass.setBindGroup(0, bindGroup->getBindGroup(), 0, nullptr);
 
-        // --- Get or create bind group for this texture ---
-        auto bindGroup = getOrCreateBindGroup(target.gpuTexture);
-        if (!bindGroup)
-        {
-            spdlog::warn("CompositePass: Failed to create bind group for texture");
-            continue;
-        }
-
-        // --- Bind the texture bind group (group 0) ---
-        renderPass.setBindGroup(0, bindGroup->getBindGroup(), 0, nullptr);
-
-        // --- Draw fullscreen triangle constrained by viewport ---
-        renderPass.draw(3, 1, 0, 0);
-    }
-
-    // --- End render pass ---
-    renderPass.end();
-    renderPass.release();
-
-    // --- Submit commands once ---
-	wgpu::CommandBufferDescriptor cmdBufferDesc{};
-	cmdBufferDesc.label = "CompositePass Commands";
-	wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
-    encoder.release();
-    m_context->getQueue().submit(commands);
-    commands.release();
+		// --- Draw fullscreen triangle constrained by viewport ---
+		renderPass.draw(3, 1, 0, 0);
+	}
+	m_renderPassContext->end(renderPass);
+	m_context->submitCommandEncoder(encoder, "CompositePass Commands");
 }
 
 void CompositePass::cleanup()
@@ -134,31 +112,26 @@ void CompositePass::cleanup()
 }
 
 std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
-	const std::shared_ptr<webgpu::WebGPUTexture>& texture
+	const std::shared_ptr<webgpu::WebGPUTexture> &texture
 )
 {
 	if (!texture)
 		return nullptr;
 
 	uint64_t cacheKey = reinterpret_cast<uint64_t>(texture.get());
-	
+
 	auto it = m_bindGroupCache.find(cacheKey);
 	if (it != m_bindGroupCache.end())
 		return it->second;
 
-	// Create new bind group
-	auto shaderInfo = m_context->shaderRegistry().getShader(shader::default::FULLSCREEN_QUAD);
-	if (!shaderInfo)
-		return nullptr;
-
-	auto bindGroupLayout = shaderInfo->getBindGroupLayout(0);
+	auto bindGroupLayout = m_shaderInfo->getBindGroupLayout(0);
 	if (!bindGroupLayout)
 		return nullptr;
 
 	std::vector<wgpu::BindGroupEntry> entries;
 	entries.reserve(bindGroupLayout->getEntries().size());
 
-	for (const auto& layoutEntry : bindGroupLayout->getEntries())
+	for (const auto &layoutEntry : bindGroupLayout->getEntries())
 	{
 		wgpu::BindGroupEntry entry{};
 		entry.binding = layoutEntry.binding;
