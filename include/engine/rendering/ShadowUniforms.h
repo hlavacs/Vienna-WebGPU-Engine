@@ -25,18 +25,18 @@ struct ShadowUniform
 static_assert(sizeof(ShadowUniform) % 16 == 0, "ShadowUniform must match WGSL layout");
 
 // Shadow pass specific uniforms for 2D shadow maps (directional/spot lights)
-struct ShadowPassUniforms2D
+struct ShadowPass2DUniforms
 {
 	glm::mat4 lightViewProjectionMatrix = glm::mat4(1.0f);
 };
-static_assert(sizeof(ShadowPassUniforms2D) % 16 == 0, "ShadowPassUniforms2D must match WGSL layout");
+static_assert(sizeof(ShadowPass2DUniforms) % 16 == 0, "ShadowPassUniforms2D must match WGSL layout");
 
 // Shadow pass specific uniforms for cube shadow maps (point lights)
-struct ShadowPassUniformsCube
+struct ShadowPassCubeUniforms
 {
 	glm::vec3 lightPosition = glm::vec3(0.0f);
 	float farPlane = 100.0f;
 };
-static_assert(sizeof(ShadowPassUniformsCube) % 16 == 0, "ShadowPassUniformsCube must match WGSL layout");
+static_assert(sizeof(ShadowPassCubeUniforms) % 16 == 0, "ShadowPassUniformsCube must match WGSL layout");
 
 } // namespace engine::rendering

@@ -2,14 +2,15 @@
 
 #include <spdlog/spdlog.h>
 
+#include "engine/rendering/FrameCache.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/Mesh.h"
 #include "engine/rendering/Model.h"
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/RenderCollector.h"
+#include "engine/rendering/RenderItemGPU.h"
 #include "engine/rendering/Renderer.h"
-#include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
@@ -72,6 +73,9 @@ void MeshPass::render(FrameCache &frameCache)
 		return;
 	}
 
+	spdlog::debug("MeshPass::render() - visibleIndices count: {}, gpuItems count: {}", 
+		m_visibleIndices.size(), frameCache.gpuRenderItems.size());
+
 	// Update lights from frame cache
 	updateLights(frameCache.lightUniforms);
 
@@ -80,8 +84,8 @@ void MeshPass::render(FrameCache &frameCache)
 	encoderDesc.label = "MeshPass Encoder";
 	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
 
-	// Begin render pass
-	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(m_renderPassContext->getRenderPassDescriptor());
+	// Begin render pass using context's begin() method
+	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 
 	// Bind frame and light uniforms
 	bindFrameUniforms(renderPass, m_cameraId, m_frameUniforms);
@@ -90,9 +94,8 @@ void MeshPass::render(FrameCache &frameCache)
 	// Draw items from frame cache
 	drawItems(encoder, renderPass, m_renderPassContext, frameCache.gpuRenderItems, m_visibleIndices);
 
-	// End render pass
-	renderPass.end();
-	renderPass.release();
+	// End render pass using context's end() method
+	m_renderPassContext->end(renderPass);
 
 	// Submit commands
 	wgpu::CommandBufferDescriptor cmdBufferDesc{};
@@ -113,6 +116,7 @@ void MeshPass::bindFrameUniforms(
 	if (!frameBindGroup)
 	{
 		frameBindGroup = m_context->bindGroupFactory().createBindGroup(m_frameBindGroupLayout);
+		spdlog::info("Created new frame bind group for camera {}", cameraId);
 	}
 
 	frameBindGroup->updateBuffer(0, &frameUniforms, sizeof(FrameUniforms), 0, m_context->getQueue());
@@ -151,24 +155,45 @@ void MeshPass::drawItems(
 	webgpu::WebGPUPipeline *currentPipeline = nullptr;
 	webgpu::WebGPUMesh *currentMesh = nullptr;
 
+	spdlog::debug("MeshPass::drawItems() - Rendering {} items", indicesToRender.size());
+	
+	size_t itemsRendered = 0;
+	size_t itemsSkipped = 0;
+
 	for (uint32_t index : indicesToRender)
 	{
 		if (index >= gpuItems.size())
+		{
+			spdlog::warn("Index {} out of bounds (gpuItems.size = {})", index, gpuItems.size());
 			continue;
+		}
 
 		const auto &optionalItem = gpuItems[index];
 		if (!optionalItem.has_value())
+		{
+			itemsSkipped++;
 			continue;
+		}
 
 		const RenderItemGPU &item = optionalItem.value();
 		if (!item.gpuMesh || !item.gpuMaterial || !item.objectBindGroup)
+		{
+			spdlog::warn("Missing GPU resources - mesh: {}, material: {}, bindGroup: {}",
+				item.gpuMesh != nullptr, item.gpuMaterial != nullptr, item.objectBindGroup != nullptr);
+			itemsSkipped++;
 			continue;
+		}
 
 		auto meshPtr = item.gpuMesh->getCPUHandle().get();
 		auto materialPtr = item.gpuMaterial->getCPUHandle().get();
 
 		if (!meshPtr.has_value() || !materialPtr.has_value())
+		{
+			spdlog::warn("Invalid CPU handles - mesh: {}, material: {}",
+				meshPtr.has_value(), materialPtr.has_value());
+			itemsSkipped++;
 			continue;
+		}
 
 		auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
 			meshPtr.value(),
@@ -177,7 +202,11 @@ void MeshPass::drawItems(
 		);
 
 		if (!pipeline || !pipeline->isValid())
+		{
+			spdlog::warn("Invalid pipeline for mesh/material");
+			itemsSkipped++;
 			continue;
+		}
 
 		// Bind pipeline only when changed
 		if (pipeline.get() != currentPipeline)
@@ -212,17 +241,14 @@ void MeshPass::drawItems(
 		item.gpuMesh->isIndexed()
 			? renderPass.drawIndexed(item.submesh.indexCount, 1, item.submesh.indexOffset, 0, 0)
 			: renderPass.draw(item.submesh.indexCount, 1, item.submesh.indexOffset, 0);
+		
+		itemsRendered++;
 	}
+	
+	spdlog::debug("MeshPass::drawItems() - Rendered: {}, Skipped: {}", itemsRendered, itemsSkipped);
 }
 
 void MeshPass::cleanup()
-{
-	m_modelCache.clear();
-	m_frameBindGroupCache.clear();
-	m_objectBindGroupCache.clear();
-}
-
-void MeshPass::clearFrameBindGroupCache()
 {
 	m_frameBindGroupCache.clear();
 }

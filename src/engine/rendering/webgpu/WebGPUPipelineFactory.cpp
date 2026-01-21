@@ -218,14 +218,6 @@ wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engin
 		attributes.push_back(tangentAttr);
 		arrayStride += sizeof(engine::rendering::Vertex::tangent);
 	}
-	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Bitangent))
-	{
-		wgpu::VertexAttribute bitangentAttr{};
-		bitangentAttr.format = wgpu::VertexFormat::Float32x3;
-		bitangentAttr.offset = offsetof(engine::rendering::Vertex, bitangent);
-		attributes.push_back(bitangentAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::bitangent);
-	}
 	for (auto i = 0; i < attributes.size(); ++i)
 	{
 		attributes[i].shaderLocation = static_cast<uint32_t>(i);

@@ -114,9 +114,9 @@ struct Mesh : public engine::core::Identifiable<Mesh>, public engine::core::Vers
 	 * @brief Compute the TBN matrix for a triangle given its vertices and expected normal.
 	 * @param corners Array of 3 vertices forming the triangle.
 	 * @param expectedN The expected normal vector.
-	 * @return The TBN matrix.
+	 * @return The TBN matrix as a vec4 (tangent.xyz, handedness).
 	 */
-	static glm::mat3x3 computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN);
+	static glm::vec4 computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN);
 
 	/**
 	 * @brief Set the vertices of the mesh.

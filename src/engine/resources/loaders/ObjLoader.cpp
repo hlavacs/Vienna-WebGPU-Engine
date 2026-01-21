@@ -117,13 +117,12 @@ std::optional<ObjGeometryData> ObjLoader::load(
 					vertex.color = {
 						attrib.colors[3 * index.vertex_index + 0],
 						attrib.colors[3 * index.vertex_index + 1],
-						attrib.colors[3 * index.vertex_index + 2],
-						1.0f
+						attrib.colors[3 * index.vertex_index + 2]
 					};
 				}
 				else
 				{
-					vertex.color = {1.f, 1.f, 1.f, 1.f};
+					vertex.color = {1.f, 1.f, 1.f};
 				}
 
 				auto [it, inserted] = uniqueVertices.try_emplace(vertex, static_cast<uint32_t>(data.vertices.size()));

@@ -4,17 +4,18 @@
 #include <unordered_map>
 #include <vector>
 
+#include "engine/rendering/FrameCache.h"
 #include "engine/rendering/RenderTarget.h"
+#include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPURenderPassContext.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 
 #include <webgpu/webgpu.hpp>
 
 namespace engine::rendering::webgpu
 {
 class WebGPUContext;
-class WebGPUTexture;
-class WebGPUPipeline;
-class WebGPUBindGroup;
 } // namespace engine::rendering::webgpu
 
 namespace engine::rendering
@@ -65,11 +66,12 @@ class CompositePass
 	 * @return Cached or newly created bind group.
 	 */
 	std::shared_ptr<webgpu::WebGPUBindGroup> getOrCreateBindGroup(
-		const std::shared_ptr<webgpu::WebGPUTexture>& texture
+		const std::shared_ptr<webgpu::WebGPUTexture> &texture
 	);
 
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
 	std::shared_ptr<webgpu::WebGPUPipeline> m_pipeline;
+	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
 	wgpu::Sampler m_sampler = nullptr;
 
 	// External dependencies (set via setters)

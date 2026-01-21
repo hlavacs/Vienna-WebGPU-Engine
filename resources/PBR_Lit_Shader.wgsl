@@ -1,10 +1,9 @@
 struct VertexInput {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
-    @location(2) color: vec3f,
+    @location(2) tangent: vec4f,
     @location(3) uv: vec2f,
-    @location(4) tangent: vec3f,
-    @location(5) bitangent: vec3f,
+    @location(4) color: vec3f,
 };
 
 struct VertexOutput {
@@ -67,14 +66,17 @@ struct MaterialUniforms {
 
 
 struct ShadowUniform {
-    view_proj: mat4x4f,       // Used for spot + directional + CSM
-    light_pos: vec3f,         // Used for point lights
+    view_proj: mat4x4f,     // Used for spot + directional + CSM
+    light_pos: vec3f,       // Used for point lights
+	near: f32,				//< 4 bytes
+	far: f32,				//< 4 bytes
     bias: f32,
     normal_bias: f32,
     texel_size: f32,
     pcf_kernel: u32,
-    shadow_type: u32,         // 0 = 2D shadow (directional/spot), 1 = cube shadow (point)
-    textureIndex: u32,        // layer in correct texture array
+    shadow_type: u32,       // 0 = 2D shadow (directional/spot), 1 = cube shadow (point)
+    textureIndex: u32,      // layer in correct texture array
+    _pad0: f32,
 };
 
 @group(0) @binding(0)
@@ -117,15 +119,20 @@ const PI: f32 = 3.141592653589793;
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let world_position = u_object.model_matrix * vec4f(in.position, 1.0);
-    out.world_position = world_position;
-    out.position = u_frame.view_projection_matrix * world_position;
-    out.normal = normalize((u_object.normal_matrix * vec4f(in.normal, 0.0)).xyz);
-    out.tangent = normalize((u_object.normal_matrix * vec4f(in.tangent, 0.0)).xyz);
-    out.bitangent = normalize((u_object.normal_matrix * vec4f(in.bitangent, 0.0)).xyz);
+    let world_pos = u_object.model_matrix * vec4f(in.position, 1.0);
+    out.world_position = world_pos;
+    out.position = u_frame.view_projection_matrix * world_pos;
+    
+    let N = normalize((u_object.normal_matrix * vec4f(in.normal, 0.0)).xyz);
+    let T = normalize((u_object.normal_matrix * vec4f(in.tangent.xyz, 0.0)).xyz);
+    let B = cross(N, T) * in.tangent.w;
+    out.normal = N;
+    out.tangent = T;
+    out.bitangent = B;
+
     out.color = in.color;
     out.uv = in.uv;
-    out.view_direction = u_frame.camera_world_position - world_position.xyz;
+    out.view_direction = u_frame.camera_world_position - world_pos.xyz;
     return out;
 }
 

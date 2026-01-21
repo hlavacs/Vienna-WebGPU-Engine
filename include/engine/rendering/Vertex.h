@@ -1,9 +1,9 @@
 #pragma once
 
+#include "engine/core/Enum.h"
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <ostream>
-#include "engine/core/Enum.h"
 
 namespace engine::rendering
 {
@@ -17,7 +17,6 @@ enum class VertexAttribute : uint32_t
 	Position = 1 << 0,
 	Normal = 1 << 1,
 	Tangent = 1 << 2,
-	Bitangent = 1 << 3,
 	Color = 1 << 4,
 	UV = 1 << 5,
 };
@@ -53,14 +52,14 @@ struct Vertex
 {
 	glm::vec3 position{};
 	glm::vec3 normal{};
-	glm::vec3 tangent{};
-	glm::vec3 bitangent{};
-	glm::vec4 color{};
+	glm::vec4 tangent{};
 	glm::vec2 uv{};
+	glm::vec3 color{};
+	float _pad;
 
 	bool operator==(const Vertex &other) const
 	{
-		return position == other.position && normal == other.normal && tangent == other.tangent && bitangent == other.bitangent && color == other.color && uv == other.uv;
+		return position == other.position && normal == other.normal && tangent == other.tangent && color == other.color && uv == other.uv;
 	}
 
 	/**
@@ -81,9 +80,9 @@ struct Vertex
 		case VertexLayout::PositionNormalUVColor:
 			return VertexAttribute::Position | VertexAttribute::Normal | VertexAttribute::UV | VertexAttribute::Color;
 		case VertexLayout::PositionNormalUVTangent:
-			return VertexAttribute::Position | VertexAttribute::Normal | VertexAttribute::UV | VertexAttribute::Tangent | VertexAttribute::Bitangent;
+			return VertexAttribute::Position | VertexAttribute::Normal | VertexAttribute::UV | VertexAttribute::Tangent;
 		case VertexLayout::PositionNormalUVTangentColor:
-			return VertexAttribute::Position | VertexAttribute::Normal | VertexAttribute::UV | VertexAttribute::Tangent | VertexAttribute::Bitangent | VertexAttribute::Color;
+			return VertexAttribute::Position | VertexAttribute::Normal | VertexAttribute::UV | VertexAttribute::Tangent | VertexAttribute::Color;
 		case VertexLayout::DebugPosition:
 			return VertexAttribute::Position;
 		case VertexLayout::DebugPositionColor:
@@ -122,6 +121,14 @@ struct Vertex
 		return VertexLayout::DebugPosition;
 	}
 
+	static const size_t PositionSize = sizeof(Vertex::position);																													 // 12 bytes
+	static const size_t PositionNormalSize = sizeof(Vertex::position) + sizeof(Vertex::normal);																						 // 24 bytes
+	static const size_t PositionNormalUVSize = sizeof(Vertex::position) + sizeof(Vertex::normal) + sizeof(Vertex::uv);																 // 28 bytes
+	static const size_t PositionNormalUVColorSize = sizeof(Vertex::position) + sizeof(Vertex::normal) + sizeof(Vertex::uv) + sizeof(Vertex::color);									 // 40 bytes
+	static const size_t PositionNormalUVTangentSize = sizeof(Vertex::position) + sizeof(Vertex::normal) + sizeof(Vertex::uv) + sizeof(Vertex::tangent);								 // 48 bytes
+	static const size_t PositionNormalUVTangentColorSize = sizeof(Vertex::position) + sizeof(Vertex::normal) + sizeof(Vertex::uv) + sizeof(Vertex::tangent) + sizeof(Vertex::color); // 60 bytes
+	static const size_t DebugPositionColorSize = sizeof(Vertex::position) + sizeof(Vertex::color);																					 // 24 bytes
+
 	/**
 	 * @brief Get the stride (size in bytes) for a given vertex layout.
 	 * @param layout The vertex layout.
@@ -134,62 +141,70 @@ struct Vertex
 		case VertexLayout::None:
 			return 0;
 		case VertexLayout::Position:
-			return sizeof(glm::vec3); // 12 bytes
+			return PositionSize; // 12 bytes
 		case VertexLayout::PositionNormal:
-			return sizeof(glm::vec3) * 2; // 24 bytes
+			return PositionNormalSize; // 24 bytes
 		case VertexLayout::PositionNormalUV:
-			return sizeof(glm::vec3) * 2 + sizeof(glm::vec2); // 32 bytes
+			return PositionNormalUVSize; // 28 bytes
 		case VertexLayout::PositionNormalUVColor:
-			return sizeof(glm::vec3) * 2 + sizeof(glm::vec2) + sizeof(glm::vec4); // 48 bytes
+			return PositionNormalUVColorSize; // 40 bytes
 		case VertexLayout::PositionNormalUVTangent:
-			return sizeof(glm::vec3) * 5 + sizeof(glm::vec2); // 68 bytes
+			return PositionNormalUVTangentSize; // 48 bytes
 		case VertexLayout::PositionNormalUVTangentColor:
-			return sizeof(Vertex); // Full vertex: 84 bytes
+			return PositionNormalUVTangentColorSize; // 64 bytes
 		case VertexLayout::DebugPosition:
-			return sizeof(glm::vec3); // 12 bytes
+			return PositionSize; // 12 bytes
 		case VertexLayout::DebugPositionColor:
-			return sizeof(glm::vec3) + sizeof(glm::vec4); // 28 bytes
+			return DebugPositionColorSize; // 24 bytes
 		}
 		return sizeof(Vertex); // Default to full vertex
 	}
 
-	
-static std::vector<uint8_t> repackVertices(const std::vector<Vertex> &vertices, VertexLayout layout)
-{
-	size_t stride = Vertex::getStride(layout);
-	std::vector<uint8_t> packed(vertices.size() * stride);
-
-	auto vertexAttributes = Vertex::requiredAttributes(layout);
-	for (size_t i = 0; i < vertices.size(); ++i)
+	static std::vector<uint8_t> repackVertices(const std::vector<Vertex> &vertices, VertexLayout layout)
 	{
-		uint8_t *dst = packed.data() + i * stride;
+		size_t stride = Vertex::getStride(layout);
+		std::vector<uint8_t> packed(vertices.size() * stride);
 
-		if (hasFlag(vertexAttributes, VertexAttribute::Position))
-			memcpy(dst, &vertices[i].position, sizeof(glm::vec3));
-		dst += sizeof(glm::vec3);
+		auto vertexAttributes = Vertex::requiredAttributes(layout);
+		for (size_t i = 0; i < vertices.size(); ++i)
+		{
+			uint8_t *dst = packed.data() + i * stride;
 
-		if (hasFlag(vertexAttributes, VertexAttribute::Normal))
-			memcpy(dst, &vertices[i].normal, sizeof(glm::vec3));
-		dst += sizeof(glm::vec3);
+			if (hasFlag(vertexAttributes, VertexAttribute::Position))
+			{
+				memcpy(dst, &vertices[i].position, sizeof(Vertex::position));
+				dst += sizeof(Vertex::position);
+			}
 
-		if (hasFlag(vertexAttributes, VertexAttribute::Tangent))
-			memcpy(dst, &vertices[i].tangent, sizeof(glm::vec3));
-		dst += sizeof(glm::vec3);
-		if (hasFlag(vertexAttributes, VertexAttribute::Bitangent))
-			memcpy(dst, &vertices[i].bitangent, sizeof(glm::vec3));
-		dst += sizeof(glm::vec3);
-		if (hasFlag(vertexAttributes, VertexAttribute::UV))
-			memcpy(dst, &vertices[i].uv, sizeof(glm::vec2));
-		dst += sizeof(glm::vec2);
+			if (hasFlag(vertexAttributes, VertexAttribute::Normal))
+			{
+				memcpy(dst, &vertices[i].normal, sizeof(Vertex::normal));
+				dst += sizeof(Vertex::normal);
+			}
 
-		if (hasFlag(vertexAttributes, VertexAttribute::Color))
-			memcpy(dst, &vertices[i].color, sizeof(glm::vec4));
-		dst += sizeof(glm::vec4);
+			if (hasFlag(vertexAttributes, VertexAttribute::Tangent))
+			{
+				memcpy(dst, &vertices[i].tangent, sizeof(Vertex::tangent));
+				dst += sizeof(Vertex::tangent);
+			}
+
+			if (hasFlag(vertexAttributes, VertexAttribute::UV))
+			{
+				memcpy(dst, &vertices[i].uv, sizeof(Vertex::uv));
+				dst += sizeof(Vertex::uv);
+			}
+
+			if (hasFlag(vertexAttributes, VertexAttribute::Color))
+			{
+				memcpy(dst, &vertices[i].color, sizeof(Vertex::color));
+				dst += sizeof(Vertex::color);
+			}
+		}
+
+		return packed;
 	}
-
-	return packed;
-}
 };
+static_assert(sizeof(Vertex) % 16 == 0, "Vertex size must be a multiple of 16 bytes.");
 
 // Stream output
 inline std::ostream &operator<<(std::ostream &os, const Vertex &v)
@@ -197,9 +212,8 @@ inline std::ostream &operator<<(std::ostream &os, const Vertex &v)
 	os << "Vertex("
 	   << "pos: [" << v.position.x << ", " << v.position.y << ", " << v.position.z << "], "
 	   << "normal: [" << v.normal.x << ", " << v.normal.y << ", " << v.normal.z << "], "
-	   << "tangent: [" << v.tangent.x << ", " << v.tangent.y << ", " << v.tangent.z << "], "
-	   << "bitangent: [" << v.bitangent.x << ", " << v.bitangent.y << ", " << v.bitangent.z << "], "
-	   << "color: [" << v.color.r << ", " << v.color.g << ", " << v.color.b << ", " << v.color.a << "], "
+	   << "tangent: [" << v.tangent.x << ", " << v.tangent.y << ", " << v.tangent.z << ", " << v.tangent.w << "], "
+	   << "color: [" << v.color.r << ", " << v.color.g << ", " << v.color.b << "], "
 	   << "uv: [" << v.uv.x << ", " << v.uv.y << "])";
 	return os;
 }
@@ -230,7 +244,6 @@ struct hash<engine::rendering::Vertex>
 		h = hashVec(v.position, h);
 		h = hashVec(v.normal, h);
 		h = hashVec(v.tangent, h);
-		h = hashVec(v.bitangent, h);
 		h = hashVec(v.color, h);
 		h = hashVec(v.uv, h);
 		return h;

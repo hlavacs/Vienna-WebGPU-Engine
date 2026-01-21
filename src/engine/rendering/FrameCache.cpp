@@ -1,4 +1,4 @@
-#include "engine/rendering/RenderTarget.h"
+#include "engine/rendering/FrameCache.h"
 
 #include <spdlog/spdlog.h>
 
@@ -18,7 +18,7 @@
 namespace engine::rendering
 {
 
-std::vector<std::optional<RenderItemGPU>>& FrameCache::prepareGPUResources(
+bool FrameCache::prepareGPUResources(
 	std::shared_ptr<webgpu::WebGPUContext> context,
 	const RenderCollector &collector,
 	const std::vector<size_t> &indicesToPrepare
@@ -32,7 +32,7 @@ std::vector<std::optional<RenderItemGPU>>& FrameCache::prepareGPUResources(
 	if (!objectBindGroupLayout)
 	{
 		spdlog::error("Failed to get objectUniforms bind group layout");
-		return gpuRenderItems;
+		return false;
 	}
 
 	// Static cache for object bind groups (shared across all frames)
@@ -115,11 +115,14 @@ std::vector<std::optional<RenderItemGPU>>& FrameCache::prepareGPUResources(
 		gpuRenderItems[idx] = gpuItem;
 	}
 
-	spdlog::debug("Prepared GPU resources: {}/{} items", 
-		std::count_if(gpuRenderItems.begin(), gpuRenderItems.end(), [](auto &i) { return i.has_value(); }),
-		collector.getRenderItems().size());
+	spdlog::debug(
+		"Prepared GPU resources: {}/{} items",
+		std::count_if(gpuRenderItems.begin(), gpuRenderItems.end(), [](auto &i)
+					  { return i.has_value(); }),
+		collector.getRenderItems().size()
+	);
 
-	return gpuRenderItems;
+	return true;
 }
 
 } // namespace engine::rendering

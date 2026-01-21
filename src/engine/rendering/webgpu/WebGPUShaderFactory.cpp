@@ -203,9 +203,7 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	shadowUniformBuffer.type = BindingType::StorageBuffer;
 	shadowUniformBuffer.name = "uShadows";
 	shadowUniformBuffer.binding = 3;
-	// Use max shadows (which is the max of both 2D and cube, or could be dynamic)
-	// Each ShadowUniform is 128 bytes (due to MSVC mat4 alignment)
-	size_t maxUnifiedShadows = std::max(maxShadows, maxShadowCubes);
+	size_t maxUnifiedShadows = maxShadows + maxShadowCubes;
 	shadowUniformBuffer.size = maxUnifiedShadows * sizeof(engine::rendering::ShadowUniform);
 	shadowUniformBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
 	shadowUniformBuffer.visibility = WGPUShaderStage_Fragment;

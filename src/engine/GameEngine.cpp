@@ -358,7 +358,8 @@ void GameEngine::renderFrame(float deltaTime)
 
 	float time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
 
-	std::vector<engine::rendering::RenderTarget> renderTargets(cameras.size());
+	std::vector<engine::rendering::RenderTarget> renderTargets;
+	renderTargets.reserve(cameras.size());
 	// Extract RenderTarget from each camera
 	for (auto &camera : cameras)
 	{
