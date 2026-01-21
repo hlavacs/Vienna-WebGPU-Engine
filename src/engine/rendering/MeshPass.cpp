@@ -23,7 +23,7 @@ namespace engine::rendering
 {
 
 MeshPass::MeshPass(std::shared_ptr<webgpu::WebGPUContext> context) :
-	m_context(context)
+	RenderPass(context)
 {
 }
 

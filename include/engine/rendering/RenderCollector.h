@@ -11,6 +11,7 @@
 #include "engine/rendering/Light.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Model.h"
+#include "engine/rendering/ShadowRequest.h"
 
 namespace engine::rendering
 {
@@ -114,13 +115,14 @@ class RenderCollector
 	std::vector<size_t> extractForPointLight(const glm::vec3 &lightPosition, float lightRange) const;
 	
 	/**
-	 * @brief Extracts lights and assigns shadow indices.
-	 * @details Lights that can cast shadows are assigned shadow indices
+	 * @brief Extracts lights and creates shadow requests (camera-independent).
+	 * @details Does NOT compute shadow matrices - those are computed by ShadowPass per-camera.
+	 * Assigns shadow texture indices and emits ShadowRequest descriptors.
 	 * @param maxShadow2D Maximum number of 2D shadow maps.
 	 * @param maxShadowCube Maximum number of cube shadow maps.
-	 * @return Vector of LightStruct and ShadowUniform for GPU upload.
+	 * @return Tuple of: LightStruct vector for GPU uniforms, ShadowRequest vector for ShadowPass.
 	 */
-	std::tuple<std::vector<LightStruct>, std::vector<ShadowUniform>> extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const;
+	std::tuple<std::vector<LightStruct>, std::vector<ShadowRequest>> extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const;
 
 
 	/**

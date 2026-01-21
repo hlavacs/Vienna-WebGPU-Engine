@@ -116,14 +116,14 @@ std::vector<size_t> RenderCollector::extractForPointLight(const glm::vec3 &light
 	return visibleIndices;
 }
 
-std::tuple<std::vector<LightStruct>, std::vector<ShadowUniform>>
+std::tuple<std::vector<LightStruct>, std::vector<ShadowRequest>>
 RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const
 {
 	std::vector<LightStruct> lights;
-	std::vector<ShadowUniform> shadows;
+	std::vector<ShadowRequest> shadowRequests;
 
 	lights.reserve(m_lights.size());
-	shadows.reserve(maxShadow2D + maxShadowCube);
+	shadowRequests.reserve(maxShadow2D + maxShadowCube);
 
 	uint32_t current2DIndex = 0;
 	uint32_t currentCubeIndex = 0;
@@ -135,52 +135,49 @@ RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShado
 		// Default: no shadow
 		lightUniform.shadowIndex = 0;
 		lightUniform.shadowCount = 0;
-		
 
 		if (light.canCastShadows())
 		{
-			ShadowUniform shadow{};
-
 			// Use std::visit to handle the variant
 			std::visit(
 				[&](auto &&specificLight)
 				{
-                using T = std::decay_t<decltype(specificLight)>;
-                
-                if constexpr (std::is_same_v<T, DirectionalLight> || std::is_same_v<T, SpotLight>)
-                {
-                    if (current2DIndex >= maxShadow2D) return;
+					using T = std::decay_t<decltype(specificLight)>;
 
-                    shadow.viewProj = light.getViewProjMatrix();
-                    shadow.bias = specificLight.shadowBias;
-                    shadow.normalBias = specificLight.shadowNormalBias;
-                    shadow.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
-                    shadow.pcfKernel = specificLight.shadowPCFKernel;
-                    shadow.shadowType = 0; // 2D shadow
-					shadow.textureIndex = current2DIndex;
+					if constexpr (std::is_same_v<T, DirectionalLight>)
+					{
+						if (current2DIndex >= maxShadow2D) return;
 
-                    lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
-                    lightUniform.shadowCount = 1;
+						// Create shadow request for ShadowPass to process
+						shadowRequests.emplace_back(&light, ShadowType::Directional2D, current2DIndex);
 
-                    shadows.push_back(shadow);
-                    current2DIndex++;
-                }
-                else if constexpr (std::is_same_v<T, PointLight>)
-                {
-                    if (currentCubeIndex >= maxShadowCube) return;
+						lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
+						lightUniform.shadowCount = 1;
+						current2DIndex++;
+					}
+					else if constexpr (std::is_same_v<T, SpotLight>)
+					{
+						if (current2DIndex >= maxShadow2D) return;
 
-                    shadow.lightPos = specificLight.position;
-                    shadow.bias = specificLight.shadowBias;
-                    shadow.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
-                    shadow.pcfKernel = specificLight.shadowPCFKernel;
-                    shadow.shadowType = 1; // Cube shadow
-					shadow.textureIndex = currentCubeIndex;
-                    lightUniform.shadowIndex = currentCubeIndex + current2DIndex;;
-                    lightUniform.shadowCount = 1;
+						// Create shadow request for ShadowPass to process
+						shadowRequests.emplace_back(&light, ShadowType::Spot2D, current2DIndex);
 
-                    shadows.push_back(shadow);
-                    currentCubeIndex++;
-                } },
+						lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
+						lightUniform.shadowCount = 1;
+						current2DIndex++;
+					}
+					else if constexpr (std::is_same_v<T, PointLight>)
+					{
+						if (currentCubeIndex >= maxShadowCube) return;
+
+						// Create shadow request for ShadowPass to process
+						shadowRequests.emplace_back(&light, ShadowType::PointCube, currentCubeIndex);
+
+						lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
+						lightUniform.shadowCount = 1;
+						currentCubeIndex++;
+					}
+				},
 				light.getData()
 			);
 		}
@@ -188,7 +185,7 @@ RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShado
 		lights.push_back(lightUniform);
 	}
 
-	return {lights, shadows};
+	return {lights, shadowRequests};
 }
 
 bool RenderCollector::isAABBVisibleInFrustum(

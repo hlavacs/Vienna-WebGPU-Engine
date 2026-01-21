@@ -15,6 +15,7 @@
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderItemGPU.h"
+#include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/Vertex.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -94,12 +95,18 @@ bool Renderer::renderFrame(
 	m_frameCache.lights = renderCollector.getLights();
 	m_frameCache.renderTargets = std::move(renderTargets);
 	m_frameCache.time = time;
-	
 
+	// Extract lights and shadow requests (camera-independent)
+	auto [lightUniforms, shadowRequests] = renderCollector.extractLightsAndShadows(
+		constants::MAX_SHADOW_MAPS_2D,
+		constants::MAX_SHADOW_MAPS_CUBE
+	);
+	m_frameCache.lightUniforms = std::move(lightUniforms);
+	m_frameCache.shadowRequests = std::move(shadowRequests);
+
+	// Render shadow maps (camera-aware - computes matrices per frame)
 	m_shadowPass->setRenderCollector(&renderCollector);
-	m_shadowPass->setContext(m_context);
 	m_shadowPass->render(m_frameCache);
-
 
 	for (const auto &target : m_frameCache.renderTargets)
 	{

@@ -17,7 +17,7 @@ namespace engine::rendering
 {
 
 CompositePass::CompositePass(std::shared_ptr<webgpu::WebGPUContext> context) :
-	m_context(context)
+	RenderPass(context)
 {
 }
 

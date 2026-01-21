@@ -103,7 +103,6 @@ class Light
 	void setData(const LightData &data)
 	{
 		m_data = data;
-		updateMatrices();
 	}
 
 	/**
@@ -125,7 +124,6 @@ class Light
 	void setTransform(const glm::mat4 &transform)
 	{
 		m_transform = transform;
-		updateMatrices();
 	}
 
 	/**
@@ -206,61 +204,6 @@ class Light
 	}
 
 	/**
-	 * @brief Gets the view, projection, and view-projection matrices for shadow mapping.
-	 * @return View matrix.
-	 */
-	const glm::mat4 &getViewMatrix() const { return m_viewMatrix; }
-	/**
-	 * @brief Gets the projection matrix for shadow mapping.
-	 * @return Projection matrix.
-	 */
-	const glm::mat4 &getProjectionMatrix() const { return m_projectionMatrix; }
-	/**
-	 * @brief Gets the combined view-projection matrix for shadow mapping.
-	 * @return View-projection matrix.
-	 */
-	const glm::mat4 &getViewProjMatrix() const { return m_viewProjMatrix; }
-
-	/**
-	 * @brief Gets the view matrix for shadow mapping.
-	 * @return View matrix.
-	 */
-	void updateMatrices()
-	{
-		glm::vec3 dir = -glm::normalize(glm::vec3(m_transform * glm::vec4(0, 0, -1, 0)));
-		switch (getLightType())
-		{
-		case Type::Directional:
-		{
-			auto dLight = asDirectional();
-			dLight.range = 10.0f;
-			// Direction in world space from transform
-			glm::vec3 dir = glm::normalize(glm::vec3(m_transform * glm::vec4(dLight.direction, 0.0f)));
-			glm::vec3 pos = -dir * dLight.range; // "behind" scene
-			m_viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
-			float r = dLight.range;
-			m_projectionMatrix = glm::ortho(-r, r, -r, r, -dLight.range, dLight.range * 2.0f);
-			m_viewProjMatrix = m_projectionMatrix * m_viewMatrix;
-			break;
-		}
-		case Type::Spot:
-		{
-			auto sLight = asSpot();
-			glm::vec3 pos = glm::vec3(m_transform * glm::vec4(sLight.position, 1.0f));
-			m_viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
-			m_projectionMatrix = glm::perspective(sLight.spotAngle * 2.0f, 1.0f, 0.1f, sLight.range);
-			m_viewProjMatrix = m_projectionMatrix * m_viewMatrix;
-			break;
-		}
-		case Type::Point:
-			// For cube maps, 6 faces generated elsewhere
-			break;
-		default:
-			break;
-		}
-	}
-
-	/**
 	 * @brief Helper to get ambient light data (throws if not ambient).
 	 */
 	const AmbientLight &asAmbient() const { return std::get<AmbientLight>(m_data); }
@@ -291,10 +234,6 @@ class Light
   private:
 	LightData m_data;
 	glm::mat4 m_transform; // World-space transform (for positions/directions)
-
-	glm::mat4 m_viewMatrix;
-	glm::mat4 m_projectionMatrix;
-	glm::mat4 m_viewProjMatrix;
 };
 
 } // namespace engine::rendering

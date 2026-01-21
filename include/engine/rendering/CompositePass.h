@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/RenderPass.h"
 #include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
@@ -27,7 +28,7 @@ namespace engine::rendering
  * Uses the fullscreen quad shader from ShaderRegistry.
  * Simple pass that just renders textures to surface with no depth testing.
  */
-class CompositePass
+class CompositePass : public RenderPass
 {
   public:
 	explicit CompositePass(std::shared_ptr<webgpu::WebGPUContext> context);
@@ -36,7 +37,7 @@ class CompositePass
 	 * @brief Initialize the composite pass.
 	 * @return True if initialization succeeded.
 	 */
-	bool initialize();
+	bool initialize() override;
 
 	/**
 	 * @brief Set the render pass context for surface rendering.
@@ -52,12 +53,12 @@ class CompositePass
 	 * Composites all render targets in frameCache.renderTargets to the surface.
 	 * @param frameCache The frame cache containing render targets.
 	 */
-	void render(FrameCache &frameCache);
+	void render(FrameCache &frameCache) override;
 
 	/**
 	 * @brief Clear cached bind groups.
 	 */
-	void cleanup();
+	void cleanup() override;
 
   private:
 	/**
@@ -69,7 +70,6 @@ class CompositePass
 		const std::shared_ptr<webgpu::WebGPUTexture> &texture
 	);
 
-	std::shared_ptr<webgpu::WebGPUContext> m_context;
 	std::shared_ptr<webgpu::WebGPUPipeline> m_pipeline;
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
 	wgpu::Sampler m_sampler = nullptr;
