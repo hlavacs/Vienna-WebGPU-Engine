@@ -9,6 +9,7 @@
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Model.h"
+#include "engine/rendering/RenderPass.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
@@ -37,7 +38,7 @@ struct RenderItemGPU;
  * Handles the main rendering of scene geometry with materials, lighting,
  * and textures. Supports arbitrary render targets and depth buffers.
  */
-class MeshPass
+class MeshPass : public RenderPass
 {
   public:
 	/**
@@ -52,7 +53,7 @@ class MeshPass
 	 * @brief Initialize the mesh pass resources.
 	 * @return True if initialization succeeded.
 	 */
-	bool initialize();
+	bool initialize() override;
 
 	/**
 	 * @brief Set the render pass context to render into.
@@ -106,12 +107,12 @@ class MeshPass
 	 * 
 	 * @param frameCache Frame-wide data (GPU items, lights, etc.)
 	 */
-	void render(FrameCache &frameCache);
+	void render(FrameCache &frameCache) override;
 
 	/**
 	 * @brief Clear cached resources (call on scene changes or major updates).
 	 */
-	void cleanup();
+	void cleanup() override;
 
 	/**
 	 * @brief Clear frame-specific bind group cache.
@@ -158,17 +159,6 @@ class MeshPass
 		const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 		const std::vector<size_t> &indicesToRender
 	);
-
-	/**
-	 * @brief Get or create GPU model from handle.
-	 * @param modelHandle The model handle.
-	 * @return Shared pointer to GPU model.
-	 */
-	std::shared_ptr<webgpu::WebGPUModel> getOrCreateWebGPUModel(
-		const engine::core::Handle<engine::rendering::Model> &modelHandle
-	);
-
-	std::shared_ptr<webgpu::WebGPUContext> m_context;
 
 	// External dependencies (set via setters)
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;

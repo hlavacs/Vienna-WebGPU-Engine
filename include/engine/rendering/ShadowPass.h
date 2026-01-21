@@ -10,6 +10,8 @@
 
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Mesh.h"
+#include "engine/rendering/RenderPass.h"
+#include "engine/rendering/ShadowRequest.h"
 #include "engine/rendering/ShadowUniforms.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -45,7 +47,7 @@ class WebGPUContext;
  *
  * Designed for use in render graphs and flexible rendering pipelines.
  */
-class ShadowPass
+class ShadowPass : public RenderPass
 {
   public:
 	/**
@@ -60,7 +62,27 @@ class ShadowPass
 	 * @brief Initialize shadow pass resources (bind group layouts, uniforms).
 	 * @return True if initialization succeeded.
 	 */
-	bool initialize();
+	bool initialize() override;
+
+	/**
+	 * @brief Render all shadow maps from shadow requests (camera-aware).
+	 * 
+	 * This method is camera-aware and computes shadow matrices per-camera:
+	 * - For directional lights: Computes CSM cascades based on camera frustum
+	 * - For spot lights: Computes perspective shadow matrix
+	 * - For point lights: Computes 6 cube face matrices
+	 * 
+	 * Shadow matrices are computed here, not stored in Light objects.
+	 * Results are written to frameCache.shadowUniforms for GPU upload.
+	 * 
+	 * @param frameCache Frame-wide data storage (reads shadowRequests, writes shadowUniforms, gpuRenderItems)
+	 */
+	void render(FrameCache &frameCache) override;
+
+	/**
+	 * @brief Clean up GPU resources.
+	 */
+	void cleanup() override;
 
 	/**
 	 * @brief Set the render collector containing scene data.
@@ -69,29 +91,12 @@ class ShadowPass
 	void setRenderCollector(const RenderCollector* collector) { m_collector = collector; }
 
 	/**
-	 * @brief Set the WebGPU context.
-	 * @param context WebGPU context for resource creation.
-	 */
-	void setContext(std::shared_ptr<webgpu::WebGPUContext> context) { m_context = context; }
-
-	/**
 	 * @brief Get the shadow bind group for use in mesh rendering.
 	 * @return Shared pointer to shadow bind group (contains shadow textures and sampler).
 	 */
 	std::shared_ptr<webgpu::WebGPUBindGroup> getShadowBindGroup() const { return m_shadowBindGroup; }
 
-	/**
-	 * @brief Render all shadow maps for all lights.
-	 * Orchestrates the entire shadow rendering process:
-	 * - Extracts lights and shadow uniforms from collector
-	 * - Performs culling for each light
-	 * - Renders shadow maps (2D or cube)
-	 * - Updates frameCache with light and shadow uniforms
-	 * 
-	 * @param frameCache Frame-wide data storage (reads/writes lights, shadows, gpuRenderItems)
-	 */
-	void render(FrameCache &frameCache);
-
+  private:
 	/**
 	 * @brief Render shadow map for a single directional or spot light (2D shadow map).
 	 *
@@ -138,13 +143,15 @@ class ShadowPass
 		float farPlane
 	);
 
-	/**
-	 * @brief Clear cached pipelines.
-	 * Call this when shaders are reloaded or graphics state changes.
-	 */
-	void cleanup();
-
   private:
+	/**
+	 * @brief Compute shadow matrix and create ShadowUniform from a ShadowRequest.
+	 * This is where per-camera shadow matrices are computed.
+	 * @param request Shadow request from RenderCollector
+	 * @return ShadowUniform with computed view-projection matrix
+	 */
+	ShadowUniform computeShadowUniform(const ShadowRequest &request);
+
 	/**
 	 * @brief Get or create shadow pipeline for a given topology and shader type.
 	 * Pipelines are cached by topology type, NOT per-mesh instance.
@@ -168,8 +175,6 @@ class ShadowPass
 		const std::vector<size_t> &indicesToRender,
 		bool isCubeShadow
 	);
-
-	std::shared_ptr<webgpu::WebGPUContext> m_context;
 
 	// External dependencies (set via setters)
 	const RenderCollector* m_collector = nullptr;

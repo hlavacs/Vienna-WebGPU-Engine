@@ -7,6 +7,7 @@
 #include "engine/rendering/Light.h"
 #include "engine/rendering/RenderItemGPU.h"
 #include "engine/rendering/RenderTarget.h"
+#include "engine/rendering/ShadowRequest.h"
 
 // Forward declarations
 namespace engine::rendering::webgpu
@@ -40,6 +41,7 @@ struct FrameCache
 {
 	std::vector<Light> lights;                              ///< CPU-side light objects
 	std::vector<LightStruct> lightUniforms;                 ///< GPU-ready light uniform data
+	std::vector<ShadowRequest> shadowRequests;              ///< Shadow requests for this frame
 	std::vector<ShadowUniform> shadowUniforms;              ///< GPU-ready shadow uniform data
 	std::vector<RenderTarget> renderTargets;                ///< Render targets for all cameras this frame
 	std::vector<std::optional<RenderItemGPU>> gpuRenderItems; ///< Lazy-prepared GPU resources
@@ -71,6 +73,7 @@ struct FrameCache
 	{
 		lights.clear();
 		lightUniforms.clear();
+		shadowRequests.clear();
 		shadowUniforms.clear();
 		renderTargets.clear();
 		gpuRenderItems.clear();

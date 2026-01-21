@@ -6,11 +6,13 @@
 
 #include "engine/math/Frustum.h"
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/Light.h"
 #include "engine/rendering/Mesh.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderItemGPU.h"
 #include "engine/rendering/Renderer.h"
 #include "engine/rendering/RenderingConstants.h"
+#include "engine/rendering/ShadowRequest.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/ShadowUniforms.h"
 #include "engine/rendering/Vertex.h"
@@ -44,7 +46,7 @@ constexpr CubeFace CUBE_FACES[6] = {
 };
 
 ShadowPass::ShadowPass(std::shared_ptr<webgpu::WebGPUContext> context) :
-	m_context(context)
+	RenderPass(context)
 {
 }
 
@@ -181,6 +183,68 @@ bool ShadowPass::initialize()
 	return true;
 }
 
+ShadowUniform ShadowPass::computeShadowUniform(const ShadowRequest &request)
+{
+	ShadowUniform shadowUniform{};
+	const Light *light = request.light;
+
+	// Set common properties based on light type
+	std::visit(
+		[&](auto &&specificLight)
+		{
+			using T = std::decay_t<decltype(specificLight)>;
+
+			if constexpr (std::is_same_v<T, DirectionalLight>)
+			{
+				// Compute directional light shadow matrix
+				glm::vec3 dir = glm::normalize(glm::vec3(light->getTransform() * glm::vec4(specificLight.direction, 0.0f)));
+				glm::vec3 pos = -dir * specificLight.range;
+				
+				glm::mat4 viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
+				float r = specificLight.range;
+				glm::mat4 projectionMatrix = glm::ortho(-r, r, -r, r, -specificLight.range, specificLight.range * 2.0f);
+				
+				shadowUniform.viewProj = projectionMatrix * viewMatrix;
+				shadowUniform.bias = specificLight.shadowBias;
+				shadowUniform.normalBias = specificLight.shadowNormalBias;
+				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
+				shadowUniform.shadowType = 0; // 2D shadow
+			}
+			else if constexpr (std::is_same_v<T, SpotLight>)
+			{
+				// Compute spot light shadow matrix
+				glm::vec3 pos = glm::vec3(light->getTransform() * glm::vec4(specificLight.position, 1.0f));
+				// Extract forward direction from transform (spotlight points in -Z direction)
+				glm::vec3 dir = glm::normalize(glm::vec3(light->getTransform() * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)));
+				
+				glm::mat4 viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
+				glm::mat4 projectionMatrix = glm::perspective(specificLight.spotAngle * 2.0f, 1.0f, 0.1f, specificLight.range);
+				
+				shadowUniform.viewProj = projectionMatrix * viewMatrix;
+				shadowUniform.bias = specificLight.shadowBias;
+				shadowUniform.normalBias = specificLight.shadowNormalBias;
+				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
+				shadowUniform.shadowType = 0; // 2D shadow
+			}
+			else if constexpr (std::is_same_v<T, PointLight>)
+			{
+				// Point light - store position for cube map rendering
+				shadowUniform.lightPos = glm::vec3(light->getTransform() * glm::vec4(specificLight.position, 1.0f));
+				shadowUniform.bias = specificLight.shadowBias;
+				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
+				shadowUniform.shadowType = 1; // Cube shadow
+			}
+		},
+		light->getData()
+	);
+
+	shadowUniform.textureIndex = request.textureIndex;
+	return shadowUniform;
+}
+
 void ShadowPass::render(FrameCache &frameCache)
 {
 	if (!m_collector)
@@ -189,63 +253,66 @@ void ShadowPass::render(FrameCache &frameCache)
 		return;
 	}
 
-	// Extract GPU-ready light and shadow uniform data
-	auto lightShadowPairs = m_collector->extractLightsAndShadows(
-		constants::MAX_SHADOW_MAPS_2D,
-		constants::MAX_SHADOW_MAPS_CUBE
-	);
-	frameCache.lightUniforms = std::move(std::get<0>(lightShadowPairs));
-	frameCache.shadowUniforms = std::move(std::get<1>(lightShadowPairs));
-
-	if (frameCache.lightUniforms.empty())
+	if (frameCache.shadowRequests.empty())
 		return;
 
-	// Render shadow maps for each light
-	for (const auto &lightUniform : frameCache.lightUniforms)
+	// Compute shadow uniforms from requests (this is where matrices are computed per-camera)
+	frameCache.shadowUniforms.clear();
+	frameCache.shadowUniforms.reserve(frameCache.shadowRequests.size());
+
+	for (const auto &request : frameCache.shadowRequests)
 	{
-		// Skip lights without shadows
-		if (lightUniform.shadowCount == 0)
-			continue;
+		frameCache.shadowUniforms.push_back(computeShadowUniform(request));
+	}
+
+	// Render shadow maps for each request
+	for (size_t i = 0; i < frameCache.shadowRequests.size(); ++i)
+	{
+		const auto &request = frameCache.shadowRequests[i];
+		const auto &shadowUniform = frameCache.shadowUniforms[i];
 
 		// Determine visible objects for this light
 		std::vector<size_t> visibleIndices;
-		if (lightUniform.light_type == 2) // Point light
+		if (request.type == ShadowType::PointCube)
 		{
+			// Point light - extract by sphere
 			visibleIndices = m_collector->extractForPointLight(
-				frameCache.shadowUniforms[lightUniform.shadowIndex].lightPos,
-				lightUniform.range
+				shadowUniform.lightPos,
+				request.light->asPoint().range
 			);
 		}
-		else // Directional or spot light
+		else // Directional2D or Spot2D
 		{
+			// Extract by frustum
 			visibleIndices = m_collector->extractForLightFrustum(
-				engine::math::Frustum::fromViewProjection(frameCache.shadowUniforms[lightUniform.shadowIndex].viewProj)
+				engine::math::Frustum::fromViewProjection(shadowUniform.viewProj)
 			);
+
 		}
 
 		// Prepare GPU resources for visible items
 		frameCache.prepareGPUResources(m_context, *m_collector, visibleIndices);
 
-		// Render shadow map based on light type
-		if (frameCache.shadowUniforms[lightUniform.shadowIndex].shadowType == 1) // Cube shadow
+		// Render shadow map based on type
+		if (request.type == ShadowType::PointCube)
 		{
 			renderShadowCube(
 				frameCache.gpuRenderItems,
 				visibleIndices,
 				m_shadowCubeArray,
-				static_cast<uint32_t>(lightUniform.shadowIndex),
-				frameCache.shadowUniforms[lightUniform.shadowIndex].lightPos,
-				lightUniform.range
+				request.textureIndex,
+				shadowUniform.lightPos,
+				request.light->asPoint().range
 			);
 		}
-		else // 2D shadow
+		else // Directional2D or Spot2D
 		{
 			renderShadow2D(
 				frameCache.gpuRenderItems,
 				visibleIndices,
 				m_shadow2DArray,
-				static_cast<uint32_t>(lightUniform.shadowIndex),
-				frameCache.shadowUniforms[lightUniform.shadowIndex].viewProj
+				request.textureIndex,
+				shadowUniform.viewProj
 			);
 		}
 	}
