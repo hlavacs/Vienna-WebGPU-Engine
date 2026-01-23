@@ -42,10 +42,10 @@ void SpatialNode::updateTransformParent(bool keepWorld)
 
 	// Find the nearest spatial parent in the Node hierarchy
 	auto spatialParent = findSpatialParentTransform();
-	
+
 	// Update Transform parent using friend access
 	m_transform->setParentInternal(spatialParent, keepWorld);
-	
+
 	// Propagate dirty state to all spatial children
 	propagateTransformDirty();
 }
@@ -54,9 +54,9 @@ void SpatialNode::propagateTransformDirty()
 {
 	if (!m_transform)
 		return;
-	
+
 	m_transform->markDirty();
-	
+
 	// Recursively mark all spatial children as dirty
 	for (const auto &child : children)
 	{

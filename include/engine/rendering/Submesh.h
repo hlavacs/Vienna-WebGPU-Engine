@@ -12,7 +12,7 @@ struct Submesh
 	uint32_t indexCount = 0;
 	Material::Handle material;
 
-	bool valid() const
+	[[nodiscard]] bool valid() const
 	{
 		return indexCount > 0 && material.valid();
 	}

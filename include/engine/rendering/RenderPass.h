@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 
 namespace engine::rendering
 {
@@ -14,12 +15,12 @@ class WebGPUContext;
 
 /**
  * @brief Base class for all render passes.
- * 
+ *
  * Provides a common interface for render passes with:
  * - Initialization and cleanup
  * - Rendering with FrameCache (core rendering data)
  * - WebGPU context access
- * 
+ *
  * Passes should receive additional dependencies (like RenderCollector) via setters,
  * not as render() parameters.
  */
@@ -52,7 +53,7 @@ class RenderPass
 	 * @param context Shared WebGPU context for device, queue, and factory access.
 	 */
 	explicit RenderPass(std::shared_ptr<webgpu::WebGPUContext> context) :
-		m_context(context)
+		m_context(std::move(context))
 	{
 	}
 

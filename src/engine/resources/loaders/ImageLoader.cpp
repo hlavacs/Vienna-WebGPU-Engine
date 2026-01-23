@@ -10,28 +10,27 @@
 
 namespace engine::resources::loaders
 {
-	
-[[nodiscard]] std::optional<Image::Ptr> ImageLoader::load(const std::filesystem::path& file)
-{
-    const auto fullPath = resolvePath(file);
-    logInfo("Loading image from '{}'", fullPath.string());
 
-    if (isHDRImage(fullPath))
-        return loadHDR(fullPath);
-    else
-        return loadLDR(fullPath);
+[[nodiscard]] std::optional<Image::Ptr> ImageLoader::load(const std::filesystem::path &file)
+{
+	const auto fullPath = resolvePath(file);
+	logInfo("Loading image from '{}'", fullPath.string());
+
+	if (isHDRImage(fullPath))
+		return loadHDR(fullPath);
+	else
+		return loadLDR(fullPath);
 }
 
-bool ImageLoader::isHDRImage(const std::filesystem::path& path)
+bool ImageLoader::isHDRImage(const std::filesystem::path &path)
 {
-    const auto ext = path.extension().string();
-    return ext == ".hdr"; 
+	const auto ext = path.extension().string();
+	return ext == ".hdr";
 }
-
 
 std::optional<Image::Ptr> ImageLoader::loadHDR(const std::filesystem::path &fullPath)
 {
-	stbi_set_flip_vertically_on_load(false); 
+	stbi_set_flip_vertically_on_load(false);
 
 	int width = 0, height = 0, channels = 0;
 	float *data = stbi_loadf(fullPath.string().c_str(), &width, &height, &channels, 0);

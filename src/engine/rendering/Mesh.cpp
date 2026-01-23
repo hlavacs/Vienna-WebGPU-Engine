@@ -32,7 +32,7 @@ void Mesh::computeTangentsIndexed()
 
 	for (auto &v : m_vertices)
 	{
-		glm::vec3 T = glm::vec3(v.tangent);
+		auto T = glm::vec3(v.tangent);
 		glm::vec3 N = v.normal;
 
 		// Orthonormalize per-vertex
@@ -69,7 +69,7 @@ void Mesh::computeTangentsNonIndexed()
 
 	for (auto &v : m_vertices)
 	{
-		glm::vec3 T = glm::vec3(v.tangent);
+		auto T = glm::vec3(v.tangent);
 		glm::vec3 N = v.normal;
 
 		// Orthonormalize per-vertex

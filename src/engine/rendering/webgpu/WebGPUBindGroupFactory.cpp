@@ -65,10 +65,10 @@ wgpu::BindGroupLayoutEntry WebGPUBindGroupFactory::createTextureBindGroupLayoutE
 }
 
 std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
-	const std::shared_ptr<WebGPUBindGroupLayoutInfo>& layoutInfo,
-	const std::map<BindGroupBindingKey, BindGroupResource>& resources,
-	const std::shared_ptr<WebGPUMaterial>& material,
-	const char* label
+	const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo,
+	const std::map<BindGroupBindingKey, BindGroupResource> &resources,
+	const std::shared_ptr<WebGPUMaterial> &material,
+	const char *label
 )
 {
 	std::vector<std::shared_ptr<WebGPUBuffer>> groupBuffers;
@@ -84,17 +84,16 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 
 		// Check if this binding has an override in the resources map
 		// Note: We don't know the group index from layoutInfo, so we check all keys with matching binding
-		auto resourceIt = std::find_if(resources.begin(), resources.end(),
-			[&entryLayout](const auto& pair) {
-				return std::get<1>(pair.first) == entryLayout.binding;
-			});
+		auto resourceIt = std::find_if(resources.begin(), resources.end(), [&entryLayout](const auto &pair)
+									   { return std::get<1>(pair.first) == entryLayout.binding; });
 		bool hasOverride = (resourceIt != resources.end());
 
 		if (hasOverride)
 		{
 			// Use the provided override resource
-			const auto& bindResource = resourceIt->second;
-			std::visit([&entry](const auto& resource) {
+			const auto &bindResource = resourceIt->second;
+			std::visit([&entry](const auto &resource)
+					   {
 				using T = std::decay_t<decltype(resource)>;
 				
 				if constexpr (std::is_same_v<T, std::shared_ptr<WebGPUTexture>>)
@@ -110,8 +109,8 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 					entry.buffer = resource->getBuffer();
 					entry.offset = 0;
 					entry.size = resource->getSize();
-				}
-			}, bindResource.resource);
+				} },
+					   bindResource.resource);
 		}
 		else
 		{

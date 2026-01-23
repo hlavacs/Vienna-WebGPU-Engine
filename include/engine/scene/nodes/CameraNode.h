@@ -36,7 +36,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	 * @brief Constructs a new CameraNode with default parameters.
 	 */
 	CameraNode();
-	virtual ~CameraNode() = default;
+	~CameraNode() override = default;
 
 	// =========================================================
 	// Transform and orientation
@@ -298,7 +298,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 		// Cameras don't add themselves to the collector - they're managed by the scene
 	}
 
-	void CameraNode::onRenderAreaChanged(uint32_t width, uint32_t height)
+	void onRenderAreaChanged(uint32_t width, uint32_t height)
 	{
 		if (height == 0)
 			return;
@@ -316,8 +316,8 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 		if (windowWidth == 0 || windowHeight == 0)
 			return;
 
-		uint32_t pixelWidth = static_cast<uint32_t>(windowWidth * m_viewport.width());
-		uint32_t pixelHeight = static_cast<uint32_t>(windowHeight * m_viewport.height());
+		auto pixelWidth = static_cast<uint32_t>(windowWidth * m_viewport.width());
+		auto pixelHeight = static_cast<uint32_t>(windowHeight * m_viewport.height());
 
 		onRenderAreaChanged(pixelWidth, pixelHeight);
 	}
@@ -338,7 +338,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	mutable glm::mat4 m_projectionMatrix = glm::mat4(1.0f);
 	mutable glm::mat4 m_viewProjectionMatrix = glm::mat4(1.0f);
 
-	mutable engine::math::Frustum m_frustum;
+	mutable engine::math::Frustum m_frustum{};
 
 	// =========================================================
 	// Projection parameters

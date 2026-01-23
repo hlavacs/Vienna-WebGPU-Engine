@@ -30,10 +30,10 @@ struct DirectionalLight
 	float shadowNormalBias = 0.3f;
 	uint32_t shadowMapSize = 2048; // Shadow map resolution
 	uint32_t shadowPCFKernel = 2;  // PCF kernel size (1 = 3x3, 2 = 5x5)
-	
+
 	// CSM (Cascaded Shadow Maps) parameters
-	uint32_t cascadeCount = 4;     // Number of shadow cascades (1-4)
-	float splitLambda = 0.7f;      // Lambda for cascade split distribution (0=uniform, 1=logarithmic)
+	uint32_t cascadeCount = 4; // Number of shadow cascades (1-4)
+	float splitLambda = 0.7f;  // Lambda for cascade split distribution (0=uniform, 1=logarithmic)
 };
 
 /**
@@ -113,7 +113,7 @@ class Light
 	 * @brief Gets the light data.
 	 * @return Reference to the variant containing light-specific data.
 	 */
-	const LightData &getData() const { return m_data; }
+	[[nodiscard]] const LightData &getData() const { return m_data; }
 
 	/**
 	 * @brief Gets the light data for modification.
@@ -134,13 +134,13 @@ class Light
 	 * @brief Gets the world transform.
 	 * @return World-space transformation matrix.
 	 */
-	const glm::mat4 &getTransform() const { return m_transform; }
+	[[nodiscard]] const glm::mat4 &getTransform() const { return m_transform; }
 
 	/**
 	 * @brief Checks if this light type can cast shadows.
 	 * @return True if the light has castShadows enabled.
 	 */
-	bool canCastShadows() const
+	[[nodiscard]] bool canCastShadows() const
 	{
 		return std::visit(
 			[](const auto &light) -> bool
@@ -159,7 +159,7 @@ class Light
 	 * @brief Gets the light type as an integer (0=ambient, 1=directional, 2=point, 3=spot).
 	 * @return Light type identifier.
 	 */
-	Light::Type getLightType() const
+	[[nodiscard]] Light::Type getLightType() const
 	{
 		return static_cast<Light::Type>(m_data.index());
 	}
@@ -168,7 +168,7 @@ class Light
 	 * @brief Extracts uniform data for GPU rendering.
 	 * @return LightStruct containing data in GPU-friendly format.
 	 */
-	LightStruct toUniforms() const
+	[[nodiscard]] LightStruct toUniforms() const
 	{
 		LightStruct uniforms;
 		uniforms.transform = m_transform;
@@ -210,30 +210,30 @@ class Light
 	/**
 	 * @brief Helper to get ambient light data (throws if not ambient).
 	 */
-	const AmbientLight &asAmbient() const { return std::get<AmbientLight>(m_data); }
+	[[nodiscard]] const AmbientLight &asAmbient() const { return std::get<AmbientLight>(m_data); }
 	AmbientLight &asAmbient() { return std::get<AmbientLight>(m_data); }
-	bool isAmbient() const { return std::holds_alternative<AmbientLight>(m_data); }
+	[[nodiscard]] bool isAmbient() const { return std::holds_alternative<AmbientLight>(m_data); }
 
 	/**
 	 * @brief Helper to get directional light data (throws if not directional).
 	 */
-	const DirectionalLight &asDirectional() const { return std::get<DirectionalLight>(m_data); }
+	[[nodiscard]] const DirectionalLight &asDirectional() const { return std::get<DirectionalLight>(m_data); }
 	DirectionalLight &asDirectional() { return std::get<DirectionalLight>(m_data); }
-	bool isDirectional() const { return std::holds_alternative<DirectionalLight>(m_data); }
+	[[nodiscard]] bool isDirectional() const { return std::holds_alternative<DirectionalLight>(m_data); }
 
 	/**
 	 * @brief Helper to get point light data (throws if not point).
 	 */
-	const PointLight &asPoint() const { return std::get<PointLight>(m_data); }
+	[[nodiscard]] const PointLight &asPoint() const { return std::get<PointLight>(m_data); }
 	PointLight &asPoint() { return std::get<PointLight>(m_data); }
-	bool isPoint() const { return std::holds_alternative<PointLight>(m_data); }
+	[[nodiscard]] bool isPoint() const { return std::holds_alternative<PointLight>(m_data); }
 
 	/**
 	 * @brief Helper to get spot light data (throws if not spot).
 	 */
-	const SpotLight &asSpot() const { return std::get<SpotLight>(m_data); }
+	[[nodiscard]] const SpotLight &asSpot() const { return std::get<SpotLight>(m_data); }
 	SpotLight &asSpot() { return std::get<SpotLight>(m_data); }
-	bool isSpot() const { return std::holds_alternative<SpotLight>(m_data); }
+	[[nodiscard]] bool isSpot() const { return std::holds_alternative<SpotLight>(m_data); }
 
   private:
 	LightData m_data;

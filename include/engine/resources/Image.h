@@ -90,27 +90,16 @@ class Image
 	Image() = default;
 
 	// Create empty image with given format
-	Image(uint32_t width, uint32_t height, ImageFormat::Type format)
+	Image(uint32_t width, uint32_t height, ImageFormat::Type format) : m_width(width), m_height(height), m_format(format)
 	{
-		m_width = width;
-		m_height = height;
-		m_format = format;
 	}
 
 	// Load from pixel data (copy)
-	Image(uint32_t width, uint32_t height, ImageFormat::Type format, std::vector<uint8_t> &&ldrPixels)
+	Image(uint32_t width, uint32_t height, ImageFormat::Type format, std::vector<uint8_t> &&ldrPixels) : m_width(width), m_height(height), m_format(format), m_ldrPixels(std::move(ldrPixels))
 	{
-		m_width = width;
-		m_height = height;
-		m_format = format;
-		m_ldrPixels = std::move(ldrPixels);
 	}
-	Image(uint32_t width, uint32_t height, ImageFormat::Type format, std::vector<float> &&hdrPixels)
+	Image(uint32_t width, uint32_t height, ImageFormat::Type format, std::vector<float> &&hdrPixels) : m_width(width), m_height(height), m_format(format), m_hdrPixels(std::move(hdrPixels))
 	{
-		m_width = width;
-		m_height = height;
-		m_format = format;
-		m_hdrPixels = std::move(hdrPixels);
 	}
 
 	Image(Image &&) noexcept = default;
@@ -119,29 +108,29 @@ class Image
 	Image(const Image &) = delete;
 	Image &operator=(const Image &) = delete;
 
-	uint32_t getWidth() const { return m_width; }
-	uint32_t getHeight() const { return m_height; }
-	ImageFormat::Type getFormat() const { return m_format; }
-	uint32_t getChannelCount() const
+	[[nodiscard]] uint32_t getWidth() const { return m_width; }
+	[[nodiscard]] uint32_t getHeight() const { return m_height; }
+	[[nodiscard]] ImageFormat::Type getFormat() const { return m_format; }
+	[[nodiscard]] uint32_t getChannelCount() const
 	{
 		return ImageFormat::getChannelCount(m_format);
 	}
-	bool isLDR() const
+	[[nodiscard]] bool isLDR() const
 	{
 		return ImageFormat::isLDRFormat(m_format);
 	}
-	bool isHDR() const
+	[[nodiscard]] bool isHDR() const
 	{
 		return ImageFormat::isHDRFormat(m_format);
 	}
-	bool isEmpty() const { return m_width == 0 || m_height == 0; }
+	[[nodiscard]] bool isEmpty() const { return m_width == 0 || m_height == 0; }
 
-	const std::vector<uint8_t> &getPixels8() const
+	[[nodiscard]] const std::vector<uint8_t> &getPixels8() const
 	{
 		assert(!isHDR());
 		return m_ldrPixels;
 	}
-	const std::vector<float> &getPixelsF() const
+	[[nodiscard]] const std::vector<float> &getPixelsF() const
 	{
 		assert(isHDR());
 		return m_hdrPixels;

@@ -15,10 +15,10 @@ std::shared_ptr<Scene> SceneManager::createScene(const std::string &sceneName)
 
 	// Create new scene
 	auto scene = std::make_shared<Scene>();
-	scene->setEngineContext(m_engineContext); // Set engine context for the scene
+	scene->setEngineContext(m_engineContext);			 // Set engine context for the scene
 	scene->getRoot()->setEngineContext(m_engineContext); // Set context for root node
 	m_scenes[sceneName] = scene;
-	
+
 	spdlog::info("Created scene '{}'", sceneName);
 	return scene;
 }
@@ -36,7 +36,7 @@ void SceneManager::registerScene(const std::string &sceneName, std::shared_ptr<S
 		spdlog::warn("Scene '{}' already exists, overwriting", sceneName);
 	}
 
-	scene->setEngineContext(m_engineContext); // Set engine context
+	scene->setEngineContext(m_engineContext);			 // Set engine context
 	scene->getRoot()->setEngineContext(m_engineContext); // Set context for root node
 	m_scenes[sceneName] = scene;
 	spdlog::info("Registered scene '{}'", sceneName);
@@ -61,7 +61,7 @@ bool SceneManager::loadScene(const std::string &sceneName)
 	// Load new scene
 	m_activeScene = it->second;
 	m_activeSceneName = sceneName;
-	
+
 	spdlog::info("Loaded scene '{}'", sceneName);
 	return true;
 }
@@ -106,11 +106,11 @@ bool SceneManager::hasScene(const std::string &sceneName) const
 	return m_scenes.find(sceneName) != m_scenes.end();
 }
 
-void SceneManager::setEngineContext(engine::EngineContext* context)
+void SceneManager::setEngineContext(engine::EngineContext *context)
 {
 	m_engineContext = context;
 	// Update all existing scenes
-	for (auto& [name, scene] : m_scenes)
+	for (auto &[name, scene] : m_scenes)
 	{
 		if (scene)
 		{

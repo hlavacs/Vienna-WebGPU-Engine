@@ -22,6 +22,7 @@ class Transform : public std::enable_shared_from_this<Transform>
 {
 	// Only SpatialNode can modify parent relationships
 	friend class nodes::SpatialNode;
+
   public:
 	using Ptr = std::shared_ptr<Transform>;
 

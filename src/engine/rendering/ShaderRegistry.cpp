@@ -131,7 +131,7 @@ bool ShaderRegistry::registerShader(std::shared_ptr<webgpu::WebGPUShaderInfo> sh
 	}
 
 	m_shaders[shaderInfo->getName()] = shaderInfo;
-	if(replaceIfExists)
+	if (replaceIfExists)
 	{
 		spdlog::info("Replaced existing shader '{}'", shaderInfo->getName());
 	}
@@ -190,7 +190,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 
 	auto shaderInfo =
 		m_context.shaderFactory()
-			.begin(shader::default ::PBR, ShaderType::Lit, "vs_main", "fs_main", engine::core::PathProvider::getResource("PBR_Lit_Shader.wgsl"))
+			.begin(shader::defaults ::PBR, ShaderType::Lit, "vs_main", "fs_main", engine::core::PathProvider::getResource("PBR_Lit_Shader.wgsl"))
 			.setVertexLayout(VertexLayout::PositionNormalUVTangentColor)
 			// Group 0: Frame uniforms (camera, time)
 			.addFrameUniforms(0)
@@ -296,7 +296,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 
 	auto shaderInfo =
 		m_context.shaderFactory()
-			.begin(shader::default ::DEBUG, ShaderType::Debug, "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
+			.begin(shader::defaults ::DEBUG, ShaderType::Debug, "vs_main", "fs_main", engine::core::PathProvider::getResource("debug.wgsl"))
 			.addFrameUniforms(0) // View-projection matrix from frame uniforms
 			.addStorageBuffer(
 				"uDebugPrimitives",
@@ -316,7 +316,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadSh
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
-				shader::default ::FULLSCREEN_QUAD,
+				shader::defaults ::FULLSCREEN_QUAD,
 				ShaderType::Unlit,
 				"vs_main",
 				"fs_main",
@@ -358,7 +358,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createMipmapBlitShader
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
-				shader::default ::MIPMAP_BLIT,
+				shader::defaults ::MIPMAP_BLIT,
 				ShaderType::Unlit,
 				"vs_main",
 				"fs_main",
@@ -398,7 +398,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowShader()
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
-				shader::default ::SHADOW,
+				shader::defaults ::SHADOW,
 				ShaderType::Unlit,
 				"vs_shadow",
 				"fs_shadow",
@@ -429,7 +429,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCubeShadowShader
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
-				shader::default ::SHADOW_CUBE,
+				shader::defaults ::SHADOW_CUBE,
 				ShaderType::Unlit,
 				"vs_shadow_cube",
 				"fs_shadow_cube",
@@ -462,7 +462,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVisualizeDepthSh
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
-				shader::default ::VISUALIZE_DEPTH,
+				shader::defaults ::VISUALIZE_DEPTH,
 				ShaderType::Unlit,
 				"vs_main",
 				"fs_main",

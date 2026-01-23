@@ -45,7 +45,7 @@ class ResourceManagerBase : public engine::debug::Loggable
 	/**
 	 * @brief Virtual destructor.
 	 */
-	virtual ~ResourceManagerBase() = default;
+	~ResourceManagerBase() override = default;
 
 	// Delete copy constructor and copy assignment to enforce move-only semantics.
 	ResourceManagerBase(const ResourceManagerBase &) = delete;

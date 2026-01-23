@@ -59,9 +59,9 @@
 		return a;                                                                                                                               \
 	}
 
-#define ENUM_BIT_FLAGS_HAS(EnumName)                                                                                                     \
-	inline static bool hasFlag(EnumName value, EnumName flag) noexcept                                                                 \
-	{                                                                                                                                   \
+#define ENUM_BIT_FLAGS_HAS(EnumName)                                                                                                      \
+	inline static bool hasFlag(EnumName value, EnumName flag) noexcept                                                                    \
+	{                                                                                                                                     \
 		return (static_cast<std::underlying_type<EnumName>::type>(value) & static_cast<std::underlying_type<EnumName>::type>(flag)) != 0; \
 	}
 

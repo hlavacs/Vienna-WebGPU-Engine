@@ -75,7 +75,7 @@ class Renderer
 	 * @brief Gets the WebGPU context.
 	 * @return Pointer to WebGPU context.
 	 */
-	webgpu::WebGPUContext *getWebGPUContext() const { return m_context.get(); }
+	[[nodiscard]] webgpu::WebGPUContext *getWebGPUContext() const { return m_context.get(); }
 
 	/**
 	 * @brief Handles window resize events.

@@ -1,3 +1,5 @@
+#include <memory>
+
 #include "engine/rendering/webgpu/WebGPURenderPassFactory.h"
 
 #include "engine/rendering/ClearFlags.h"
@@ -91,12 +93,12 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createDepthOnl
 	renderPassDesc.depthStencilAttachment = &depthAttachment;
 
 	// No color textures for depth-only pass
-	return std::shared_ptr<WebGPURenderPassContext>(
-		new WebGPURenderPassContext(
-			std::vector<std::shared_ptr<WebGPUTexture>>{},
-			nullptr,
-			renderPassDesc
-		)
+	return std::make_shared<WebGPURenderPassContext>(
+
+		std::vector<std::shared_ptr<WebGPUTexture>>{},
+		nullptr,
+		renderPassDesc
+
 	);
 }
 

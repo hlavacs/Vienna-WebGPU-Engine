@@ -1,8 +1,8 @@
 #include "engine/GameEngine.h"
 
 #include <SDL.h>
-#include <backends/imgui_impl_sdl2.h>
 #include <algorithm>
+#include <backends/imgui_impl_sdl2.h>
 #include <chrono>
 #include <iostream>
 #include <sdl2webgpu.h>
@@ -344,11 +344,8 @@ void GameEngine::renderFrame(float deltaTime)
 		return;
 
 	// Sort cameras by depth (lower depth renders first)
-	std::sort(cameras.begin(), cameras.end(),
-		[](const auto &a, const auto &b) {
-			return a->getDepth() < b->getDepth();
-		}
-	);
+	std::sort(cameras.begin(), cameras.end(), [](const auto &a, const auto &b)
+			  { return a->getDepth() < b->getDepth(); });
 
 	engine::rendering::RenderCollector renderCollector;
 	// Collect render data directly from scene graph
@@ -375,7 +372,7 @@ void GameEngine::renderFrame(float deltaTime)
 		target.clearFlags = camera->getClearFlags();
 		target.backgroundColor = camera->getBackgroundColor();
 		target.cpuTarget = camera->getRenderTarget();
-		target.gpuTexture = nullptr;  // Will be set by renderer
+		target.gpuTexture = nullptr; // Will be set by renderer
 
 		renderTargets.push_back(target);
 	}

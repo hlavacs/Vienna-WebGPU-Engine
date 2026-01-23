@@ -31,7 +31,7 @@ class WebGPUDepthTextureFactory
 	 * @brief Construct the factory with a WebGPU context.
 	 * @param context Pointer to the WebGPUContext. Must not be nullptr.
 	 */
-	explicit WebGPUDepthTextureFactory(WebGPUContext& context);
+	explicit WebGPUDepthTextureFactory(WebGPUContext &context);
 
 	/**
 	 * @brief Create a default depth texture and view for the given size.
@@ -59,7 +59,7 @@ class WebGPUDepthTextureFactory
 	/**
 	 * @brief Pointer to the WebGPU context used for resource creation.
 	 */
-	WebGPUContext& m_context;
+	WebGPUContext &m_context;
 };
 
 } // namespace engine::rendering::webgpu

@@ -12,4 +12,4 @@ enum class ShaderType
 	PostProcess,
 	Custom
 };
-}
+} // namespace engine::rendering

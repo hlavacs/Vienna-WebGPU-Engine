@@ -16,7 +16,7 @@ class CoordinateSystem
 
 		// Right-handed systems
 		RH_Y_UP_NEGATIVE_Z_FORWARD, // WebGPU, Vulkan, OpenGL, Maya, glTF (RH, +Y up, -Z forward)
-		RH_Z_UP_NEGATIVE_Y_FORWARD,	// Blender, 3ds Max (RH, +Z up, -Y forward)
+		RH_Z_UP_NEGATIVE_Y_FORWARD, // Blender, 3ds Max (RH, +Z up, -Y forward)
 	};
 
 	enum class Handedness
@@ -33,8 +33,8 @@ class CoordinateSystem
 	};
 
 	/*
-	* @brief Default coordinate system used by the engine
-	*/
+	 * @brief Default coordinate system used by the engine
+	 */
 	static constexpr Cartesian DEFAULT = Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD;
 
 	static constexpr Cartesian UNITY = Cartesian::LH_Y_UP_Z_FORWARD;

@@ -1,10 +1,10 @@
 #include "engine/ui/ImGuiManager.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
-#include <imgui.h>
+#include <SDL.h>
 #include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_wgpu.h>
-#include <SDL.h>
+#include <imgui.h>
 #include <spdlog/spdlog.h>
 
 namespace engine::ui
@@ -15,7 +15,7 @@ ImGuiManager::~ImGuiManager()
 	shutdown();
 }
 
-bool ImGuiManager::initialize(SDL_Window* window, std::shared_ptr<engine::rendering::webgpu::WebGPUContext> context)
+bool ImGuiManager::initialize(SDL_Window *window, std::shared_ptr<engine::rendering::webgpu::WebGPUContext> context)
 {
 	if (m_initialized)
 	{
@@ -38,7 +38,7 @@ bool ImGuiManager::initialize(SDL_Window* window, std::shared_ptr<engine::render
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO();
+	ImGuiIO &io = ImGui::GetIO();
 	(void)io;
 
 	// Setup Platform/Renderer backends
@@ -49,7 +49,7 @@ bool ImGuiManager::initialize(SDL_Window* window, std::shared_ptr<engine::render
 	WGPUDevice wgpuDevice = device;
 	WGPUTextureFormat rtFormat = static_cast<WGPUTextureFormat>(context->getSwapChainFormat());
 	WGPUTextureFormat depthFormat = WGPUTextureFormat_Undefined; // No depth for UI rendering
-	
+
 	ImGui_ImplWGPU_Init(wgpuDevice, 3, rtFormat, depthFormat);
 
 	m_initialized = true;
@@ -71,7 +71,8 @@ void ImGuiManager::shutdown()
 	ImGui::DestroyContext();
 
 	m_initialized = false;
-	spdlog::info("ImGuiManager shut down");}
+	spdlog::info("ImGuiManager shut down");
+}
 
 void ImGuiManager::addFrame(UIFrameCallback callback)
 {
@@ -97,14 +98,14 @@ void ImGuiManager::render(wgpu::RenderPassEncoder renderPass)
 	ImGui::NewFrame();
 
 	// Execute all frame callbacks
-	for (auto& callback : m_frameCallbacks)
+	for (auto &callback : m_frameCallbacks)
 	{
 		callback();
 	}
 
 	// Render ImGui
 	ImGui::Render();
-	ImDrawData* drawData = ImGui::GetDrawData();
+	ImDrawData *drawData = ImGui::GetDrawData();
 	if (drawData)
 	{
 		ImGui_ImplWGPU_RenderDrawData(drawData, renderPass);

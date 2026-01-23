@@ -140,31 +140,31 @@ class WebGPUPipeline
 	 * @brief Gets the underlying WebGPU render pipeline.
 	 * @return The render pipeline.
 	 */
-	wgpu::RenderPipeline getPipeline() const { return m_pipeline; }
+	[[nodiscard]] wgpu::RenderPipeline getPipeline() const { return m_pipeline; }
 
 	/**
 	 * @brief Gets the pipeline layout.
 	 * @return The pipeline layout.
 	 */
-	wgpu::PipelineLayout getLayout() const { return m_layout; }
+	[[nodiscard]] wgpu::PipelineLayout getLayout() const { return m_layout; }
 
 	/**
 	 * @brief Gets the render pipeline descriptor.
 	 * @return The descriptor used to create this pipeline.
 	 */
-	const wgpu::RenderPipelineDescriptor &getDescriptor() const { return m_descriptor; }
+	[[nodiscard]] const wgpu::RenderPipelineDescriptor &getDescriptor() const { return m_descriptor; }
 
 	/**
 	 * @brief Checks if the pipeline is valid.
 	 * @return True if pipeline is not null.
 	 */
-	bool isValid() const { return m_pipeline != nullptr; }
+	[[nodiscard]] bool isValid() const { return m_pipeline != nullptr; }
 
 	/**
 	 * @brief Gets the vertex layout baked into this pipeline.
 	 * @return The vertex layout enum.
 	 */
-	engine::rendering::VertexLayout getVertexLayout() const { return m_vertexLayout; }
+	[[nodiscard]] engine::rendering::VertexLayout getVertexLayout() const { return m_vertexLayout; }
 
 	/**
 	 * @brief Implicit conversion to wgpu::RenderPipeline for convenience.

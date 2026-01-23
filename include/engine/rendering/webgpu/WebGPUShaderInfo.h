@@ -55,8 +55,10 @@ class WebGPUShaderInfo
 	{
 	}
 
-	~WebGPUShaderInfo() {
-		if (m_module) {
+	~WebGPUShaderInfo()
+	{
+		if (m_module)
+		{
 			m_module.release();
 		}
 		m_module = nullptr;
@@ -67,63 +69,63 @@ class WebGPUShaderInfo
 	 * @brief Gets the shader name.
 	 * @return Shader name string.
 	 */
-	const std::string &getName() const { return m_name; }
+	[[nodiscard]] const std::string &getName() const { return m_name; }
 	/**
 	 * @brief Gets the shader file path.
 	 * @return Shader file path string.
 	 */
-	const std::string &getPath() const { return m_path; }
+	[[nodiscard]] const std::string &getPath() const { return m_path; }
 	/**
 	 * @brief Gets the WebGPU shader module.
 	 * @return The WebGPU shader module.
 	 */
-	wgpu::ShaderModule getModule() const { return m_module; }
+	[[nodiscard]] wgpu::ShaderModule getModule() const { return m_module; }
 	/**
 	 * @brief Gets the vertex entry point name.
 	 * @return Vertex entry point string.
 	 */
-	const std::string &getVertexEntryPoint() const { return m_vertexEntryPoint; }
+	[[nodiscard]] const std::string &getVertexEntryPoint() const { return m_vertexEntryPoint; }
 	/**
 	 * @brief Gets the fragment entry point name.
 	 * @return Fragment entry point string.
 	 */
-	const std::string &getFragmentEntryPoint() const { return m_fragmentEntryPoint; }
+	[[nodiscard]] const std::string &getFragmentEntryPoint() const { return m_fragmentEntryPoint; }
 	/**
 	 * @brief Gets the shader type.
 	 * @return Shader type enum.
 	 */
-	const engine::rendering::ShaderType &getShaderType() const { return m_shaderType; }
+	[[nodiscard]] const engine::rendering::ShaderType &getShaderType() const { return m_shaderType; }
 	/**
 	 * @brief Gets the vertex layout.
 	 * @return Vertex layout enum.
 	 */
-	const engine::rendering::VertexLayout &getVertexLayout() const { return m_vertexLayout; }
+	[[nodiscard]] const engine::rendering::VertexLayout &getVertexLayout() const { return m_vertexLayout; }
 	/**
 	 * @brief Gets the vertex layout.
 	 * @return Vertex layout enum.
 	 */
-	const engine::rendering::ShaderFeature::Flag &getShaderFeatures() const { return m_features; }
+	[[nodiscard]] const engine::rendering::ShaderFeature::Flag &getShaderFeatures() const { return m_features; }
 	/**
 	 * @brief Wether depth testing is enabled.
 	 * @return True if depth testing is enabled.
 	 */
-	bool isDepthEnabled() const { return m_enableDepth; }
+	[[nodiscard]] bool isDepthEnabled() const { return m_enableDepth; }
 	/**
 	 * @brief Wether blending is enabled.
 	 * @return True if blending is enabled.
 	 */
-	bool isBlendEnabled() const { return m_enableBlend; }
+	[[nodiscard]] bool isBlendEnabled() const { return m_enableBlend; }
 	/**
 	 * @brief Wether back-face culling is enabled.
 	 * @return True if back-face culling is enabled.
 	 */
-	bool isBackFaceCullingEnabled() const { return m_cullBackFaces; }
+	[[nodiscard]] bool isBackFaceCullingEnabled() const { return m_cullBackFaces; }
 
 	/**
 	 * @brief Access bind group layouts for pipeline creation.
 	 * @return Map of group index to layout info.
 	 */
-	const std::unordered_map<uint32_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> &getBindGroupLayouts() const
+	[[nodiscard]] const std::unordered_map<uint32_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> &getBindGroupLayouts() const
 	{
 		return m_bindGroupLayouts;
 	}
@@ -132,7 +134,7 @@ class WebGPUShaderInfo
 	 * @brief Access bind group layouts for pipeline creation.
 	 * @return Vector of layout infos.
 	 */
-	std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> getBindGroupLayoutVector() const
+	[[nodiscard]] std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> getBindGroupLayoutVector() const
 	{
 		std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> layoutVector;
 		for (const auto &[_, layout] : m_bindGroupLayouts)
@@ -147,7 +149,7 @@ class WebGPUShaderInfo
 	 * @param groupIndex The bind group index.
 	 * @return Shared pointer to layout info or nullptr.
 	 */
-	std::shared_ptr<WebGPUBindGroupLayoutInfo> getBindGroupLayout(uint32_t groupIndex) const
+	[[nodiscard]] std::shared_ptr<WebGPUBindGroupLayoutInfo> getBindGroupLayout(uint32_t groupIndex) const
 	{
 		auto it = m_bindGroupLayouts.find(groupIndex);
 		if (it != m_bindGroupLayouts.end())
@@ -159,7 +161,7 @@ class WebGPUShaderInfo
 	 * @brief Check if shader info is valid.
 	 * @return True if valid, false otherwise.
 	 */
-	bool isValid() const
+	[[nodiscard]] bool isValid() const
 	{
 		return m_module != nullptr && !m_vertexEntryPoint.empty() && !m_fragmentEntryPoint.empty();
 	}

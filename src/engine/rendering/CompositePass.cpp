@@ -26,13 +26,12 @@ bool CompositePass::initialize()
 	spdlog::info("Initializing CompositePass");
 
 	// Get fullscreen quad shader from registry
-	m_shaderInfo = m_context->shaderRegistry().getShader(shader::default ::FULLSCREEN_QUAD);
+	m_shaderInfo = m_context->shaderRegistry().getShader(shader::defaults ::FULLSCREEN_QUAD);
 	if (!m_shaderInfo || !m_shaderInfo->isValid())
 	{
 		spdlog::error("Fullscreen quad shader not found in registry");
 		return false;
 	}
-	
 
 	// Create pipeline using the pipeline manager
 	m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
@@ -118,7 +117,7 @@ std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
 	if (!texture)
 		return nullptr;
 
-	uint64_t cacheKey = reinterpret_cast<uint64_t>(texture.get());
+	auto cacheKey = reinterpret_cast<uint64_t>(texture.get());
 
 	auto it = m_bindGroupCache.find(cacheKey);
 	if (it != m_bindGroupCache.end())

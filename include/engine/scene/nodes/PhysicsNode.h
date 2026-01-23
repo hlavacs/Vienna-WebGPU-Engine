@@ -17,7 +17,7 @@ class PhysicsNode : public SpatialNode
 		addNodeType(NodeType::Physics);
 	}
 
-	virtual ~PhysicsNode() = default;
+	~PhysicsNode() override = default;
 
 	/** @brief Called at fixed intervals for physics updates. */
 	virtual void fixedUpdate(float fixedDeltaTime) {}

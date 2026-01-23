@@ -98,22 +98,22 @@ struct GltfGeometryData
 	/**
 	 * @brief Returns the total number of vertices
 	 */
-	size_t vertexCount() const { return vertices.size(); }
+	[[nodiscard]] size_t vertexCount() const { return vertices.size(); }
 
 	/**
 	 * @brief Returns the total number of indices
 	 */
-	size_t indexCount() const { return indices.size(); }
+	[[nodiscard]] size_t indexCount() const { return indices.size(); }
 
 	/**
 	 * @brief Returns the total number of primitives
 	 */
-	size_t primitiveCount() const { return primitives.size(); }
+	[[nodiscard]] size_t primitiveCount() const { return primitives.size(); }
 
 	/**
 	 * @brief Check if any geometry was loaded
 	 */
-	bool isEmpty() const { return vertices.empty(); }
+	[[nodiscard]] bool isEmpty() const { return vertices.empty(); }
 };
 
 } // namespace engine::resources

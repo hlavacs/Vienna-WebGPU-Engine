@@ -58,7 +58,7 @@ class WebGPUBindGroupLayoutInfo
 	 * @brief Gets the unique key for this bind group layout.
 	 * @return Optional unique key string.
 	 */
-	const std::optional<std::string> &getKey() const { return m_key; }
+	[[nodiscard]] const std::optional<std::string> &getKey() const { return m_key; }
 
 	/**
 	 * @brief Sets whether this bind group is global. Only relevant if a key is set.
@@ -70,7 +70,7 @@ class WebGPUBindGroupLayoutInfo
 	 * @brief Gets whether this bind group is global.
 	 * @return True if global, false otherwise.
 	 */
-	bool isGlobal() const { return m_isGlobal; }
+	[[nodiscard]] bool isGlobal() const { return m_isGlobal; }
 
 	/**
 	 * @brief Destructor that cleans up WebGPU resources.
@@ -87,25 +87,25 @@ class WebGPUBindGroupLayoutInfo
 	 * @brief Gets the underlying WebGPU bind group layout.
 	 * @return The WebGPU bind group layout object.
 	 */
-	wgpu::BindGroupLayout getLayout() const { return m_layout; }
+	[[nodiscard]] wgpu::BindGroupLayout getLayout() const { return m_layout; }
 
 	/**
 	 * @brief Gets the bind group layout descriptor.
 	 * @return The WebGPU bind group layout descriptor.
 	 */
-	const wgpu::BindGroupLayoutDescriptor &getLayoutDescriptor() const { return m_layoutDesc; }
+	[[nodiscard]] const wgpu::BindGroupLayoutDescriptor &getLayoutDescriptor() const { return m_layoutDesc; }
 
 	/**
 	 * @brief Gets the number of entries in the bind group layout.
 	 * @return Number of entries.
 	 */
-	uint32_t getEntryCount() const { return m_layoutDesc.entryCount; }
+	[[nodiscard]] uint32_t getEntryCount() const { return m_layoutDesc.entryCount; }
 
 	/**
 	 * @brief Gets the entries of the bind group layout.
 	 * @return Const reference to vector of bind group layout entries.
 	 */
-	const std::vector<wgpu::BindGroupLayoutEntry> &getEntries() const
+	[[nodiscard]] const std::vector<wgpu::BindGroupLayoutEntry> &getEntries() const
 	{
 		return m_entries;
 	}
@@ -116,7 +116,7 @@ class WebGPUBindGroupLayoutInfo
 	 * @return Pointer to the bind group layout entry at the specified index.
 	 * @throws Assertion failure if index is out of bounds.
 	 */
-	const wgpu::BindGroupLayoutEntry *getEntry(size_t index) const
+	[[nodiscard]] const wgpu::BindGroupLayoutEntry *getEntry(size_t index) const
 	{
 		assert(index < m_entries.size() && "Entry index out of bounds");
 		return &m_entries[index];
@@ -127,7 +127,7 @@ class WebGPUBindGroupLayoutInfo
 	 * @param binding The binding number to search for.
 	 * @return Pointer to the entry if found, nullptr otherwise.
 	 */
-	const wgpu::BindGroupLayoutEntry *findEntryByBinding(uint32_t binding) const
+	[[nodiscard]] const wgpu::BindGroupLayoutEntry *findEntryByBinding(uint32_t binding) const
 	{
 		for (const auto &entry : m_entries)
 		{
@@ -170,7 +170,7 @@ class WebGPUBindGroupLayoutInfo
 	 * @param binding The binding index.
 	 * @return The material slot name, or empty string if not set.
 	 */
-	std::string getMaterialSlotName(uint32_t binding) const
+	[[nodiscard]] std::string getMaterialSlotName(uint32_t binding) const
 	{
 		auto it = m_materialSlotNames.find(binding);
 		return (it != m_materialSlotNames.end()) ? it->second : "";
@@ -181,7 +181,7 @@ class WebGPUBindGroupLayoutInfo
 	 * @param binding The binding index.
 	 * @return The fallback color as glm::vec3, or std::nullopt if not set.
 	 */
-	std::optional<glm::vec3> getFallbackColor(uint32_t binding) const
+	[[nodiscard]] std::optional<glm::vec3> getFallbackColor(uint32_t binding) const
 	{
 		auto it = m_fallbackColors.find(binding);
 		if (it != m_fallbackColors.end())

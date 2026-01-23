@@ -24,26 +24,26 @@ struct Rect
 	 * @brief Computes the width of the rectangle.
 	 * @return Width as float.
 	 */
-	float width() const { return max.x - min.x; }
+	[[nodiscard]] float width() const { return max.x - min.x; }
 
 	/**
 	 * @brief Computes the height of the rectangle.
 	 * @return Height as float.
 	 */
-	float height() const { return max.y - min.y; }
+	[[nodiscard]] float height() const { return max.y - min.y; }
 
 	/**
 	 * @brief Computes the area of the rectangle.
 	 * @return Area as float.
 	 */
-	float area() const { return width() * height(); }
+	[[nodiscard]] float area() const { return width() * height(); }
 
 	/**
 	 * @brief Checks if a point is inside the rectangle.
 	 * @param point Point to test.
 	 * @return True if point is inside, false otherwise.
 	 */
-	bool contains(const glm::vec2 &point) const
+	[[nodiscard]] bool contains(const glm::vec2 &point) const
 
 	{
 		return (point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y);
@@ -66,7 +66,7 @@ struct Rect
 	 * @param other Rectangle to test intersection with.
 	 * @return True if rectangles intersect, false otherwise.
 	 */
-	bool intersects(const Rect &other) const
+	[[nodiscard]] bool intersects(const Rect &other) const
 	{
 		return (min.x <= other.max.x && max.x >= other.min.x && min.y <= other.max.y && max.y >= other.min.y);
 	}
@@ -75,6 +75,6 @@ struct Rect
 	 * @brief Gets the rectangle as a vec4 (min.x, min.y, max.x, max.y).
 	 * @return glm::vec4 representation.
 	 */
-	glm::vec4 toVec4() const { return glm::vec4(min.x, min.y, max.x, max.y); }
+	[[nodiscard]] glm::vec4 toVec4() const { return {min.x, min.y, max.x, max.y}; }
 };
 } // namespace engine::math

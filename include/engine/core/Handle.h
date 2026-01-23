@@ -31,15 +31,15 @@ class Handle
 	explicit constexpr Handle(id_type id) :
 		m_id(id) {}
 
-	constexpr id_type id() const { return m_id; }
-	constexpr bool valid() const { return m_id != 0; }
+	[[nodiscard]] constexpr id_type id() const { return m_id; }
+	[[nodiscard]] constexpr bool valid() const { return m_id != 0; }
 
 	constexpr bool operator==(const Handle<T> &other) const { return m_id == other.m_id; }
 	constexpr bool operator!=(const Handle<T> &other) const { return m_id != other.m_id; }
 	constexpr bool operator<(const Handle<T> &other) const { return m_id < other.m_id; }
 
 	// Attempts to resolve the handle using the resolver set by the manager
-	std::optional<std::shared_ptr<T>> get() const
+	[[nodiscard]] std::optional<std::shared_ptr<T>> get() const
 	{
 		if (!valid() || !s_resolver)
 			return std::nullopt;

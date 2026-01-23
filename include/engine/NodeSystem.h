@@ -1,6 +1,6 @@
 /**
  * NodeSystem.h - Convenience header for custom node implementations
- * 
+ *
  * Include this header when creating custom UpdateNode or RenderNode implementations.
  * It provides all common dependencies for node system development.
  */
@@ -14,12 +14,12 @@
 // Scene graph
 #include "engine/scene/Scene.h"
 #include "engine/scene/Transform.h"
-#include "engine/scene/nodes/Node.h"
-#include "engine/scene/nodes/UpdateNode.h"
-#include "engine/scene/nodes/RenderNode.h"
 #include "engine/scene/nodes/CameraNode.h"
 #include "engine/scene/nodes/LightNode.h"
 #include "engine/scene/nodes/ModelRenderNode.h"
+#include "engine/scene/nodes/Node.h"
+#include "engine/scene/nodes/RenderNode.h"
+#include "engine/scene/nodes/UpdateNode.h"
 
 // Common math
 #include <glm/glm.hpp>

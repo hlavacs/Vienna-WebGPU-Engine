@@ -336,7 +336,7 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::WebGPUShaderBuilder::build()
 {
 	// Load shader module if not already set and path provided
-	wgpu::ShaderModule shaderModule = m_shaderModule;  // Use stored module or load from path
+	wgpu::ShaderModule shaderModule = m_shaderModule; // Use stored module or load from path
 	if (!shaderModule && !m_shaderPath.empty())
 	{
 		shaderModule = m_factory.loadShaderModule(m_shaderPath);

@@ -47,7 +47,7 @@ struct alignas(16) DebugPrimitive
 			glm::vec3 to;
 			float _pad1;
 			glm::vec4 _unused;
-		} line;
+		} line{};
 
 		// Disk: center (vec3), radii (vec3) - elliptical disk
 		struct Disk
@@ -161,22 +161,22 @@ class DebugRenderCollector
 	/**
 	 * @brief Get the current list of primitives.
 	 */
-	const std::vector<DebugPrimitive> &getPrimitives() const { return m_primitives; }
+	[[nodiscard]] const std::vector<DebugPrimitive> &getPrimitives() const { return m_primitives; }
 
 	/**
 	 * @brief Get number of primitives.
 	 */
-	size_t getPrimitiveCount() const { return m_primitives.size(); }
+	[[nodiscard]] size_t getPrimitiveCount() const { return m_primitives.size(); }
 
 	/**
 	 * @brief Check if there are any primitives to render.
 	 */
-	bool isEmpty() const { return m_primitives.empty(); }
+	[[nodiscard]] bool isEmpty() const { return m_primitives.empty(); }
 
 	/**
 	 * @brief Check if the collection is at capacity.
 	 */
-	bool isFull() const { return m_primitives.size() >= MAX_DEBUG_PRIMITIVES; }
+	[[nodiscard]] bool isFull() const { return m_primitives.size() >= MAX_DEBUG_PRIMITIVES; }
 
 	/**
 	 * @brief Get the maximum number of primitives that can be stored.

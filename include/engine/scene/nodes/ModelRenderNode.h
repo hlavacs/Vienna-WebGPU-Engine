@@ -46,7 +46,7 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 		addNodeType(NodeType::Model);
 	}
 
-	virtual ~ModelRenderNode() = default;
+	~ModelRenderNode() override = default;
 
 	/**
 	 * @brief Add this model to the render collector.

@@ -1,6 +1,6 @@
 #pragma once
-#include <glm/glm.hpp>
 #include "ShadowUniforms.h"
+#include <glm/glm.hpp>
 
 namespace engine::rendering
 {

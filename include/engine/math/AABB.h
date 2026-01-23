@@ -46,20 +46,20 @@ struct AABB
 	 * 6: (min.x, max.y, max.z)
 	 * 7: (max.x, max.y, max.z)
 	 */
-	glm::vec3 getCorner(int index) const
+	[[nodiscard]] glm::vec3 getCorner(int index) const
 	{
-		return glm::vec3(
+		return {
 			(index & 1) ? max.x : min.x,
 			(index & 2) ? max.y : min.y,
 			(index & 4) ? max.z : min.z
-		);
+		};
 	}
 
 	/**
 	 * @brief Get all corners of the AABB.
 	 * @return An array of 8 corner positions.
 	 */
-	std::array<glm::vec3, 8> getCorners() const
+	[[nodiscard]] std::array<glm::vec3, 8> getCorners() const
 	{
 		return {
 			getCorner(0),
@@ -77,23 +77,23 @@ struct AABB
 	 * @brief Calculate the volume of the AABB.
 	 * @return The volume.
 	 */
-	float getVolume() const
+	[[nodiscard]] float getVolume() const
 	{
 		glm::vec3 size = max - min;
 		return size.x * size.y * size.z;
 	}
 
 	// Get center
-	glm::vec3 center() const { return (min + max) * 0.5f; }
+	[[nodiscard]] glm::vec3 center() const { return (min + max) * 0.5f; }
 
 	// Get size (width, height, depth)
-	glm::vec3 size() const { return max - min; }
+	[[nodiscard]] glm::vec3 size() const { return max - min; }
 
 	// Get extent (half-size)
-	glm::vec3 extent() const { return (max - min) * 0.5f; }
+	[[nodiscard]] glm::vec3 extent() const { return (max - min) * 0.5f; }
 
 	// Transform the AABB by a matrix
-	AABB transformed(const glm::mat4 &matrix) const
+	[[nodiscard]] AABB transformed(const glm::mat4 &matrix) const
 	{
 		auto corners = getCorners();
 

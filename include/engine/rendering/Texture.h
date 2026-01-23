@@ -95,8 +95,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	bool isReadbackPending() const
 	{
-		return m_readbackFuture.valid() && 
-			   m_readbackFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+		return m_readbackFuture.valid() && m_readbackFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
 	}
 
 	/**
@@ -105,8 +104,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	bool isReadbackComplete() const
 	{
-		return m_readbackFuture.valid() && 
-			   m_readbackFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+		return m_readbackFuture.valid() && m_readbackFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 	}
 
 	/**
@@ -187,9 +185,9 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 
 	engine::resources::Image::Ptr m_image;
 	std::filesystem::path m_filePath;
-	
+
 	mutable std::future<bool> m_readbackFuture; // Future for async GPU-to-CPU readback
-	bool m_readbackRequested = false; // Flag to request readback on next render
+	bool m_readbackRequested = false;			// Flag to request readback on next render
 };
 
 } // namespace engine::rendering

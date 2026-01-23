@@ -68,7 +68,8 @@ class WebGPUSyncObject
 	void syncIfNeeded()
 	{
 		auto obj = m_cpuHandle.get();
-		if (!obj || !obj.value()) return;
+		if (!obj || !obj.value())
+			return;
 
 		const auto &cpuObj = *obj.value();
 		if (needsSync(cpuObj))

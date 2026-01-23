@@ -169,8 +169,8 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 		return nullptr;
 	}
 
-	uint32_t viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.z);
-	uint32_t viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.w);
+	auto viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.z);
+	auto viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.w);
 
 	if (viewPortWidth == 0 || viewPortHeight == 0)
 	{
@@ -299,7 +299,7 @@ void Renderer::compositeTexturesToSurface(
 )
 {
 	/* m_frameCache.renderTargets[0].gpuTexture = m_context->textureFactory().createRenderTarget(
-		-1, 
+		-1,
 		2048,
 		2048,
 		wgpu::TextureFormat::RGBA8Unorm

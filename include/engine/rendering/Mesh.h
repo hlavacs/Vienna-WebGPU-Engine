@@ -83,8 +83,10 @@ struct Mesh : public engine::core::Identifiable<Mesh>, public engine::core::Vers
 	) :
 		m_vertices(std::move(vertices)),
 		m_boundingBox(boundingBox),
-		m_isIndexed(false),
-		m_isTriangulated(triangulated) {}
+
+		m_isTriangulated(triangulated)
+	{
+	}
 
 	Mesh(
 		std::vector<Vertex> vertices,

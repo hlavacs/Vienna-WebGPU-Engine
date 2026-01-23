@@ -8,6 +8,7 @@
 #include "engine/rendering/Submesh.h"
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace engine::rendering
@@ -23,7 +24,7 @@ struct Model : public engine::core::Identifiable<Model>, public engine::core::Ve
 	using Ptr = std::shared_ptr<Model>;
 
 	Model() = default;
-	Model(MeshHandle mesh, const std::string &filePath, const std::string &name = "") : engine::core::Identifiable<Model>(name), m_mesh(mesh), m_filePath(filePath)
+	Model(MeshHandle mesh, std::string filePath, const std::string &name = "") : engine::core::Identifiable<Model>(name), m_mesh(mesh), m_filePath(std::move(filePath))
 	{
 	}
 

@@ -14,17 +14,16 @@ class WebGPUContext;
 namespace engine::rendering
 {
 
-namespace shader::default
+namespace shader::defaults
 {
-	constexpr const char *PBR = "PBR_Lit_Shader";
-	constexpr const char *DEBUG = "Debug_Shader";
-	constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_Shader";
-	constexpr const char *MIPMAP_BLIT = "Mipmap_Blit_Shader";
-	constexpr const char *SHADOW = "Shadow_Shader";
-	constexpr const char *SHADOW_CUBE = "Shadow_Cube_Shader";
-	constexpr const char *VISUALIZE_DEPTH = "Visualize_Depth_Shader";
-} // namespace shader::default
-
+constexpr const char *PBR = "PBR_Lit_Shader";
+constexpr const char *DEBUG = "Debug_Shader";
+constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_Shader";
+constexpr const char *MIPMAP_BLIT = "Mipmap_Blit_Shader";
+constexpr const char *SHADOW = "Shadow_Shader";
+constexpr const char *SHADOW_CUBE = "Shadow_Cube_Shader";
+constexpr const char *VISUALIZE_DEPTH = "Visualize_Depth_Shader";
+} // namespace shader::defaults
 
 /**
  * @class ShaderRegistry
@@ -56,7 +55,7 @@ class ShaderRegistry
 	 * @param name The name of the shader.
 	 * @return Shared pointer to shader info, or nullptr if not found.
 	 */
-	std::shared_ptr<webgpu::WebGPUShaderInfo> getShader(const std::string &name) const;
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUShaderInfo> getShader(const std::string &name) const;
 
 	/**
 	 * @brief Register a shader with its name. Names must be unique.
@@ -83,7 +82,7 @@ class ShaderRegistry
 	 * @param name The shader name.
 	 * @return True if shader exists.
 	 */
-	bool hasShader(const std::string &name) const;
+	[[nodiscard]] bool hasShader(const std::string &name) const;
 
   private:
 	webgpu::WebGPUContext &m_context;

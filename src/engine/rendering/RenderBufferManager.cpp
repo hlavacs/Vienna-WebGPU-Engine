@@ -12,7 +12,7 @@ RenderBufferManager::RenderBufferManager(size_t bufferCount) :
 
 RenderState &RenderBufferManager::acquireWriteBuffer()
 {
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::scoped_lock lock(m_mutex);
 	return m_buffers[m_writeIndex % m_bufferCount];
 }
 
@@ -27,7 +27,7 @@ void RenderBufferManager::submitWrite()
 
 const RenderState &RenderBufferManager::acquireReadBuffer()
 {
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::scoped_lock lock(m_mutex);
 	return m_buffers[m_readIndex % m_bufferCount];
 }
 

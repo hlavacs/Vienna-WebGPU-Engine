@@ -32,7 +32,7 @@ class Scene
 	void setRoot(nodes::Node::Ptr root) { m_root = root; }
 
 	/** @brief Get the root node of the scene */
-	nodes::Node::Ptr getRoot() const { return m_root; }
+	[[nodiscard]] nodes::Node::Ptr getRoot() const { return m_root; }
 
 	/** @brief Set the main camera.
 	 * @param camera The camera node to set as the main camera.
@@ -45,12 +45,12 @@ class Scene
 	}
 
 	/** @brief Get the active camera */
-	nodes::CameraNode::Ptr getMainCamera() const { return m_mainCamera; }
+	[[nodiscard]] nodes::CameraNode::Ptr getMainCamera() const { return m_mainCamera; }
 
 	/** @brief Get all active cameras in the scene
 	 * @note The main camera is always first in the returned vector
 	 */
-	std::vector<std::shared_ptr<nodes::CameraNode>> getActiveCameras() const
+	[[nodiscard]] std::vector<std::shared_ptr<nodes::CameraNode>> getActiveCameras() const
 	{
 		if (!m_mainCamera || !m_mainCamera->isEnabled())
 			return {}; // If no main camera we will not rendrer anything
@@ -77,13 +77,13 @@ class Scene
 	}
 
 	/** @brief Get the debug render collector for this frame */
-	const engine::rendering::DebugRenderCollector &getDebugCollector() const { return m_debugCollector; }
+	[[nodiscard]] const engine::rendering::DebugRenderCollector &getDebugCollector() const { return m_debugCollector; }
 
 	/** @brief Set the engine context for node access to engine systems */
 	void setEngineContext(engine::EngineContext *context) { m_engineContext = context; }
 
 	/** @brief Get the engine context */
-	engine::EngineContext *getEngineContext() const { return m_engineContext; }
+	[[nodiscard]] engine::EngineContext *getEngineContext() const { return m_engineContext; }
 
   protected:
 	friend class engine::GameEngine;
@@ -96,10 +96,10 @@ class Scene
 
 	/**
 	 * @brief Collect renderable items from scene graph into the RenderCollector.
-	 * 
+	 *
 	 * Traverses the scene graph and calls onRenderCollect() on all enabled RenderNodes,
 	 * allowing them to add models and lights directly to the RenderCollector.
-	 * 
+	 *
 	 * @param collector The render collector to populate with scene data.
 	 */
 	void collectRenderData(engine::rendering::RenderCollector &collector);

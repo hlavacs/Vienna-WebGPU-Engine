@@ -2,7 +2,7 @@
 
 namespace engine
 {
-	
+
 /**
  * @struct GameEngineOptions
  * @brief Configuration options for the game engine.

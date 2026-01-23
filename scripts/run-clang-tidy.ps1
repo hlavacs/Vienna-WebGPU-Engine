@@ -69,7 +69,7 @@ $counter = 0
 foreach ($file in $files) {
     $counter++
     Write-Host "[$counter/$($files.Count)] $($file.FullName)"
-    clang-tidy $file.FullName -p $BuildDir --header-filter=".*" $fixArg
+    clang-tidy $file.FullName -p $BuildDir --header-filter='^(src|include)/(?!.*(stb_image|tiny_gltf|tiny_obj))' $fixArg
 }
 
 Write-Host "`nclang-tidy finished. Processed $counter files."

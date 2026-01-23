@@ -7,8 +7,8 @@
 
 #include "engine/core/Handle.h"
 #include "engine/rendering/Material.h"
-#include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUSyncObject.h"
 
 namespace engine::rendering::webgpu
@@ -52,7 +52,7 @@ class WebGPUMaterial : public WebGPUSyncObject<engine::rendering::Material>, pub
 	 * @brief Bind the material for rendering.
 	 * @param renderPass The render pass encoder.
 	 */
-    void bind(wgpu::RenderPassEncoder &renderPass) const;
+	void bind(wgpu::RenderPassEncoder &renderPass) const;
 
 	/**
 	 * @brief Get the material textures dictionary.
@@ -135,7 +135,7 @@ class WebGPUMaterial : public WebGPUSyncObject<engine::rendering::Material>, pub
 	/**
 	 * @brief The material bind group.
 	 */
-    std::shared_ptr<WebGPUBindGroup> m_materialBindGroup;
+	std::shared_ptr<WebGPUBindGroup> m_materialBindGroup;
 };
 
 } // namespace engine::rendering::webgpu

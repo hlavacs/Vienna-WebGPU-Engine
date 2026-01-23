@@ -1,10 +1,11 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 #include <vector>
 
-#include <webgpu/webgpu.hpp>
 #include <spdlog/spdlog.h>
+#include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
@@ -37,7 +38,7 @@ class WebGPUBindGroup
 		std::shared_ptr<WebGPUBindGroupLayoutInfo> layoutInfo,
 		std::vector<std::shared_ptr<WebGPUBuffer>> buffers
 	) : m_bindGroup(bindGroup),
-		m_layoutInfo(layoutInfo),
+		m_layoutInfo(std::move(layoutInfo)),
 		m_buffers(std::move(buffers))
 	{
 		// Note: bindGroup can be null for layout-only groups (e.g., texture groups managed by material system)
@@ -76,19 +77,19 @@ class WebGPUBindGroup
 	 * @brief Gets the underlying WebGPU bind group.
 	 * @return The WebGPU bind group object.
 	 */
-	wgpu::BindGroup getBindGroup() const { return m_bindGroup; }
+	[[nodiscard]] wgpu::BindGroup getBindGroup() const { return m_bindGroup; }
 
 	/**
 	 * @brief Gets the bind group layout info.
 	 * @return Shared pointer to the bind group layout info.
 	 */
-	std::shared_ptr<WebGPUBindGroupLayoutInfo> getLayoutInfo() const { return m_layoutInfo; }
+	[[nodiscard]] std::shared_ptr<WebGPUBindGroupLayoutInfo> getLayoutInfo() const { return m_layoutInfo; }
 
 	/**
 	 * @brief Gets the buffers used by this bind group.
 	 * @return Vector of shared pointers to WebGPUBuffer instances.
 	 */
-	const std::vector<std::shared_ptr<WebGPUBuffer>> &getBuffers() const { return m_buffers; }
+	[[nodiscard]] const std::vector<std::shared_ptr<WebGPUBuffer>> &getBuffers() const { return m_buffers; }
 
 	/**
 	 * @brief Gets a specific buffer by index.
@@ -96,7 +97,7 @@ class WebGPUBindGroup
 	 * @return Shared pointer to the buffer at the specified index.
 	 * @throws Assertion failure if index is out of bounds.
 	 */
-	std::shared_ptr<WebGPUBuffer> getBuffer(size_t index) const
+	[[nodiscard]] std::shared_ptr<WebGPUBuffer> getBuffer(size_t index) const
 	{
 		assert(index < m_buffers.size() && "Buffer index out of bounds");
 		return m_buffers[index];
@@ -107,7 +108,7 @@ class WebGPUBindGroup
 	 * @param binding The binding number to search for.
 	 * @return Shared pointer to the buffer if found, nullptr otherwise.
 	 */
-	std::shared_ptr<WebGPUBuffer> findBufferByBinding(uint32_t binding) const
+	[[nodiscard]] std::shared_ptr<WebGPUBuffer> findBufferByBinding(uint32_t binding) const
 	{
 		for (const auto &buffer : m_buffers)
 		{
@@ -123,7 +124,7 @@ class WebGPUBindGroup
 	 * @brief Gets the number of buffers in this bind group.
 	 * @return Number of buffers.
 	 */
-	size_t getBufferCount() const { return m_buffers.size(); }
+	[[nodiscard]] size_t getBufferCount() const { return m_buffers.size(); }
 
 	/**
 	 * @brief Updates buffer data at a specific binding.
@@ -141,7 +142,7 @@ class WebGPUBindGroup
 		{
 			return false;
 		}
-		
+
 		queue.writeBuffer(buffer->getBuffer(), offset, data, size);
 		return true;
 	}
@@ -150,7 +151,7 @@ class WebGPUBindGroup
 	 * @brief Checks if this bind group is valid.
 	 * @return True if bind group and layout are valid.
 	 */
-	bool isValid() const
+	[[nodiscard]] bool isValid() const
 	{
 		return m_bindGroup != nullptr && m_layoutInfo != nullptr;
 	}

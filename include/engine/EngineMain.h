@@ -1,12 +1,12 @@
 /**
  * EngineMain.h - Convenience header for main.cpp entry points
- * 
+ *
  * Include this header at the top of your main.cpp file.
  * It handles SDL_MAIN_HANDLED and provides all common dependencies for engine initialization.
- * 
+ *
  * Usage:
  *   #include "engine/EngineMain.h"
- *   
+ *
  *   int main(int argc, char** argv) {
  *       // Your engine initialization code
  *   }
@@ -20,8 +20,8 @@
 #endif
 
 // Core engine
-#include "engine/GameEngine.h"
 #include "engine/EngineContext.h"
+#include "engine/GameEngine.h"
 
 // Scene management
 #include "engine/scene/Scene.h"
@@ -32,11 +32,11 @@
 #include "engine/scene/nodes/UpdateNode.h"
 
 // Resource management
-#include "engine/resources/ResourceManager.h"
 #include "engine/rendering/Material.h"
+#include "engine/rendering/Mesh.h"
 #include "engine/rendering/Model.h"
 #include "engine/rendering/Texture.h"
-#include "engine/rendering/Mesh.h"
+#include "engine/resources/ResourceManager.h"
 
 // WebGPU resources
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
@@ -57,10 +57,10 @@
 #include <spdlog/spdlog.h>
 
 // Standard library
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
-#include <map>
 
 // Platform-specific
 #ifdef __EMSCRIPTEN__

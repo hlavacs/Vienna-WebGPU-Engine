@@ -61,7 +61,7 @@ class WebGPUMesh : public WebGPUSyncObject<engine::rendering::Mesh>
 	{
 	}
 
-	~WebGPUMesh()
+	~WebGPUMesh() override
 	{
 		for (auto &[layout, entry] : m_vertexBuffers)
 		{
