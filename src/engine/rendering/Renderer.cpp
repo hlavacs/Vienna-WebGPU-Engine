@@ -259,7 +259,7 @@ void Renderer::renderToTexture(
 		target.gpuTexture,
 		m_depthBuffer,
 		clearFlags,
-		glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) // ToDo: use backgroundColor just debigging
+		backgroundColor
 	);
 
 	auto cameraFrustum = engine::math::Frustum::fromViewProjection(frameUniforms.viewProjectionMatrix);

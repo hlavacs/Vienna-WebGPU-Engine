@@ -74,6 +74,16 @@ bool ShaderRegistry::initializeDefaultShaders()
 	}
 	registerShader(shadowCubeShader);
 
+	auto visualizeDepthShader = createVisualizeDepthShader();
+	if (!visualizeDepthShader || !visualizeDepthShader->isValid())
+	{
+		spdlog::warn("Failed to create Visualize Depth shader - shadow visualization will be unavailable");
+	}
+	else
+	{
+		registerShader(visualizeDepthShader);
+	}
+
 	spdlog::info("Default shaders initialized successfully");
 	return true;
 }
@@ -434,6 +444,32 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCubeShadowShader
 				0, // binding
 				WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
 			)
+			.build();
+
+	return shaderInfo;
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVisualizeDepthShader()
+{
+	// Create depth visualization shader for shadow map debugging
+	// Converts depth texture to grayscale color texture
+	//
+	// visualize_depth.wgsl structure:
+	// @group(0) @binding(0) var depthTexture: texture_depth_2d_array;
+	// @group(0) @binding(1) var depthSampler: sampler_comparison;
+	// @group(0) @binding(2) var<uniform> layer: u32;
+
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin(
+				shader::default ::VISUALIZE_DEPTH,
+				ShaderType::Unlit,
+				"vs_main",
+				"fs_main",
+				engine::core::PathProvider::getResource("visualize_depth.wgsl")
+			)
+			.setVertexLayout(engine::rendering::VertexLayout::None)
+			.disableDepth()
 			.build();
 
 	return shaderInfo;

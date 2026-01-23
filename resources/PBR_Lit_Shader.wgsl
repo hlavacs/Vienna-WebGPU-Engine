@@ -66,17 +66,17 @@ struct MaterialUniforms {
 
 
 struct ShadowUniform {
-    view_proj: mat4x4f,     // Used for spot + directional + CSM
-    light_pos: vec3f,       // Used for point lights
-	near: f32,				//< 4 bytes
-	far: f32,				//< 4 bytes
-    bias: f32,
-    normal_bias: f32,
-    texel_size: f32,
-    pcf_kernel: u32,
-    shadow_type: u32,       // 0 = 2D shadow (directional/spot), 1 = cube shadow (point)
-    textureIndex: u32,      // layer in correct texture array
-    _pad0: f32,
+    view_proj: mat4x4f,     // Used for spot + directional + CSM (64 bytes)
+    light_pos: vec3f,       // Used for point lights (12 bytes)
+	near: f32,				// 4 bytes (total: 80)
+	far: f32,				// 4 bytes
+    bias: f32,              // 4 bytes
+    normal_bias: f32,       // 4 bytes
+    texel_size: f32,        // 4 bytes (total: 96)
+    pcf_kernel: u32,        // 4 bytes
+    shadow_type: u32,       // 0 = 2D shadow (directional/spot), 1 = cube shadow (point) (4 bytes)
+    textureIndex: u32,      // layer in correct texture array (4 bytes, total: 108)
+    cascade_split: f32,     // far plane distance for this cascade (CSM only) (4 bytes, total: 112)
 };
 
 @group(0) @binding(0)
@@ -182,6 +182,21 @@ fn get_position_from_transform(transform: mat4x4f) -> vec3f {
 // ------------------------------------------------------------
 // Shadow Mapping
 // ------------------------------------------------------------
+
+// Select CSM cascade based on view-space depth
+fn select_cascade(view_depth: f32, light: Light) -> u32 {
+    // Find which cascade this fragment belongs to
+    for (var i: u32 = 0u; i < light.shadow_count; i = i + 1u) {
+        let shadow_idx = light.shadow_index + i;
+        let shadow = u_shadows[shadow_idx];
+        if (view_depth <= shadow.cascade_split) {
+            return i;
+        }
+    }
+    // Default to last cascade if beyond all splits
+    return light.shadow_count - 1u;
+}
+
 fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
     // No shadow if shadow_count is 0
     if (light.shadow_count == 0u) {
@@ -190,29 +205,56 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
 
     // Handle 2D shadows (directional and spot lights)
     if (light.light_type == 1u || light.light_type == 3u) {
-        // For now, use only the first shadow (index 0 in the light's shadow range)
-        let shadow = u_shadows[light.shadow_index];
-
+        var shadow_index = light.shadow_index;
+        
+        // CSM: Select cascade for directional lights
+        if (light.light_type == 1u && light.shadow_count > 1u) {
+            // Compute view-space depth
+            let view_pos = u_frame.view_matrix * vec4f(world_pos, 1.0);
+            let view_depth = -view_pos.z; // Negative because camera looks down -Z
+            let cascade_idx = select_cascade(view_depth, light);
+            shadow_index = light.shadow_index + cascade_idx;
+        }
+        
+        let shadow = u_shadows[shadow_index];
         let light_space_pos = shadow.view_proj * vec4f(world_pos, 1.0);
-        var shadow_proj = light_space_pos.xyz / light_space_pos.w;
-        var shadow_uv = shadow_proj.xy * 0.5 + vec2f(0.5);
-        shadow_uv.y = 1.0 - shadow_uv.y;
+
+        if (light_space_pos.w <= 0.00001) {
+            return 1.0;
+        }
+
+        let shadow_proj = light_space_pos.xyz / light_space_pos.w;
+        let shadow_uv = shadow_proj.xy * vec2(0.5, -0.5) + vec2(0.5);
         let shadow_depth = shadow_proj.z;
 
         if (shadow_uv.x < 0.0 || shadow_uv.x > 1.0 ||
             shadow_uv.y < 0.0 || shadow_uv.y > 1.0 ||
-            shadow_depth < 0.0 || shadow_depth > 1.0) {
+            shadow_depth <= 0.0 || shadow_depth >= 1.0) {
             return 1.0;
-        }
+        } 
 
-        let light_dir = normalize(-light.transform[2].xyz);
-        let ndotl = clamp(dot(normal, light_dir), 0.0, 1.0);
+        // ================================
+        // Bias calculation
+        // ================================
+        let light_dir = normalize(get_direction_from_transform(light.transform));
+        let ndotl = max(dot(normal, light_dir), 0.0);
         let slope_bias = shadow.normal_bias * (1.0 - ndotl);
-        var final_bias = (shadow.bias + slope_bias);
-        if (light.light_type == 3u) {
-            final_bias *= shadow.texel_size;
+
+        var final_bias: f32;
+
+        if (light.light_type == 1u) {
+            // Directional: texel + min bias
+            let texel_bias = shadow.bias * shadow.texel_size;
+            final_bias = max(texel_bias, 0.001) + max(slope_bias * shadow.texel_size, 0.001);
+        } else {
+            // Spotlight: scale by light-space depth
+            let depth_scale = abs(shadow_depth);
+            let distance_scale = smoothstep(shadow.near, shadow.far, depth_scale);
+            final_bias = (shadow.bias + slope_bias) * distance_scale;
         }
-        final_bias = clamp(final_bias, 0.0000001, 0.003);
+        
+        final_bias = clamp(final_bias, 0.000001, 0.02);
+
         let current_depth = shadow_depth - final_bias;
 
         // =============================
@@ -235,7 +277,7 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
             for (var y = -kernel; y <= kernel; y = y + 1) {
                 let offset = vec2f(f32(x), f32(y)) * shadow.texel_size * pcf_scale;
                 let uv = shadow_uv + offset;
-                // Sample using shadow_index as the layer
+                // Sample using shadow.textureIndex as the layer
                 visibility += textureSampleCompare(shadow_maps_2d, shadow_sampler, uv, shadow.textureIndex, current_depth);
                 samples += 1.0;
             }

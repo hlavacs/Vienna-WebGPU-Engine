@@ -2,7 +2,7 @@
 
 namespace engine
 {
-// ToDo: Use and document this struct in the GameEngine class
+	
 /**
  * @struct GameEngineOptions
  * @brief Configuration options for the game engine.

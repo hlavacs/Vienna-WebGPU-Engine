@@ -94,7 +94,7 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createDepthOnl
 	return std::shared_ptr<WebGPURenderPassContext>(
 		new WebGPURenderPassContext(
 			std::vector<std::shared_ptr<WebGPUTexture>>{},
-			nullptr, // ToDo: Method should accept a depth texture instead of raw view
+			nullptr,
 			renderPassDesc
 		)
 	);

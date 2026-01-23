@@ -1,5 +1,6 @@
 #include "engine/rendering/ShadowPass.h"
 
+#include <cmath>
 #include <glm/gtc/matrix_transform.hpp>
 #include <map>
 #include <spdlog/spdlog.h>
@@ -12,8 +13,8 @@
 #include "engine/rendering/RenderItemGPU.h"
 #include "engine/rendering/Renderer.h"
 #include "engine/rendering/RenderingConstants.h"
-#include "engine/rendering/ShadowRequest.h"
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/ShadowRequest.h"
 #include "engine/rendering/ShadowUniforms.h"
 #include "engine/rendering/Vertex.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
@@ -70,7 +71,7 @@ bool ShadowPass::initialize()
 	}
 
 	// Get bind group layouts from shaders
-	m_shadowPass2DBindGroupLayout = shadowShader->getBindGroupLayout(0);		   // Group 0: Shadow uniforms
+	m_shadowPass2DBindGroupLayout = shadowShader->getBindGroupLayout(0);	   // Group 0: Shadow uniforms
 	m_shadowPassCubeBindGroupLayout = shadowCubeShader->getBindGroupLayout(0); // Group 0: Cube shadow uniforms
 
 	if (!m_shadowPass2DBindGroupLayout || !m_shadowPassCubeBindGroupLayout)
@@ -173,17 +174,51 @@ bool ShadowPass::initialize()
 			"ShadowMaps BindGroup"
 		);
 
-		spdlog::info("Shadow map resources initialized (2D array: {}x{}, Cube array: {}x{})",
-			constants::DEFAULT_SHADOW_MAP_SIZE, constants::MAX_SHADOW_MAPS_2D,
-			constants::DEFAULT_CUBE_SHADOW_MAP_SIZE, constants::MAX_SHADOW_MAPS_CUBE
-		);
+		spdlog::info("Shadow map resources initialized (2D array: {}x{}, Cube array: {}x{})", constants::DEFAULT_SHADOW_MAP_SIZE, constants::MAX_SHADOW_MAPS_2D, constants::DEFAULT_CUBE_SHADOW_MAP_SIZE, constants::MAX_SHADOW_MAPS_CUBE);
 	}
 
 	spdlog::info("ShadowPass initialized successfully");
 	return true;
 }
 
-ShadowUniform ShadowPass::computeShadowUniform(const ShadowRequest &request)
+std::vector<float> ShadowPass::computeCascadeSplits(
+	uint32_t cascadeCount,
+	float cameraNear,
+	float cameraFar,
+	float lambda
+)
+{
+	std::vector<float> splits(cascadeCount + 1);
+	splits[0] = cameraNear;
+	splits[cascadeCount] = cameraFar;
+
+	float range = cameraFar - cameraNear;
+	float ratio = cameraFar / cameraNear;
+
+	for (uint32_t i = 1; i < cascadeCount; ++i)
+	{
+		float p = static_cast<float>(i) / static_cast<float>(cascadeCount);
+
+		// Uniform split
+		float uniformSplit = cameraNear + range * p;
+
+		// Logarithmic split
+		float logSplit = cameraNear * std::pow(ratio, p);
+
+		// Interpolate between uniform and logarithmic
+		splits[i] = lambda * logSplit + (1.0f - lambda) * uniformSplit;
+	}
+
+	return splits;
+}
+
+ShadowUniform ShadowPass::computeShadowUniform(
+	const ShadowRequest &request,
+	uint32_t cascadeIndex,
+	float cameraNear,
+	float cameraFar,
+	float splitLambda
+)
 {
 	ShadowUniform shadowUniform{};
 	const Light *light = request.light;
@@ -199,12 +234,38 @@ ShadowUniform ShadowPass::computeShadowUniform(const ShadowRequest &request)
 				// Compute directional light shadow matrix
 				glm::vec3 dir = glm::normalize(glm::vec3(light->getTransform() * glm::vec4(specificLight.direction, 0.0f)));
 				glm::vec3 pos = -dir * specificLight.range;
-				
+
 				glm::mat4 viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
-				float r = specificLight.range;
-				glm::mat4 projectionMatrix = glm::ortho(-r, r, -r, r, -specificLight.range, specificLight.range * 2.0f);
-				
-				shadowUniform.viewProj = projectionMatrix * viewMatrix;
+
+				// For CSM, compute cascade-specific projection
+				if (request.cascadeCount > 1)
+				{
+					// Compute cascade splits
+					auto splits = computeCascadeSplits(request.cascadeCount, cameraNear, cameraFar, splitLambda);
+
+					float cascadeNear = splits[cascadeIndex];
+					float cascadeFar = splits[cascadeIndex + 1];
+
+					// Store the cascade split distance for shader selection
+					shadowUniform.cascadeSplit = cascadeFar;
+
+					// Compute orthographic bounds for this cascade
+					// TODO: This should ideally fit the camera frustum slice tightly
+					// For now, use a simple range based on cascade distance
+					float r = specificLight.range * (cascadeFar / cameraFar);
+					glm::mat4 projectionMatrix = glm::ortho(-r, r, -r, r, -specificLight.range, specificLight.range * 2.0f);
+
+					shadowUniform.viewProj = projectionMatrix * viewMatrix;
+				}
+				else
+				{
+					// Single shadow map (non-CSM)
+					float r = specificLight.range;
+					glm::mat4 projectionMatrix = glm::ortho(-r, r, -r, r, -specificLight.range, specificLight.range * 2.0f);
+					shadowUniform.viewProj = projectionMatrix * viewMatrix;
+					shadowUniform.cascadeSplit = cameraFar; // Use camera far as split
+				}
+
 				shadowUniform.bias = specificLight.shadowBias;
 				shadowUniform.normalBias = specificLight.shadowNormalBias;
 				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
@@ -217,16 +278,17 @@ ShadowUniform ShadowPass::computeShadowUniform(const ShadowRequest &request)
 				glm::vec3 pos = glm::vec3(light->getTransform() * glm::vec4(specificLight.position, 1.0f));
 				// Extract forward direction from transform (spotlight points in -Z direction)
 				glm::vec3 dir = glm::normalize(glm::vec3(light->getTransform() * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)));
-				
+
 				glm::mat4 viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
 				glm::mat4 projectionMatrix = glm::perspective(specificLight.spotAngle * 2.0f, 1.0f, 0.1f, specificLight.range);
-				
+
 				shadowUniform.viewProj = projectionMatrix * viewMatrix;
 				shadowUniform.bias = specificLight.shadowBias;
 				shadowUniform.normalBias = specificLight.shadowNormalBias;
 				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
 				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
-				shadowUniform.shadowType = 0; // 2D shadow
+				shadowUniform.shadowType = 0;					  // 2D shadow
+				shadowUniform.cascadeSplit = specificLight.range; // Use range as split
 			}
 			else if constexpr (std::is_same_v<T, PointLight>)
 			{
@@ -235,13 +297,14 @@ ShadowUniform ShadowPass::computeShadowUniform(const ShadowRequest &request)
 				shadowUniform.bias = specificLight.shadowBias;
 				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
 				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
-				shadowUniform.shadowType = 1; // Cube shadow
+				shadowUniform.shadowType = 1;					  // Cube shadow
+				shadowUniform.cascadeSplit = specificLight.range; // Use range as split
 			}
 		},
 		light->getData()
 	);
 
-	shadowUniform.textureIndex = request.textureIndex;
+	shadowUniform.textureIndex = request.textureIndexStart + cascadeIndex;
 	return shadowUniform;
 }
 
@@ -256,62 +319,128 @@ void ShadowPass::render(FrameCache &frameCache)
 	if (frameCache.shadowRequests.empty())
 		return;
 
+	// TODO: Get camera near/far from first render target (multi-camera CSM needs more work)
+	float cameraNear = 0.1f;
+	float cameraFar = 100.0f;
+	if (!frameCache.renderTargets.empty())
+	{
+		// Extract near/far from projection matrix
+		const auto &proj = frameCache.renderTargets[0].projectionMatrix;
+		// For perspective: far = (2*n) / (2 - m33 - m32)
+		// For orthographic: far = (2 + m32) / m33
+		// Simplified extraction (assumes perspective)
+		cameraNear = proj[3][2] / (proj[2][2] - 1.0f);
+		cameraFar = proj[3][2] / (proj[2][2] + 1.0f);
+
+		// Clamp to reasonable values
+		cameraNear = glm::max(0.01f, glm::abs(cameraNear));
+		cameraFar = glm::max(cameraNear + 1.0f, glm::abs(cameraFar));
+	}
+
 	// Compute shadow uniforms from requests (this is where matrices are computed per-camera)
 	frameCache.shadowUniforms.clear();
-	frameCache.shadowUniforms.reserve(frameCache.shadowRequests.size());
 
+	// Count total shadow uniforms needed (accounting for CSM cascades)
+	size_t totalUniforms = 0;
 	for (const auto &request : frameCache.shadowRequests)
 	{
-		frameCache.shadowUniforms.push_back(computeShadowUniform(request));
+		totalUniforms += request.cascadeCount;
+	}
+	frameCache.shadowUniforms.reserve(totalUniforms);
+
+	// Create shadow uniforms (one per cascade for CSM)
+	for (const auto &request : frameCache.shadowRequests)
+	{
+		if (request.type == ShadowType::Directional2D && request.cascadeCount > 1)
+		{
+			// CSM: Create multiple uniforms, one per cascade
+			const auto &dirLight = request.light->asDirectional();
+			for (uint32_t i = 0; i < request.cascadeCount; ++i)
+			{
+				frameCache.shadowUniforms.push_back(
+					computeShadowUniform(request, i, cameraNear, cameraFar, dirLight.splitLambda)
+				);
+			}
+		}
+		else
+		{
+			// Non-CSM: Single uniform
+			frameCache.shadowUniforms.push_back(computeShadowUniform(request, 0, cameraNear, cameraFar));
+		}
 	}
 
 	// Render shadow maps for each request
-	for (size_t i = 0; i < frameCache.shadowRequests.size(); ++i)
+	size_t uniformIndex = 0;
+	for (const auto &request : frameCache.shadowRequests)
 	{
-		const auto &request = frameCache.shadowRequests[i];
-		const auto &shadowUniform = frameCache.shadowUniforms[i];
-
-		// Determine visible objects for this light
-		std::vector<size_t> visibleIndices;
 		if (request.type == ShadowType::PointCube)
 		{
-			// Point light - extract by sphere
-			visibleIndices = m_collector->extractForPointLight(
+			// Point light - single cube shadow
+			const auto &shadowUniform = frameCache.shadowUniforms[uniformIndex];
+			uniformIndex++;
+
+			// Determine visible objects for this light
+			std::vector<size_t> visibleIndices = m_collector->extractForPointLight(
 				shadowUniform.lightPos,
 				request.light->asPoint().range
 			);
-		}
-		else // Directional2D or Spot2D
-		{
-			// Extract by frustum
-			visibleIndices = m_collector->extractForLightFrustum(
-				engine::math::Frustum::fromViewProjection(shadowUniform.viewProj)
-			);
 
-		}
+			// Prepare GPU resources for visible items
+			frameCache.prepareGPUResources(m_context, *m_collector, visibleIndices);
 
-		// Prepare GPU resources for visible items
-		frameCache.prepareGPUResources(m_context, *m_collector, visibleIndices);
-
-		// Render shadow map based on type
-		if (request.type == ShadowType::PointCube)
-		{
 			renderShadowCube(
 				frameCache.gpuRenderItems,
 				visibleIndices,
 				m_shadowCubeArray,
-				request.textureIndex,
+				request.textureIndexStart,
 				shadowUniform.lightPos,
 				request.light->asPoint().range
 			);
 		}
-		else // Directional2D or Spot2D
+		else if (request.type == ShadowType::Directional2D && request.cascadeCount > 1)
 		{
+			// CSM: Render each cascade
+			for (uint32_t cascadeIdx = 0; cascadeIdx < request.cascadeCount; ++cascadeIdx)
+			{
+				const auto &shadowUniform = frameCache.shadowUniforms[uniformIndex];
+				uniformIndex++;
+
+				// Extract visible objects for this cascade frustum
+				std::vector<size_t> visibleIndices = m_collector->extractForLightFrustum(
+					engine::math::Frustum::fromViewProjection(shadowUniform.viewProj)
+				);
+
+				// Prepare GPU resources for visible items
+				frameCache.prepareGPUResources(m_context, *m_collector, visibleIndices);
+
+				renderShadow2D(
+					frameCache.gpuRenderItems,
+					visibleIndices,
+					m_shadow2DArray,
+					request.textureIndexStart + cascadeIdx,
+					shadowUniform.viewProj
+				);
+			}
+		}
+		else
+		{
+			// Single 2D shadow (spot or single directional)
+			const auto &shadowUniform = frameCache.shadowUniforms[uniformIndex];
+			uniformIndex++;
+
+			// Extract by frustum
+			std::vector<size_t> visibleIndices = m_collector->extractForLightFrustum(
+				engine::math::Frustum::fromViewProjection(shadowUniform.viewProj)
+			);
+
+			// Prepare GPU resources for visible items
+			frameCache.prepareGPUResources(m_context, *m_collector, visibleIndices);
+
 			renderShadow2D(
 				frameCache.gpuRenderItems,
 				visibleIndices,
 				m_shadow2DArray,
-				request.textureIndex,
+				request.textureIndexStart,
 				shadowUniform.viewProj
 			);
 		}
@@ -354,16 +483,16 @@ void ShadowPass::renderShadow2D(
 	);
 
 	// Create render pass using factory
-	// auto renderPassContext = m_context->renderPassFactory().createDepthOnly(shadowTexture, arrayLayer);
+	auto renderPassContext = m_context->renderPassFactory().createDepthOnly(shadowTexture, arrayLayer);
 	// ToDo: Remove Debug
-	auto renderPassContext = m_context->renderPassFactory().create(
+	/* auto renderPassContext = m_context->renderPassFactory().create(
 		shadowDebugingTexture,
 		shadowTexture,
 		ClearFlags::Depth | ClearFlags::SolidColor,
 		glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), // Debug: Clear to green
 		-1,
 		arrayLayer
-	);
+	); */
 	// Create command encoder
 	wgpu::CommandEncoderDescriptor encoderDesc{};
 	encoderDesc.label = "Shadow 2D Encoder";
@@ -427,7 +556,7 @@ void ShadowPass::renderShadowCube(
 
 		uint32_t layerIndex = cubeIndex * 6 + face.faceIndex;
 		std::string faceLabel = "Shadow Cube Face " + std::to_string(face.faceIndex);
-		
+
 		auto renderPassContext = m_context->renderPassFactory().createDepthOnly(shadowTexture, layerIndex);
 
 		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
@@ -494,12 +623,12 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(
 
 	// Create pipeline for depth-only rendering
 	auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
-		shadowShader,					  // Shader
-		wgpu::TextureFormat::RGBA8Unorm,	  // Color format (debug) // ToDo: Remove Debug
+		shadowShader,					   // Shader
+		wgpu::TextureFormat::Undefined,	   // Color format
 		wgpu::TextureFormat::Depth32Float, // Depth format
-		topology,						  // Topology from mesh
-		wgpu::CullMode::None,			  // Cull mode
-		1								  // Sample count
+		topology,						   // Topology from mesh
+		wgpu::CullMode::None,			   // Cull mode
+		1								   // Sample count
 	);
 
 	if (!pipeline || !pipeline->isValid())

@@ -26,12 +26,13 @@ enum class ShadowType : uint32_t
  */
 struct ShadowRequest
 {
-	const Light* light;       // Reference to scene light (non-owning)
-	ShadowType type;          // Shadow mapping technique
-	uint32_t textureIndex;    // Index into shadow texture array (2D or cube)
+	const Light* light;           // Reference to scene light (non-owning)
+	ShadowType type;              // Shadow mapping technique
+	uint32_t textureIndexStart;   // Starting index into shadow texture array
+	uint32_t cascadeCount;        // Number of cascades (1 for non-CSM, 2-4 for CSM)
 	
-	ShadowRequest(const Light* l, ShadowType t, uint32_t idx)
-		: light(l), type(t), textureIndex(idx) {}
+	ShadowRequest(const Light* l, ShadowType t, uint32_t idxStart, uint32_t cascades = 1)
+		: light(l), type(t), textureIndexStart(idxStart), cascadeCount(cascades) {}
 };
 
 } // namespace engine::rendering
