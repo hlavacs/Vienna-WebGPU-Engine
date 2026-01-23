@@ -1,0 +1,11 @@
+---
+# clang-tidy config for your engine
+Checks: >
+  modernize-use-forward-declarations,
+  readability-redundant-include,
+  cppcoreguidelines-*,
+  modernize-*,
+  -modernize-use-trailing-return-type
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(src|include)/'   # only src/ or include/
+FormatStyle: file

@@ -110,7 +110,9 @@
 			"type": "shell",
 			"isBackground": true,
 			"command": "http-server",
-			"args": ["-c-1"],
+			"args": [
+				"-c-1"
+			],
 			"presentation": {
 				"reveal": "silent"
 			},
@@ -142,6 +144,28 @@
 			"command": "echo ${input:terminate}",
 			"type": "shell"
 		},
+		{
+			"label": "Clang-Tidy: Forward Declare & Clean Includes",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}/scripts/run-clang-tidy.ps1",
+				"-BuildDir",
+				"build/Windows/Debug",
+				"-Mode",
+				"fix"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			}
+		}
 	],
 	"inputs": [
 		{
@@ -170,6 +194,6 @@
 			"type": "command",
 			"command": "workbench.action.tasks.terminate",
 			"args": "terminateAll"
-		}
+		},
 	]
 }
