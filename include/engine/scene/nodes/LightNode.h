@@ -11,7 +11,7 @@ namespace engine::scene::nodes
 
 /**
  * @brief A node that represents a light in the scene.
- * 
+ *
  * Automatically adds its light data to the RenderCollector during scene traversal.
  * Inherits from SpatialNode to have a transform for positioning the light.
  * Uses the new Light class with variant-based type system for easier access to type-specific properties.
@@ -30,7 +30,7 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 		m_light = engine::rendering::Light(engine::rendering::AmbientLight{});
 	}
 
-	virtual ~LightNode() = default;
+	~LightNode() override = default;
 
 	/**
 	 * @brief Add this light to the render collector.
@@ -58,12 +58,13 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 			return;
 
 		auto worldMatrix = getTransform()->getWorldMatrix();
-		glm::vec3 position = glm::vec3(worldMatrix[3]);
+		auto position = glm::vec3(worldMatrix[3]);
 		glm::vec3 direction = -glm::vec3(worldMatrix[2]); // Forward direction
 
 		// Get color from light (using visitor pattern)
 		glm::vec3 lightColor = std::visit(
-			[](const auto& light) -> glm::vec3 { return light.color; },
+			[](const auto &light) -> glm::vec3
+			{ return light.color; },
 			m_light.getData()
 		);
 		glm::vec4 color = glm::vec4(lightColor, 1.0f);
@@ -75,7 +76,7 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 			break;
 
 		case engine::rendering::Light::Type::Directional: // Directional - draw arrow in light direction
-		case engine::rendering::Light::Type::Spot: // Spot - draw arrow in light direction
+		case engine::rendering::Light::Type::Spot:		  // Spot - draw arrow in light direction
 		{
 			float arrowLength = 0.5f;
 			float arrowHeadSize = 0.2f;
@@ -87,13 +88,13 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 		case engine::rendering::Light::Type::Point: // Point - draw 3 orthogonal disks (sphere representation)
 		{
 			float radius = 0.5f;
-			
+
 			// XY plane disk (normal along Z)
 			collector.addDisk(position, glm::vec3(radius, radius, 0.0f), glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
-			
+
 			// XZ plane disk (normal along Y)
 			collector.addDisk(position, glm::vec3(radius, 0.0f, radius), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
-			
+
 			// YZ plane disk (normal along X)
 			collector.addDisk(position, glm::vec3(0.0f, radius, radius), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 			break;
@@ -108,7 +109,7 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	 * @brief Sets the light data.
 	 * @param light Light object with type-specific data.
 	 */
-	void setLight(const engine::rendering::Light& light)
+	void setLight(const engine::rendering::Light &light)
 	{
 		m_light = light;
 	}
@@ -117,7 +118,7 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	 * @brief Gets the light object.
 	 * @return Reference to the light.
 	 */
-	engine::rendering::Light& getLight()
+	engine::rendering::Light &getLight()
 	{
 		return m_light;
 	}
@@ -126,7 +127,7 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	 * @brief Gets the light object (const).
 	 * @return Const reference to the light.
 	 */
-	const engine::rendering::Light& getLight() const
+	const engine::rendering::Light &getLight() const
 	{
 		return m_light;
 	}
@@ -138,7 +139,8 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	void setColor(const glm::vec3 &color)
 	{
 		std::visit(
-			[&color](auto& light) { light.color = color; },
+			[&color](auto &light)
+			{ light.color = color; },
 			m_light.getData()
 		);
 	}
@@ -150,7 +152,8 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	glm::vec3 getColor() const
 	{
 		return std::visit(
-			[](const auto& light) -> glm::vec3 { return light.color; },
+			[](const auto &light) -> glm::vec3
+			{ return light.color; },
 			m_light.getData()
 		);
 	}
@@ -162,7 +165,8 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	void setIntensity(float intensity)
 	{
 		std::visit(
-			[intensity](auto& light) { light.intensity = intensity; },
+			[intensity](auto &light)
+			{ light.intensity = intensity; },
 			m_light.getData()
 		);
 	}
@@ -174,7 +178,8 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	float getIntensity() const
 	{
 		return std::visit(
-			[](const auto& light) -> float { return light.intensity; },
+			[](const auto &light) -> float
+			{ return light.intensity; },
 			m_light.getData()
 		);
 	}
@@ -195,7 +200,7 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	void setCastShadows(bool castShadows)
 	{
 		std::visit(
-			[castShadows](auto& light)
+			[castShadows](auto &light)
 			{
 				using T = std::decay_t<decltype(light)>;
 				if constexpr (!std::is_same_v<T, engine::rendering::AmbientLight>)

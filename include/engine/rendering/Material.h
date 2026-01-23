@@ -28,7 +28,7 @@ struct TextureSlot
 	TextureSlot() = default;
 	TextureSlot(TextureHandle h, ColorSpace cs = ColorSpace::sRGB) : handle(h), colorSpace(cs) {}
 
-	bool isValid() const { return handle.valid(); }
+	[[nodiscard]] bool isValid() const { return handle.valid(); }
 };
 
 /**

@@ -5,6 +5,7 @@
 #include <future>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 #include <webgpu/webgpu.hpp>
 
 namespace engine::rendering::webgpu
@@ -46,7 +47,7 @@ class WebGPUTexture
 		m_textureDesc(textureDesc),
 		m_viewDesc(viewDesc),
 		m_type(type),
-		m_cpuHandle(cpuHandle)
+		m_cpuHandle(std::move(cpuHandle))
 	{
 		assert((type == Texture::Type::Surface || texture) && "WebGPUTexture: Texture cannot be null for non-surface types.");
 		assert(m_textureView && "WebGPUTexture: TextureView cannot be null.");
@@ -246,7 +247,7 @@ class WebGPUTexture
 	wgpu::TextureView m_textureView;				//< The view of the WebGPU texture.
 	wgpu::TextureDescriptor m_textureDesc;			//< Descriptor used to create the texture.
 	wgpu::TextureViewDescriptor m_viewDesc;			//< Descriptor used to create the texture view.
-	
+
 	mutable std::unordered_map<uint32_t, wgpu::TextureView> m_layerViews; //< Cached layer views for array layers.
 };
 

@@ -25,7 +25,7 @@ struct RenderItemCPU
 {
 	engine::rendering::Model::Handle modelHandle;
 	engine::rendering::Submesh submesh;
-	glm::mat4 worldTransform;
+	glm::mat4 worldTransform{};
 	engine::math::AABB worldBounds; // World-space bounding box for culling
 	uint32_t renderLayer = 0;
 	uint64_t objectID = 0; // Unique object ID for bind group caching
@@ -97,14 +97,14 @@ class RenderCollector
 	 * @param frustum View frustum for culling.
 	 * @return Indices of visible items.
 	 */
-	std::vector<size_t> extractVisible(const engine::math::Frustum &frustum) const;
+	[[nodiscard]] std::vector<size_t> extractVisible(const engine::math::Frustum &frustum) const;
 
 	/**
 	 * @brief Extracts items visible from a directional/spot light (frustum-based).
 	 * @param lightFrustum Light's frustum (orthographic for directional, perspective for spot).
 	 * @return Indices of visible items.
 	 */
-	std::vector<size_t> extractForLightFrustum(const engine::math::Frustum &lightFrustum) const;
+	[[nodiscard]] std::vector<size_t> extractForLightFrustum(const engine::math::Frustum &lightFrustum) const;
 
 	/**
 	 * @brief Extracts items visible from a point light (sphere-based).
@@ -112,8 +112,8 @@ class RenderCollector
 	 * @param lightRange Light's maximum range.
 	 * @return Indices of visible items.
 	 */
-	std::vector<size_t> extractForPointLight(const glm::vec3 &lightPosition, float lightRange) const;
-	
+	[[nodiscard]] std::vector<size_t> extractForPointLight(const glm::vec3 &lightPosition, float lightRange) const;
+
 	/**
 	 * @brief Extracts lights and creates shadow requests (camera-independent).
 	 * @details Does NOT compute shadow matrices - those are computed by ShadowPass per-camera.
@@ -122,32 +122,31 @@ class RenderCollector
 	 * @param maxShadowCube Maximum number of cube shadow maps.
 	 * @return Tuple of: LightStruct vector for GPU uniforms, ShadowRequest vector for ShadowPass.
 	 */
-	std::tuple<std::vector<LightStruct>, std::vector<ShadowRequest>> extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const;
-
+	[[nodiscard]] std::tuple<std::vector<LightStruct>, std::vector<ShadowRequest>> extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShadowCube) const;
 
 	/**
 	 * @brief Gets all collected render items.
 	 * @return Const reference to render items vector.
 	 */
-	const std::vector<RenderItemCPU> &getRenderItems() const { return m_renderItems; };
+	[[nodiscard]] const std::vector<RenderItemCPU> &getRenderItems() const { return m_renderItems; };
 
 	/**
 	 * @brief Gets all collected lights.
 	 * @return Const reference to lights vector.
 	 */
-	const std::vector<Light> &getLights() const { return m_lights; };
+	[[nodiscard]] const std::vector<Light> &getLights() const { return m_lights; };
 
 	/**
 	 * @brief Gets the number of collected render items.
 	 * @return Item count.
 	 */
-	size_t getRenderItemCount() const { return m_renderItems.size(); }
+	[[nodiscard]] size_t getRenderItemCount() const { return m_renderItems.size(); }
 
 	/**
 	 * @brief Gets the number of collected lights.
 	 * @return Light count.
 	 */
-	size_t getLightCount() const { return m_lights.size(); }
+	[[nodiscard]] size_t getLightCount() const { return m_lights.size(); }
 
   private:
 	/**

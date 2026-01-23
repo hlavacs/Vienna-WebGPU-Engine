@@ -26,10 +26,9 @@ class LoaderBase : public engine::debug::Loggable
 		m_basePath(std::filesystem::absolute(std::move(basePath)))
 	{
 	}
-	virtual ~LoaderBase() = default;
+	~LoaderBase() override = default;
 
   public:
-
 	/**
 	 * @brief Loads a resource from a file.
 	 *

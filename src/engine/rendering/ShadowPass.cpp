@@ -56,14 +56,14 @@ bool ShadowPass::initialize()
 	spdlog::info("Initializing ShadowPass (single-light, texture-agnostic)");
 
 	// Get shadow shaders to extract bind group layouts
-	auto shadowShader = m_context->shaderRegistry().getShader(shader::default ::SHADOW);
+	auto shadowShader = m_context->shaderRegistry().getShader(shader::defaults ::SHADOW);
 	if (!shadowShader || !shadowShader->isValid())
 	{
 		spdlog::error("Shadow shader not found in registry");
 		return false;
 	}
 
-	auto shadowCubeShader = m_context->shaderRegistry().getShader(shader::default ::SHADOW_CUBE);
+	auto shadowCubeShader = m_context->shaderRegistry().getShader(shader::defaults ::SHADOW_CUBE);
 	if (!shadowCubeShader || !shadowCubeShader->isValid())
 	{
 		spdlog::error("Shadow cube shader not found in registry");
@@ -613,7 +613,7 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(
 	}
 
 	// Get appropriate shadow shader
-	auto shaderName = isCubeShadow ? shader::default ::SHADOW_CUBE : shader::default ::SHADOW;
+	auto shaderName = isCubeShadow ? shader::defaults ::SHADOW_CUBE : shader::defaults ::SHADOW;
 	auto shadowShader = m_context->shaderRegistry().getShader(shaderName);
 	if (!shadowShader || !shadowShader->isValid())
 	{

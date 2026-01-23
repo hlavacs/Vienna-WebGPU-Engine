@@ -73,8 +73,7 @@ void MeshPass::render(FrameCache &frameCache)
 		return;
 	}
 
-	spdlog::debug("MeshPass::render() - visibleIndices count: {}, gpuItems count: {}", 
-		m_visibleIndices.size(), frameCache.gpuRenderItems.size());
+	spdlog::debug("MeshPass::render() - visibleIndices count: {}, gpuItems count: {}", m_visibleIndices.size(), frameCache.gpuRenderItems.size());
 
 	// Update lights from frame cache
 	updateLights(frameCache.lightUniforms);
@@ -156,7 +155,7 @@ void MeshPass::drawItems(
 	webgpu::WebGPUMesh *currentMesh = nullptr;
 
 	spdlog::debug("MeshPass::drawItems() - Rendering {} items", indicesToRender.size());
-	
+
 	size_t itemsRendered = 0;
 	size_t itemsSkipped = 0;
 
@@ -178,8 +177,7 @@ void MeshPass::drawItems(
 		const RenderItemGPU &item = optionalItem.value();
 		if (!item.gpuMesh || !item.gpuMaterial || !item.objectBindGroup)
 		{
-			spdlog::warn("Missing GPU resources - mesh: {}, material: {}, bindGroup: {}",
-				item.gpuMesh != nullptr, item.gpuMaterial != nullptr, item.objectBindGroup != nullptr);
+			spdlog::warn("Missing GPU resources - mesh: {}, material: {}, bindGroup: {}", item.gpuMesh != nullptr, item.gpuMaterial != nullptr, item.objectBindGroup != nullptr);
 			itemsSkipped++;
 			continue;
 		}
@@ -189,8 +187,7 @@ void MeshPass::drawItems(
 
 		if (!meshPtr.has_value() || !materialPtr.has_value())
 		{
-			spdlog::warn("Invalid CPU handles - mesh: {}, material: {}",
-				meshPtr.has_value(), materialPtr.has_value());
+			spdlog::warn("Invalid CPU handles - mesh: {}, material: {}", meshPtr.has_value(), materialPtr.has_value());
 			itemsSkipped++;
 			continue;
 		}
@@ -241,10 +238,10 @@ void MeshPass::drawItems(
 		item.gpuMesh->isIndexed()
 			? renderPass.drawIndexed(item.submesh.indexCount, 1, item.submesh.indexOffset, 0, 0)
 			: renderPass.draw(item.submesh.indexCount, 1, item.submesh.indexOffset, 0);
-		
+
 		itemsRendered++;
 	}
-	
+
 	spdlog::debug("MeshPass::drawItems() - Rendered: {}, Skipped: {}", itemsRendered, itemsSkipped);
 }
 

@@ -76,7 +76,7 @@ std::optional<engine::resources::GltfGeometryData> GltfLoader::load(
 		{
 			engine::rendering::Vertex vertex{};
 			size_t offset = posView.byteOffset + posAccessor.byteOffset + i * posAccessor.ByteStride(posView);
-			const float *posPtr = reinterpret_cast<const float *>(&posBuffer.data[offset]);
+			const auto *posPtr = reinterpret_cast<const float *>(&posBuffer.data[offset]);
 			glm::vec3 pos{posPtr[0], posPtr[1], posPtr[2]};
 			vertex.position = math::CoordinateSystem::transform(pos, srcCoordSys, dstCoordSys);
 
@@ -87,7 +87,7 @@ std::optional<engine::resources::GltfGeometryData> GltfLoader::load(
 				const auto &nrmView = model.bufferViews[nrmAccessor.bufferView];
 				const auto &nrmBuffer = model.buffers[nrmView.buffer];
 				size_t nrmOffset = nrmView.byteOffset + nrmAccessor.byteOffset + i * nrmAccessor.ByteStride(nrmView);
-				const float *nrmPtr = reinterpret_cast<const float *>(&nrmBuffer.data[nrmOffset]);
+				const auto *nrmPtr = reinterpret_cast<const float *>(&nrmBuffer.data[nrmOffset]);
 				glm::vec3 nrm{nrmPtr[0], nrmPtr[1], nrmPtr[2]};
 				vertex.normal = math::CoordinateSystem::transform(nrm, srcCoordSys, dstCoordSys);
 			}
@@ -99,7 +99,7 @@ std::optional<engine::resources::GltfGeometryData> GltfLoader::load(
 				const auto &uvView = model.bufferViews[uvAccessor.bufferView];
 				const auto &uvBuffer = model.buffers[uvView.buffer];
 				size_t uvOffset = uvView.byteOffset + uvAccessor.byteOffset + i * uvAccessor.ByteStride(uvView);
-				const float *uvPtr = reinterpret_cast<const float *>(&uvBuffer.data[uvOffset]);
+				const auto *uvPtr = reinterpret_cast<const float *>(&uvBuffer.data[uvOffset]);
 				vertex.uv = {uvPtr[0], 1.0f - uvPtr[1]};
 			}
 

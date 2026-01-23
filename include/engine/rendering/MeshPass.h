@@ -47,7 +47,7 @@ class MeshPass : public RenderPass
 	 */
 	explicit MeshPass(std::shared_ptr<webgpu::WebGPUContext> context);
 
-	~MeshPass() = default;
+	~MeshPass() override = default;
 
 	/**
 	 * @brief Initialize the mesh pass resources.
@@ -59,36 +59,36 @@ class MeshPass : public RenderPass
 	 * @brief Set the render pass context to render into.
 	 * @param context Render pass context (color + depth targets, clear flags).
 	 */
-	void setRenderPassContext(const std::shared_ptr<webgpu::WebGPURenderPassContext> &context) 
-	{ 
-		m_renderPassContext = context; 
+	void setRenderPassContext(const std::shared_ptr<webgpu::WebGPURenderPassContext> &context)
+	{
+		m_renderPassContext = context;
 	}
 
 	/**
 	 * @brief Set the frame uniforms (camera matrices, position, time).
 	 * @param uniforms Camera/frame uniforms.
 	 */
-	void setFrameUniforms(const FrameUniforms &uniforms) 
-	{ 
-		m_frameUniforms = uniforms; 
+	void setFrameUniforms(const FrameUniforms &uniforms)
+	{
+		m_frameUniforms = uniforms;
 	}
 
 	/**
 	 * @brief Set the camera ID for bind group caching.
 	 * @param id Camera identifier.
 	 */
-	void setCameraId(uint64_t id) 
-	{ 
-		m_cameraId = id; 
+	void setCameraId(uint64_t id)
+	{
+		m_cameraId = id;
 	}
 
 	/**
 	 * @brief Set visible indices for this render pass.
 	 * @param indices Indices of items visible to the camera.
 	 */
-	void setVisibleIndices(const std::vector<size_t> &indices) 
-	{ 
-		m_visibleIndices = indices; 
+	void setVisibleIndices(const std::vector<size_t> &indices)
+	{
+		m_visibleIndices = indices;
 	}
 
 	/**
@@ -104,7 +104,7 @@ class MeshPass : public RenderPass
 	 * @brief Render meshes using data from FrameCache.
 	 * Accesses: frameCache.gpuRenderItems, frameCache.lightUniforms
 	 * Additional data from setters: renderPassContext, frameUniforms, cameraId, visibleIndices, shadowBindGroup
-	 * 
+	 *
 	 * @param frameCache Frame-wide data (GPU items, lights, etc.)
 	 */
 	void render(FrameCache &frameCache) override;

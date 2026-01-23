@@ -32,7 +32,7 @@ struct Frustum
 	Plane nearPlane;
 	Plane farPlane;
 
-	std::array<const Plane *, 6> asArray() const
+	[[nodiscard]] std::array<const Plane *, 6> asArray() const
 	{
 		return {&leftPlane, &rightPlane, &bottomPlane, &topPlane, &nearPlane, &farPlane};
 	}
@@ -50,11 +50,11 @@ struct Frustum
 		}
 	}
 
-private:
+  private:
 	static Frustum extractFromMatrix(const glm::mat4 &clip)
 	{
-		Frustum f;
-		
+		Frustum f{};
+
 		// Extract planes using Gribb-Hartmann method
 		f.leftPlane = {
 			glm::vec3(clip[0][3] + clip[0][0], clip[1][3] + clip[1][0], clip[2][3] + clip[2][0]),
@@ -80,19 +80,19 @@ private:
 			glm::vec3(clip[0][3] - clip[0][2], clip[1][3] - clip[1][2], clip[2][3] - clip[2][2]),
 			clip[3][3] - clip[3][2]
 		};
-		
+
 		f.normalizeAll();
 		return f;
 	}
 
 	static glm::vec3 computeUpVector(const glm::vec3 &dir)
 	{
-		return glm::abs(glm::dot(dir, glm::vec3(0, 1, 0))) > 0.99f 
-			? glm::vec3(1, 0, 0) 
-			: glm::vec3(0, 1, 0);
+		return glm::abs(glm::dot(dir, glm::vec3(0, 1, 0))) > 0.99f
+				   ? glm::vec3(1, 0, 0)
+				   : glm::vec3(0, 1, 0);
 	}
 
-public:
+  public:
 	static Frustum fromViewProjection(const glm::mat4 &viewProj)
 	{
 		return extractFromMatrix(viewProj);
@@ -113,7 +113,8 @@ public:
 		float fovDegrees,
 		float aspectRatio,
 		float nearPlaneDist,
-		float farPlaneDist)
+		float farPlaneDist
+	)
 	{
 		glm::vec3 up = computeUpVector(dir);
 		glm::mat4 view = glm::lookAt(pos, pos + dir, up);
@@ -136,7 +137,8 @@ public:
 		float halfWidth,
 		float halfHeight,
 		float nearPlaneDist,
-		float farPlaneDist)
+		float farPlaneDist
+	)
 	{
 		glm::vec3 up = computeUpVector(dir);
 		glm::mat4 view = glm::lookAt(center - dir * farPlaneDist, center, up);
@@ -152,7 +154,7 @@ public:
 	static Frustum fromSphere(const glm::vec3 &center, float radius)
 	{
 		// Axis-aligned bounding box around sphere (already normalized)
-		Frustum f;
+		Frustum f{};
 		f.leftPlane = {glm::vec3(1, 0, 0), -(center.x - radius)};
 		f.rightPlane = {glm::vec3(-1, 0, 0), center.x + radius};
 		f.bottomPlane = {glm::vec3(0, 1, 0), -(center.y - radius)};

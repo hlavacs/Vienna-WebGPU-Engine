@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
@@ -114,16 +115,16 @@ class WebGPUShaderFactory
 	  protected:
 		WebGPUShaderBuilder(
 			WebGPUShaderFactory &factory,
-			const std::string &name,
+			std::string name,
 			const ShaderType type,
-			const std::string &vertexEntry,
-			const std::string &fragmentEntry,
+			std::string vertexEntry,
+			std::string fragmentEntry,
 			const std::optional<std::filesystem::path> &shaderPath
 		) : m_factory(factory),
-			m_name(name),
+			m_name(std::move(name)),
 			m_type(type),
-			m_vertexEntry(vertexEntry),
-			m_fragmentEntry(fragmentEntry),
+			m_vertexEntry(std::move(vertexEntry)),
+			m_fragmentEntry(std::move(fragmentEntry)),
 			m_shaderPath(shaderPath ? shaderPath->string() : "")
 		{
 		}

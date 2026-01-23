@@ -9,7 +9,7 @@ namespace engine::rendering::webgpu
 
 /**
  * @brief Wrapper for WebGPU buffer with metadata.
- * 
+ *
  * Encapsulates a GPU buffer along with its binding information, usage flags,
  * and whether it's a global (engine-managed) or per-material buffer.
  */
@@ -95,12 +95,12 @@ class WebGPUBuffer
 
 	// === Getters ===
 
-	wgpu::Buffer getBuffer() const { return m_buffer; }
-	const std::string &getName() const { return m_name; }
-	uint32_t getBinding() const { return m_binding; }
-	size_t getSize() const { return m_size; }
-	WGPUBufferUsageFlags getUsage() const { return m_usage; }
-	bool isValid() const { return m_buffer != nullptr; }
+	[[nodiscard]] wgpu::Buffer getBuffer() const { return m_buffer; }
+	[[nodiscard]] const std::string &getName() const { return m_name; }
+	[[nodiscard]] uint32_t getBinding() const { return m_binding; }
+	[[nodiscard]] size_t getSize() const { return m_size; }
+	[[nodiscard]] WGPUBufferUsageFlags getUsage() const { return m_usage; }
+	[[nodiscard]] bool isValid() const { return m_buffer != nullptr; }
 
   private:
 	wgpu::Buffer m_buffer = nullptr;

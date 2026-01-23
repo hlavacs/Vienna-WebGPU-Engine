@@ -9,7 +9,7 @@ namespace engine::rendering::webgpu
 {
 
 WebGPUContext::WebGPUContext() :
-	m_surface(nullptr), m_lastWindowHandle(nullptr) {}
+	m_surface(nullptr) {}
 
 void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
 {
@@ -42,8 +42,8 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
 	m_shaderRegistry->initializeDefaultShaders();
 
 	// ToDo: Move this to the surface manager
-	SDL_Window *sdlWindow = static_cast<SDL_Window *>(windowHandle);
-	int width, height;
+	auto *sdlWindow = static_cast<SDL_Window *>(windowHandle);
+	int width = 0, height = 0;
 	SDL_GL_GetDrawableSize(sdlWindow, &width, &height);
 
 	WebGPUSurfaceManager::Config config;
@@ -74,7 +74,7 @@ void WebGPUContext::initSurface(void *windowHandle)
 	if (m_surface)
 		return;
 
-	SDL_Window *sdlWindow = static_cast<SDL_Window *>(windowHandle);
+	auto *sdlWindow = static_cast<SDL_Window *>(windowHandle);
 	m_surface = wgpu::Surface(SDL_GetWGPUSurface(m_instance, sdlWindow));
 
 	assert(m_surface);
@@ -313,4 +313,4 @@ WebGPUPipelineManager &WebGPUContext::pipelineManager()
 	return *m_pipelineManager;
 
 } // namespace engine::rendering::webgpu
-}
+} // namespace engine::rendering::webgpu

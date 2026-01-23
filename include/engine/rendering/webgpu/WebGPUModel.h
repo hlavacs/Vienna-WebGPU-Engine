@@ -41,13 +41,13 @@ class WebGPUModel : public WebGPUSyncObject<engine::rendering::Model>
 	 * @brief Get the GPU-side mesh.
 	 * @return Shared pointer to WebGPUMesh.
 	 */
-	std::shared_ptr<WebGPUMesh> getMesh() const { return m_mesh; }
+	[[nodiscard]] std::shared_ptr<WebGPUMesh> getMesh() const { return m_mesh; }
 
 	/**
 	 * @brief Get the model options.
 	 * @return The model options.
 	 */
-	const WebGPUModelOptions &getOptions() const { return m_options; }
+	[[nodiscard]] const WebGPUModelOptions &getOptions() const { return m_options; }
 
   protected:
 	/**

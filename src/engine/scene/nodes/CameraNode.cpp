@@ -7,15 +7,11 @@
 namespace engine::scene::nodes
 {
 
-CameraNode::CameraNode()
+CameraNode::CameraNode() : m_fov(45.0f), m_aspect(16.0f / 9.0f), m_near(0.1f), m_far(100.0f)
 {
 	addNodeType(nodes::NodeType::Camera);
 
 	// Initialize camera parameters
-	m_fov = 45.0f;
-	m_aspect = 16.0f / 9.0f;
-	m_near = 0.1f;
-	m_far = 100.0f;
 
 	// Position the camera initially
 	if (m_transform)

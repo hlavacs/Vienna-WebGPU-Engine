@@ -27,12 +27,12 @@ class WebGPUPipelineFactory;
  */
 struct PipelineKey
 {
-	std::string shaderName;						  // shader identifier (immutable after creation)
-	wgpu::TextureFormat colorFormat;			  // vom RenderTarget
-	wgpu::TextureFormat depthFormat;			  // vom RenderTarget
-	engine::rendering::Topology::Type topology;	  // vom Mesh
-	wgpu::CullMode cullMode;					  // von Material / Default
-	uint32_t sampleCount;						  // MSAA, vom RenderTarget / global
+	std::string shaderName;						// shader identifier (immutable after creation)
+	wgpu::TextureFormat colorFormat;			// vom RenderTarget
+	wgpu::TextureFormat depthFormat;			// vom RenderTarget
+	engine::rendering::Topology::Type topology; // vom Mesh
+	wgpu::CullMode cullMode;					// von Material / Default
+	uint32_t sampleCount;						// MSAA, vom RenderTarget / global
 
 	bool operator==(const PipelineKey &other) const
 	{
@@ -61,7 +61,7 @@ struct PipelineKeyHasher
  * @brief Manages render pipelines with hot-reloading support.
  *
  * SINGLE ENTRY POINT for all pipeline creation and management.
- * 
+ *
  * Design Principles:
  * - All pipeline requests go through the manager (getOrCreatePipeline)
  * - Pipelines are immutable after creation
@@ -82,7 +82,7 @@ class WebGPUPipelineManager
 	 *
 	 * ONLY public method for obtaining pipelines.
 	 * The key is generated internally using shader info, features, vertex layout, and render target formats.
-	 * 
+	 *
 	 * @param mesh The mesh defining vertex layout and topology.
 	 * @param material The material defining shader.
 	 * @param renderPass The render pass defining target formats.
@@ -99,7 +99,7 @@ class WebGPUPipelineManager
 	 *
 	 * Use this when you have all pipeline parameters but no mesh or material object.
 	 * Useful for specialized passes like shadow rendering, compositing, etc.
-	 * 
+	 *
 	 * @param shaderInfo The shader to use (must be valid).
 	 * @param colorFormat Render target color format (or Undefined for no color).
 	 * @param depthFormat Render target depth format (or Undefined for no depth).
@@ -119,10 +119,10 @@ class WebGPUPipelineManager
 
 	/**
 	 * @brief Mark a pipeline for reload after current frame finishes.
-	 * 
+	 *
 	 * Uses swap semantics: the old pipeline remains valid until processPendingReloads() is called
 	 * (after frame presentation). Frames in progress will continue using the old pipeline.
-	 * 
+	 *
 	 * @param pipeline Pipeline to reload.
 	 * @return True if pipeline was marked (will be reloaded after frame).
 	 */
@@ -136,10 +136,10 @@ class WebGPUPipelineManager
 
 	/**
 	 * @brief Process pending pipeline reloads (call after frame finishes and is presented).
-	 * 
+	 *
 	 * This is the only time pipelines are actually replaced in the cache.
 	 * Safe to call at any time; does nothing if no reloads are pending.
-	 * 
+	 *
 	 * @return Number of successfully reloaded pipelines.
 	 */
 	size_t processPendingReloads();
@@ -156,17 +156,17 @@ class WebGPUPipelineManager
 	// Pipeline cache: key -> pipeline
 	// Immutable after insertion; replaced entirely on reload via processPendingReloads()
 	std::unordered_map<PipelineKey, std::shared_ptr<WebGPUPipeline>, PipelineKeyHasher> m_pipelines;
-	
+
 	// Pipelines marked for reload after current frame finishes
 	std::unordered_set<std::shared_ptr<WebGPUPipeline>> m_pendingReloads;
 
 	/**
 	 * @brief Internal: Create a new pipeline object (no caching, no registration).
-	 * 
+	 *
 	 * Only called by:
 	 * - getOrCreatePipeline (for new pipelines)
 	 * - processPendingReloads (for reloaded pipelines)
-	 * 
+	 *
 	 * Factory construction only; caller is responsible for cache management.
 	 */
 	bool createPipelineInternal(

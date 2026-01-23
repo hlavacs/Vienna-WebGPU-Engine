@@ -94,7 +94,7 @@ void Node::addChild(Ptr child)
 	child->parent = this;
 	child->setEngineContext(m_engineContext); // Propagate context to child
 	children.push_back(child);
-	
+
 	// Update Transform hierarchy if child is spatial
 	if (child->isSpatial())
 	{
@@ -104,7 +104,7 @@ void Node::addChild(Ptr child)
 			spatialChild->updateTransformParent(true); // Keep world transform
 		}
 	}
-	
+
 	if (enabled && child->isEnabled())
 		child->start();
 }
@@ -116,7 +116,7 @@ void Node::removeChild(Ptr child)
 	children.erase(std::remove(children.begin(), children.end(), child), children.end());
 	child->parent = nullptr;
 	child->setEngineContext(nullptr); // Clear context when removed
-	
+
 	// Clear Transform parent if child is spatial
 	if (child->isSpatial())
 	{

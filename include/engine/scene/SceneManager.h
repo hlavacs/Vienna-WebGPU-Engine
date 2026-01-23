@@ -15,7 +15,7 @@ namespace engine::scene
 
 /**
  * @brief Manages multiple scenes and handles scene transitions
- * 
+ *
  * The SceneManager is responsible for:
  * - Creating and registering scenes
  * - Switching between scenes
@@ -52,14 +52,14 @@ class SceneManager
 	 * @brief Get the currently active scene
 	 * @return Pointer to active scene, or nullptr if none
 	 */
-	std::shared_ptr<Scene> getActiveScene() const { return m_activeScene; }
+	[[nodiscard]] std::shared_ptr<Scene> getActiveScene() const { return m_activeScene; }
 
 	/**
 	 * @brief Get a scene by name (without making it active)
 	 * @param sceneName The name of the scene
 	 * @return Pointer to scene, or nullptr if not found
 	 */
-	std::shared_ptr<Scene> getScene(const std::string &sceneName) const;
+	[[nodiscard]] std::shared_ptr<Scene> getScene(const std::string &sceneName) const;
 
 	/**
 	 * @brief Remove a scene from the manager
@@ -77,19 +77,19 @@ class SceneManager
 	 * @param sceneName The name of the scene
 	 * @return true if scene exists, false otherwise
 	 */
-	bool hasScene(const std::string &sceneName) const;
-	
+	[[nodiscard]] bool hasScene(const std::string &sceneName) const;
+
 	/**
 	 * @brief Set the engine context for all scenes
 	 * @param context The engine context
 	 */
-	void setEngineContext(engine::EngineContext* context);
+	void setEngineContext(engine::EngineContext *context);
 
   private:
 	std::map<std::string, std::shared_ptr<Scene>> m_scenes;
 	std::shared_ptr<Scene> m_activeScene = nullptr;
 	std::string m_activeSceneName;
-	engine::EngineContext* m_engineContext = nullptr;
+	engine::EngineContext *m_engineContext = nullptr;
 };
 
 } // namespace engine::scene

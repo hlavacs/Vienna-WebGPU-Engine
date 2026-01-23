@@ -3,8 +3,8 @@
 #include "engine/core/Identifiable.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 #include <memory>
-#include <webgpu/webgpu.hpp>
 #include <optional>
+#include <webgpu/webgpu.hpp>
 
 namespace engine::rendering::webgpu
 {

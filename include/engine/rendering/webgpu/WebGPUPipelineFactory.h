@@ -33,7 +33,7 @@ class WebGPUPipelineFactory
 	 * @param topology The engine topology enum.
 	 * @return Corresponding wgpu::PrimitiveTopology.
 	 */
-	wgpu::PrimitiveTopology convertTopology(engine::rendering::Topology::Type topology) const
+	[[nodiscard]] wgpu::PrimitiveTopology convertTopology(engine::rendering::Topology::Type topology) const
 	{
 		switch (topology)
 		{

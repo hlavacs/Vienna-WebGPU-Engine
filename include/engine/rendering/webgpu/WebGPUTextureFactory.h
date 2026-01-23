@@ -30,8 +30,8 @@ struct hash<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>>
 #include "engine/rendering/ColorSpace.h"
 #include "engine/rendering/Texture.h"
 #include "engine/rendering/webgpu/BaseWebGPUFactory.h"
-#include "engine/rendering/webgpu/WebGPUTexture.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 
 namespace engine::rendering::webgpu
 {
@@ -216,7 +216,6 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	std::shared_ptr<WebGPUPipeline> getOrCreateMipmapPipeline(wgpu::TextureFormat format);
 
   private:
-
 	std::shared_ptr<WebGPUTexture> m_whiteTexture;
 	std::shared_ptr<WebGPUTexture> m_blackTexture;
 	std::shared_ptr<WebGPUTexture> m_defaultNormalTexture;

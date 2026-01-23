@@ -1,6 +1,7 @@
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 
 #include <fstream>
+#include <memory>
 #include <spdlog/spdlog.h>
 
 #include "engine/rendering/ShaderRegistry.h"
@@ -31,9 +32,9 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	}
 	// Create a width x height RGBA8 texture with the given color
 	std::vector<uint8_t> rgba(width * height * 4);
-	uint8_t r = static_cast<uint8_t>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
-	uint8_t g = static_cast<uint8_t>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f);
-	uint8_t b = static_cast<uint8_t>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f);
+	auto r = static_cast<uint8_t>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
+	auto g = static_cast<uint8_t>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f);
+	auto b = static_cast<uint8_t>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f);
 	uint8_t a = 255;
 	for (uint32_t i = 0; i < width * height; ++i)
 	{
@@ -87,13 +88,13 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 	viewDesc.aspect = wgpu::TextureAspect::All;
 
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
-	auto texturePtr = std::shared_ptr<WebGPUTexture>(
-		new WebGPUTexture(
-			gpuTexture,
-			view,
-			desc,
-			viewDesc
-		)
+	auto texturePtr = std::make_shared<WebGPUTexture>(
+
+		gpuTexture,
+		view,
+		desc,
+		viewDesc
+
 	);
 	m_colorTextureCache[std::make_tuple(r, g, b, a, width, height)] = texturePtr;
 	return texturePtr;
@@ -221,15 +222,15 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 
 	wgpu::TextureView textureView = gpuTexture.createView(viewDesc);
 
-	return std::shared_ptr<WebGPUTexture>(
-		new WebGPUTexture(
-			gpuTexture,
-			textureView,
-			desc,
-			viewDesc,
-			texture.getType(),
-			textureOpt.value()
-		)
+	return std::make_shared<WebGPUTexture>(
+
+		gpuTexture,
+		textureView,
+		desc,
+		viewDesc,
+		texture.getType(),
+		textureOpt.value()
+
 	);
 }
 
@@ -280,15 +281,15 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createRenderTarget(
 
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
 
-	auto texturePtr = std::shared_ptr<WebGPUTexture>(
-		new WebGPUTexture(
-			gpuTexture,
-			view,
-			textureDesc,
-			viewDesc,
-			Texture::Type::RenderTarget,
-			nullptr
-		)
+	auto texturePtr = std::make_shared<WebGPUTexture>(
+
+		gpuTexture,
+		view,
+		textureDesc,
+		viewDesc,
+		Texture::Type::RenderTarget,
+		nullptr
+
 	);
 
 	// Cache for reuse
@@ -310,13 +311,13 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
 
 	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(textureDesc);
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
-	return std::shared_ptr<WebGPUTexture>(
-		new WebGPUTexture(
-			gpuTexture,
-			view,
-			textureDesc,
-			viewDesc
-		)
+	return std::make_shared<WebGPUTexture>(
+
+		gpuTexture,
+		view,
+		textureDesc,
+		viewDesc
+
 	);
 }
 
@@ -478,7 +479,7 @@ void WebGPUTextureFactory::generateMipmaps(
 	}
 
 	// Get shader info to access bind group layout
-	auto mipmapShader = m_context.shaderRegistry().getShader(shader::default ::MIPMAP_BLIT);
+	auto mipmapShader = m_context.shaderRegistry().getShader(shader::defaults ::MIPMAP_BLIT);
 	if (!mipmapShader || !mipmapShader->isValid())
 	{
 		spdlog::error("Failed to get mipmap shader for bind group layout");
@@ -568,7 +569,7 @@ void WebGPUTextureFactory::generateMipmaps(
 std::shared_ptr<WebGPUPipeline> WebGPUTextureFactory::getOrCreateMipmapPipeline(wgpu::TextureFormat format)
 {
 	// Get the mipmap blit shader from registry
-	auto mipmapShader = m_context.shaderRegistry().getShader(shader::default ::MIPMAP_BLIT);
+	auto mipmapShader = m_context.shaderRegistry().getShader(shader::defaults ::MIPMAP_BLIT);
 	if (!mipmapShader || !mipmapShader->isValid())
 	{
 		spdlog::error("Failed to get mipmap blit shader from registry");

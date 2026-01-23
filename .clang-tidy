@@ -7,5 +7,8 @@ Checks: >
   modernize-*,
   -modernize-use-trailing-return-type
 WarningsAsErrors: ''
-HeaderFilterRegex: '^(src|include)/'   # only src/ or include/
+HeaderFilterRegex: '^(src|include)/(?!.*(stb_image|tiny_gltf|tiny_obj)\.h)'
 FormatStyle: file
+CheckOptions:
+  - key: modernize-use-forward-declarations.PrivateHeaders
+    value: false

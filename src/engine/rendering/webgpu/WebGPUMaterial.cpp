@@ -31,13 +31,15 @@ bool WebGPUMaterial::needsSync(const Material &cpuMaterial) const
 	// Check if any texture versions changed
 	for (const auto &[slotName, textureSlot] : cpuMaterial.getTextureSlots())
 	{
-		if (!textureSlot.handle.valid()) continue;
-		
+		if (!textureSlot.handle.valid())
+			continue;
+
 		auto texOpt = textureSlot.handle.get();
-		if (!texOpt.has_value()) continue;
-		
+		if (!texOpt.has_value())
+			continue;
+
 		auto &tex = texOpt.value();
-		
+
 		// Check cached texture version
 		auto it = m_textureVersions.find(slotName);
 		if (it == m_textureVersions.end() || it->second < tex->getVersion())
@@ -104,9 +106,11 @@ void WebGPUMaterial::cacheTextureVersions(const Material &cpuMaterial)
 	m_textureVersions.clear();
 	for (const auto &[slotName, textureSlot] : cpuMaterial.getTextureSlots())
 	{
-		if (!textureSlot.handle.valid()) continue;
+		if (!textureSlot.handle.valid())
+			continue;
 		auto texOpt = textureSlot.handle.get();
-		if (!texOpt.has_value()) continue;
+		if (!texOpt.has_value())
+			continue;
 		m_textureVersions[slotName] = texOpt.value()->getVersion();
 	}
 }

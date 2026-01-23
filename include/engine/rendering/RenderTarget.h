@@ -41,7 +41,7 @@ struct RenderTarget
 	 * @param time Current frame time in seconds.
 	 * @return FrameUniforms ready for GPU upload.
 	 */
-	FrameUniforms getFrameUniforms(float time) const
+	[[nodiscard]] FrameUniforms getFrameUniforms(float time) const
 	{
 		FrameUniforms uniforms{};
 		uniforms.viewMatrix = viewMatrix;

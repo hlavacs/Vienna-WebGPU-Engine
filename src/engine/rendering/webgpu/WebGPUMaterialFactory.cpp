@@ -73,7 +73,7 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandleUncached(
 	// Get texture slots (new API with ColorSpace)
 	auto textureSlots = material.getTextureSlots();
 	std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> textureMap;
-	for(const auto& [slotName, texSlot] : textureSlots)
+	for (const auto &[slotName, texSlot] : textureSlots)
 	{
 		if (!texSlot.isValid())
 		{
@@ -89,7 +89,7 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandleUncached(
 		textureMap,
 		options
 	);
-	
+
 	return webgpuMaterial;
 }
 

@@ -61,7 +61,9 @@ std::shared_ptr<WebGPUTexture> WebGPUDepthTextureFactory::create(
 	else if (format == wgpu::TextureFormat::Depth24PlusStencil8 || format == wgpu::TextureFormat::Depth32FloatStencil8)
 	{
 		type = Texture::Type::DepthStencil;
-	} else {
+	}
+	else
+	{
 		spdlog::error("WebGPUDepthTextureFactory: Unsupported format for depth texture");
 		return nullptr;
 	}

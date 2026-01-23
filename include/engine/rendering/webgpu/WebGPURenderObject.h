@@ -120,13 +120,13 @@ class WebGPURenderObject : public engine::core::Identifiable<WebGPURenderObject<
 	 * @brief Bind the render object for rendering.
 	 * @param renderPass The render pass encoder.
 	 */
-    virtual void bind(wgpu::RenderPassEncoder &renderPass) const = 0;
+	virtual void bind(wgpu::RenderPassEncoder &renderPass) const = 0;
 
 	/** @brief Get the WebGPU context. */
 	WebGPUContext &getContext() { return m_context; }
 
 	/** @brief Check if the object is dirty (needs update). */
-	bool isDirty() const { return m_dirty; }
+	[[nodiscard]] bool isDirty() const { return m_dirty; }
 
 	/** @brief Set the dirty flag. */
 	void setDirty(bool dirty) { m_dirty = dirty; }
@@ -138,10 +138,10 @@ class WebGPURenderObject : public engine::core::Identifiable<WebGPURenderObject<
 	void setType(Type type) { m_type = type; }
 
 	/** @brief Get the creation time of the object. */
-	std::chrono::steady_clock::time_point getCreationTime() const { return m_creationTime; }
+	[[nodiscard]] std::chrono::steady_clock::time_point getCreationTime() const { return m_creationTime; }
 
 	/** @brief Get the last update time of the object. */
-	std::chrono::steady_clock::time_point getLastUpdateTime() const { return m_lastUpdateTime; }
+	[[nodiscard]] std::chrono::steady_clock::time_point getLastUpdateTime() const { return m_lastUpdateTime; }
 
   protected:
 	/**

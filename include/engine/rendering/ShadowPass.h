@@ -56,7 +56,7 @@ class ShadowPass : public RenderPass
 	 */
 	explicit ShadowPass(std::shared_ptr<webgpu::WebGPUContext> context);
 
-	~ShadowPass() = default;
+	~ShadowPass() override = default;
 
 	/**
 	 * @brief Initialize shadow pass resources (bind group layouts, uniforms).
@@ -66,15 +66,15 @@ class ShadowPass : public RenderPass
 
 	/**
 	 * @brief Render all shadow maps from shadow requests (camera-aware).
-	 * 
+	 *
 	 * This method is camera-aware and computes shadow matrices per-camera:
 	 * - For directional lights: Computes CSM cascades based on camera frustum
 	 * - For spot lights: Computes perspective shadow matrix
 	 * - For point lights: Computes 6 cube face matrices
-	 * 
+	 *
 	 * Shadow matrices are computed here, not stored in Light objects.
 	 * Results are written to frameCache.shadowUniforms for GPU upload.
-	 * 
+	 *
 	 * @param frameCache Frame-wide data storage (reads shadowRequests, writes shadowUniforms, gpuRenderItems)
 	 */
 	void render(FrameCache &frameCache) override;
@@ -88,13 +88,13 @@ class ShadowPass : public RenderPass
 	 * @brief Set the render collector containing scene data.
 	 * @param collector The render collector with render items and lights.
 	 */
-	void setRenderCollector(const RenderCollector* collector) { m_collector = collector; }
+	void setRenderCollector(const RenderCollector *collector) { m_collector = collector; }
 
 	/**
 	 * @brief Get the shadow bind group for use in mesh rendering.
 	 * @return Shared pointer to shadow bind group (contains shadow textures and sampler).
 	 */
-	std::shared_ptr<webgpu::WebGPUBindGroup> getShadowBindGroup() const { return m_shadowBindGroup; }
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBindGroup> getShadowBindGroup() const { return m_shadowBindGroup; }
 
   private:
 	/**
@@ -202,7 +202,7 @@ class ShadowPass : public RenderPass
 	);
 
 	// External dependencies (set via setters)
-	const RenderCollector* m_collector = nullptr;
+	const RenderCollector *m_collector = nullptr;
 
 	// Shadow map resources
 	std::shared_ptr<webgpu::WebGPUTexture> m_shadow2DArray;
@@ -212,7 +212,7 @@ class ShadowPass : public RenderPass
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowBindGroup;
 
 	// Bind group layouts (from shaders)
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_shadowPass2DBindGroupLayout;		//< For 2D shadows
+	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_shadowPass2DBindGroupLayout;	//< For 2D shadows
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_shadowPassCubeBindGroupLayout; //< For cube shadows
 
 	// Uniform buffers (reusable across lights)
@@ -220,12 +220,12 @@ class ShadowPass : public RenderPass
 	std::shared_ptr<webgpu::WebGPUBuffer> m_shadowPassCubeUniformsBuffer; //< Cube shadow uniforms
 
 	// Reusable bind groups (updated per-light via writeBuffer)
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowPass2DBindGroup;		//< For 2D shadows
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowPass2DBindGroup;	//< For 2D shadows
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowPassCubeBindGroup; //< For cube shadows
 
 	// Pipeline caching (by topology type, NOT per-mesh instance)
 	// Using weak_ptr: if pipeline is released elsewhere, we'll recreate it
-	std::unordered_map<int, std::weak_ptr<webgpu::WebGPUPipeline>> m_pipelineCache;	   //< 2D shadow pipelines
+	std::unordered_map<int, std::weak_ptr<webgpu::WebGPUPipeline>> m_pipelineCache;		//< 2D shadow pipelines
 	std::unordered_map<int, std::weak_ptr<webgpu::WebGPUPipeline>> m_cubePipelineCache; //< Cube shadow pipelines
 };
 

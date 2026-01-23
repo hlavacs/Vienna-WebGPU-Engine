@@ -47,7 +47,7 @@ class WebGPUSurfaceManager
 		 * @param device The WebGPU device.
 		 * @return Configured wgpu::SurfaceConfiguration.
 		 */
-		wgpu::SurfaceConfiguration asSurfaceConfiguration(const wgpu::Device &device) const
+		[[nodiscard]] wgpu::SurfaceConfiguration asSurfaceConfiguration(const wgpu::Device &device) const
 		{
 			wgpu::SurfaceConfiguration cfg{};
 			cfg.device = device;
@@ -115,7 +115,7 @@ class WebGPUSurfaceManager
 	 * @brief Get the current surface configuration.
 	 * @return Reference to the current Config.
 	 */
-	const Config &currentConfig() const { return m_config; }
+	[[nodiscard]] const Config &currentConfig() const { return m_config; }
 
   private:
 	/**
@@ -124,7 +124,7 @@ class WebGPUSurfaceManager
 	void applyConfig();
 
   private:
-	WebGPUContext &m_context;		   ///< Reference to the WebGPU context
+	WebGPUContext &m_context; ///< Reference to the WebGPU context
 
 	Config m_config{};			  ///< Current surface configuration
 	Config m_lastAppliedConfig{}; ///< Last applied surface configuration

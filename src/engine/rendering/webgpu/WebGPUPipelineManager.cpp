@@ -68,14 +68,14 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineManager::getOrCreatePipeline(
 		cullMode,
 		sampleCount
 	};
-	
+
 	// Check cache first
 	auto it = m_pipelines.find(key);
 	if (it != m_pipelines.end())
 	{
 		return it->second;
 	}
-	
+
 	// Create new pipeline
 	std::shared_ptr<WebGPUPipeline> pipeline;
 	if (!createPipelineInternal(key, shaderInfo, pipeline))
@@ -83,7 +83,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineManager::getOrCreatePipeline(
 		spdlog::error("Failed to create pipeline with explicit parameters");
 		return nullptr;
 	}
-	
+
 	m_pipelines[key] = pipeline;
 	return pipeline;
 }
@@ -195,7 +195,7 @@ bool WebGPUPipelineManager::createPipelineInternal(
 		spdlog::error("No valid shader info provided for pipeline with shader '{}'", config.shaderName);
 		return false;
 	}
-	
+
 	outPipeline = m_pipelineFactory->createRenderPipeline(
 		shaderInfo,
 		shaderInfo, // Same shader info for both vertex and fragment

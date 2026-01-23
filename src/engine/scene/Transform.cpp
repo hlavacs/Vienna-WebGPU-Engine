@@ -52,7 +52,7 @@ glm::quat Transform::getRotation() const
 glm::vec3 Transform::getScale() const
 {
 	glm::mat4 world = getWorldMatrix();
-	return glm::vec3(glm::length(glm::vec3(world[0])), glm::length(glm::vec3(world[1])), glm::length(glm::vec3(world[2])));
+	return {glm::length(glm::vec3(world[0])), glm::length(glm::vec3(world[1])), glm::length(glm::vec3(world[2]))};
 }
 
 glm::vec3 Transform::getEulerAngles() const

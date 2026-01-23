@@ -18,7 +18,7 @@ namespace engine::ui
 /**
  * @class ImGuiManager
  * @brief Manages ImGui initialization, frame rendering, and cleanup
- * 
+ *
  * Handles all ImGui setup for SDL2 and WebGPU backends, and provides
  * a callback-based system for adding UI frames.
  */
@@ -32,10 +32,10 @@ class ImGuiManager
 	~ImGuiManager();
 
 	// Disable copy/move
-	ImGuiManager(const ImGuiManager&) = delete;
-	ImGuiManager& operator=(const ImGuiManager&) = delete;
-	ImGuiManager(ImGuiManager&&) = delete;
-	ImGuiManager& operator=(ImGuiManager&&) = delete;
+	ImGuiManager(const ImGuiManager &) = delete;
+	ImGuiManager &operator=(const ImGuiManager &) = delete;
+	ImGuiManager(ImGuiManager &&) = delete;
+	ImGuiManager &operator=(ImGuiManager &&) = delete;
 
 	/**
 	 * @brief Initialize ImGui with SDL2 and WebGPU backends
@@ -43,7 +43,7 @@ class ImGuiManager
 	 * @param context WebGPU context for device and format information
 	 * @return true if initialization succeeded, false otherwise
 	 */
-	bool initialize(SDL_Window* window, std::shared_ptr<engine::rendering::webgpu::WebGPUContext> context);
+	bool initialize(SDL_Window *window, std::shared_ptr<engine::rendering::webgpu::WebGPUContext> context);
 
 	/**
 	 * @brief Shutdown and cleanup ImGui
@@ -53,7 +53,7 @@ class ImGuiManager
 	/**
 	 * @brief Add a UI frame callback
 	 * @param callback Function that builds ImGui UI
-	 * 
+	 *
 	 * Multiple callbacks can be added and will be executed in order during each frame.
 	 */
 	void addFrame(UIFrameCallback callback);
@@ -66,7 +66,7 @@ class ImGuiManager
 	/**
 	 * @brief Render all registered UI frames
 	 * @param renderPass WebGPU render pass encoder to render into
-	 * 
+	 *
 	 * This executes all registered callbacks and renders the final ImGui draw data.
 	 */
 	void render(wgpu::RenderPassEncoder renderPass);
@@ -75,7 +75,7 @@ class ImGuiManager
 	 * @brief Check if ImGui is initialized
 	 * @return true if initialized, false otherwise
 	 */
-	bool isInitialized() const { return m_initialized; }
+	[[nodiscard]] bool isInitialized() const { return m_initialized; }
 
   private:
 	bool m_initialized = false;

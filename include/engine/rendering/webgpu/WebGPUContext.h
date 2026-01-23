@@ -60,11 +60,11 @@ class WebGPUContext
 	 */
 	wgpu::Surface getSurface();
 
-	wgpu::Instance getInstance() const { return m_instance; }
-	wgpu::Adapter getAdapter() const { return m_adapter; }
-	wgpu::Device getDevice() const { return m_device; }
-	wgpu::Queue getQueue() const { return m_queue; }
-	wgpu::TextureFormat getSwapChainFormat() const { return m_swapChainFormat; }
+	[[nodiscard]] wgpu::Instance getInstance() const { return m_instance; }
+	[[nodiscard]] wgpu::Adapter getAdapter() const { return m_adapter; }
+	[[nodiscard]] wgpu::Device getDevice() const { return m_device; }
+	[[nodiscard]] wgpu::Queue getQueue() const { return m_queue; }
+	[[nodiscard]] wgpu::TextureFormat getSwapChainFormat() const { return m_swapChainFormat; }
 
 	// === Surface Manager Accessor ===
 	WebGPUSurfaceManager &surfaceManager();

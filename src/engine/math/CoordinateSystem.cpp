@@ -19,13 +19,13 @@ glm::vec3 CoordinateSystem::transform(const glm::vec3 &v, Cartesian src, Cartesi
 	{
 		switch (srcInfo.forwardIndex)
 		{
-		case 0: 
+		case 0:
 			result.x = -result.x;
 			break;
 		case 1:
 			result.y = -result.y;
 			break;
-		case 2: 
+		case 2:
 			result.z = -result.z;
 			break;
 		}
@@ -36,7 +36,7 @@ glm::vec3 CoordinateSystem::transform(const glm::vec3 &v, Cartesian src, Cartesi
 
 CoordinateSystem::BasisInfo CoordinateSystem::basisInfo(Cartesian cs)
 {
-	BasisInfo info;
+	BasisInfo info{};
 
 	switch (cs)
 	{

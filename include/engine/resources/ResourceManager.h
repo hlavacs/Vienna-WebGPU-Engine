@@ -14,8 +14,8 @@
 #include "engine/resources/ModelManager.h"
 #include "engine/resources/TextureManager.h"
 #include "engine/resources/loaders/GltfLoader.h"
-#include "engine/resources/loaders/ObjLoader.h"
 #include "engine/resources/loaders/ImageLoader.h"
+#include "engine/resources/loaders/ObjLoader.h"
 
 namespace engine::resources
 {
@@ -29,6 +29,7 @@ class ResourceManager
 	using mat3x3 = glm::mat3x3;
 
 	explicit ResourceManager(path baseDir);
+
   public:
 	std::shared_ptr<engine::resources::loaders::ObjLoader> m_objLoader;
 	std::shared_ptr<engine::resources::loaders::GltfLoader> m_gltfLoader;
