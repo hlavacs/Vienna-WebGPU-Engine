@@ -64,11 +64,6 @@ int main(int argc, char **argv)
 	auto sunLightNode = std::make_shared<engine::scene::nodes::LightNode>();
 	engine::rendering::DirectionalLight sunData;
 	sunData.color = glm::vec3(1.0f, 1.0f, 0.95f);
-	sunData.intensity = 1.0f;
-	sunData.castShadows = true;
-	sunData.shadowMapSize = 4096;
-	sunData.shadowBias = 0.005f;
-	sunData.shadowNormalBias = 0.01f;
 	sunData.shadowPCFKernel = 2;
 	sunLightNode->getLight().setData(sunData);
 	rootNode->addChild(std::static_pointer_cast<engine::scene::nodes::Node>(sunLightNode));
@@ -78,8 +73,6 @@ int main(int argc, char **argv)
 	engine::rendering::DirectionalLight moonData;
 	moonData.color = glm::vec3(0.7f, 0.8f, 1.0f);
 	moonData.intensity = 0.2f;
-	moonData.castShadows = false; // Disable for performance, or enable for moon shadows
-	moonData.shadowMapSize = 2048;
 	moonLightNode->getLight().setData(moonData);
 	rootNode->addChild(std::static_pointer_cast<engine::scene::nodes::Node>(moonLightNode));
 

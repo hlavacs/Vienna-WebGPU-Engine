@@ -48,7 +48,6 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 	{
 		m_engine.getContext()->shaderRegistry().reloadAllShaders();
 		m_engine.getContext()->pipelineManager().reloadAllPipelines();
-		// ToDo: Recreate pipelines
 	}
 	ImGui::SameLine();
 	// Debug rendering toggle

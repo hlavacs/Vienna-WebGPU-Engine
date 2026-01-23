@@ -146,21 +146,23 @@ RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShado
 
 					if constexpr (std::is_same_v<T, DirectionalLight>)
 					{
-						if (current2DIndex >= maxShadow2D) return;
+						uint32_t cascades = std::min(specificLight.cascadeCount, 4u); // Max 4 cascades
+						
+						if (current2DIndex + cascades > maxShadow2D) return;
 
-						// Create shadow request for ShadowPass to process
-						shadowRequests.emplace_back(&light, ShadowType::Directional2D, current2DIndex);
+						// Create shadow request for ShadowPass to process (with CSM cascades)
+						shadowRequests.emplace_back(&light, ShadowType::Directional2D, current2DIndex, cascades);
 
 						lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
-						lightUniform.shadowCount = 1;
-						current2DIndex++;
+						lightUniform.shadowCount = cascades; // Multiple cascades
+						current2DIndex += cascades; // Allocate multiple texture layers
 					}
 					else if constexpr (std::is_same_v<T, SpotLight>)
 					{
 						if (current2DIndex >= maxShadow2D) return;
 
 						// Create shadow request for ShadowPass to process
-						shadowRequests.emplace_back(&light, ShadowType::Spot2D, current2DIndex);
+						shadowRequests.emplace_back(&light, ShadowType::Spot2D, current2DIndex, 1);
 
 						lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
 						lightUniform.shadowCount = 1;
@@ -171,7 +173,7 @@ RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShado
 						if (currentCubeIndex >= maxShadowCube) return;
 
 						// Create shadow request for ShadowPass to process
-						shadowRequests.emplace_back(&light, ShadowType::PointCube, currentCubeIndex);
+						shadowRequests.emplace_back(&light, ShadowType::PointCube, currentCubeIndex, 1);
 
 						lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
 						lightUniform.shadowCount = 1;

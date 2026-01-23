@@ -26,15 +26,9 @@ fn vs_shadow(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     let worldPos = uObject.modelMatrix * vec4f(in.position, 1.0);
     let clipPos = uShadow.lightViewProjectionMatrix * worldPos;
-    let ndc = clipPos.xyz / clipPos.w;
     out.position = clipPos;
-    let near: f32 = 0.1;
-    let far: f32 = 100.0;
-    let viewDepth = clipPos.z; // in view space
-    let viewPos = uObject.modelMatrix * vec4f(in.position, 1.0);
     
-    let ndcZ = clipPos.z / clipPos.w;
-    out.depth = ndcZ * 0.5 + 0.5;
+    out.depth = clipPos.z / clipPos.w;
     return out;
 }
 

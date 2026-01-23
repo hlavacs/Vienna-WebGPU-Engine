@@ -98,9 +98,6 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	if (enableDepth)
 	{
 		depthStencil.format = depthFormat;
-		depthStencil.depthBias = 0;
-		depthStencil.depthBiasClamp = 0.01f;
-		depthStencil.depthBiasSlopeScale = 1.5f;
 		depthStencil.depthWriteEnabled = true;
 		depthStencil.depthCompare = wgpu::CompareFunction::Less;
 		depthStencil.stencilReadMask = 0;

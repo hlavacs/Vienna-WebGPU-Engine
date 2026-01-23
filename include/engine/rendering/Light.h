@@ -24,12 +24,16 @@ struct DirectionalLight
 	glm::vec3 color = glm::vec3(1.0f);
 	float intensity = 1.0f;
 	glm::vec3 direction = glm::vec3(0.0f, -1.0f, 0.0f); // World-space direction
-	float range = 100.0f;								// Shadow influence area
+	float range = 50.0f;								// Shadow influence area
 	bool castShadows = false;
-	float shadowBias = 0.005f;
-	float shadowNormalBias = 0.01f;
-	uint32_t shadowMapSize = 4096; // Shadow map resolution
-	uint32_t shadowPCFKernel = 1;  // PCF kernel size (1 = 3x3, 2 = 5x5)
+	float shadowBias = 0.002f;
+	float shadowNormalBias = 0.3f;
+	uint32_t shadowMapSize = 2048; // Shadow map resolution
+	uint32_t shadowPCFKernel = 2;  // PCF kernel size (1 = 3x3, 2 = 5x5)
+	
+	// CSM (Cascaded Shadow Maps) parameters
+	uint32_t cascadeCount = 4;     // Number of shadow cascades (1-4)
+	float splitLambda = 0.7f;      // Lambda for cascade split distribution (0=uniform, 1=logarithmic)
 };
 
 /**
@@ -60,8 +64,8 @@ struct SpotLight
 	float spotSoftness = 0.2f; // Softness of the cone edge
 	float range = 10.0f;	   // Effective range for culling and attenuation
 	bool castShadows = false;
-	float shadowBias = 0.005f;
-	float shadowNormalBias = 0.01f;
+	float shadowBias = 0.002f;
+	float shadowNormalBias = 0.3f;
 	uint32_t shadowMapSize = 2048; // Shadow map resolution
 	uint32_t shadowPCFKernel = 1;
 };
