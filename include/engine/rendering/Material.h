@@ -1,5 +1,14 @@
 #pragma once
 
+#include <memory>
+#include <string>
+#include <typeindex>
+#include <typeinfo>
+#include <unordered_map>
+#include <variant>
+
+#include <glm/glm.hpp>
+
 #include "engine/core/Handle.h"
 #include "engine/core/Identifiable.h"
 #include "engine/core/Versioned.h"
@@ -7,12 +16,6 @@
 #include "engine/rendering/MaterialFeatureMask.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/Texture.h"
-#include <glm/glm.hpp>
-#include <memory>
-#include <string>
-#include <unordered_map>
-#include <variant>
-
 namespace engine::rendering
 {
 using TextureHandle = Texture::Handle;
@@ -99,9 +102,57 @@ struct UnlitProperties
 };
 static_assert(sizeof(UnlitProperties) % 16 == 0);
 
-using MaterialProperties = std::variant<
-	PBRProperties,
-	UnlitProperties>;
+struct MaterialPropertiesData
+{
+	std::shared_ptr<void> data; // type-erased storage
+	size_t size = 0;			// size in bytes
+	std::type_index type;		// type info
+
+	template <typename T>
+	static MaterialPropertiesData create(const T &value)
+	{
+		auto p = std::make_shared<T>(value);
+		return MaterialPropertiesData{p, sizeof(T), std::type_index(typeid(T))};
+	}
+
+	template <typename T>
+	bool isType() const
+	{
+		return type == std::type_index(typeid(T));
+	}
+
+	template <typename T>
+	T &as()
+	{
+		if (type != std::type_index(typeid(T)))
+			throw std::runtime_error("Property type mismatch");
+		return *reinterpret_cast<T *>(data.get());
+	}
+
+	template <typename T>
+	const T &as() const
+	{
+		if (type != std::type_index(typeid(T)))
+			throw std::runtime_error("Property type mismatch");
+		return *reinterpret_cast<const T *>(data.get());
+	}
+
+	/**
+	 * @brief Returns a raw pointer and size to the stored data.
+	 */
+	const void *getData() const
+	{
+		return data.get();
+	}
+
+	/**
+	 * @brief Non-const version (for updating GPU buffers)
+	 */
+	void *getData()
+	{
+		return data.get();
+	}
+};
 
 struct Material : public engine::core::Identifiable<Material>,
 				  public engine::core::Versioned
@@ -120,59 +171,32 @@ struct Material : public engine::core::Identifiable<Material>,
 	Material(const Material &) = delete;
 	Material &operator=(const Material &) = delete;
 
-	/**
-	 * @brief Get the material properties.
-	 * @return The material properties struct.
-	 */
-	const MaterialProperties &getProperties() const { return m_properties; }
-
-	/**
-	 * @brief Get the size of the current properties struct.
-	 * @return Size in bytes.
-	 */
-	const size_t getPropertiesSize() const
-	{
-		return std::visit(
-			[](auto &&arg) -> size_t
-			{
-				return sizeof(arg);
-			},
-			m_properties
-		);
-	}
-
-	/**
-	 * @brief Set the material properties.
-	 * @param properties The material properties struct.
-	 * @tparam T Type of the properties struct (e.g., PBRProperties or UnlitProperties).
-	 */
 	template <typename T>
-	void setProperties(const T &properties)
+	void setProperties(const T &props)
 	{
-		static_assert(
-			std::is_same_v<T, PBRProperties> || std::is_same_v<T, UnlitProperties>,
-			"Invalid material property type"
-		);
-
-		m_properties = properties;
+		m_properties = MaterialPropertiesData::create(props);
 		incrementVersion();
-	}
-
-	/**
-	 * @brief Check if the material properties are of a specific type.
-	 * @tparam T Type to check against (e.g., PBRProperties or UnlitProperties).
-	 * @return True if the properties are of type T, false otherwise.
-	 */
-	template <typename T>
-	bool isPropertiesKind() const
-	{
-		return std::holds_alternative<T>(m_properties);
 	}
 
 	template <typename T>
 	const T &getProperties() const
 	{
-		return std::get<T>(m_properties);
+		return m_properties.as<T>();
+	}
+
+	const void *getPropertiesData() const
+	{
+		return m_properties.getData();
+	}
+
+	size_t getPropertiesSize() const
+	{
+		return m_properties.size;
+	}
+
+	std::type_index getPropertiesType() const
+	{
+		return m_properties.type;
 	}
 
 	/**
@@ -366,7 +390,7 @@ struct Material : public engine::core::Identifiable<Material>,
 	/**
 	 * @brief Material properties stored in a struct.
 	 */
-	MaterialProperties m_properties{PBRProperties{}};
+	MaterialPropertiesData m_properties{MaterialPropertiesData::create(PBRProperties{})};
 
 	/**
 	 * @brief The identifier of the shader used by this material.

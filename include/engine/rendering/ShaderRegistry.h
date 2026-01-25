@@ -4,6 +4,8 @@
 #include <string>
 #include <unordered_map>
 
+#include <webgpu/webgpu.hpp>
+
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
 namespace engine::rendering::webgpu
@@ -20,10 +22,29 @@ constexpr const char *PBR = "PBR_Lit_Shader";
 constexpr const char *DEBUG = "Debug_Shader";
 constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_Shader";
 constexpr const char *MIPMAP_BLIT = "Mipmap_Blit_Shader";
-constexpr const char *SHADOW = "Shadow_Shader";
-constexpr const char *SHADOW_CUBE = "Shadow_Cube_Shader";
+constexpr const char *SHADOW_PASS_2D = "ShadowPass2D_Shader";
+constexpr const char *SHADOW_PASS_CUBE = "ShadowPassCube_Shader";
 constexpr const char *VISUALIZE_DEPTH = "Visualize_Depth_Shader";
 } // namespace shader::defaults
+
+namespace bindgroup::defaults
+{
+constexpr const char *FRAME = "Frame_BindGroup";
+constexpr const char *LIGHT = "Light_BindGroup";
+constexpr const char *OBJECT = "Object_BindGroup";
+constexpr const char *MATERIAL = "Material_BindGroup";
+constexpr const char *SHADOW = "Shadow_BindGroup";
+constexpr const char *SHADOW_PASS_2D = "ShadowPass2D_BindGroup";
+constexpr const char *SHADOW_PASS_CUBE = "ShadowPassCube_BindGroup";
+constexpr const char *MIPMAP_BLIT = "MipmapBlit_BindGroup";
+constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_BindGroup";
+constexpr const char *VISUALIZE_DEPTH = "Visualize_Depth_BindGroup";
+constexpr const char *DEBUG = "Debug_BindGroup";
+} // namespace bindgroup::defaults
+namespace bindgroup::entry::defaults
+{
+constexpr const char *MATERIAL_PROPERTIES = "materialProperties";
+} // namespace bindgroup::entry::defaults
 
 /**
  * @class ShaderRegistry
@@ -95,8 +116,8 @@ class ShaderRegistry
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createDebugShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createFullscreenQuadShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createMipmapBlitShader();
-	std::shared_ptr<webgpu::WebGPUShaderInfo> createShadowShader();
-	std::shared_ptr<webgpu::WebGPUShaderInfo> createCubeShadowShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createShadowPass2DShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createShadowPassCubeShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createVisualizeDepthShader();
 };
 

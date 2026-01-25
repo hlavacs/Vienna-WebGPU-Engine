@@ -4,18 +4,19 @@
 #include <memory>
 #include <variant>
 #include <vector>
+
 #include <webgpu/webgpu.hpp>
 
-#include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
-#include "engine/rendering/webgpu/WebGPUBuffer.h"
-#include "engine/rendering/webgpu/WebGPUMaterial.h"
-#include "engine/rendering/webgpu/WebGPUTexture.h"
 
 namespace engine::rendering::webgpu
 {
 
 class WebGPUContext;
+class WebGPUBindGroup;
+class WebGPUBuffer;
+class WebGPUTexture;
+class WebGPUMaterial;
 
 /**
  * @brief Resource variant for bind group entries.
@@ -65,97 +66,21 @@ class WebGPUBindGroupFactory
 	~WebGPUBindGroupFactory();
 
 	/**
-	 * @brief Helper to create a uniform buffer BindGroupLayoutEntry for type T.
-	 * @tparam T Uniform struct type.
-	 * @param binding Binding index (default: -1 for auto-assignment).
-	 * @param visibility wgpu::ShaderStage stage visibility (default: Vertex | Fragment).
-	 * @return wgpu::BindGroupLayoutEntry
-	 */
-	template <typename T>
-	wgpu::BindGroupLayoutEntry createUniformBindGroupLayoutEntry(
-		int binding = -1,
-		uint32_t visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment
-	)
-	{
-		static_assert(std::is_standard_layout_v<T>, "Uniform buffer type must be standard layout");
-		wgpu::BindGroupLayoutEntry entry = {};
-		entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
-		entry.visibility = visibility;
-		entry.buffer.type = wgpu::BufferBindingType::Uniform;
-		entry.buffer.hasDynamicOffset = false;
-		entry.buffer.minBindingSize = sizeof(T);
-		return entry;
-	}
-
-	/**
-	 * @brief Helper to create a storage buffer BindGroupLayoutEntry.
-	 * @param binding Binding index (default: -1 for auto-assignment).
-	 * @param visibility wgpu::ShaderStage stage visibility (default: Vertex | Fragment).
-	 * @param readOnly Whether the storage buffer is read-only (default: true).
-	 * @return wgpu::BindGroupLayoutEntry
-	 */
-	wgpu::BindGroupLayoutEntry createStorageBindGroupLayoutEntry(
-		int binding = -1,
-		uint32_t visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
-		bool readOnly = true
-	);
-
-	/**
-	 * @brief Helper to create a sampler BindGroupLayoutEntry.
-	 * @param binding Binding index (default: -1 for auto-assignment).
-	 * @param visibility wgpu::ShaderStage stage visibility (default: Fragment).
-	 * @param samplerType Type of sampler binding (default: Filtering).
-	 * @return wgpu::BindGroupLayoutEntry
-	 */
-	wgpu::BindGroupLayoutEntry createSamplerBindGroupLayoutEntry(
-		int binding = -1,
-		uint32_t visibility = wgpu::ShaderStage::Fragment,
-		wgpu::SamplerBindingType samplerType = wgpu::SamplerBindingType::Filtering
-	);
-
-	/**
-	 * @brief Helper to create a texture BindGroupLayoutEntry.
-	 * @param binding Binding index (default: -1 for auto-assignment).
-	 * @param visibility wgpu::ShaderStage stage visibility (default: Fragment).
-	 * @param sampleType Type of texture sample (default: Float).
-	 * @param viewDimension Texture view dimension (default: 2D).
-	 * @param multisampled Whether the texture is multisampled (default: false).
-	 * @return wgpu::BindGroupLayoutEntry
-	 */
-	wgpu::BindGroupLayoutEntry createTextureBindGroupLayoutEntry(
-		int binding = -1,
-		uint32_t visibility = wgpu::ShaderStage::Fragment,
-		wgpu::TextureSampleType sampleType = wgpu::TextureSampleType::Float,
-		wgpu::TextureViewDimension viewDimension = wgpu::TextureViewDimension::_2D,
-		bool multisampled = false
-	);
-
-	/**
 	 * @brief Helper to create a vector of BindGroupLayoutEntries with auto binding assignment.
 	 * @param name Optional name for the layout.
-	 * @param rawEntries BindGroupLayoutEntry objects (with binding=-1 for auto).
+	 * @param type Semantic type of the bind group.
+	 * @param reuse Reuse policy for the bind group.
+	 * @param entries BindGroupLayoutEntry objects (with binding=-1 for auto).
+	 * @param bindings Typed bindings contained in this layout.
 	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
 	 */
-	std::shared_ptr<WebGPUBindGroupLayoutInfo> createBindGroupLayoutInfo(std::string name, std::vector<wgpu::BindGroupLayoutEntry> entries)
-	{
-		uint32_t nextBinding = 0;
-
-		for (auto &entry : entries)
-		{
-			if (entry.binding == static_cast<uint32_t>(-1))
-			{
-				entry.binding = nextBinding++;
-			}
-			else
-			{
-				nextBinding = std::max(nextBinding, entry.binding + 1);
-			}
-		}
-		wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
-		desc.label = name.c_str();
-		auto layout = createBindGroupLayoutFromDescriptor(desc);
-		return std::make_shared<WebGPUBindGroupLayoutInfo>(layout, desc);
-	}
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> createBindGroupLayoutInfo(
+		std::string name, 
+		BindGroupType type,
+		BindGroupReuse reuse,
+		std::vector<wgpu::BindGroupLayoutEntry> entries,
+		std::vector<BindGroupBinding> bindings = {}
+	);
 
 	/**
 	 * @brief Helper to create a vector of BindGroupLayoutEntries with auto binding assignment.
@@ -210,45 +135,18 @@ class WebGPUBindGroupFactory
 	);
 
 	/**
-	 * @brief Release all created bind groups and layouts.
-	 */
-	void cleanup()
-	{
-		m_globalBindGroups.clear();
-		m_globalBindGroupLayouts.clear();
-	}
-
-	/**
 	 * @brief Get global bind group by key.
 	 * @param key Unique key for the bind group.
 	 * @return Shared pointer to the WebGPUBindGroup, or nullptr if not found.
 	 */
-	std::shared_ptr<WebGPUBindGroup> getGlobalBindGroup(const std::string &key)
-	{
-		auto it = m_globalBindGroups.find(key);
-		if (it == m_globalBindGroups.end())
-		{
-			return nullptr;
-		}
-		return it->second;
-	}
+	std::shared_ptr<WebGPUBindGroup> getGlobalBindGroup(const std::string &key);
 
 	/**
 	 * @brief Get global bind group layout by key.
 	 * @param key Unique key for the bind group layout.
 	 * @return Shared pointer to the WebGPUBindGroupLayoutInfo, or nullptr if not found.
 	 */
-	std::shared_ptr<WebGPUBindGroupLayoutInfo> getGlobalBindGroupLayout(
-		const std::string &key
-	)
-	{
-		auto it = m_globalBindGroupLayouts.find(key);
-		if (it == m_globalBindGroupLayouts.end())
-		{
-			return nullptr;
-		}
-		return it->second;
-	}
+	std::shared_ptr<WebGPUBindGroupLayoutInfo> getGlobalBindGroupLayout(const std::string &key);
 
 	/**
 	 * @brief Store a global bind group with a unique key.
@@ -259,15 +157,7 @@ class WebGPUBindGroupFactory
 	bool storeGlobalBindGroup(
 		const std::string &key,
 		const std::shared_ptr<WebGPUBindGroup> &bindGroup
-	)
-	{
-		if (m_globalBindGroups.find(key) != m_globalBindGroups.end())
-		{
-			return false; // Key already exists
-		}
-		m_globalBindGroups[key] = bindGroup;
-		return true;
-	}
+	);
 
 	/**
 	 * @brief Store a global bind group layout with a unique key.
@@ -278,17 +168,18 @@ class WebGPUBindGroupFactory
 	bool storeGlobalBindGroupLayout(
 		const std::string &key,
 		const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo
-	)
+	);
+
+	/**
+	 * @brief Release all created bind groups and layouts.
+	 */
+	void cleanup()
 	{
-		if (m_globalBindGroupLayouts.find(key) != m_globalBindGroupLayouts.end())
-		{
-			return false; // Key already exists
-		}
-		m_globalBindGroupLayouts[key] = layoutInfo;
-		return true;
+		m_globalBindGroups.clear();
+		m_globalBindGroupLayouts.clear();
 	}
 
-  protected:
+  private:
 	/**
 	 * @brief Create a BindGroupLayoutDescriptor from entries.
 	 */
@@ -299,17 +190,6 @@ class WebGPUBindGroupFactory
 	 */
 	wgpu::BindGroupDescriptor createBindGroupDescriptor(const wgpu::BindGroupLayout &layout, const std::vector<wgpu::BindGroupEntry> &entries);
 
-	/**
-	 * @brief Create a BindGroupLayout from a descriptor.
-	 */
-	wgpu::BindGroupLayout createBindGroupLayoutFromDescriptor(const wgpu::BindGroupLayoutDescriptor &desc);
-
-	/**
-	 * @brief Create a BindGroup from a descriptor.
-	 */
-	wgpu::BindGroup createBindGroupFromDescriptor(const wgpu::BindGroupDescriptor &desc);
-
-  private:
 	WebGPUContext &m_context;
 
 	std::unordered_map<std::string, std::shared_ptr<WebGPUBindGroup>> m_globalBindGroups;

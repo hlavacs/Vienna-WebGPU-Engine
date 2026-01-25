@@ -66,23 +66,29 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 		return;
 	}
 
-	// Create or update material bind group (group 3)
-	auto layout = shaderInfo->getBindGroupLayout(3);
+	auto layout = shaderInfo->getBindGroupLayout(bindgroup::defaults::MATERIAL); // ToDo: Handle Custom Material Bind Groups
 	if (!layout)
 	{
-		spdlog::warn("WebGPUMaterial: Shader has no bind group layout 3 for material");
+		spdlog::warn("WebGPUMaterial: Shader has no bind group layout {} for material", bindgroup::defaults::MATERIAL);
 		return;
 	}
 
-	if (!m_materialBindGroup)
+	if (!m_materialBindGroup || layout != m_materialBindGroup->getLayoutInfo())
 	{
 		m_materialBindGroup = m_context.bindGroupFactory().createBindGroup(layout, {}, shared_from_this());
 	}
 
+	auto materialBindGroupBindingIndex = layout->getBindingIndex(bindgroup::entry::defaults::MATERIAL_PROPERTIES);
+	if(!materialBindGroupBindingIndex.has_value())
+	{
+		spdlog::warn("WebGPUMaterial: Material bind group layout missing MATERIAL binding");
+		return;
+	}
+
 	// Update material properties buffer
 	m_materialBindGroup->updateBuffer(
-		0, // binding 0 for material properties
-		reinterpret_cast<const uint8_t *>(&cpuMaterial.getProperties()),
+		materialBindGroupBindingIndex.value(),
+		reinterpret_cast<const uint8_t *>(cpuMaterial.getPropertiesData()),
 		cpuMaterial.getPropertiesSize(),
 		0,
 		m_context.getQueue()
@@ -90,15 +96,6 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 
 	// Update cached texture versions
 	cacheTextureVersions(cpuMaterial);
-}
-
-void WebGPUMaterial::bind(wgpu::RenderPassEncoder &pass) const
-{
-	if (!m_materialBindGroup || !m_materialBindGroup->getBindGroup())
-		return;
-
-	// Always bind at group 3
-	pass.setBindGroup(3, m_materialBindGroup->getBindGroup(), 0, nullptr);
 }
 
 void WebGPUMaterial::cacheTextureVersions(const Material &cpuMaterial)

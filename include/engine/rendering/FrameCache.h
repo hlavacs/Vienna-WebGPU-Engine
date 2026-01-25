@@ -13,6 +13,7 @@
 namespace engine::rendering::webgpu
 {
 class WebGPUContext;
+class WebGPUBindGroup;
 } // namespace engine::rendering::webgpu
 
 namespace engine::rendering
@@ -39,13 +40,15 @@ class RenderCollector;
  */
 struct FrameCache
 {
-	std::vector<Light> lights;								  ///< CPU-side light objects
-	std::vector<LightStruct> lightUniforms;					  ///< GPU-ready light uniform data
-	std::vector<ShadowRequest> shadowRequests;				  ///< Shadow requests for this frame
-	std::vector<ShadowUniform> shadowUniforms;				  ///< GPU-ready shadow uniform data
-	std::vector<RenderTarget> renderTargets;				  ///< Render targets for all cameras this frame
-	std::vector<std::optional<RenderItemGPU>> gpuRenderItems; ///< Lazy-prepared GPU resources
-	float time = 0.0f;										  ///< Current frame time
+	std::vector<Light> lights;																	 ///< CPU-side light objects
+	std::vector<LightStruct> lightUniforms;														 ///< GPU-ready light uniform data
+	std::vector<ShadowRequest> shadowRequests;													 ///< Shadow requests for this frame
+	std::vector<ShadowUniform> shadowUniforms;													 ///< GPU-ready shadow uniform data
+	std::vector<RenderTarget> renderTargets;													 ///< Render targets for all cameras this frame
+	std::vector<std::optional<RenderItemGPU>> gpuRenderItems;									 ///< Lazy-prepared GPU resources
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> frameBindGroupCache;	 ///< Per-frame bind group cache
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> objectBindGroupCache; ///< Per-object bind group cache
+	float time = 0.0f;																			 ///< Current frame time
 
 	/**
 	 * @brief Prepares GPU resources for the specified indices from the collector.
@@ -66,8 +69,10 @@ struct FrameCache
 	);
 
 	/**
-	 * @brief Clears all frame cache data.
+	 * @brief Clears all frame cache data that should be reset at the end of each frame.
 	 * Call at the end of each frame to reset for the next frame.
+	 * @note Does NOT release GPU resources - those are managed via shared_ptr.
+	 * The frameBindGroupCache is also retained across frames for efficiency.
 	 */
 	void clear()
 	{

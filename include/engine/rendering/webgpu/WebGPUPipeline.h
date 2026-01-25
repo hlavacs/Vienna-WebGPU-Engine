@@ -47,7 +47,8 @@ class WebGPUPipeline
 		wgpu::ColorTargetState colorTarget,
 		wgpu::DepthStencilState depthStencil,
 		wgpu::FragmentState fragmentState,
-		engine::rendering::VertexLayout vertexLayout
+		engine::rendering::VertexLayout vertexLayout,
+		std::shared_ptr<WebGPUShaderInfo> shaderInfo
 	) : m_pipeline(pipeline),
 		m_layout(layout),
 		m_descriptor(desc),
@@ -56,7 +57,8 @@ class WebGPUPipeline
 		m_colorTarget(std::move(colorTarget)),
 		m_depthStencil(std::move(depthStencil)),
 		m_fragmentState(std::move(fragmentState)),
-		m_vertexLayout(vertexLayout)
+		m_vertexLayout(vertexLayout),
+		m_shaderInfo(std::move(shaderInfo))
 	{
 		assert(m_pipeline && "Pipeline must be valid");
 		assert(m_layout && "Pipeline layout must be valid");
@@ -167,6 +169,12 @@ class WebGPUPipeline
 	[[nodiscard]] engine::rendering::VertexLayout getVertexLayout() const { return m_vertexLayout; }
 
 	/**
+	 * @brief Gets the shader info associated with this pipeline.
+	 * @return The shader info.
+	 */
+	[[nodiscard]] std::shared_ptr<WebGPUShaderInfo> getShaderInfo() const { return m_shaderInfo; }
+
+	/**
 	 * @brief Implicit conversion to wgpu::RenderPipeline for convenience.
 	 */
 	operator wgpu::RenderPipeline() const { return m_pipeline; }
@@ -177,6 +185,7 @@ class WebGPUPipeline
 	wgpu::RenderPipelineDescriptor m_descriptor;
 	std::vector<wgpu::VertexAttribute> m_vertexAttributes;
 	engine::rendering::VertexLayout m_vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor;
+	std::shared_ptr<WebGPUShaderInfo> m_shaderInfo;
 
 	wgpu::VertexBufferLayout m_vertexBufferLayout = {};
 	wgpu::ColorTargetState m_colorTarget = {};

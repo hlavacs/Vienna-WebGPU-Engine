@@ -148,7 +148,8 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 		(hasFragmentShader && colorFormat != wgpu::TextureFormat::Undefined) ? std::move(colorTarget) : wgpu::ColorTargetState{},
 		enableDepth ? std::move(depthStencil) : wgpu::DepthStencilState{},
 		(hasFragmentShader && colorFormat != wgpu::TextureFormat::Undefined) ? std::move(fragmentState) : wgpu::FragmentState{},
-		vertexShader->getVertexLayout()
+		vertexShader->getVertexLayout(),
+		std::move(vertexShader)
 	);
 }
 

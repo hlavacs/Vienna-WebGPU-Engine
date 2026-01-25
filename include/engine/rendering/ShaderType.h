@@ -1,3 +1,5 @@
+#pragma once
+
 namespace engine::rendering
 {
 /**

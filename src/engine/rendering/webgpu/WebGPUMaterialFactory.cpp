@@ -67,9 +67,6 @@ std::shared_ptr<WebGPUMaterial> WebGPUMaterialFactory::createFromHandleUncached(
 
 	const auto &material = *materialOpt.value();
 
-	// Get the material properties
-	const auto &materialProps = material.getProperties();
-
 	// Get texture slots (new API with ColorSpace)
 	auto textureSlots = material.getTextureSlots();
 	std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> textureMap;

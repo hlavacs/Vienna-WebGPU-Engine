@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <glm/glm.hpp>
 #include <memory>
 #include <optional>
@@ -12,206 +13,297 @@ namespace engine::rendering::webgpu
 {
 
 /**
+ * @brief Determines whether a bind group can be reused across shaders/objects.
+ */
+enum class BindGroupReuse
+{
+	Global,		 //< device-wide, never changes
+	PerFrame,	 //< per camera or per frame
+	PerMaterial, //< tied to material instance
+	PerObject	 //< per render item / draw call
+};
+
+/**
+ * @brief Semantic type of a bind group.
+ */
+enum class BindGroupType
+{
+	Frame,
+	Light,
+	Mipmap,
+	Object,
+	Material,
+	Shadow,
+	ShadowPass2D,
+	ShadowPassCube,
+	Debug,
+	Custom,
+};
+
+/**
+ * @brief Type of a single binding inside a bind group.
+ */
+enum class BindingType
+{
+	UniformBuffer,
+	StorageBuffer,
+	Texture,
+	MaterialTexture,
+	Sampler
+};
+
+/**
+ * @brief Metadata describing a single binding in a bind group layout.
+ */
+struct BindGroupBinding // ToDo: Constructor that lets it build from wgpu::BindGroupLayoutEntry and extra info
+{
+	uint32_t bindingIndex;									///< GPU binding index
+	std::string name;										///< Human-readable name for retrieval by slot name
+	BindingType type;										///< Type of the binding
+	wgpu::ShaderStage visibility = wgpu::ShaderStage::None; ///< Shader stages this binding is visible in
+
+	// For buffers
+	size_t size = 0;
+	// Only for textures
+	std::optional<std::string> materialSlotName; ///< Material slot name or debug name
+	std::optional<glm::vec3> fallbackColor;		 ///< Default color if texture is missing
+};
+
+/**
  * @class WebGPUBindGroupLayoutInfo
- * @brief GPU-side bind group layout: wraps a WebGPU bind group layout and its descriptor.
+ * @brief Encapsulates a GPU bind group layout and its typed bindings.
  *
- * This class encapsulates a WebGPU bind group layout and its associated descriptor,
- * providing accessors for all relevant properties and ensuring resource cleanup.
- * Used for managing bind group layouts throughout the rendering pipeline.
- *
- * Extended to support material slot name mapping for texture bindings and unique keys for global buffers.
+ * Provides:
+ * - Typed binding metadata (uniforms, textures, samplers)
+ * - Global/shared reuse management
+ * - Helper queries for passes and materials
  */
 class WebGPUBindGroupLayoutInfo
 {
   public:
 	/**
-	 * @brief Constructs a WebGPUBindGroupLayoutInfo from descriptor and GPU objects.
-	 *
-	 * @param layout The GPU-side bind group layout.
-	 * @param layoutDesc The bind group layout descriptor used to create the layout.
-	 *
-	 * @throws Assertion failure if layout is invalid.
+	 * @brief Constructs a bind group layout info with typed bindings.
+	 * @param layout GPU-side bind group layout handle
+	 * @param layoutDesc Descriptor used to create the layout
+	 * @param name Human-readable name for this bind group (also used as key for shared groups)
+	 * @param type Semantic type of the bind group
+	 * @param reuse Whether the bind group can be shared across shaders/objects
+	 * @param bindings Typed bindings contained in this layout
 	 */
 	WebGPUBindGroupLayoutInfo(
 		wgpu::BindGroupLayout layout,
-		const wgpu::BindGroupLayoutDescriptor &layoutDesc
+		const wgpu::BindGroupLayoutDescriptor &layoutDesc,
+		std::string name,
+		BindGroupType type,
+		BindGroupReuse reuse,
+		std::vector<BindGroupBinding> bindings
 	) : m_layout(layout),
-		m_layoutDesc(layoutDesc)
+		m_layoutDesc(layoutDesc),
+		m_name(std::move(name)),
+		m_type(type),
+		m_reuse(reuse),
+		m_bindings(std::move(bindings))
 	{
 		assert(m_layout && "BindGroupLayout must be valid");
-		assert(m_layoutDesc.entryCount > 0 && "BindGroupLayoutInfo must have at least one entry");
+		assert(!m_bindings.empty() && "BindGroupLayoutInfo must have at least one binding");
 
-		// Copy entries to ensure they remain valid (descriptor entries pointer can be temporary)
+		// Copy entries to own memory to ensure descriptor lifetime
 		m_entries.assign(m_layoutDesc.entries, m_layoutDesc.entries + m_layoutDesc.entryCount);
-
-		// Update descriptor to point to our owned copy
 		m_layoutDesc.entries = m_entries.data();
+		buildLookupTables();
 	}
 
-	/**
-	 * @brief Sets a unique key for this bind group layout, used to retrieve global buffers.
-	 * @param key Unique key (e.g., "frameUniforms", "lightUniforms")
-	 */
-	void setKey(const std::optional<std::string> &key) { m_key = key; }
-
-	/**
-	 * @brief Gets the unique key for this bind group layout.
-	 * @return Optional unique key string.
-	 */
-	[[nodiscard]] const std::optional<std::string> &getKey() const { return m_key; }
-
-	/**
-	 * @brief Sets whether this bind group is global. Only relevant if a key is set.
-	 * @param isGlobal True if global, false otherwise.
-	 */
-	void setGlobal(bool isGlobal) { m_isGlobal = isGlobal; }
-
-	/**
-	 * @brief Gets whether this bind group is global.
-	 * @return True if global, false otherwise.
-	 */
-	[[nodiscard]] bool isGlobal() const { return m_isGlobal; }
-
-	/**
-	 * @brief Destructor that cleans up WebGPU resources.
-	 */
 	~WebGPUBindGroupLayoutInfo()
 	{
 		if (m_layout)
-		{
 			m_layout.release();
-		}
 	}
 
 	/**
-	 * @brief Gets the underlying WebGPU bind group layout.
-	 * @return The WebGPU bind group layout object.
+	 * @brief Gets the name of the bind group layout.
+	 * @note Used as key for reusable bind groups.
+	 * @return Name string
 	 */
-	[[nodiscard]] wgpu::BindGroupLayout getLayout() const { return m_layout; }
+	[[nodiscard]] const std::string &getName() const { return m_name; }
+	/**
+	 * @brief Gets the semantic type of the bind group.
+	 * @note Used for identifying standard bind groups.
+	 * @return BindGroupType enum value
+	 */
+	[[nodiscard]] BindGroupType getType() const { return m_type; }
 
 	/**
-	 * @brief Gets the bind group layout descriptor.
-	 * @return The WebGPU bind group layout descriptor.
+	 * @brief Gets the underlying WebGPU bind group layout.
+	 * @return The WebGPU bind group layout object
+	 */
+	[[nodiscard]] const wgpu::BindGroupLayout &getLayout() const { return m_layout; }
+	/**
+	 * @brief Gets the descriptor used to create the bind group layout.
+	 * @return The bind group layout descriptor
 	 */
 	[[nodiscard]] const wgpu::BindGroupLayoutDescriptor &getLayoutDescriptor() const { return m_layoutDesc; }
 
 	/**
-	 * @brief Gets the number of entries in the bind group layout.
-	 * @return Number of entries.
+	 * @brief Gets the typed bindings in this bind group layout.
+	 * @return Vector of BindGroupBinding metadata
 	 */
-	[[nodiscard]] uint32_t getEntryCount() const { return m_layoutDesc.entryCount; }
+	[[nodiscard]] const std::vector<BindGroupBinding> &getBindings() const { return m_bindings; }
 
 	/**
-	 * @brief Gets the entries of the bind group layout.
-	 * @return Const reference to vector of bind group layout entries.
+	 * @brief Gets the typed bindings in this bind group layout.
+	 * @return Vector of BindGroupBinding metadata
 	 */
-	[[nodiscard]] const std::vector<wgpu::BindGroupLayoutEntry> &getEntries() const
+	[[nodiscard]] const std::vector<wgpu::BindGroupLayoutEntry> &getEntries() const { return m_entries; }
+
+	/**
+	 * @brief Gets the reuse policy of the bind group.
+	 * @return BindGroupReuse enum value
+	 */
+	[[nodiscard]] BindGroupReuse getReuse() const { return m_reuse; }
+
+	/**
+	 * @brief Get cache key for reusable bind groups
+	 */
+	[[nodiscard]] std::string getCacheKey() const { return m_name; }
+
+	/**
+	 * @brief Check if a binding exists by its index
+	 * @param slotName Name of the binding slot
+	 */
+	[[nodiscard]] bool hasBinding(const std::string &slotName) const
 	{
-		return m_entries;
+		return m_slotNameMap.find(slotName) != m_slotNameMap.end();
+	}
+
+	[[nodiscard]] const BindGroupBinding *getBinding(uint32_t bindingIndex) const
+	{
+		if(m_bindings.size() <= bindingIndex)
+            return nullptr;
+		return &m_bindings[bindingIndex];
+	}
+
+	[[nodiscard]] const BindGroupBinding *getBinding(const std::string &slotName) const
+	{
+		auto it = m_slotNameMap.find(slotName);
+		if (it == m_slotNameMap.end())
+			return nullptr;
+		return &m_bindings[it->second];
+	}
+
+	[[nodiscard]] const BindGroupBinding *getBindingByMaterialSlot(const std::string &materialSlot) const
+	{
+		auto it = m_materialSlotNameMap.find(materialSlot);
+		if (it == m_materialSlotNameMap.end())
+			return nullptr;
+		return &m_bindings[it->second];
+	}
+
+	[[nodiscard]] std::optional<size_t> getBindingIndex(const std::string &slotName) const
+	{
+		auto it = m_slotNameMap.find(slotName);
+		if (it == m_slotNameMap.end())
+			return std::nullopt;
+		return it->second;
+	}
+	/**
+	 * @brief Get layout entry by index
+	 */
+	[[nodiscard]] const wgpu::BindGroupLayoutEntry *getLayoutEntry(uint32_t bindingIndex) const
+	{
+		if(m_entries.size() <= bindingIndex)
+            return nullptr;
+		return &m_entries[bindingIndex];
+	}
+
+	[[nodiscard]] const wgpu::BindGroupLayoutEntry *getLayoutEntry(const std::string &slotName) const
+	{
+		auto it = m_slotNameMap.find(slotName);
+		if (it == m_slotNameMap.end())
+			return nullptr;
+		return &m_entries[it->second];
 	}
 
 	/**
-	 * @brief Gets a specific entry by index.
-	 * @param index Index of the entry to retrieve.
-	 * @return Pointer to the bind group layout entry at the specified index.
-	 * @throws Assertion failure if index is out of bounds.
+	 * @brief Get binding type by index
 	 */
-	[[nodiscard]] const wgpu::BindGroupLayoutEntry *getEntry(size_t index) const
+	[[nodiscard]] std::optional<BindingType> getBindingType(uint32_t bindingIndex) const
 	{
-		assert(index < m_entries.size() && "Entry index out of bounds");
-		return &m_entries[index];
+		if (const auto *b = getBinding(bindingIndex))
+			return b->type;
+		return std::nullopt; // default fallback
 	}
 
 	/**
-	 * @brief Finds an entry by binding number.
-	 * @param binding The binding number to search for.
-	 * @return Pointer to the entry if found, nullptr otherwise.
+	 * @brief Get texture slot name (only valid for Texture bindings)
 	 */
-	[[nodiscard]] const wgpu::BindGroupLayoutEntry *findEntryByBinding(uint32_t binding) const
+	[[nodiscard]] std::string getMaterialSlotName(uint32_t bindingIndex) const
 	{
-		for (const auto &entry : m_entries)
-		{
-			if (entry.binding == binding)
-			{
-				return &entry;
-			}
-		}
-		return nullptr;
+		if (const auto *b = getBinding(bindingIndex))
+			if (b->type == BindingType::MaterialTexture)
+				return b->materialSlotName.value_or("");
+		return "";
 	}
 
 	/**
-	 * @brief Sets the material slot name for a specific binding.
-	 * @param binding The binding index.
-	 * @param slotName The material slot name (e.g., "albedo", "normal").
+	 * @brief Get texture fallback color (only valid for Texture bindings)
 	 */
-	void setMaterialSlotName(uint32_t binding, const std::string &slotName)
+	[[nodiscard]] std::optional<glm::vec3> getMaterialFallbackColor(std::string materialSlot) const
 	{
-		if (!slotName.empty())
-		{
-			m_materialSlotNames[binding] = slotName;
-		}
+		if (const auto *b = getBindingByMaterialSlot(materialSlot))
+			if (b->type == BindingType::MaterialTexture)
+				return b->fallbackColor;
+		return std::nullopt;
 	}
 
 	/**
-	 * @brief Sets the fallback color for a specific binding.
-	 * @param binding The binding index.
-	 * @param color The fallback color as glm::vec3 (optional).
+	 * @brief Get texture fallback color (only valid for Texture bindings)
+	 * @param bindingIndex Binding index to query
+	 * @return Optional glm::vec3 fallback color
 	 */
-	void setFallbackColor(uint32_t binding, const std::optional<glm::vec3> &color)
+	[[nodiscard]] std::optional<glm::vec3> getMaterialFallbackColor(uint32_t bindingIndex) const
 	{
-		if (color.has_value())
-		{
-			m_fallbackColors[binding] = color.value();
-		}
-	}
-
-	/**
-	 * @brief Gets the material slot name for a specific binding.
-	 * @param binding The binding index.
-	 * @return The material slot name, or empty string if not set.
-	 */
-	[[nodiscard]] std::string getMaterialSlotName(uint32_t binding) const
-	{
-		auto it = m_materialSlotNames.find(binding);
-		return (it != m_materialSlotNames.end()) ? it->second : "";
-	}
-
-	/**
-	 * @brief Gets the fallback color for a specific binding.
-	 * @param binding The binding index.
-	 * @return The fallback color as glm::vec3, or std::nullopt if not set.
-	 */
-	[[nodiscard]] std::optional<glm::vec3> getFallbackColor(uint32_t binding) const
-	{
-		auto it = m_fallbackColors.find(binding);
-		if (it != m_fallbackColors.end())
-		{
-			return it->second;
-		}
+		if (const auto *b = getBinding(bindingIndex))
+			if (b->type == BindingType::MaterialTexture)
+				return b->fallbackColor;
 		return std::nullopt;
 	}
 
   private:
-	/** Unique key for global bind group retrieval (frameUniforms, lightUniforms, objectUniforms, etc.) */
-	std::optional<std::string> m_key;
+	void buildLookupTables()
+	{
+		for (size_t i = 0; i < m_entries.size(); ++i)
+		{
+			assert(
+				m_entries[i].binding == m_bindings[i].bindingIndex && "BindGroupLayoutEntry and BindGroupBinding mismatch"
+			);
+		}
+		for (size_t i = 0; i < m_bindings.size(); ++i)
+		{
+			const auto &b = m_bindings[i];
 
-	/** Underlying WebGPU bind group layout */
+			m_slotNameMap.emplace(b.name, i);
+			if (b.type == BindingType::MaterialTexture)
+			{
+				assert(
+					!b.materialSlotName.value_or("").empty() && "Material texture bindings must have a slot name"
+				);
+
+				m_materialSlotNameMap.emplace(b.materialSlotName.value_or(""), i);
+			}
+		}
+	}
+
+	std::string m_name; ///< Name / optional key for reusable bindgroups
+	BindGroupType m_type;
+	BindGroupReuse m_reuse;
+
 	wgpu::BindGroupLayout m_layout;
-
-	/** Descriptor used to create the bind group layout */
 	wgpu::BindGroupLayoutDescriptor m_layoutDesc;
-
-	/** Owned copy of layout entries to ensure lifetime */
 	std::vector<wgpu::BindGroupLayoutEntry> m_entries;
 
-	/** Maps binding index to material slot name for texture bindings */
-	std::unordered_map<uint32_t, std::string> m_materialSlotNames;
-
-	/** Maps binding index to fallback color for texture bindings */
-	std::unordered_map<uint32_t, glm::vec3> m_fallbackColors;
-
-	/** Whether this bind group is global (only relevant if a key is set) */
-	bool m_isGlobal = false;
+	std::vector<BindGroupBinding> m_bindings; ///< Typed binding metadata
+	std::unordered_map<std::string, size_t> m_slotNameMap;
+	std::unordered_map<std::string, size_t> m_materialSlotNameMap;
 };
 
 } // namespace engine::rendering::webgpu

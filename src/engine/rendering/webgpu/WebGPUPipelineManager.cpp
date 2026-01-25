@@ -116,65 +116,65 @@ size_t WebGPUPipelineManager::reloadAllPipelines()
 size_t WebGPUPipelineManager::processPendingReloads()
 {
 	if (m_pendingReloads.empty())
-	{
 		return 0;
-	}
 
 	spdlog::info("Processing {} pending pipeline reload(s) after frame...", m_pendingReloads.size());
 	size_t successCount = 0;
 
-	// Find all keys with pipelines that need to be reloaded
-	std::vector<PipelineKey> keysToReload;
+	// Step 1: Collect unique shaders to reload
+	std::unordered_set<std::string> shadersToReload;
 	for (const auto &pair : m_pipelines)
 	{
 		if (m_pendingReloads.find(pair.second) != m_pendingReloads.end())
-		{
-			keysToReload.push_back(pair.first);
-		}
+			shadersToReload.insert(pair.first.shaderName);
 	}
 
-	// Reload each affected pipeline using swap semantics
-	for (const auto &key : keysToReload)
+	// Step 2: Reload each shader once
+	std::unordered_map<std::string, std::shared_ptr<WebGPUShaderInfo>> reloadedShaders;
+	for (const auto &shaderName : shadersToReload)
 	{
-		// Retrieve the shader from registry by name
-		auto shaderInfo = m_context.shaderRegistry().getShader(key.shaderName);
+		auto shaderInfo = m_context.shaderRegistry().getShader(shaderName);
 		if (!shaderInfo || !shaderInfo->isValid())
 		{
-			spdlog::error("Cannot reload pipeline: shader '{}' not found or invalid", key.shaderName);
+			spdlog::error("Cannot reload shader '{}' — not found or invalid", shaderName);
 			continue;
 		}
 
-		// Reload shader from disk (creates new shader immutably)
-		spdlog::info("Reloading shader: {}", key.shaderName);
-		m_context.shaderFactory().reloadShader(key.shaderName);
+		spdlog::info("Reloading shader: {}", shaderName);
+		m_context.shaderFactory().reloadShader(shaderInfo);
 
-		// Retrieve updated shader after reload
-		shaderInfo = m_context.shaderRegistry().getShader(key.shaderName);
+		shaderInfo = m_context.shaderRegistry().getShader(shaderName);
 		if (!shaderInfo || !shaderInfo->isValid())
 		{
-			spdlog::error("Failed to reload shader: {}", key.shaderName);
+			spdlog::error("Failed to reload shader: {}", shaderName);
 			continue;
 		}
 
-		// Build NEW pipeline object with reloaded shader (immutable)
+		reloadedShaders[shaderName] = shaderInfo;
+	}
+
+	// Step 3: Rebuild pipelines that use reloaded shaders
+	for (auto &pair : m_pipelines)
+	{
+		const auto &key = pair.first;
+		auto it = reloadedShaders.find(key.shaderName);
+		if (it == reloadedShaders.end())
+			continue; // shader not reloaded, skip
+
 		std::shared_ptr<WebGPUPipeline> newPipeline;
-		if (!createPipelineInternal(key, shaderInfo, newPipeline))
+		if (!createPipelineInternal(key, it->second, newPipeline))
 		{
 			spdlog::error("Failed to recreate pipeline for shader: {}", key.shaderName);
 			continue;
 		}
 
-		// SWAP: Replace old pipeline in cache with new one (atomic operation)
-		// Old pipeline may still be referenced by in-flight frames, but it's immutable
-		// and will be released when last frame releases its reference
-		m_pipelines[key] = newPipeline;
+		pair.second = newPipeline;
 		successCount++;
 		spdlog::info("Pipeline reloaded successfully for shader: {}", key.shaderName);
 	}
 
-	// Clear pending set after processing all reloads
 	m_pendingReloads.clear();
-	spdlog::info("Completed: {}/{} pipeline(s) reloaded", successCount, keysToReload.size());
+	spdlog::info("Completed: {}/{} pipeline(s) reloaded", successCount, m_pipelines.size());
 	return successCount;
 }
 

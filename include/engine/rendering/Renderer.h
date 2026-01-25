@@ -13,9 +13,7 @@
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/MeshPass.h"
 #include "engine/rendering/Model.h"
-#include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderPassManager.h"
-#include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/Texture.h"
@@ -33,6 +31,9 @@ class GameEngine; // forward declaration
 
 namespace engine::rendering
 {
+
+	class RenderCollector; // forward declaration
+	class RenderTarget;	 // forward declaration
 
 /**
  * @brief Central renderer that orchestrates the rendering pipeline.
@@ -99,21 +100,11 @@ class Renderer
 	 * @brief Renders camera view to a texture.
 	 * Performs frustum culling, prepares GPU resources, delegates to MeshPass.
 	 * @param collector Scene data collector.
-	 * @param renderTargetId Target camera ID.
-	 * @param viewport Normalized viewport [0..1].
-	 * @param clearFlags Clear flags for this render target.
-	 * @param backgroundColor Background color.
-	 * @param cpuTarget Optional CPU readback target.
-	 * @param frameUniforms Camera uniforms (view, projection, etc.).
+	 * @param renderTarget Render target information for this camera.
 	 */
 	void renderToTexture(
 		const RenderCollector &collector,
-		uint64_t renderTargetId,
-		const glm::vec4 &viewport,
-		ClearFlags clearFlags,
-		const glm::vec4 &backgroundColor,
-		std::optional<TextureHandle> cpuTarget,
-		const FrameUniforms &frameUniforms
+		RenderTarget &renderTarget
 	);
 
 	/**
@@ -163,7 +154,7 @@ class Renderer
 	);
 
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
-	std::unique_ptr<RenderPassManager> m_renderPassManager;
+	// std::unique_ptr<RenderPassManager> m_renderPassManager; // ToDo: future use
 	std::unique_ptr<ShadowPass> m_shadowPass;
 	std::unique_ptr<MeshPass> m_meshPass;
 	std::unique_ptr<CompositePass> m_compositePass;
@@ -174,6 +165,8 @@ class Renderer
 	std::shared_ptr<webgpu::WebGPUTexture> m_depthBuffer;
 
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
+
+	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
 };
 
 } // namespace engine::rendering

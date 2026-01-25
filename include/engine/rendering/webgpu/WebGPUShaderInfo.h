@@ -1,18 +1,22 @@
 #pragma once
 
-#include "engine/rendering/ShaderFeatureMask.h"
-#include "engine/rendering/ShaderType.h"
-#include "engine/rendering/Vertex.h"
+#include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include <webgpu/webgpu.hpp>
+
+#include "engine/rendering/ShaderFeatureMask.h"
+#include "engine/rendering/ShaderType.h"
+#include "engine/rendering/Vertex.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 
 namespace engine::rendering::webgpu
 {
 
-class WebGPUBindGroupLayoutInfo;
 class WebGPUShaderFactory;
 
 /**
@@ -31,7 +35,7 @@ class WebGPUShaderInfo
   public:
 	WebGPUShaderInfo(
 		std::string name,
-		std::string path,
+		std::filesystem::path path,
 		engine::rendering::ShaderType type,
 		wgpu::ShaderModule mod,
 		std::string vertexEntry,
@@ -55,16 +59,7 @@ class WebGPUShaderInfo
 	{
 	}
 
-	~WebGPUShaderInfo()
-	{
-		if (m_module)
-		{
-			m_module.release();
-		}
-		m_module = nullptr;
-		// Clear bind group layouts to ensure their destructors are called
-		m_bindGroupLayouts.clear();
-	}
+	~WebGPUShaderInfo();
 	/**
 	 * @brief Gets the shader name.
 	 * @return Shader name string.
@@ -72,9 +67,9 @@ class WebGPUShaderInfo
 	[[nodiscard]] const std::string &getName() const { return m_name; }
 	/**
 	 * @brief Gets the shader file path.
-	 * @return Shader file path string.
+	 * @return Shader file path.
 	 */
-	[[nodiscard]] const std::string &getPath() const { return m_path; }
+	[[nodiscard]] const std::filesystem::path &getPath() const { return m_path; }
 	/**
 	 * @brief Gets the WebGPU shader module.
 	 * @return The WebGPU shader module.
@@ -122,111 +117,72 @@ class WebGPUShaderInfo
 	[[nodiscard]] bool isBackFaceCullingEnabled() const { return m_cullBackFaces; }
 
 	/**
+	 * @brief Check if shader info is valid.
+	 * @return True if valid, false otherwise.
+	 */
+	[[nodiscard]] bool isValid() const;
+
+	/**
 	 * @brief Access bind group layouts for pipeline creation.
 	 * @return Map of group index to layout info.
 	 */
-	[[nodiscard]] const std::unordered_map<uint32_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> &getBindGroupLayouts() const
-	{
-		return m_bindGroupLayouts;
-	}
+	[[nodiscard]] const std::unordered_map<uint64_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> &getBindGroupLayouts() const;
 
 	/**
 	 * @brief Access bind group layouts for pipeline creation.
 	 * @return Vector of layout infos.
 	 */
-	[[nodiscard]] std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> getBindGroupLayoutVector() const
-	{
-		std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> layoutVector;
-		for (const auto &[_, layout] : m_bindGroupLayouts)
-		{
-			layoutVector.push_back(layout);
-		}
-		return layoutVector;
-	}
+	[[nodiscard]] std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> getBindGroupLayoutVector() const;
 
 	/**
 	 * @brief Get a specific bind group layout by index.
 	 * @param groupIndex The bind group index.
 	 * @return Shared pointer to layout info or nullptr.
 	 */
-	[[nodiscard]] std::shared_ptr<WebGPUBindGroupLayoutInfo> getBindGroupLayout(uint32_t groupIndex) const
-	{
-		auto it = m_bindGroupLayouts.find(groupIndex);
-		if (it != m_bindGroupLayouts.end())
-			return it->second;
-		return nullptr;
-	}
+	[[nodiscard]] std::shared_ptr<WebGPUBindGroupLayoutInfo> getBindGroupLayout(uint32_t groupIndex) const;
 
 	/**
-	 * @brief Check if shader info is valid.
-	 * @return True if valid, false otherwise.
+	 * @brief Get bind group layout by type
 	 */
-	[[nodiscard]] bool isValid() const
-	{
-		return m_module != nullptr && !m_vertexEntryPoint.empty() && !m_fragmentEntryPoint.empty();
-	}
+	[[nodiscard]] std::shared_ptr<WebGPUBindGroupLayoutInfo> getBindGroupLayout(BindGroupType type) const;
+
+	/**
+	 * @brief Get bind group layout by name
+	 */
+	[[nodiscard]] std::shared_ptr<WebGPUBindGroupLayoutInfo> getBindGroupLayout(const std::string &name) const;
+
+	/**
+	 * @brief Gets the bind group index by name of the bind group.
+	 * @return Optional bind group index. std::nullopt if not found.
+	 */
+	[[nodiscard]] std::optional<uint64_t> getBindGroupIndex(const std::string &name) const;
+	/**
+	 * @brief Check if a bind group exists by name
+	 */
+	[[nodiscard]] bool hasBindGroup(const std::string &name) const;
+
+	/**
+	 * @brief Check if a bind group exists by type
+	 */
+	[[nodiscard]] bool hasBindGroup(BindGroupType type) const;
 
   private:
-	/**
-	 * @brief Set the shader name.
-	 * @param name The shader name.
-	 */
-	void setName(std::string name) { m_name = std::move(name); }
-
-	/**
-	 * @brief Set the shader path.
-	 * @param path The shader file path.
-	 */
-	void setPath(std::string path) { m_path = std::move(path); }
-
-	/**
-	 * @brief Set the vertex layout.
-	 * @param layout The vertex layout enum.
-	 */
-	void setVertexLayout(engine::rendering::VertexLayout layout) { m_vertexLayout = layout; }
-
-	/**
-	 * @brief Set the vertex entry point name.
-	 * @param entry The vertex entry point name.
-	 */
-	void setVertexEntryPoint(std::string entry) { m_vertexEntryPoint = std::move(entry); }
-
-	/**
-	 * @brief Set the fragment entry point name.
-	 * @param entry The fragment entry point name.
-	 */
-	void setFragmentEntryPoint(std::string entry) { m_fragmentEntryPoint = std::move(entry); }
-
-	/**
-	 * @brief Set the shader type.
-	 * @param type The shader type.
-	 */
-	void setShaderType(engine::rendering::ShaderType type) { m_shaderType = type; }
-
-	/**
-	 * @brief Set the shader features.
-	 * @param features The shader feature mask.
-	 */
-	void setShaderFeatures(engine::rendering::ShaderFeature::Flag features) { m_features = features; }
-
-	/**
-	 * @brief Enable or disable depth testing.
-	 * @param enable True to enable depth testing, false to disable.
-	 */
-	void setEnableDepth(bool enable) { m_enableDepth = enable; }
-
-	/**
-	 * @brief Add a bind group layout.
-	 * @param groupIndex The bind group index.
-	 */
-	void addBindGroupLayout(uint32_t groupIndex, std::shared_ptr<WebGPUBindGroupLayoutInfo> layout) { m_bindGroupLayouts[groupIndex] = std::move(layout); }
+	void setName(std::string name);
+	void setPath(std::string path);
+	void setVertexLayout(engine::rendering::VertexLayout layout);
+	void setVertexEntryPoint(std::string entry);
+	void setFragmentEntryPoint(std::string entry);
+	void setShaderType(engine::rendering::ShaderType type);
+	void setShaderFeatures(engine::rendering::ShaderFeature::Flag features);
+	void setEnableDepth(bool enable);
+	void addBindGroupLayout(uint32_t groupIndex, std::shared_ptr<WebGPUBindGroupLayoutInfo> layout);
 
 	bool m_enableDepth;
 	bool m_enableBlend;
 	bool m_cullBackFaces;
 
 	std::string m_name;
-	std::string m_path;
+	std::filesystem::path m_path;
 	wgpu::ShaderModule m_module = nullptr;
 	std::string m_vertexEntryPoint;
 	std::string m_fragmentEntryPoint;
@@ -234,7 +190,9 @@ class WebGPUShaderInfo
 	engine::rendering::VertexLayout m_vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor;
 	engine::rendering::ShaderFeature::Flag m_features = engine::rendering::ShaderFeature::Flag::None;
 
-	std::unordered_map<uint32_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> m_bindGroupLayouts;
+	std::unordered_map<uint64_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> m_bindGroupLayouts;
+	std::unordered_map<std::string, uint64_t> m_nameToIndex;
+	std::unordered_map<BindGroupType, uint64_t> m_typeToIndex;
 };
 
 } // namespace engine::rendering::webgpu
