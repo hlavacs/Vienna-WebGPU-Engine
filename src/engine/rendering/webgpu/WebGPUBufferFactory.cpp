@@ -212,7 +212,7 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
 	size_t size
 )
 {
-	const wgpu::BindGroupLayoutEntry *entry = layoutInfo.findEntryByBinding(binding);
+	const wgpu::BindGroupLayoutEntry *entry = layoutInfo.getLayoutEntry(binding);
 	assert(entry != nullptr && "Binding not found in layout");
 
 	// Determine buffer size

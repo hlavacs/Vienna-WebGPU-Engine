@@ -49,10 +49,10 @@ class WebGPUMaterial : public WebGPUSyncObject<engine::rendering::Material>, pub
 	~WebGPUMaterial() override = default;
 
 	/**
-	 * @brief Bind the material for rendering.
-	 * @param renderPass The render pass encoder.
+	 * @brief Get the material bind group.
+	 * @return Shared pointer to the bind group.
 	 */
-	void bind(wgpu::RenderPassEncoder &renderPass) const;
+	[[nodiscard]] std::shared_ptr<WebGPUBindGroup> getBindGroup() const { return m_materialBindGroup; }
 
 	/**
 	 * @brief Get the material textures dictionary.

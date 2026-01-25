@@ -7,7 +7,7 @@ struct VertexOutput {
 var depthTexture: texture_depth_2d_array;
 
 @group(0) @binding(1)
-var depthSampler: sampler_comparison;
+var depthSampler: sampler;
 
 @group(0) @binding(2)
 var<uniform> layer: u32;
@@ -29,7 +29,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Sample depth value (0.0 = near, 1.0 = far)
-    let depth = textureSample(depthTexture, depthSampler, in.uv, i32(layer), 0.5);
+    let depth = textureSample(depthTexture, depthSampler, in.uv, i32(layer));
     
     // Convert to grayscale: white = near (small depth), black = far (large depth)
     // Note: Inverted for intuitive visualization

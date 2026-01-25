@@ -1,46 +1,41 @@
+
 #pragma once
 
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
-#include <utility>
 #include <vector>
+
+#include <glm/glm.hpp>
 #include <webgpu/webgpu.hpp>
 
-#include "engine/rendering/webgpu/WebGPUBindGroup.h"
-#include "engine/rendering/webgpu/WebGPUBuffer.h"
-#include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include "engine/rendering/FrameUniforms.h"
+#include "engine/rendering/LightUniforms.h"
+#include "engine/rendering/ObjectUniforms.h"
+#include "engine/rendering/ShaderType.h"
+#include "engine/rendering/Vertex.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 
 namespace engine::rendering::webgpu
 {
 
 class WebGPUContext;
-class WebGPUBindGroupLayoutInfo;
+class WebGPUShaderInfo;
+class WebGPUBindGroup;
 
 /**
- * @brief Type of binding in a bind group.
- */
-enum class BindingType
-{
-	UniformBuffer,
-	StorageBuffer,
-	Texture,
-	Sampler
-};
-
-/**
- * @brief Helper struct to describe a binding during shader creation.
+ * @brief Describes a single binding inside a bind group.
  */
 struct ShaderBinding
 {
 	std::string name;
-	std::string materialSlotName;
-
+	std::optional<std::string> materialSlotName;
 	BindingType type = BindingType::UniformBuffer;
 	uint32_t binding = 0;
 
-	size_t size = 0;
+	size_t size = 0; ///< For buffers
 	WGPUBufferUsageFlags usage = 0;
 	uint32_t visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
 	bool readOnly = false;
@@ -56,163 +51,72 @@ struct ShaderBinding
 };
 
 /**
- * @brief Builder pattern factory for creating shader metadata with manual reflection.
- *
- * Since WebGPU provides no shader reflection API, WebGPUShaderFactory uses a builder
- * pattern to manually describe shader structure:
- * - Bind group organization
- * - Buffer bindings (global vs per-material)
- * - Texture/sampler bindings
- *
- * Usage:
- * ```cpp
- * auto shaderInfo = WebGPUShaderFactory(context)
- *     .begin("myShader", "vs_main", "fs_main", shaderPath)
- *     .addFrameUniforms(0)      // group 0
- *     .addLightUniforms(1)      // group 1
- *     .addCustomUniform("MyUniforms", sizeof(MyUniforms), 2, 0) // group 2
- *     .addTexture("albedoTex", "albedo", 3, 0) // group 3
- *     .build();
- * ```
+ * @brief Factory/builder for creating WebGPUShaderInfo with typed bind groups.
  */
 class WebGPUShaderFactory
 {
   public:
-	struct BindGroupBuilder
-	{
-		std::optional<std::string> key; // identity of the whole bind group
-		bool isGlobal = false;			// whether this bind group is global
-		std::vector<ShaderBinding> bindings;
-	};
-
 	/**
 	 * @brief Constructs a WebGPUShaderFactory bound to a WebGPU context.
 	 * @param context Reference to the WebGPU context for device access.
 	 */
 	explicit WebGPUShaderFactory(WebGPUContext &context);
 
-	class WebGPUShaderBuilder;
-	/**
-	 * @brief Begins building a new shader.
-	 * @param name Shader name for debugging and lookup.
-	 * @param vertexEntry Vertex shader entry point name.
-	 * @param fragmentEntry Fragment shader entry point name.
-	 * @param shaderPath Optional path to WGSL file (empty to skip loading).
-	 * @return A WebGPUShaderBuilder for chaining.
-	 */
-	WebGPUShaderBuilder begin(
-		const std::string &name,
-		const ShaderType type,
-		const std::string &vertexEntry,
-		const std::string &fragmentEntry,
-		const std::optional<std::filesystem::path> &shaderPath = std::nullopt
-	);
+	struct BindGroupBuilder
+	{
+		std::string name;								  ///< User-provided name for the bind group (also used as cache key)
+		BindGroupType type = BindGroupType::Custom;		  ///< Semantic type of bind group
+		BindGroupReuse reuse = BindGroupReuse::PerObject; ///< Reuse policy
+		std::vector<ShaderBinding> bindings;			  ///< Typed bindings in this bind group
+		bool isEngineDefault = false;					  ///< Whether this is a global/shared bind group
+														  // ToDo: isEngineDefault is used for bindgroup layouts. It is bad design and we should have a WebGPUBindGroupRegistry where we can register default bindgroups on initialization.
+	};
 
 	class WebGPUShaderBuilder
 	{
 		friend class WebGPUShaderFactory;
 
-	  protected:
-		WebGPUShaderBuilder(
-			WebGPUShaderFactory &factory,
-			std::string name,
-			const ShaderType type,
-			std::string vertexEntry,
-			std::string fragmentEntry,
-			const std::optional<std::filesystem::path> &shaderPath
-		) : m_factory(factory),
-			m_name(std::move(name)),
-			m_type(type),
-			m_vertexEntry(std::move(vertexEntry)),
-			m_fragmentEntry(std::move(fragmentEntry)),
-			m_shaderPath(shaderPath ? shaderPath->string() : "")
-		{
-		}
-
 	  public:
 		/**
-		 * @brief Sets the shader module directly (alternative to loading from file).
-		 * @param module Pre-compiled shader module.
+		 * @brief Adds a new bind group. All subsequent bindings attach here.
+		 * @param name The name/key for this bind group (e.g., "shadow", "frame", "material").
+		 * @param reuse Reuse policy: Shared for global bindgroups, PerObject for per-material.
+		 * @param type Optional semantic type for bind group caching and lookup.
 		 * @return Reference to this builder for chaining.
+		 *
+		 * After calling this, you can retrieve the bind group layout from the shader via:
+		 * ```
+		 * auto shader = factory.begin(...)
+		 *     .addBindGroup("shadow", BindGroupReuse::Shared, BindGroupType::Shadow)
+		 *     .build();
+		 * auto shadowLayout = shader->getBindGroupLayout("shadow");
+		 * auto shadowLayoutByType = shader->getBindGroupLayout(BindGroupType::Shadow);
+		 * ```
 		 */
-		WebGPUShaderBuilder &setShaderModule(wgpu::ShaderModule module);
+		WebGPUShaderBuilder &addBindGroup(
+			const std::string &name,
+			BindGroupReuse reuse = BindGroupReuse::PerObject,
+			BindGroupType type = BindGroupType::Custom
+		);
 
 		/**
-		 * @brief Sets the vertex layout for the shader.
-		 * @param layout Vertex layout enum (use VertexLayout::None for procedural vertex generation).
-		 * @return Reference to this builder for chaining.
-		 */
-		WebGPUShaderBuilder &setVertexLayout(engine::rendering::VertexLayout layout);
-
-		/**
-		 * @brief Disables depth testing for this shader.
-		 * @return Reference to this builder for chaining.
-		 */
-		WebGPUShaderBuilder &disableDepth();
-
-		/**
-		 * @brief Sets the key for a specific bind group.
-		 * @param groupIndex Bind group index.
-		 * @param key Unique key for the bind group.
-		 * @return Reference to this builder for chaining.
-		 */
-		WebGPUShaderBuilder &asGlobalBindGroup(uint32_t groupIndex, std::string key);
-
-		/**
-		 * @brief Adds frame uniforms (view/projection matrix, camera position, time).
-		 * @param groupIndex Bind group index (typically 0).
-		 * @return Reference to this builder for chaining.
-		 */
-		WebGPUShaderBuilder &addFrameUniforms(uint32_t groupIndex);
-
-		/**
-		 * @brief Adds object uniforms (model matrix, normal matrix).
-		 * @param groupIndex Bind group index (typically 0).
-		 * @return Reference to this builder for chaining.
-		 */
-		WebGPUShaderBuilder &addObjectUniforms(uint32_t groupIndex);
-
-		/**
-		 * @brief Adds light data uniforms (light count + array of lights).
-		 * @param groupIndex Bind group index (typically 1).
-		 * @param maxLights Maximum number of lights to support (default 16).
-		 * @return Reference to this builder for chaining.
-		 */
-		WebGPUShaderBuilder &addLightUniforms(uint32_t groupIndex, size_t maxLights = 16);
-
-		/**
-		 * @brief Adds shadow mapping uniforms (light view-proj matrix, cascade info).
-		 * @param groupIndex Bind group index (typically 2).
-		 * @param maxShadows Maximum number of 2D shadow maps (default 16).
-		 * @param maxShadowCubes Maximum number of cube shadow maps (default 4).
-		 * @return Reference to this builder for chaining.
-		 */
-		WebGPUShaderBuilder &addShadowUniforms(uint32_t groupIndex, size_t maxShadows = 16, size_t maxShadowCubes = 4);
-
-		// === Custom Uniforms ===
-
-		/**
-		 * @brief Adds a custom uniform buffer (per-material or global).
-		 * @param name Buffer name for debugging.
+		 * @brief Adds a uniform buffer binding to the current bind group.
+		 * @param name Uniform buffer name for debugging.
 		 * @param size Buffer size in bytes.
-		 * @param groupIndex Bind group index.
 		 * @param binding Binding index within the group.
 		 * @param visibility Shader stage visibility flags.
 		 * @return Reference to this builder for chaining.
 		 */
-		WebGPUShaderBuilder &addCustomUniform(
+		WebGPUShaderBuilder &addUniform(
 			const std::string &name,
 			size_t size,
-			uint32_t groupIndex,
-			uint32_t binding,
 			uint32_t visibility = static_cast<uint32_t>(wgpu::ShaderStage::Vertex)
 		);
 
 		/**
-		 * @brief Adds a storage buffer.
-		 * @param name Buffer name for debugging.
+		 * @brief Adds a storage buffer binding to the current bind group.
+		 * @param name Storage buffer name for debugging.
 		 * @param size Buffer size in bytes.
-		 * @param groupIndex Bind group index.
 		 * @param binding Binding index within the group.
 		 * @param readOnly Whether the buffer is read-only.
 		 * @param visibility Shader stage visibility flags.
@@ -221,41 +125,50 @@ class WebGPUShaderFactory
 		WebGPUShaderBuilder &addStorageBuffer(
 			const std::string &name,
 			size_t size,
-			uint32_t groupIndex,
-			uint32_t binding,
 			bool readOnly = true,
 			uint32_t visibility = static_cast<uint32_t>(wgpu::ShaderStage::Vertex)
 		);
 
 		/**
-		 * @brief Adds a texture binding.
+		 * @brief Adds a texture binding to the current bind group.
 		 * @param name Texture variable name in shader for debugging.
-		 * @param materialSlotName Material texture slot name (e.g., MaterialTextureSlots::ALBEDO).
-		 *                         This is used to match the texture from Material::getTexture(slotName).
-		 * @param groupIndex Bind group index.
 		 * @param binding Binding index within the group.
 		 * @param sampleType Texture sample type (default: Float).
 		 * @param viewDimension Texture view dimension (default: 2D).
 		 * @param multisampled Whether the texture is multisampled (default: false).
-		 * @param visibility Shader stage visibility flags.
+		 * @param fallbackColor Optional fallback color for missing textures.
 		 * @return Reference to this builder for chaining.
 		 */
 		WebGPUShaderBuilder &addTexture(
 			const std::string &name,
-			const std::string &materialSlotName,
-			uint32_t groupIndex,
-			uint32_t binding,
 			wgpu::TextureSampleType sampleType = wgpu::TextureSampleType::Float,
 			wgpu::TextureViewDimension viewDimension = wgpu::TextureViewDimension::_2D,
 			bool multisampled = false,
+			uint32_t visibility = static_cast<uint32_t>(wgpu::ShaderStage::Fragment)
+		);
+
+		/**
+		 * @brief Adds a material texture binding to the current bind group.
+		 * @param name Texture variable name in shader for debugging.
+		 * @param materialSlotName Material slot name (e.g., "albedo", "normal").
+		 * @param sampleType Texture sample type (default: Float).
+		 * @param viewDimension Texture view dimension (default: 2D).
+		 * @param visibility Shader stage visibility flags.
+		 * @param fallbackColor Optional fallback color for missing textures.
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &addMaterialTexture(
+			const std::string &name,
+			const std::string &materialSlotName,
+			wgpu::TextureSampleType sampleType = wgpu::TextureSampleType::Float,
+			wgpu::TextureViewDimension viewDimension = wgpu::TextureViewDimension::_2D,
 			uint32_t visibility = static_cast<uint32_t>(wgpu::ShaderStage::Fragment),
 			std::optional<glm::vec3> fallbackColor = std::nullopt
 		);
 
 		/**
-		 * @brief Adds a sampler binding.
+		 * @brief Adds a sampler binding to the current bind group.
 		 * @param name Sampler name for debugging.
-		 * @param groupIndex Bind group index.
 		 * @param binding Binding index within the group.
 		 * @param samplerType Sampler binding type (default: Filtering).
 		 * @param visibility Shader stage visibility flags.
@@ -263,10 +176,49 @@ class WebGPUShaderFactory
 		 */
 		WebGPUShaderBuilder &addSampler(
 			const std::string &name,
-			uint32_t groupIndex,
-			uint32_t binding,
 			wgpu::SamplerBindingType samplerType = wgpu::SamplerBindingType::Filtering,
 			uint32_t visibility = static_cast<uint32_t>(wgpu::ShaderStage::Fragment)
+		);
+
+		/**
+		 * @brief Adds frame uniforms bind group (view/projection matrix, camera position, time).
+		 * Automatically creates a new "Frame" bind group with BindGroupType::Frame.
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &addFrameBindGroup();
+
+		/**
+		 * @brief Adds object uniforms bind group (model matrix, normal matrix).
+		 * Automatically creates a new "Object" bind group with BindGroupType::Object.
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &addObjectBindGroup();
+
+		/**
+		 * @brief Adds light data bind group (light count + array of lights).
+		 * Automatically creates a new "Light" bind group with BindGroupType::Light.
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &addLightBindGroup(); // ToDo: Move configurations out
+
+		/**
+		 * @brief Adds shadow mapping bind group (shadow textures, samplers, uniforms).
+		 * Automatically creates a new "Shadow" bind group with BindGroupType::Shadow.
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &addShadowBindGroup();
+
+		/**
+		 * @brief Adds a custom uniform buffer (per-material or global).
+		 * @param name Buffer name for debugging.
+		 * @param size Buffer size in bytes.
+		 * @param visibility Shader stage visibility flags.
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &addCustomUniform(
+			const std::string &name,
+			size_t size,
+			uint32_t visibility = static_cast<uint32_t>(wgpu::ShaderStage::Vertex)
 		);
 
 		/**
@@ -283,41 +235,74 @@ class WebGPUShaderFactory
 
 	  private:
 		/**
-		 * @brief Ensures a bind group builder exists at the given index.
-		 * @param groupIndex The bind group index.
-		 * @return Reference to the BindGroupBuilder for the specified index.
+		 * @brief Constructs a WebGPUShaderBuilder with the given parameters.
 		 */
-		BindGroupBuilder &getOrCreateBindGroup(uint32_t groupIndex);
+		WebGPUShaderBuilder(
+			WebGPUShaderFactory &factory,
+			std::string name,
+			ShaderType type,
+			std::string vertexEntry,
+			std::string fragmentEntry,
+			engine::rendering::VertexLayout vertexLayout,
+			bool depthEnabled,
+			bool blendEnabled,
+			bool cullBackFaces,
+			std::filesystem::path shaderPath
+		);
 
-		// Shader metadata - accumulated during building, used to construct shader at build() time
+		/**
+		 * @brief Checks that a bind group has been added before adding bindings.
+		 */
+		void checkLastBindGroup();
+
 		std::string m_name;
 		ShaderType m_type;
 		std::string m_vertexEntry;
 		std::string m_fragmentEntry;
-		std::string m_shaderPath;
-		wgpu::ShaderModule m_shaderModule = nullptr;
-
-		// Configuration - accumulated during building
-		engine::rendering::VertexLayout m_vertexLayout = engine::rendering::VertexLayout::None;
-		bool m_depthEnabled = true;
-		bool m_blendEnabled = true;
-		bool m_backFaceCullingEnabled = true;
+		engine::rendering::VertexLayout m_vertexLayout;
+		wgpu::ShaderModule m_shaderModule;
+		bool m_depthEnabled;
+		bool m_blendEnabled;
+		bool m_backFaceCullingEnabled;
 		uint32_t m_shaderFeatures = 0;
+		std::filesystem::path m_shaderPath;
 
-		// Bind groups - accumulated during building
 		std::map<uint32_t, BindGroupBuilder> m_bindGroupsBuilder;
-
+		int32_t m_lastBindGroupIndex;
 		WebGPUShaderFactory &m_factory;
 	};
 
 	/**
-	 * @brief Reloads a specific shader by name from the registry.
-	 * This reconstructs the shader info with current data.
-	 * @note This will update the shader registry with the reloaded shader.
-	 * @param shaderName The name of the shader to reload.
-	 * @return True if the shader was successfully reloaded, false otherwise.
+	 * @brief Begins building a new shader.
+	 * @param name Shader name for debugging and lookup.
+	 * @param type Shader type enum.
+	 * @param shaderPath Path to WGSL file.
+	 * @param vertexEntry Vertex shader entry point name.
+	 * @param fragmentEntry Fragment shader entry point name.
+	 * @param vertexLayout Vertex layout enum for the shader (default PositionNormalUVTangentColor).
+	 * @param depthEnabled Whether depth testing is enabled (default true).
+	 * @param blendEnabled Whether blending is enabled (default false).
+	 * @param cullBackFaces Whether back-face culling is enabled (default true).
+	 * @return A WebGPUShaderBuilder for chaining method calls.
 	 */
-	bool reloadShader(const std::string &shaderName);
+	WebGPUShaderBuilder begin(
+		const std::string &name,
+		ShaderType type,
+		const std::filesystem::path &shaderPath,
+		const std::string &vertexEntry,
+		const std::string &fragmentEntry,
+		engine::rendering::VertexLayout vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor,
+		bool depthEnabled = true,
+		bool blendEnabled = false,
+		bool cullBackFaces = true
+	);
+
+	/**
+	 * @brief Loads shader module from file path.
+	 * @param shaderPath Path to the WGSL shader file.
+	 * @return Loaded shader module.
+	 */
+	wgpu::ShaderModule loadShaderModule(const std::filesystem::path &shaderPath);
 
 	/**
 	 * @brief Reloads a specific shader info by reconstructing it with current data.
@@ -335,13 +320,6 @@ class WebGPUShaderFactory
 	 * @param bindGroupsBuilder Map of bind group builders to create layouts from.
 	 */
 	void createBindGroupLayouts(std::shared_ptr<WebGPUShaderInfo> shaderInfo, std::map<uint32_t, BindGroupBuilder> &bindGroupsBuilder);
-
-	/**
-	 * @brief Loads shader module from file path.
-	 * @param shaderPath Path to the WGSL shader file.
-	 * @return Loaded shader module.
-	 */
-	wgpu::ShaderModule loadShaderModule(const std::string &shaderPath);
 
 	WebGPUContext &m_context;
 };

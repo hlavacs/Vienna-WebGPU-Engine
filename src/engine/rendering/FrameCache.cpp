@@ -28,15 +28,12 @@ bool FrameCache::prepareGPUResources(
 	if (gpuRenderItems.size() != collector.getRenderItems().size())
 		gpuRenderItems.resize(collector.getRenderItems().size());
 
-	auto objectBindGroupLayout = context->bindGroupFactory().getGlobalBindGroupLayout("objectUniforms");
+	auto objectBindGroupLayout = context->bindGroupFactory().getGlobalBindGroupLayout(bindgroup::defaults::OBJECT);
 	if (!objectBindGroupLayout)
 	{
 		spdlog::error("Failed to get objectUniforms bind group layout");
 		return false;
 	}
-
-	// Static cache for object bind groups (shared across all frames)
-	static std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> s_objectBindGroupCache;
 
 	const auto &cpuItems = collector.getRenderItems();
 	for (size_t idx : indicesToPrepare)
@@ -80,8 +77,8 @@ bool FrameCache::prepareGPUResources(
 
 		// Get or create object bind group
 		std::shared_ptr<webgpu::WebGPUBindGroup> objectBindGroup;
-		auto it = s_objectBindGroupCache.find(cpuItem.objectID);
-		if (it != s_objectBindGroupCache.end())
+		auto it = objectBindGroupCache.find(cpuItem.objectID);
+		if (it != objectBindGroupCache.end())
 		{
 			objectBindGroup = it->second;
 		}
@@ -89,7 +86,7 @@ bool FrameCache::prepareGPUResources(
 		{
 			objectBindGroup = context->bindGroupFactory().createBindGroup(objectBindGroupLayout);
 			if (cpuItem.objectID != 0)
-				s_objectBindGroupCache[cpuItem.objectID] = objectBindGroup;
+				objectBindGroupCache[cpuItem.objectID] = objectBindGroup;
 		}
 
 		auto objectUniforms = ObjectUniforms{cpuItem.worldTransform, glm::inverseTranspose(cpuItem.worldTransform)};

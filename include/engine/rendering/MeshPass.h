@@ -65,15 +65,6 @@ class MeshPass : public RenderPass
 	}
 
 	/**
-	 * @brief Set the frame uniforms (camera matrices, position, time).
-	 * @param uniforms Camera/frame uniforms.
-	 */
-	void setFrameUniforms(const FrameUniforms &uniforms)
-	{
-		m_frameUniforms = uniforms;
-	}
-
-	/**
 	 * @brief Set the camera ID for bind group caching.
 	 * @param id Camera identifier.
 	 */
@@ -114,35 +105,35 @@ class MeshPass : public RenderPass
 	 */
 	void cleanup() override;
 
-	/**
-	 * @brief Clear frame-specific bind group cache.
-	 */
-	void clearFrameBindGroupCache();
-
   private:
 	/**
 	 * @brief Bind frame uniforms (camera, view-projection, time).
 	 * @param renderPass The render pass encoder.
-	 * @param cameraId The camera ID for caching.
-	 * @param frameUniforms The frame uniforms data.
+	 * @param frameCache The frame cache containing frame bind groups.
+	 * @return True if binding succeeded.
 	 */
-	void bindFrameUniforms(
-		wgpu::RenderPassEncoder renderPass,
-		uint64_t cameraId,
-		const FrameUniforms &frameUniforms
-	);
+	bool bindFrameUniforms(wgpu::RenderPassEncoder renderPass, FrameCache &frameCache);
 
 	/**
 	 * @brief Bind light uniforms.
 	 * @param renderPass The render pass encoder.
+	 * @param frameCache The frame cache containing light bind groups.
+	 * @return True if binding succeeded.
 	 */
-	void bindLightUniforms(wgpu::RenderPassEncoder renderPass);
+	bool bindLightUniforms(wgpu::RenderPassEncoder renderPass, FrameCache &frameCache);
 
 	/**
-	 * @brief Update light data for the frame.
-	 * @param lights The light data.
+	 * @brief Bind object uniforms.
+	 * @param renderPass The render pass encoder.
+	 * @param webgpuShaderInfo The shader info for the current material.
+	 * @param objectBindGroup The per-object bind group.
+	 * @return True if binding succeeded.
 	 */
-	void updateLights(const std::vector<LightStruct> &lights);
+	bool bindObjectUniforms(
+		wgpu::RenderPassEncoder renderPass,
+		const std::shared_ptr<webgpu::WebGPUShaderInfo> &webgpuShaderInfo,
+		const std::shared_ptr<webgpu::WebGPUBindGroup> &objectBindGroup
+	);
 
 	/**
 	 * @brief Draw all prepared render items.
@@ -155,28 +146,21 @@ class MeshPass : public RenderPass
 	void drawItems(
 		wgpu::CommandEncoder &encoder,
 		wgpu::RenderPassEncoder renderPass,
-		const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext,
 		const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 		const std::vector<size_t> &indicesToRender
 	);
 
 	// External dependencies (set via setters)
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
-	FrameUniforms m_frameUniforms{};
 	uint64_t m_cameraId = 0;
 	std::vector<size_t> m_visibleIndices;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowBindGroup;
 
 	// Bind group layouts
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_lightBindGroupLayout;
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_objectBindGroupLayout;
 
-	// Bind groups
+	// Cached bind groups
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowBindGroup;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
-
-	// Caching
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_frameBindGroupCache;
 };
 
 } // namespace engine::rendering

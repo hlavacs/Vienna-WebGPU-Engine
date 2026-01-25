@@ -3,14 +3,18 @@
 #include <memory>
 #include <utility>
 
+#include <webgpu/webgpu.hpp>
+
 namespace engine::rendering
 {
 
-class FrameCache;
+class FrameCache; // Forward declaration
 
 namespace webgpu
 {
-class WebGPUContext;
+class WebGPUContext; // Forward declaration
+class WebGPUBindGroup; // Forward declaration
+class WebGPUShaderInfo; // Forward declaration
 }
 
 /**
@@ -41,6 +45,19 @@ class RenderPass
 	 * @param frameCache The frame cache containing all render data for this frame.
 	 */
 	virtual void render(FrameCache &frameCache) = 0;
+
+	/**
+	 * @brief Bind a bind group to the render pass based on shader info using the shader's bind group layout.
+	 * @param renderPass The render pass encoder.
+	 * @param webgpuShaderInfo The shader info containing information about bind groups.
+	 * @param bindgroup The bind group to bind.
+	 * @return true if binding succeeded, false otherwise.
+	 */
+	static bool bind(
+		wgpu::RenderPassEncoder renderPass,
+		const std::shared_ptr<webgpu::WebGPUShaderInfo> &webgpuShaderInfo,
+		const std::shared_ptr<webgpu::WebGPUBindGroup> &bindgroup
+	);
 
 	/**
 	 * @brief Clean up GPU resources.

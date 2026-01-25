@@ -6,30 +6,42 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
+#include "engine/rendering/ClearFlags.h"
+#include "engine/rendering/CompositePass.h"
+#include "engine/rendering/DebugCollector.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/Mesh.h"
+#include "engine/rendering/MeshPass.h"
 #include "engine/rendering/Model.h"
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderItemGPU.h"
+#include "engine/rendering/RenderPassManager.h"
+#include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/ShadowPass.h"
+#include "engine/rendering/Texture.h"
 #include "engine/rendering/Vertex.h"
+#include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUModel.h"
 #include "engine/rendering/webgpu/WebGPUModelFactory.h"
+#include "engine/rendering/webgpu/WebGPUPipelineManager.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 #include "engine/scene/nodes/CameraNode.h"
 
 namespace engine::rendering
 {
 
 Renderer::Renderer(std::shared_ptr<webgpu::WebGPUContext> context) :
-	m_context(context),
-	m_renderPassManager(std::make_unique<RenderPassManager>(*context))
+	m_context(context)
+// m_renderPassManager(std::make_unique<RenderPassManager>(*context))
 {
 }
 
@@ -74,6 +86,13 @@ bool Renderer::initialize()
 		return false;
 	}
 
+	m_frameBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout(bindgroup::defaults::FRAME);
+	if (!m_frameBindGroupLayout)
+	{
+		spdlog::error("Failed to get global bind group layout for frame uniforms");
+		return false;
+	}
+
 	spdlog::info("Renderer initialized successfully");
 	return true;
 }
@@ -91,7 +110,21 @@ bool Renderer::renderFrame(
 		spdlog::warn("renderFrame called with no render targets");
 		return false;
 	}
-
+	for (const auto &target : renderTargets)
+	{
+		if (m_frameCache.frameBindGroupCache[target.cameraId] == nullptr)
+		{
+			m_frameCache.frameBindGroupCache[target.cameraId] = m_context->bindGroupFactory().createBindGroup(m_frameBindGroupLayout);
+		}
+		auto frameUniforms = target.getFrameUniforms(m_frameCache.time);
+		m_frameCache.frameBindGroupCache[target.cameraId]->updateBuffer(
+			0,
+			&frameUniforms,
+			sizeof(FrameUniforms),
+			0,
+			m_context->getQueue()
+		);
+	}
 	m_frameCache.lights = renderCollector.getLights();
 	m_frameCache.renderTargets = std::move(renderTargets);
 	m_frameCache.time = time;
@@ -108,16 +141,11 @@ bool Renderer::renderFrame(
 	m_shadowPass->setRenderCollector(&renderCollector);
 	m_shadowPass->render(m_frameCache);
 
-	for (const auto &target : m_frameCache.renderTargets)
+	for (auto &target : m_frameCache.renderTargets)
 	{
 		renderToTexture(
 			renderCollector,
-			target.cameraId,
-			target.viewport,
-			target.clearFlags,
-			target.backgroundColor,
-			target.cpuTarget,
-			target.getFrameUniforms(m_frameCache.time)
+			target
 		);
 	}
 
@@ -208,47 +236,23 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 }
 void Renderer::renderToTexture(
 	const RenderCollector &collector,
-	uint64_t renderTargetId,
-	const glm::vec4 &viewport,
-	ClearFlags clearFlags,
-	const glm::vec4 &backgroundColor,
-	std::optional<TextureHandle> cpuTarget,
-	const FrameUniforms &frameUniforms
+	RenderTarget &renderTarget
 )
 {
-	spdlog::debug("renderToTexture called: cameraId={}, renderItems={}, lights={}", renderTargetId, collector.getRenderItems().size(), collector.getLights().size());
+	spdlog::debug("renderToTexture called: cameraId={}, renderItems={}, lights={}", renderTarget.cameraId, collector.getRenderItems().size(), collector.getLights().size());
 
-	// Find the render target in the frame cache
-	RenderTarget *targetPtr = nullptr;
-	for (auto &target : m_frameCache.renderTargets)
-	{
-		if (target.cameraId == renderTargetId)
-		{
-			targetPtr = &target;
-			break;
-		}
-	}
-
-	if (!targetPtr)
-	{
-		spdlog::error("Render target with cameraId={} not found in frame cache", renderTargetId);
-		return;
-	}
-
-	RenderTarget &target = *targetPtr;
-
-	target.gpuTexture = updateRenderTexture(
-		renderTargetId,
-		target.gpuTexture,
-		cpuTarget,
-		viewport,
+	renderTarget.gpuTexture = updateRenderTexture(
+		renderTarget.cameraId,
+		renderTarget.gpuTexture,
+		renderTarget.cpuTarget,
+		renderTarget.viewport,
 		wgpu::TextureFormat::RGBA16Float,
 		static_cast<WGPUTextureUsage>(
 			wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc
 		)
 	);
 
-	if (!target.gpuTexture)
+	if (!renderTarget.gpuTexture)
 	{
 		spdlog::error("Failed to create/update render target texture");
 		return;
@@ -256,13 +260,13 @@ void Renderer::renderToTexture(
 
 	// Create render pass context
 	auto renderPassContext = m_context->renderPassFactory().create(
-		target.gpuTexture,
+		renderTarget.gpuTexture,
 		m_depthBuffer,
-		clearFlags,
-		backgroundColor
+		renderTarget.clearFlags,
+		renderTarget.backgroundColor
 	);
 
-	auto cameraFrustum = engine::math::Frustum::fromViewProjection(frameUniforms.viewProjectionMatrix);
+	auto cameraFrustum = engine::math::Frustum::fromViewProjection(renderTarget.viewProjectionMatrix);
 
 	std::vector<size_t> visibleIndices = collector.extractVisible(cameraFrustum);
 
@@ -272,8 +276,7 @@ void Renderer::renderToTexture(
 
 	// Set dependencies for MeshPass
 	m_meshPass->setRenderPassContext(renderPassContext);
-	m_meshPass->setFrameUniforms(frameUniforms);
-	m_meshPass->setCameraId(renderTargetId); // Use renderTargetId (which is the camera ID)
+	m_meshPass->setCameraId(renderTarget.cameraId); // Use renderTargetId (which is the camera ID)
 	m_meshPass->setVisibleIndices(visibleIndices);
 	m_meshPass->setShadowBindGroup(m_shadowPass->getShadowBindGroup());
 
@@ -282,13 +285,13 @@ void Renderer::renderToTexture(
 	m_meshPass->render(m_frameCache);
 
 	// Check if CPU readback was requested
-	if (cpuTarget.has_value() && cpuTarget->valid())
+	if (renderTarget.cpuTarget.has_value() && renderTarget.cpuTarget->valid())
 	{
-		auto textureOpt = cpuTarget->get();
+		auto textureOpt = renderTarget.cpuTarget->get();
 		if (textureOpt.has_value() && textureOpt.value()->isReadbackRequested())
 		{
 			// Initiate async GPU-to-CPU readback
-			auto readbackFuture = target.gpuTexture->readbackToCPUAsync(*m_context, textureOpt.value());
+			auto readbackFuture = renderTarget.gpuTexture->readbackToCPUAsync(*m_context, textureOpt.value());
 			textureOpt.value()->setReadbackFuture(std::move(readbackFuture));
 		}
 	}

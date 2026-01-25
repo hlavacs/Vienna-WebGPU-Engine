@@ -30,26 +30,10 @@ MeshPass::MeshPass(std::shared_ptr<webgpu::WebGPUContext> context) :
 bool MeshPass::initialize()
 {
 	spdlog::info("Initializing MeshPass");
-
-	// Get global bind group layouts
-	m_frameBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("frameUniforms");
-	if (!m_frameBindGroupLayout)
-	{
-		spdlog::error("Failed to get global bind group layout for frameUniforms");
-		return false;
-	}
-
-	m_lightBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("lightUniforms");
+	m_lightBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout(bindgroup::defaults::LIGHT);
 	if (!m_lightBindGroupLayout)
 	{
 		spdlog::error("Failed to get global bind group layout for lightUniforms");
-		return false;
-	}
-
-	m_objectBindGroupLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout("objectUniforms");
-	if (!m_objectBindGroupLayout)
-	{
-		spdlog::error("Failed to get global bind group layout for objectUniforms");
 		return false;
 	}
 
@@ -75,60 +59,39 @@ void MeshPass::render(FrameCache &frameCache)
 
 	spdlog::debug("MeshPass::render() - visibleIndices count: {}, gpuItems count: {}", m_visibleIndices.size(), frameCache.gpuRenderItems.size());
 
-	// Update lights from frame cache
-	updateLights(frameCache.lightUniforms);
-
 	// Create command encoder
-	wgpu::CommandEncoderDescriptor encoderDesc{};
-	encoderDesc.label = "MeshPass Encoder";
-	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
+	auto encoder = m_context->createCommandEncoder("MeshPass Encoder");
 
 	// Begin render pass using context's begin() method
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
+	{
+		// Bind frame and light uniforms
+		bindFrameUniforms(renderPass, frameCache);
+		bindLightUniforms(renderPass, frameCache);
 
-	// Bind frame and light uniforms
-	bindFrameUniforms(renderPass, m_cameraId, m_frameUniforms);
-	bindLightUniforms(renderPass);
-
-	// Draw items from frame cache
-	drawItems(encoder, renderPass, m_renderPassContext, frameCache.gpuRenderItems, m_visibleIndices);
-
-	// End render pass using context's end() method
+		// Draw items from frame cache
+		drawItems(encoder, renderPass, frameCache.gpuRenderItems, m_visibleIndices);
+	}
 	m_renderPassContext->end(renderPass);
 
-	// Submit commands
-	wgpu::CommandBufferDescriptor cmdBufferDesc{};
-	cmdBufferDesc.label = "MeshPass Commands";
-	wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
-	encoder.release();
-	m_context->getQueue().submit(commands);
-	commands.release();
+	m_context->submitCommandEncoder(encoder, "MeshPass Commands");
 }
 
-void MeshPass::bindFrameUniforms(
-	wgpu::RenderPassEncoder renderPass,
-	uint64_t cameraId,
-	const FrameUniforms &frameUniforms
-)
+bool MeshPass::bindFrameUniforms(wgpu::RenderPassEncoder renderPass, FrameCache &frameCache)
 {
-	auto &frameBindGroup = m_frameBindGroupCache[cameraId];
+	auto frameBindGroup = frameCache.frameBindGroupCache[m_cameraId];
 	if (!frameBindGroup)
 	{
-		frameBindGroup = m_context->bindGroupFactory().createBindGroup(m_frameBindGroupLayout);
-		spdlog::info("Created new frame bind group for camera {}", cameraId);
+		spdlog::error("Frame bind group not found in cache for camera ID {}", m_cameraId);
+		return false;
 	}
-
-	frameBindGroup->updateBuffer(0, &frameUniforms, sizeof(FrameUniforms), 0, m_context->getQueue());
 	renderPass.setBindGroup(0, frameBindGroup->getBindGroup(), 0, nullptr);
+	return true;
 }
 
-void MeshPass::bindLightUniforms(wgpu::RenderPassEncoder renderPass)
+bool MeshPass::bindLightUniforms(wgpu::RenderPassEncoder renderPass, FrameCache &frameCache)
 {
-	renderPass.setBindGroup(1, m_lightBindGroup->getBindGroup(), 0, nullptr);
-}
-
-void MeshPass::updateLights(const std::vector<LightStruct> &lights)
-{
+	const auto &lights = frameCache.lightUniforms;
 	// Always write the header, even if there are no lights (count = 0)
 	LightsBuffer header;
 	header.count = static_cast<uint32_t>(lights.size());
@@ -141,18 +104,37 @@ void MeshPass::updateLights(const std::vector<LightStruct> &lights)
 	{
 		m_lightBindGroup->updateBuffer(0, lights.data(), lights.size() * sizeof(LightStruct), sizeof(LightsBuffer), m_context->getQueue());
 	}
+	renderPass.setBindGroup(1, m_lightBindGroup->getBindGroup(), 0, nullptr);
+	return true;
+}
+
+bool MeshPass::bindObjectUniforms(
+	wgpu::RenderPassEncoder renderPass,
+	const std::shared_ptr<webgpu::WebGPUShaderInfo> &webgpuShaderInfo,
+	const std::shared_ptr<webgpu::WebGPUBindGroup> &objectBindGroup
+)
+{
+	if (RenderPass::bind(renderPass, webgpuShaderInfo, objectBindGroup))
+	{
+		return true;
+	}
+	else
+	{
+		spdlog::error("Failed to bind object uniforms");
+		return false;
+	}
 }
 
 void MeshPass::drawItems(
 	wgpu::CommandEncoder &encoder,
 	wgpu::RenderPassEncoder renderPass,
-	const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext,
 	const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 	const std::vector<size_t> &indicesToRender
 )
 {
-	webgpu::WebGPUPipeline *currentPipeline = nullptr;
+	std::shared_ptr<webgpu::WebGPUPipeline> currentPipeline = nullptr;
 	webgpu::WebGPUMesh *currentMesh = nullptr;
+	webgpu::WebGPUMaterial *currentMaterial = nullptr;
 
 	spdlog::debug("MeshPass::drawItems() - Rendering {} items", indicesToRender.size());
 
@@ -182,35 +164,37 @@ void MeshPass::drawItems(
 			continue;
 		}
 
-		auto meshPtr = item.gpuMesh->getCPUHandle().get();
-		auto materialPtr = item.gpuMaterial->getCPUHandle().get();
-
-		if (!meshPtr.has_value() || !materialPtr.has_value())
+		if (item.gpuMesh != currentMesh || item.gpuMaterial.get() != currentMaterial)
 		{
-			spdlog::warn("Invalid CPU handles - mesh: {}, material: {}", meshPtr.has_value(), materialPtr.has_value());
-			itemsSkipped++;
-			continue;
-		}
+			auto meshPtr = item.gpuMesh->getCPUHandle().get();
+			auto materialPtr = item.gpuMaterial->getCPUHandle().get();
 
-		auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
-			meshPtr.value(),
-			materialPtr.value(),
-			renderPassContext
-		);
+			if (!meshPtr.has_value() || !materialPtr.has_value())
+			{
+				spdlog::warn("Invalid CPU handles - mesh: {}, material: {}", meshPtr.has_value(), materialPtr.has_value());
+				itemsSkipped++;
+				continue;
+			}
 
-		if (!pipeline || !pipeline->isValid())
-		{
-			spdlog::warn("Invalid pipeline for mesh/material");
-			itemsSkipped++;
-			continue;
-		}
+			currentPipeline = m_context->pipelineManager().getOrCreatePipeline(
+				meshPtr.value(),
+				materialPtr.value(),
+				m_renderPassContext
+			);
 
-		// Bind pipeline only when changed
-		if (pipeline.get() != currentPipeline)
-		{
-			currentPipeline = pipeline.get();
-			currentMesh = nullptr;
+			if (!currentPipeline || !currentPipeline->isValid())
+			{
+				spdlog::warn("Invalid pipeline for mesh/material");
+				itemsSkipped++;
+				continue;
+			}
 			renderPass.setPipeline(currentPipeline->getPipeline());
+
+			if (item.gpuMaterial.get() != currentMaterial)
+			{
+				currentMaterial = item.gpuMaterial.get();
+				RenderPass::bind(renderPass, currentPipeline->getShaderInfo(), item.gpuMaterial->getBindGroup());
+			}
 		}
 
 		// Bind vertex/index buffers only when mesh changes
@@ -222,17 +206,14 @@ void MeshPass::drawItems(
 				currentPipeline->getVertexLayout()
 			);
 		}
-		// Bind object bind group (group 2)
-		renderPass.setBindGroup(2, item.objectBindGroup->getBindGroup(), 0, nullptr);
+		bindObjectUniforms(renderPass, currentPipeline->getShaderInfo(), item.objectBindGroup);
 
-		// Bind material (group 3)
-		item.gpuMaterial->bind(renderPass);
-
-		// Bind shadow bind group (group 4)
 		if (m_shadowBindGroup)
 		{
-			renderPass.setBindGroup(4, m_shadowBindGroup->getBindGroup(), 0, nullptr);
+			RenderPass::bind(renderPass, currentPipeline->getShaderInfo(), m_shadowBindGroup);
 		}
+
+		// ToDo: Bind other global bind groups as needed
 
 		// Draw submesh
 		item.gpuMesh->isIndexed()
@@ -247,7 +228,6 @@ void MeshPass::drawItems(
 
 void MeshPass::cleanup()
 {
-	m_frameBindGroupCache.clear();
 }
 
 } // namespace engine::rendering

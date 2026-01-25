@@ -18,50 +18,34 @@ WebGPUBindGroupFactory::~WebGPUBindGroupFactory()
 	cleanup();
 }
 
-wgpu::BindGroupLayoutEntry WebGPUBindGroupFactory::createStorageBindGroupLayoutEntry(
-	int binding,
-	uint32_t visibility,
-	bool readOnly
+std::shared_ptr<WebGPUBindGroupLayoutInfo> WebGPUBindGroupFactory::createBindGroupLayoutInfo(
+	std::string name,
+	BindGroupType type,
+	BindGroupReuse reuse,
+	std::vector<wgpu::BindGroupLayoutEntry> entries,
+	std::vector<BindGroupBinding> bindings
 )
 {
-	wgpu::BindGroupLayoutEntry entry = {};
-	entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
-	entry.visibility = visibility;
-	entry.buffer.type = readOnly ? wgpu::BufferBindingType::ReadOnlyStorage
-								 : wgpu::BufferBindingType::Storage;
-	entry.buffer.hasDynamicOffset = false;
-	entry.buffer.minBindingSize = 0; // No minimum size for storage buffer
-	return entry;
-}
-
-wgpu::BindGroupLayoutEntry WebGPUBindGroupFactory::createSamplerBindGroupLayoutEntry(
-	int binding,
-	uint32_t visibility,
-	wgpu::SamplerBindingType samplerType
-)
-{
-	wgpu::BindGroupLayoutEntry entry = {};
-	entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
-	entry.visibility = visibility;
-	entry.sampler.type = samplerType;
-	return entry;
-}
-
-wgpu::BindGroupLayoutEntry WebGPUBindGroupFactory::createTextureBindGroupLayoutEntry(
-	int binding,
-	uint32_t visibility,
-	wgpu::TextureSampleType sampleType,
-	wgpu::TextureViewDimension viewDimension,
-	bool multisampled
-)
-{
-	wgpu::BindGroupLayoutEntry entry = {};
-	entry.binding = static_cast<uint32_t>(binding); // will be replaced later if -1
-	entry.visibility = visibility;
-	entry.texture.sampleType = sampleType;
-	entry.texture.viewDimension = viewDimension;
-	entry.texture.multisampled = multisampled;
-	return entry;
+	uint32_t nextBinding = 0;
+	bindings.reserve(entries.size());
+	for (auto &entry : entries)
+	{
+		if (entry.binding == static_cast<uint32_t>(-1))
+			entry.binding = nextBinding++;
+		else
+			nextBinding = std::max(nextBinding, entry.binding + 1);
+	}
+	wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
+	desc.label = name.c_str();
+	auto layout = m_context.getDevice().createBindGroupLayout(desc);
+	return std::make_shared<WebGPUBindGroupLayoutInfo>(
+		layout,
+		desc,
+		std::move(name),
+		type,
+		reuse,
+		std::move(bindings)
+	);
 }
 
 std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
@@ -73,7 +57,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 {
 	std::vector<std::shared_ptr<WebGPUBuffer>> groupBuffers;
 	std::vector<wgpu::BindGroupEntry> entries;
-	entries.reserve(layoutInfo->getEntries().size());
+	entries.reserve(layoutInfo->getBindings().size());
 
 	bool allReady = true;
 
@@ -149,7 +133,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 				}
 				else
 				{
-					auto fallbackColor = layoutInfo->getFallbackColor(entryLayout.binding);
+					auto fallbackColor = layoutInfo->getMaterialFallbackColor(entryLayout.binding);
 					if (fallbackColor.has_value())
 					{
 						entry.textureView = m_context.textureFactory().createFromColor(fallbackColor.value())->getTextureView();
@@ -214,18 +198,74 @@ wgpu::BindGroupDescriptor WebGPUBindGroupFactory::createBindGroupDescriptor(cons
 	return desc;
 }
 
-// === Creation from descriptors ===
-
-wgpu::BindGroupLayout WebGPUBindGroupFactory::createBindGroupLayoutFromDescriptor(const wgpu::BindGroupLayoutDescriptor &desc)
+/**
+ * @brief Get global bind group by key.
+ * @param key Unique key for the bind group.
+ * @return Shared pointer to the WebGPUBindGroup, or nullptr if not found.
+ */
+std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::getGlobalBindGroup(const std::string &key)
 {
-	auto layout = m_context.getDevice().createBindGroupLayout(desc);
-	return layout;
+	auto it = m_globalBindGroups.find(key);
+	if (it == m_globalBindGroups.end())
+	{
+		return nullptr;
+	}
+	return it->second;
 }
 
-wgpu::BindGroup WebGPUBindGroupFactory::createBindGroupFromDescriptor(const wgpu::BindGroupDescriptor &desc)
+/**
+ * @brief Get global bind group layout by key.
+ * @param key Unique key for the bind group layout.
+ * @return Shared pointer to the WebGPUBindGroupLayoutInfo, or nullptr if not found.
+ */
+std::shared_ptr<WebGPUBindGroupLayoutInfo> WebGPUBindGroupFactory::getGlobalBindGroupLayout(
+	const std::string &key
+)
 {
-	auto group = m_context.getDevice().createBindGroup(desc);
-	return group;
+	auto it = m_globalBindGroupLayouts.find(key);
+	if (it == m_globalBindGroupLayouts.end())
+	{
+		return nullptr;
+	}
+	return it->second;
+}
+
+/**
+ * @brief Store a global bind group with a unique key.
+ * @param key Unique key for the bind group.
+ * @param bindGroup Shared pointer to the WebGPUBindGroup.
+ * @return True if stored successfully, false if key already exists.
+ */
+bool WebGPUBindGroupFactory::storeGlobalBindGroup(
+	const std::string &key,
+	const std::shared_ptr<WebGPUBindGroup> &bindGroup
+)
+{
+	if (m_globalBindGroups.find(key) != m_globalBindGroups.end())
+	{
+		return false; // Key already exists
+	}
+	m_globalBindGroups[key] = bindGroup;
+	return true;
+}
+
+/**
+ * @brief Store a global bind group layout with a unique key.
+ * @param key Unique key for the bind group layout.
+ * @param layoutInfo Shared pointer to the WebGPUBindGroupLayoutInfo.
+ * @return True if stored successfully, false if key already exists.
+ */
+bool WebGPUBindGroupFactory::storeGlobalBindGroupLayout(
+	const std::string &key,
+	const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo
+)
+{
+	if (m_globalBindGroupLayouts.find(key) != m_globalBindGroupLayouts.end())
+	{
+		return false; // Key already exists
+	}
+	m_globalBindGroupLayouts[key] = layoutInfo;
+	return true;
 }
 
 // === Generic Bind Group Creation ===
@@ -236,7 +276,7 @@ wgpu::BindGroup WebGPUBindGroupFactory::createBindGroup(
 )
 {
 	wgpu::BindGroupDescriptor desc = createBindGroupDescriptor(layout, entries);
-	auto group = createBindGroupFromDescriptor(desc);
+	auto group = m_context.getDevice().createBindGroup(desc);
 	return group;
 }
 
