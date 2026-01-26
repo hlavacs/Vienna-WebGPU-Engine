@@ -22,6 +22,7 @@
 // Core engine
 #include "engine/EngineContext.h"
 #include "engine/GameEngine.h"
+#include "engine/core/PathProvider.h"
 
 // Scene management
 #include "engine/scene/Scene.h"
@@ -66,3 +67,5 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
 #endif
+
+using PathProvider = engine::core::PathProvider;

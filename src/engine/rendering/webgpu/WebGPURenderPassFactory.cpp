@@ -26,7 +26,7 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::create(
 	wgpu::RenderPassDepthStencilAttachment depthAttachment;
 	if (colorTexture)
 	{
-		colorAttachment.view = colorTextureLayer >= 0 ? colorTexture->getLayerView(colorTextureLayer, "Color Texture Layer") : colorTexture->getTextureView();
+		colorAttachment.view = colorTexture->getTextureView(colorTextureLayer);
 		colorAttachment.resolveTarget = nullptr;
 #ifdef __EMSCRIPTEN__
 		colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
@@ -40,7 +40,7 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::create(
 	// Only create depth attachment if depth texture is provided
 	if (depthTexture)
 	{
-		depthAttachment.view = depthTextureLayer >= 0 ? depthTexture->getLayerView(depthTextureLayer, "Depth Texture Layer") : depthTexture->getTextureView();
+		depthAttachment.view = depthTexture->getTextureView(depthTextureLayer);
 		depthAttachment.depthClearValue = 1.0f;
 		depthAttachment.depthLoadOp = hasFlag(clearFlags, ClearFlags::Depth) ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
 		depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
@@ -72,7 +72,7 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createDepthOnl
 )
 {
 	wgpu::RenderPassDepthStencilAttachment depthAttachment{};
-	depthAttachment.view = arrayLayer >= 0 ? depthTexture->getLayerView(arrayLayer, "Depth-Only Texture Layer") : depthTexture->getTextureView();
+	depthAttachment.view = depthTexture->getTextureView(arrayLayer);
 	depthAttachment.depthLoadOp = clearDepth ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
 	depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
 	depthAttachment.depthClearValue = clearValue;
@@ -94,11 +94,9 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createDepthOnl
 
 	// No color textures for depth-only pass
 	return std::make_shared<WebGPURenderPassContext>(
-
 		std::vector<std::shared_ptr<WebGPUTexture>>{},
 		nullptr,
 		renderPassDesc
-
 	);
 }
 

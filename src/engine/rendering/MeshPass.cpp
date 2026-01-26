@@ -141,7 +141,7 @@ void MeshPass::drawItems(
 	size_t itemsRendered = 0;
 	size_t itemsSkipped = 0;
 
-	for (uint32_t index : indicesToRender)
+	for (const auto &index : indicesToRender)
 	{
 		if (index >= gpuItems.size())
 		{
@@ -156,7 +156,7 @@ void MeshPass::drawItems(
 			continue;
 		}
 
-		const RenderItemGPU &item = optionalItem.value();
+		const auto &item = optionalItem.value();
 		if (!item.gpuMesh || !item.gpuMaterial || !item.objectBindGroup)
 		{
 			spdlog::warn("Missing GPU resources - mesh: {}, material: {}, bindGroup: {}", item.gpuMesh != nullptr, item.gpuMaterial != nullptr, item.objectBindGroup != nullptr);
@@ -166,19 +166,19 @@ void MeshPass::drawItems(
 
 		if (item.gpuMesh != currentMesh || item.gpuMaterial.get() != currentMaterial)
 		{
-			auto meshPtr = item.gpuMesh->getCPUHandle().get();
-			auto materialPtr = item.gpuMaterial->getCPUHandle().get();
+			auto cpuMesh = item.gpuMesh->getCPUHandle().get();
+			auto cpuMaterial = item.gpuMaterial->getCPUHandle().get();
 
-			if (!meshPtr.has_value() || !materialPtr.has_value())
+			if (!cpuMesh.has_value() || !cpuMaterial.has_value())
 			{
-				spdlog::warn("Invalid CPU handles - mesh: {}, material: {}", meshPtr.has_value(), materialPtr.has_value());
+				spdlog::warn("Invalid CPU handles - mesh: {}, material: {}", cpuMesh.has_value(), cpuMaterial.has_value());
 				itemsSkipped++;
 				continue;
 			}
 
 			currentPipeline = m_context->pipelineManager().getOrCreatePipeline(
-				meshPtr.value(),
-				materialPtr.value(),
+				cpuMesh.value(),
+				cpuMaterial.value(),
 				m_renderPassContext
 			);
 
@@ -197,16 +197,16 @@ void MeshPass::drawItems(
 			}
 		}
 
+		if(!bindObjectUniforms(renderPass, currentPipeline->getShaderInfo(), item.objectBindGroup)) {
+			itemsSkipped++;
+			continue;
+		}
 		// Bind vertex/index buffers only when mesh changes
 		if (item.gpuMesh != currentMesh)
 		{
 			currentMesh = item.gpuMesh;
-			currentMesh->bindBuffers(
-				renderPass,
-				currentPipeline->getVertexLayout()
-			);
+			currentMesh->bindBuffers(renderPass,currentPipeline->getVertexLayout());
 		}
-		bindObjectUniforms(renderPass, currentPipeline->getShaderInfo(), item.objectBindGroup);
 
 		if (m_shadowBindGroup)
 		{

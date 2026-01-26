@@ -20,11 +20,16 @@ MainDemoImGuiUI::MainDemoImGuiUI(
 	{
 		m_lightNodes.push_back(child);
 	};
+
+	auto renderer = m_engine.getRenderer().lock();
+	m_debugShadowCubeArray = renderer->getShadowPass().DEBUG_SHADOW_CUBE_ARRAY;
+	m_debugShadow2DArray = renderer->getShadowPass().DEBUG_SHADOW_2D_ARRAY;
 }
 
 void MainDemoImGuiUI::render()
 {
 	ImGui::Begin("Lighting & Camera Controls");
+
 	renderLightingAndCameraControls();
 	ImGui::Separator();
 	renderMaterialProperties();
@@ -41,6 +46,89 @@ void MainDemoImGuiUI::renderPerformanceWindow()
 	ImGui::End();
 }
 
+void MainDemoImGuiUI::renderShadowDebugWindow()
+{
+    auto renderer = m_engine.getRenderer().lock();
+    if (!renderer || !renderer->getShadowPass().isDebugMode())
+        return;
+
+    ImGui::Begin("Shadow Map Debug");
+
+    const int thumbSize = 128;
+    const int columns = 3;
+
+    // --- Cube array debug ---
+    if (m_debugShadowCubeArray)
+    {
+        if (ImGui::CollapsingHeader("Cube Shadow Maps"))
+        {
+            const int totalLayers = m_debugShadowCubeArray->getTextureViewDescriptor().arrayLayerCount;
+            const int numCubes = totalLayers / 6;
+
+            for (int cubeIndex = 0; cubeIndex < numCubes; ++cubeIndex)
+            {
+                if (ImGui::CollapsingHeader(("Cube " + std::to_string(cubeIndex)).c_str()))
+                {
+                    ImGui::Text("Cube Index: %d", cubeIndex);
+                    ImGui::Separator();
+
+                    ImGui::Columns(columns, nullptr, false);
+
+                    for (int faceIndex = 0; faceIndex < 6; ++faceIndex)
+                    {
+                        int layerIndex = cubeIndex * 6 + faceIndex;
+                        ImTextureID faceImguiId = m_debugShadowCubeArray->getTextureView(layerIndex);
+
+                        ImGui::Text("Face %d", faceIndex);
+                        ImGui::Image(faceImguiId, ImVec2((float)thumbSize, (float)thumbSize),
+                                     ImVec2(0,0), ImVec2(1,1),
+                                     ImVec4(1,1,1,1), ImVec4(0,0,0,0));
+                        ImGui::NextColumn();
+                    }
+
+                    ImGui::Columns(1);
+                    ImGui::Separator();
+                }
+            }
+        }
+    }
+    else
+    {
+        ImGui::Text("No cube shadow array texture available.");
+    }
+
+    // --- 2D array debug ---
+    if (m_debugShadow2DArray)
+    {
+        if (ImGui::CollapsingHeader("2D Shadow Maps"))
+        {
+            const int totalLayers = m_debugShadow2DArray->getTextureViewDescriptor().arrayLayerCount;
+            ImGui::Columns(columns, nullptr, false);
+
+            for (int layerIndex = 0; layerIndex < totalLayers; ++layerIndex)
+            {
+                ImTextureID texId = m_debugShadow2DArray->getTextureView(layerIndex);
+
+                ImGui::Text("Layer %d", layerIndex);
+                ImGui::Image(texId, ImVec2((float)thumbSize, (float)thumbSize),
+                             ImVec2(0,0), ImVec2(1,1),
+                             ImVec4(1,1,1,1), ImVec4(0,0,0,0));
+                ImGui::NextColumn();
+            }
+
+            ImGui::Columns(1);
+            ImGui::Separator();
+        }
+    }
+    else
+    {
+        ImGui::Text("No 2D shadow array texture available.");
+    }
+
+    ImGui::End();
+}
+
+
 void MainDemoImGuiUI::renderLightingAndCameraControls()
 {
 	// Shader reload button
@@ -52,8 +140,10 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 	ImGui::SameLine();
 	// Debug rendering toggle
 	static bool showDebugRendering = false;
+	static bool showDebugShadowMaps = false;
 	static bool prevDebugState = false;
 	ImGui::Checkbox("Debug Rendering", &showDebugRendering);
+	ImGui::Checkbox("Debug Shadow Maps", &showDebugShadowMaps);
 	if (showDebugRendering != prevDebugState)
 	{
 		for (auto &light : m_lightNodes)
@@ -73,6 +163,7 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 		}
 		prevDebugState = showDebugRendering;
 	}
+	m_engine.getRenderer().lock()->getShadowPass().setDebugMode(showDebugShadowMaps);
 }
 
 void MainDemoImGuiUI::renderMaterialProperties()
@@ -187,7 +278,7 @@ void MainDemoImGuiUI::renderLightsSection()
 				directionalData.color = glm::vec3(1.0f);
 				directionalData.intensity = 1.0f;
 				newLight->getLight().setData(directionalData);
-				
+
 				float pitch = 140.0f, yaw = -30.0f, roll = 0.0f;
 				glm::quat rot = glm::quat(glm::radians(glm::vec3(pitch, yaw, roll)));
 				newLight->getTransform()->setLocalRotation(rot);
@@ -198,7 +289,6 @@ void MainDemoImGuiUI::renderLightsSection()
 				engine::rendering::PointLight pointData;
 				pointData.color = glm::vec3(1.0f);
 				pointData.intensity = 1.0f;
-				pointData.position = glm::vec3(0.0f, 2.0f, 0.0f);
 				newLight->getLight().setData(pointData);
 				newLight->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 0.0f));
 			}
@@ -252,7 +342,6 @@ void MainDemoImGuiUI::renderLightsSection()
 						engine::rendering::PointLight pointData;
 						pointData.color = light->getColor();
 						pointData.intensity = light->getIntensity();
-						pointData.position = light->getTransform() ? light->getTransform()->getLocalPosition() : glm::vec3(0.0f);
 						light->getLight().setData(pointData);
 						break;
 					}
@@ -261,7 +350,6 @@ void MainDemoImGuiUI::renderLightsSection()
 						engine::rendering::SpotLight spotData;
 						spotData.color = light->getColor();
 						spotData.intensity = light->getIntensity();
-						spotData.position = light->getTransform() ? light->getTransform()->getLocalPosition() : glm::vec3(0.0f);
 						light->getLight().setData(spotData);
 						break;
 					}
@@ -310,7 +398,7 @@ void MainDemoImGuiUI::renderLightsSection()
 					if (light->getLight().isSpot())
 					{
 						// Access spot light data directly
-						auto& spotData = light->getLight().asSpot();
+						auto &spotData = light->getLight().asSpot();
 						float spotAngleDegrees = glm::degrees(spotData.spotAngle) * 2.0f; // Full cone angle
 						if (ImGui::SliderFloat("Cone Angle (degrees)", &spotAngleDegrees, 1.0f, 180.0f))
 						{
@@ -322,7 +410,7 @@ void MainDemoImGuiUI::renderLightsSection()
 							spotData.spotSoftness = spotSoftness;
 						}
 					}
-					
+
 					// Shadow casting controls (for directional, point, and spot lights)
 					if (!light->getLight().isAmbient())
 					{

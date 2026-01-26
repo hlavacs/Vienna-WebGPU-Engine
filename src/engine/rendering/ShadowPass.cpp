@@ -38,12 +38,12 @@ struct CubeFace
 };
 
 constexpr CubeFace CUBE_FACES[6] = {
-	{glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f), 0},	 // +X
-	{glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f), 1}, // -X
-	{glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 2},	 // +Y
-	{glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), 3}, // -Y
-	{glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f), 4},	 // +Z
-	{glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f), 5}	 // -Z
+    {glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0},   // -X (right)
+    {glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1},  // +X (left)
+    {glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), 2},  // +Y (up)
+    {glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 3},  // -Y (down)
+    {glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 4},   // +Z (forward)
+    {glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 5}   // -Z (backward)
 };
 
 ShadowPass::ShadowPass(std::shared_ptr<webgpu::WebGPUContext> context) :
@@ -53,7 +53,7 @@ ShadowPass::ShadowPass(std::shared_ptr<webgpu::WebGPUContext> context) :
 
 bool ShadowPass::initialize()
 {
-	spdlog::info("Initializing ShadowPass (single-light, texture-agnostic)");
+	spdlog::info("Initializing ShadowPass");
 
 	// Get shadow shaders to extract bind group layouts
 	auto shadowShader = m_context->shaderRegistry().getShader(shader::defaults::SHADOW_PASS_2D);
@@ -71,8 +71,8 @@ bool ShadowPass::initialize()
 	}
 
 	// Get bind group layouts from shaders
-	m_shadowPass2DBindGroupLayout = shadowShader->getBindGroupLayout(0);	   // Group 0: Shadow uniforms
-	m_shadowPassCubeBindGroupLayout = shadowCubeShader->getBindGroupLayout(0); // Group 0: Cube shadow uniforms
+	m_shadowPass2DBindGroupLayout = shadowShader->getBindGroupLayout(bindgroup::defaults::SHADOW_PASS_2D);
+	m_shadowPassCubeBindGroupLayout = shadowCubeShader->getBindGroupLayout(bindgroup::defaults::SHADOW_PASS_CUBE);
 
 	if (!m_shadowPass2DBindGroupLayout || !m_shadowPassCubeBindGroupLayout)
 	{
@@ -80,60 +80,20 @@ bool ShadowPass::initialize()
 		return false;
 	}
 
-	// Create uniform buffers using buffer factory
-	m_shadowPass2DUniformsBuffer = m_context->bufferFactory().createUniformBufferWrapped(
-		"Shadow Uniforms Buffer",
-		0,
-		sizeof(ShadowPass2DUniforms)
+	m_shadowPass2DBindGroup = m_context->bindGroupFactory().createBindGroup(
+		m_shadowPass2DBindGroupLayout,
+		{},
+		nullptr,
+		"Shadow Pass 2D Bind Group"
 	);
 
-	m_shadowPassCubeUniformsBuffer = m_context->bufferFactory().createUniformBufferWrapped(
-		"Shadow Cube Uniforms Buffer",
-		0,
-		sizeof(ShadowPassCubeUniforms)
-	);
-
-	// Create reusable bind group for 2D shadows
+	for (int i = 0; i < 6; ++i)
 	{
-		std::vector<wgpu::BindGroupEntry> entries(1);
-		entries[0].binding = 0;
-		entries[0].buffer = m_shadowPass2DUniformsBuffer->getBuffer();
-		entries[0].offset = 0;
-		entries[0].size = sizeof(ShadowPass2DUniforms);
-
-		wgpu::BindGroupDescriptor bgDesc{};
-		bgDesc.layout = m_shadowPass2DBindGroupLayout->getLayout();
-		bgDesc.label = "Shadow Pass 2D Bind Group";
-		bgDesc.entryCount = entries.size();
-		bgDesc.entries = entries.data();
-		wgpu::BindGroup bindGroup = m_context->getDevice().createBindGroup(bgDesc);
-
-		m_shadowPass2DBindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
-			bindGroup,
-			m_shadowPass2DBindGroupLayout,
-			std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{m_shadowPass2DUniformsBuffer}
-		);
-	}
-
-	// Create reusable bind group for cube shadows
-	{
-		std::vector<wgpu::BindGroupEntry> entries(1);
-		entries[0].binding = 0;
-		entries[0].buffer = m_shadowPassCubeUniformsBuffer->getBuffer();
-		entries[0].offset = 0;
-		entries[0].size = sizeof(ShadowPassCubeUniforms);
-
-		wgpu::BindGroupDescriptor bgDesc{};
-		bgDesc.layout = m_shadowPassCubeBindGroupLayout->getLayout();
-		bgDesc.label = "Shadow Pass Cube Bind Group";
-		bgDesc.entryCount = entries.size();
-		bgDesc.entries = entries.data();
-		wgpu::BindGroup bindGroup = m_context->getDevice().createBindGroup(bgDesc);
-
-		m_shadowPassCubeBindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
-			bindGroup,
+		m_shadowPassCubeBindGroup[i] = m_context->bindGroupFactory().createBindGroup(
 			m_shadowPassCubeBindGroupLayout,
-			std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{m_shadowPassCubeUniformsBuffer}
+			{},
+			nullptr,
+			"Shadow Pass Cube Bind Group"
 		);
 	}
 
@@ -177,6 +137,18 @@ bool ShadowPass::initialize()
 		spdlog::info("Shadow map resources initialized (2D array: {}x{}, Cube array: {}x{})", constants::DEFAULT_SHADOW_MAP_SIZE, constants::MAX_SHADOW_MAPS_2D, constants::DEFAULT_CUBE_SHADOW_MAP_SIZE, constants::MAX_SHADOW_MAPS_CUBE);
 	}
 
+	DEBUG_SHADOW_2D_ARRAY = m_context->textureFactory().createShadowMap2DArray(
+		constants::DEFAULT_SHADOW_MAP_SIZE,
+		constants::MAX_SHADOW_MAPS_2D,
+		wgpu::TextureFormat::RGBA8Unorm
+	);
+
+	DEBUG_SHADOW_CUBE_ARRAY = m_context->textureFactory().createShadowMapCubeArray(
+		constants::DEFAULT_CUBE_SHADOW_MAP_SIZE,
+		constants::MAX_SHADOW_MAPS_CUBE,
+		wgpu::TextureFormat::RGBA8Unorm
+	);
+
 	spdlog::info("ShadowPass initialized successfully");
 	return true;
 }
@@ -215,6 +187,7 @@ std::vector<float> ShadowPass::computeCascadeSplits(
 ShadowUniform ShadowPass::computeShadowUniform(
 	const ShadowRequest &request,
 	uint32_t cascadeIndex,
+	glm::vec3 cameraPosition,
 	float cameraNear,
 	float cameraFar,
 	float splitLambda
@@ -232,7 +205,7 @@ ShadowUniform ShadowPass::computeShadowUniform(
 			if constexpr (std::is_same_v<T, DirectionalLight>)
 			{
 				// Compute directional light shadow matrix
-				glm::vec3 dir = glm::normalize(glm::vec3(light->getTransform() * glm::vec4(specificLight.direction, 0.0f)));
+				glm::vec3 dir = glm::normalize(light->getTransform()[2]); // Extract forward direction from transform
 				glm::vec3 pos = -dir * specificLight.range;
 
 				glm::mat4 viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
@@ -271,13 +244,15 @@ ShadowUniform ShadowPass::computeShadowUniform(
 				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
 				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
 				shadowUniform.shadowType = 0; // 2D shadow
+				shadowUniform.far = specificLight.range;
+				shadowUniform.near = 0.1f;
 			}
 			else if constexpr (std::is_same_v<T, SpotLight>)
 			{
 				// Compute spot light shadow matrix
-				glm::vec3 pos = glm::vec3(light->getTransform() * glm::vec4(specificLight.position, 1.0f));
+				glm::vec3 pos = light->getTransform()[3]; // Extract position from transform
 				// Extract forward direction from transform (spotlight points in -Z direction)
-				glm::vec3 dir = glm::normalize(glm::vec3(light->getTransform() * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)));
+				glm::vec3 dir = glm::normalize(light->getTransform()[2]);
 
 				glm::mat4 viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
 				glm::mat4 projectionMatrix = glm::perspective(specificLight.spotAngle * 2.0f, 1.0f, 0.1f, specificLight.range);
@@ -289,16 +264,21 @@ ShadowUniform ShadowPass::computeShadowUniform(
 				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
 				shadowUniform.shadowType = 0;					  // 2D shadow
 				shadowUniform.cascadeSplit = specificLight.range; // Use range as split
+				shadowUniform.far = specificLight.range;
+				shadowUniform.near = 0.1f;
 			}
 			else if constexpr (std::is_same_v<T, PointLight>)
 			{
 				// Point light - store position for cube map rendering
-				shadowUniform.lightPos = glm::vec3(light->getTransform() * glm::vec4(specificLight.position, 1.0f));
+				shadowUniform.lightPos = light->getTransform()[3]; // Extract position from transform
 				shadowUniform.bias = specificLight.shadowBias;
 				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+				shadowUniform.normalBias = specificLight.shadowNormalBias;
 				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
 				shadowUniform.shadowType = 1;					  // Cube shadow
 				shadowUniform.cascadeSplit = specificLight.range; // Use range as split
+				shadowUniform.far = specificLight.range;
+				shadowUniform.near = 0.1f;
 			}
 		},
 		light->getData()
@@ -320,22 +300,10 @@ void ShadowPass::render(FrameCache &frameCache)
 		return;
 
 	// TODO: Get camera near/far from first render target (multi-camera CSM needs more work)
-	float cameraNear = 0.1f;
-	float cameraFar = 100.0f;
-	if (!frameCache.renderTargets.empty())
-	{
-		// Extract near/far from projection matrix
-		const auto &proj = frameCache.renderTargets[0].projectionMatrix;
-		// For perspective: far = (2*n) / (2 - m33 - m32)
-		// For orthographic: far = (2 + m32) / m33
-		// Simplified extraction (assumes perspective)
-		cameraNear = proj[3][2] / (proj[2][2] - 1.0f);
-		cameraFar = proj[3][2] / (proj[2][2] + 1.0f);
-
-		// Clamp to reasonable values
-		cameraNear = glm::max(0.01f, glm::abs(cameraNear));
-		cameraFar = glm::max(cameraNear + 1.0f, glm::abs(cameraFar));
-	}
+	const auto &renderTarget = frameCache.renderTargets[m_cameraId];
+	glm::vec3 cameraPosition = renderTarget.cameraPosition;
+	float cameraNear = renderTarget.projectionMatrix[3][2] / (renderTarget.projectionMatrix[2][2] - 1.0f);
+	float cameraFar = renderTarget.projectionMatrix[3][2] / (renderTarget.projectionMatrix[2][2] + 1.0f);
 
 	// Compute shadow uniforms from requests (this is where matrices are computed per-camera)
 	frameCache.shadowUniforms.clear();
@@ -358,14 +326,14 @@ void ShadowPass::render(FrameCache &frameCache)
 			for (uint32_t i = 0; i < request.cascadeCount; ++i)
 			{
 				frameCache.shadowUniforms.push_back(
-					computeShadowUniform(request, i, cameraNear, cameraFar, dirLight.splitLambda)
+					computeShadowUniform(request, i, cameraPosition, cameraNear, cameraFar, dirLight.splitLambda)
 				);
 			}
 		}
 		else
 		{
 			// Non-CSM: Single uniform
-			frameCache.shadowUniforms.push_back(computeShadowUniform(request, 0, cameraNear, cameraFar));
+			frameCache.shadowUniforms.push_back(computeShadowUniform(request, 0, cameraPosition, cameraNear, cameraFar));
 		}
 	}
 
@@ -418,7 +386,9 @@ void ShadowPass::render(FrameCache &frameCache)
 					visibleIndices,
 					m_shadow2DArray,
 					request.textureIndexStart + cascadeIdx,
-					shadowUniform.viewProj
+					shadowUniform.viewProj,
+					shadowUniform.lightPos,
+					request.light->asDirectional().range
 				);
 			}
 		}
@@ -441,7 +411,9 @@ void ShadowPass::render(FrameCache &frameCache)
 				visibleIndices,
 				m_shadow2DArray,
 				request.textureIndexStart,
-				shadowUniform.viewProj
+				shadowUniform.viewProj,
+				shadowUniform.lightPos,
+				request.light->asSpot().range
 			);
 		}
 	}
@@ -464,42 +436,45 @@ void ShadowPass::renderShadow2D(
 	const std::vector<size_t> &indicesToRender, // only items visible to this light
 	const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
 	uint32_t arrayLayer,
-	const glm::mat4 &lightViewProjection
+	const glm::mat4 &lightViewProjection,
+	const glm::vec3 &lightPosition,
+	float farPlane
 )
 {
 	// Prepare shadow uniforms
 	ShadowPass2DUniforms shadowUniforms;
 	shadowUniforms.lightViewProjectionMatrix = lightViewProjection;
+	shadowUniforms.lightPos = lightPosition; // Extract light position from matrix
+	shadowUniforms.farPlane = farPlane;		 // Extract light position from matrix
 
 	uint32_t shadowMapSize = shadowTexture->getWidth();
 	// Update uniforms using the reusable bind group
 	m_shadowPass2DBindGroup->updateBuffer(0, &shadowUniforms, sizeof(ShadowPass2DUniforms), 0, m_context->getQueue());
 
-	auto shadowDebugingTexture = m_context->textureFactory().createRenderTarget(
-		-1 - arrayLayer, // Unique negative ID for debugging
-		shadowMapSize,
-		shadowMapSize,
-		wgpu::TextureFormat::RGBA8Unorm
-	);
+	std::shared_ptr<webgpu::WebGPURenderPassContext> renderPassContext = nullptr;
 
 	// Create render pass using factory
-	auto renderPassContext = m_context->renderPassFactory().createDepthOnly(shadowTexture, arrayLayer);
-	// ToDo: Remove Debug
-	/* auto renderPassContext = m_context->renderPassFactory().create(
-		shadowDebugingTexture,
-		shadowTexture,
-		ClearFlags::Depth | ClearFlags::SolidColor,
-		glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), // Debug: Clear to green
-		-1,
-		arrayLayer
-	); */
-	// Create command encoder
-	wgpu::CommandEncoderDescriptor encoderDesc{};
-	encoderDesc.label = "Shadow 2D Encoder";
-	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
+	if (m_isDebugMode)
+	{
+		// Debug: Clear to solid color for visualization
+		renderPassContext = m_context->renderPassFactory().create(
+			DEBUG_SHADOW_2D_ARRAY,
+			shadowTexture,
+			ClearFlags::SolidColor | ClearFlags::Depth,
+			glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), // Clear to black
+			arrayLayer,
+			arrayLayer
+		);
+	}
+	else
+	{
+		// Normal: Clear depth only
+		renderPassContext = m_context->renderPassFactory().createDepthOnly(shadowTexture, arrayLayer);
+	}
 
-	// Begin render pass
-	wgpu::RenderPassEncoder renderPass = renderPassContext->begin(encoder);
+	// Create command encoder
+	auto encoder = m_context->createCommandEncoder("Shadow 2D Encoder");
+	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
 
 	renderPass.setViewport(0.0f, 0.0f, static_cast<float>(shadowMapSize), static_cast<float>(shadowMapSize), 0.0f, 1.0f);
 	renderPass.setScissorRect(0, 0, shadowMapSize, shadowMapSize);
@@ -526,12 +501,14 @@ void ShadowPass::renderShadowCube(
 	float farPlane
 )
 {
+	ShadowPassCubeUniforms shadowCubeUniforms;
+	shadowCubeUniforms.lightPos = lightPosition;
+	shadowCubeUniforms.farPlane = farPlane;
+	uint32_t cubeMapSize = shadowTexture->getWidth();
+	auto encoder = m_context->createCommandEncoder(("Shadow Cube Encoder " + std::to_string(cubeIndex)).c_str());
+
 	// Perspective projection (90° FOV)
 	glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, farPlane);
-	// Create a single command encoder for all faces
-	wgpu::CommandEncoderDescriptor encoderDesc{};
-	encoderDesc.label = ("Shadow Cube Encoder " + std::to_string(cubeIndex)).c_str();
-	wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
 
 	for (const auto &face : CUBE_FACES)
 	{
@@ -543,10 +520,8 @@ void ShadowPass::renderShadowCube(
 		glm::mat4 lightVP = projection * view;
 
 		// Update uniforms
-		ShadowPassCubeUniforms shadowCubeUniforms;
-		shadowCubeUniforms.lightPosition = lightPosition;
-		shadowCubeUniforms.farPlane = farPlane;
-		m_shadowPassCubeBindGroup->updateBuffer(
+		shadowCubeUniforms.lightViewProjectionMatrix = lightVP;
+		m_shadowPassCubeBindGroup[face.faceIndex]->updateBuffer(
 			0,
 			&shadowCubeUniforms,
 			sizeof(ShadowPassCubeUniforms),
@@ -555,34 +530,40 @@ void ShadowPass::renderShadowCube(
 		);
 
 		uint32_t layerIndex = cubeIndex * 6 + face.faceIndex;
-		std::string faceLabel = "Shadow Cube Face " + std::to_string(face.faceIndex);
 
-		auto renderPassContext = m_context->renderPassFactory().createDepthOnly(shadowTexture, layerIndex);
+		std::shared_ptr<webgpu::WebGPURenderPassContext> renderPassContext = nullptr;
+		if (m_isDebugMode)
+		{
+			// Debug: Clear each face to a solid color for visualization
+			renderPassContext = m_context->renderPassFactory().create(
+				DEBUG_SHADOW_CUBE_ARRAY,
+				shadowTexture,
+				ClearFlags::SolidColor | ClearFlags::Depth,
+				glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), // Clear to black
+				layerIndex,
+				layerIndex
+			);
+		}
+		else
+		{
+			// Normal: Clear depth only
+			renderPassContext = m_context->renderPassFactory().createDepthOnly(shadowTexture, layerIndex);
+		}
 
 		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
 
-		uint32_t cubeMapSize = shadowTexture->getWidth();
 		renderPass.setViewport(0.0f, 0.0f, static_cast<float>(cubeMapSize), static_cast<float>(cubeMapSize), 0.0f, 1.0f);
 		renderPass.setScissorRect(0, 0, cubeMapSize, cubeMapSize);
 
-		renderPass.setBindGroup(0, m_shadowPassCubeBindGroup->getBindGroup(), 0, nullptr);
+		renderPass.setBindGroup(0, m_shadowPassCubeBindGroup[face.faceIndex]->getBindGroup(), 0, nullptr);
 
 		// Render all items
 		renderItems(renderPass, items, indicesToRender, true);
 
-		renderPass.end();
-		renderPass.release();
+		renderPassContext->end(renderPass);
 	}
 
-	// Submit all faces in one go
-	wgpu::CommandBufferDescriptor cmdBufferDesc{};
-	cmdBufferDesc.label = ("Shadow Cube Commands " + std::to_string(cubeIndex)).c_str();
-	wgpu::CommandBuffer commands = encoder.finish(cmdBufferDesc);
-
-	m_context->getDevice().getQueue().submit(1, &commands);
-
-	commands.release();
-	encoder.release();
+	m_context->submitCommandEncoder(encoder, ("Shadow Cube Commands " + std::to_string(cubeIndex)).c_str());
 }
 
 std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(
@@ -591,7 +572,7 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(
 )
 {
 	// Use topology type as cache key (NOT mesh pointer)
-	int cacheKey = static_cast<int>(topology);
+	int cacheKey = static_cast<int>(topology) + (m_isDebugMode ? 1000 : 0);
 
 	// Use different cache for cube shadows
 	auto &cache = isCubeShadow ? m_cubePipelineCache : m_pipelineCache;
@@ -623,8 +604,9 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(
 
 	// Create pipeline for depth-only rendering
 	auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
-		shadowShader,					   // Shader
-		wgpu::TextureFormat::Undefined,	   // Color format
+		shadowShader, // Shader
+		// wgpu::TextureFormat::Undefined,	   // Color format
+		m_isDebugMode ? wgpu::TextureFormat::RGBA8Unorm : wgpu::TextureFormat::Undefined,
 		wgpu::TextureFormat::Depth32Float, // Depth format
 		topology,						   // Topology from mesh
 		wgpu::CullMode::None,			   // Cull mode
@@ -656,7 +638,7 @@ void ShadowPass::renderItems(
 	bool isCubeShadow
 )
 {
-	const webgpu::WebGPUPipeline *currentPipeline = nullptr;
+	std::shared_ptr<webgpu::WebGPUPipeline> currentPipeline = nullptr;
 	const webgpu::WebGPUMesh *currentMesh = nullptr;
 
 	int renderedCount = 0;
@@ -664,51 +646,47 @@ void ShadowPass::renderItems(
 	for (const auto &index : indicesToRender)
 	{
 		if (index >= gpuItems.size())
-			continue;
-
-		const auto &gpuItemOpt = gpuItems[index];
-		if (!gpuItemOpt.has_value())
-			continue;
-		const auto &gpuItem = gpuItemOpt.value();
-		if (!gpuItem.gpuMesh)
-			continue;
-
-		auto meshOpt = gpuItem.gpuMesh->getCPUHandle().get();
-		if (!meshOpt.has_value())
-			continue;
-
-		auto mesh = meshOpt.value();
-
-		// Get or create pipeline based on topology
-		auto pipeline = getOrCreatePipeline(mesh->getTopology(), isCubeShadow);
-		if (!pipeline || !pipeline->isValid())
-			continue;
-
-		// Bind pipeline if changed
-		if (pipeline.get() != currentPipeline)
 		{
-			currentPipeline = pipeline.get();
+			spdlog::warn("Index {} out of bounds (gpuItems.size = {})", index, gpuItems.size());
+			continue;
+		}
+
+		const auto &optionalItem = gpuItems[index];
+		if (!optionalItem.has_value())
+			continue;
+
+		const auto &item = optionalItem.value();
+		if (!item.gpuMesh || !item.gpuMaterial || !item.objectBindGroup)
+			continue;
+
+		if (item.gpuMesh != currentMesh)
+		{
+			auto cpuMesh = item.gpuMesh->getCPUHandle().get();
+			if (!cpuMesh.has_value())
+				continue;
+
+			currentPipeline = getOrCreatePipeline(cpuMesh.value()->getTopology(), isCubeShadow);
+			if (!currentPipeline || !currentPipeline->isValid())
+				continue;
 			renderPass.setPipeline(currentPipeline->getPipeline());
 		}
 
-		renderPass.setBindGroup(1, gpuItem.objectBindGroup->getBindGroup(), 0, nullptr);
-
-		// Bind vertex/index buffers if mesh changed
-		if (gpuItem.gpuMesh != currentMesh)
+		if (!RenderPass::bind(renderPass, currentPipeline->getShaderInfo(), item.objectBindGroup))
 		{
-			currentMesh = gpuItem.gpuMesh;
-			gpuItem.gpuMesh->bindBuffers(renderPass, currentPipeline->getVertexLayout());
+			spdlog::warn("Failed to bind object bind group for shadow pass");
+			continue;
+		}
+		// Bind vertex/index buffers only when mesh changes
+		if (item.gpuMesh != currentMesh)
+		{
+			currentMesh = item.gpuMesh;
+			currentMesh->bindBuffers(renderPass, currentPipeline->getVertexLayout());
 		}
 
 		// Draw submesh
-		if (gpuItem.gpuMesh->isIndexed())
-		{
-			renderPass.drawIndexed(gpuItem.submesh.indexCount, 1, gpuItem.submesh.indexOffset, 0, 0);
-		}
-		else
-		{
-			renderPass.draw(gpuItem.submesh.indexCount, 1, gpuItem.submesh.indexOffset, 0);
-		}
+		item.gpuMesh->isIndexed()
+			? renderPass.drawIndexed(item.submesh.indexCount, 1, item.submesh.indexOffset, 0, 0)
+			: renderPass.draw(item.submesh.indexCount, 1, item.submesh.indexOffset, 0);
 
 		renderedCount++;
 	}

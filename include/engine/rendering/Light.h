@@ -23,7 +23,6 @@ struct DirectionalLight
 {
 	glm::vec3 color = glm::vec3(1.0f);
 	float intensity = 1.0f;
-	glm::vec3 direction = glm::vec3(0.0f, -1.0f, 0.0f); // World-space direction
 	float range = 50.0f;								// Shadow influence area
 	bool castShadows = false;
 	float shadowBias = 0.002f;
@@ -43,10 +42,10 @@ struct PointLight
 {
 	glm::vec3 color = glm::vec3(1.0f);
 	float intensity = 1.0f;
-	glm::vec3 position = glm::vec3(0.0f);
 	float range = 10.0f; // Effective range for culling
 	bool castShadows = false;
 	float shadowBias = 0.005f;
+	float shadowNormalBias = 0.3f;
 	uint32_t shadowMapSize = 1024; // Shadow cube map resolution per face
 	uint32_t shadowPCFKernel = 1;
 };
@@ -58,8 +57,6 @@ struct SpotLight
 {
 	glm::vec3 color = glm::vec3(1.0f);
 	float intensity = 1.0f;
-	glm::vec3 position = glm::vec3(0.0f);
-	glm::vec3 direction = glm::vec3(0.0f, -1.0f, 0.0f);
 	float spotAngle = 0.5f;	   // Inner cone angle (radians)
 	float spotSoftness = 0.2f; // Softness of the cone edge
 	float range = 10.0f;	   // Effective range for culling and attenuation

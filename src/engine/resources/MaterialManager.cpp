@@ -301,6 +301,49 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	return mat;
 }
 
+std::optional<MaterialManager::MaterialPtr> MaterialManager::createPBRMaterial(
+	std::string name,
+	engine::rendering::PBRProperties pbrProperties,
+	const std::unordered_map<std::string, TextureHandle> &textures
+)
+{
+	auto mat = std::make_shared<Material>();
+
+	mat->setName(name);
+	mat->setProperties(pbrProperties);
+
+	MaterialFeature::Flag features = MaterialFeature::Flag::None;
+
+	// Check which textures are provided
+	for (const auto &[slotName, texHandle] : textures)
+	{
+		mat->setTexture(slotName, texHandle);
+		if (slotName == engine::rendering::MaterialTextureSlots::DIFFUSE)
+			features |= MaterialFeature::Flag::UsesBaseColorMap;
+		else if (slotName == engine::rendering::MaterialTextureSlots::NORMAL)
+			features |= MaterialFeature::Flag::UsesNormalMap;
+		else if (slotName == engine::rendering::MaterialTextureSlots::OCCLUSION)
+			features |= MaterialFeature::Flag::UsesOcclusionMap;
+		else if (slotName == engine::rendering::MaterialTextureSlots::EMISSIVE)
+			features |= MaterialFeature::Flag::UsesEmissiveMap;
+		else if (slotName == engine::rendering::MaterialTextureSlots::METALLIC)
+			features |= MaterialFeature::Flag::UsesMetallicMap;
+		else if (slotName == engine::rendering::MaterialTextureSlots::ROUGHNESS)
+			features |= MaterialFeature::Flag::UsesRoughnessMap;
+	}
+
+	mat->setFeatureMask(features);
+
+	// Default shader
+	mat->setShader(engine::rendering::shader::defaults::PBR);
+
+	auto handleOpt = add(mat);
+	if (!handleOpt)
+		return std::nullopt;
+
+	return mat;
+}
+
 std::shared_ptr<TextureManager> MaterialManager::getTextureManager() const
 {
 	return m_textureManager;

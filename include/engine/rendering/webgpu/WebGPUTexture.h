@@ -41,7 +41,7 @@ class WebGPUTexture
 		const wgpu::TextureDescriptor &textureDesc,
 		const wgpu::TextureViewDescriptor &viewDesc,
 		Texture::Type type = Texture::Type::Image,
-		std::shared_ptr<Texture> cpuHandle = nullptr
+		Texture::Handle cpuHandle = Texture::Handle()
 	) : m_texture(texture),
 		m_textureView(textureView),
 		m_textureDesc(textureDesc),
@@ -85,7 +85,12 @@ class WebGPUTexture
 	/**
 	 * @brief Returns the CPU-side texture handle if available.
 	 */
-	std::shared_ptr<Texture> getCPUHandle() const { return m_cpuHandle; }
+	Texture::Handle getCPUHandle() const
+	{
+		if (m_cpuHandle.valid())
+			return m_cpuHandle;
+		return Texture::Handle();
+	}
 
 	/**
 	 * @brief Gets the underlying WebGPU texture.
@@ -95,9 +100,10 @@ class WebGPUTexture
 
 	/**
 	 * @brief Gets the WebGPU texture view.
+	 * @param layer Optional array layer index for array or cube map textures. Default is -1 (entire texture).
 	 * @return The WebGPU texture view object.
 	 */
-	wgpu::TextureView getTextureView() const { return m_textureView; }
+	wgpu::TextureView getTextureView(int layer = -1) const;
 
 	/**
 	 * @brief Gets the width of the texture in pixels.
@@ -153,16 +159,54 @@ class WebGPUTexture
 	 * @param label Optional label for debugging.
 	 * @return A WebGPU texture view for the specified layer.
 	 */
-	wgpu::TextureView getLayerView(uint32_t arrayLayer, const char *label = nullptr) const;
+	wgpu::TextureView get2DArrayLayerView(uint32_t arrayLayer, const char *label = nullptr) const;
 
 	/**
-	 * @brief Creates a cube map view for a specific cube face index.
-	 *        Useful for rendering to individual faces of a cube map texture.
-	 * @param cubeIndex The cube face index (0-5) to create a view for.
+	 * @brief Gets or creates a cube map view for a specific cube face index.
+	 *        Views are cached and reused. Useful for rendering to individual faces of cube map arrays
+	 * @param cubeIndex The cube index to create a view for.
 	 * @param label Optional label for debugging.
 	 * @return A WebGPU texture view for the specified cube face.
 	 */
-	wgpu::TextureView createCubeView(uint32_t cubeIndex, const char *label = nullptr) const;
+	wgpu::TextureView getCubeMapView(uint32_t cubeIndex, const char *label = nullptr) const;
+
+	/**
+	 * @brief Gets or creates a cube map view for a specific cube face index.
+	 *        Views are cached and reused. Useful for rendering to individual faces of cube map arrays
+	 * @param cubeIndex The cube index to create a view for.
+	 * @param faceIndex The face index (0-5) of the cube to create a view for.
+	 * @param label Optional label for debugging.
+	 * @return A WebGPU texture view for the specified cube face.
+	 */
+	wgpu::TextureView getCubeMapFace(uint32_t cubeIndex, uint32_t faceIndex, const char *label = nullptr) const;
+
+	/**
+	 * @brief Checks if the texture view is an array layer view (2D Array or Cube Array).
+	 * @return True if the view is an array layer view, false otherwise.
+	 */
+	bool isArrayLayerView() const
+	{
+		return m_viewDesc.dimension == wgpu::TextureViewDimension::CubeArray
+			   || m_viewDesc.dimension == wgpu::TextureViewDimension::_2DArray;
+	}
+
+	/**
+	 * @brief Checks if the texture view is a 2D array view.
+	 * @return True if the view is a 2D array, false otherwise.
+	 */
+	bool is2DArrayLayerView() const
+	{
+		return m_viewDesc.dimension == wgpu::TextureViewDimension::_2DArray;
+	}
+
+	/**
+	 * @brief Checks if the texture view is a cube map array view.
+	 * @return True if the view is a cube map array, false otherwise.
+	 */
+	bool isCubeMapArray() const
+	{
+		return m_viewDesc.dimension == wgpu::TextureViewDimension::CubeArray;
+	}
 
 	/**
 	 * @brief Maps an ImageFormat::Type to a WebGPU texture format.
@@ -242,13 +286,14 @@ class WebGPUTexture
 
   protected:
 	Texture::Type m_type = Texture::Type::Image;	//< The type of texture.
-	std::shared_ptr<Texture> m_cpuHandle = nullptr; //< Optional CPU-side texture handle.
+	Texture::Handle m_cpuHandle = Texture::Handle(); //< Optional CPU-side texture handle.
 	wgpu::Texture m_texture;						//< The underlying WebGPU texture resource.
 	wgpu::TextureView m_textureView;				//< The view of the WebGPU texture.
 	wgpu::TextureDescriptor m_textureDesc;			//< Descriptor used to create the texture.
 	wgpu::TextureViewDescriptor m_viewDesc;			//< Descriptor used to create the texture view.
 
-	mutable std::unordered_map<uint32_t, wgpu::TextureView> m_layerViews; //< Cached layer views for array layers.
+	mutable std::unordered_map<uint32_t, wgpu::TextureView> m_layerViews;	//< Cached layer views for array layers or cube faces.
+	mutable std::unordered_map<uint32_t, wgpu::TextureView> m_cubeMapViews; //< Cached cube map views for cube faces.
 };
 
 } // namespace engine::rendering::webgpu

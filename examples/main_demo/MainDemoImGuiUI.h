@@ -22,12 +22,17 @@ class MainDemoImGuiUI
 
 	void renderPerformanceWindow();
 
+	void renderShadowDebugWindow();
+
   private:
 	  engine::GameEngine &m_engine;
 	  std::shared_ptr<engine::scene::nodes::Node> m_rootNode;
 	  std::shared_ptr<demo::OrbitCameraController> m_orbitCameraController;
 	  std::shared_ptr<engine::scene::nodes::CameraNode> m_cameraNode;
+	  std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> m_debugShadowCubeArray;
+	  std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> m_debugShadow2DArray;
 	  OrbitCameraState &m_orbitState;
+
 
 	  std::vector<std::shared_ptr<engine::scene::nodes::LightNode>> m_lightNodes;
 	  std::map<size_t, glm::vec3> m_lightDirectionsUI; //< Seperate storage for Euler angles for ImGui because of instability when converting from quaternions every frame.

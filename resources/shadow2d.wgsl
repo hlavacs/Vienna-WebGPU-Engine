@@ -9,6 +9,8 @@ struct VertexOutput {
 
 struct ShadowPass2DUniforms {
     lightViewProjectionMatrix: mat4x4f,
+    lightPos: vec3f,
+    farPlane: f32,
 };
 
 struct ObjectUniforms {
@@ -24,17 +26,20 @@ var<uniform> uObject: ObjectUniforms;
 @vertex
 fn vs_shadow(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let worldPos = uObject.modelMatrix * vec4f(in.position, 1.0);
-    let clipPos = uShadow.lightViewProjectionMatrix * worldPos;
-    out.position = clipPos;
-    
-    out.depth = clipPos.z / clipPos.w;
+    let worldPos = (uObject.modelMatrix * vec4f(in.position, 1.0)).xyz;
+
+    out.position = uShadow.lightViewProjectionMatrix * vec4f(worldPos, 1.0);
+
+    // Linear depth for debug
+    let lightToFrag = worldPos - uShadow.lightPos; // uShadow.lightPos must be uniform
+    out.depth = length(lightToFrag) / uShadow.farPlane;
+
     return out;
 }
 
 @fragment
 fn fs_shadow(in: VertexOutput) -> @location(0) vec4f {
     // Write unbiased depth as grayscale
-    let d = in.depth;
+    let d = clamp(in.depth, 0.0, 1.0);
     return vec4f(d, d, d, 1.0);
 }

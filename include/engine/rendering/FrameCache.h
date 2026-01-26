@@ -44,7 +44,7 @@ struct FrameCache
 	std::vector<LightStruct> lightUniforms;														 ///< GPU-ready light uniform data
 	std::vector<ShadowRequest> shadowRequests;													 ///< Shadow requests for this frame
 	std::vector<ShadowUniform> shadowUniforms;													 ///< GPU-ready shadow uniform data
-	std::vector<RenderTarget> renderTargets;													 ///< Render targets for all cameras this frame
+	std::unordered_map<uint64_t, RenderTarget> renderTargets;									 ///< Render targets for all cameras this frame
 	std::vector<std::optional<RenderItemGPU>> gpuRenderItems;									 ///< Lazy-prepared GPU resources
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> frameBindGroupCache;	 ///< Per-frame bind group cache
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> objectBindGroupCache; ///< Per-object bind group cache

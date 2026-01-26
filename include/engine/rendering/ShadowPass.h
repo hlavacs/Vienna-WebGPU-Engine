@@ -50,6 +50,9 @@ class WebGPUContext;
 class ShadowPass : public RenderPass
 {
   public:
+	std::shared_ptr<webgpu::WebGPUTexture> DEBUG_SHADOW_CUBE_ARRAY; //< Debug copy of cube shadow maps
+	std::shared_ptr<webgpu::WebGPUTexture> DEBUG_SHADOW_2D_ARRAY;	//< Debug copy of 2D shadow maps
+
 	/**
 	 * @brief Construct a shadow pass.
 	 * @param context The WebGPU context.
@@ -91,10 +94,32 @@ class ShadowPass : public RenderPass
 	void setRenderCollector(const RenderCollector *collector) { m_collector = collector; }
 
 	/**
+	 * @brief Set the camera ID for bind group caching.
+	 * @param id Camera identifier.
+	 */
+	void setCameraId(uint64_t id)
+	{
+		m_cameraId = id;
+	}
+
+	/**
 	 * @brief Get the shadow bind group for use in mesh rendering.
 	 * @return Shared pointer to shadow bind group (contains shadow textures and sampler).
 	 */
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBindGroup> getShadowBindGroup() const { return m_shadowBindGroup; }
+
+	/**
+	 * @brief Check if debug mode is enabled.
+	 * In debug mode, shadow maps may be copied for visualization.
+	 * @return True if debug mode is enabled.
+	 */
+	bool isDebugMode() const { return m_isDebugMode; }
+
+	/**
+	 * @brief Enable or disable debug mode.
+	 * In debug mode, shadow maps may be copied for visualization.
+	 */
+	void setDebugMode(bool debugMode) { m_isDebugMode = debugMode; }
 
   private:
 	/**
@@ -105,6 +130,8 @@ class ShadowPass : public RenderPass
 	 * @param shadowTexture Target depth texture (owned by caller).
 	 * @param arrayLayer Array layer index to render into.
 	 * @param lightViewProjection Light's view-projection matrix (calculated by caller).
+	 * @param lightPosition Position of the light in world space.
+	 * @param farPlane Far plane distance for the light's projection matrix.
 	 *
 	 * Caller responsibilities:
 	 * - Filter items to only those visible from light
@@ -116,7 +143,9 @@ class ShadowPass : public RenderPass
 		const std::vector<size_t> &indicesToRender, // only items visible to this light
 		const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
 		uint32_t arrayLayer,
-		const glm::mat4 &lightViewProjection
+		const glm::mat4 &lightViewProjection,
+		const glm::vec3 &lightPosition,
+		float farPlane
 	);
 
 	/**
@@ -143,7 +172,6 @@ class ShadowPass : public RenderPass
 		float farPlane
 	);
 
-  private:
 	/**
 	 * @brief Compute shadow matrix and create ShadowUniform from a ShadowRequest.
 	 * This is where per-camera shadow matrices are computed.
@@ -156,7 +184,8 @@ class ShadowPass : public RenderPass
 	 */
 	ShadowUniform computeShadowUniform(
 		const ShadowRequest &request,
-		uint32_t cascadeIndex = 0,
+		uint32_t cascadeIndex,
+		glm::vec3 cameraPosition,
 		float cameraNear = 0.1f,
 		float cameraFar = 100.0f,
 		float splitLambda = 0.5f
@@ -204,6 +233,9 @@ class ShadowPass : public RenderPass
 	// External dependencies (set via setters)
 	const RenderCollector *m_collector = nullptr;
 
+	size_t m_cameraId = 0; //< Current camera ID for multi-camera setups
+	bool m_isDebugMode = false;
+
 	// Shadow map resources
 	std::shared_ptr<webgpu::WebGPUTexture> m_shadow2DArray;
 	std::shared_ptr<webgpu::WebGPUTexture> m_shadowCubeArray;
@@ -220,8 +252,8 @@ class ShadowPass : public RenderPass
 	std::shared_ptr<webgpu::WebGPUBuffer> m_shadowPassCubeUniformsBuffer; //< Cube shadow uniforms
 
 	// Reusable bind groups (updated per-light via writeBuffer)
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowPass2DBindGroup;	//< For 2D shadows
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowPassCubeBindGroup; //< For cube shadows
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowPass2DBindGroup;	   //< For 2D shadows
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowPassCubeBindGroup[6]; //< For cube shadows
 
 	// Pipeline caching (by topology type, NOT per-mesh instance)
 	// Using weak_ptr: if pipeline is released elsewhere, we'll recreate it

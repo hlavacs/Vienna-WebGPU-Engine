@@ -64,6 +64,19 @@ class MaterialManager : public ResourceManagerBase<engine::rendering::Material>
 	);
 
 	/**
+	 * @brief Creates a PBR Material with specified properties and associated textures.
+	 * @param name The name of the material.
+	 * @param pbrProperties The PBR properties for the material.
+	 * @param textures A map of texture slot names to texture handles.
+	 */
+	[[nodiscard]]
+	std::optional<MaterialPtr> createPBRMaterial(
+		std::string name,
+		engine::rendering::PBRProperties pbrProperties,
+		const std::unordered_map<std::string, TextureHandle> &textures
+	);
+
+	/**
 	 * @brief Access the underlying TextureManager.
 	 * @return Shared pointer to the TextureManager.
 	 */
