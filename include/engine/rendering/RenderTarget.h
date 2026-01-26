@@ -35,6 +35,7 @@ struct RenderTarget
 	glm::vec4 backgroundColor;
 	std::optional<Texture::Handle> cpuTarget;
 	std::shared_ptr<webgpu::WebGPUTexture> gpuTexture; // actual GPU render target texture
+	int layerIndex{-1};								   // for texture arrays or cube maps
 
 	/**
 	 * @brief Constructs FrameUniforms from this RenderTarget.

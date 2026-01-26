@@ -78,7 +78,7 @@ void CompositePass::render(FrameCache &frameCache)
 	const uint32_t surfaceW = surfaceTex->getWidth();
 	const uint32_t surfaceH = surfaceTex->getHeight();
 
-	for (const auto &target : frameCache.renderTargets)
+	for (const auto &[targetId, target] : frameCache.renderTargets)
 	{
 		if (!target.gpuTexture)
 			continue;
@@ -88,7 +88,7 @@ void CompositePass::render(FrameCache &frameCache)
 		renderPass.setScissorRect(uint32_t(vpPx.x), uint32_t(vpPx.y), uint32_t(vpPx.z), uint32_t(vpPx.w));
 
 		// --- Get or create bind group for this texture ---
-		auto bindGroup = getOrCreateBindGroup(target.gpuTexture);
+		auto bindGroup = getOrCreateBindGroup(target.gpuTexture, target.layerIndex);
 		if (!bindGroup)
 		{
 			spdlog::warn("CompositePass: Failed to create bind group for texture");
@@ -111,13 +111,14 @@ void CompositePass::cleanup()
 }
 
 std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
-	const std::shared_ptr<webgpu::WebGPUTexture> &texture
+	const std::shared_ptr<webgpu::WebGPUTexture> &texture,
+	int layerIndex
 )
 {
 	if (!texture)
 		return nullptr;
 
-	auto cacheKey = reinterpret_cast<uint64_t>(texture.get());
+	auto cacheKey = reinterpret_cast<uint64_t>(texture.get()) ^ static_cast<uint64_t>(layerIndex);
 
 	auto it = m_bindGroupCache.find(cacheKey);
 	if (it != m_bindGroupCache.end())
@@ -136,7 +137,7 @@ std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
 		entry.binding = layoutEntry.binding;
 
 		if (layoutEntry.texture.sampleType != wgpu::TextureSampleType::Undefined)
-			entry.textureView = texture->getTextureView();
+			entry.textureView = texture->getTextureView(layerIndex);
 		else if (layoutEntry.sampler.type != wgpu::SamplerBindingType::Undefined)
 			entry.sampler = m_sampler;
 

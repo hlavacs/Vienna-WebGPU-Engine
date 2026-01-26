@@ -89,12 +89,10 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromColor(
 
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
 	auto texturePtr = std::make_shared<WebGPUTexture>(
-
 		gpuTexture,
 		view,
 		desc,
 		viewDesc
-
 	);
 	m_colorTextureCache[std::make_tuple(r, g, b, a, width, height)] = texturePtr;
 	return texturePtr;
@@ -223,14 +221,12 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 	wgpu::TextureView textureView = gpuTexture.createView(viewDesc);
 
 	return std::make_shared<WebGPUTexture>(
-
 		gpuTexture,
 		textureView,
 		desc,
 		viewDesc,
 		texture.getType(),
-		textureOpt.value()
-
+		textureHandle
 	);
 }
 
@@ -282,14 +278,11 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createRenderTarget(
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
 
 	auto texturePtr = std::make_shared<WebGPUTexture>(
-
 		gpuTexture,
 		view,
 		textureDesc,
 		viewDesc,
-		Texture::Type::RenderTarget,
-		nullptr
-
+		Texture::Type::RenderTarget
 	);
 
 	// Cache for reuse
@@ -312,12 +305,10 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
 	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(textureDesc);
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
 	return std::make_shared<WebGPUTexture>(
-
 		gpuTexture,
 		view,
 		textureDesc,
 		viewDesc
-
 	);
 }
 
@@ -393,59 +384,77 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::getDefaultNormalTexture()
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createShadowMap2DArray(
 	uint32_t size,
-	uint32_t arrayLayers
+	uint32_t arrayLayers,
+	wgpu::TextureFormat format
 )
 {
+	if (format == wgpu::TextureFormat::Undefined)
+		format = wgpu::TextureFormat::Depth32Float;
 	wgpu::TextureDescriptor textureDesc{};
 	textureDesc.label = "Shadow Maps 2D Array";
 	textureDesc.size = {size, size, arrayLayers};
 	textureDesc.mipLevelCount = 1;
 	textureDesc.sampleCount = 1;
 	textureDesc.dimension = wgpu::TextureDimension::_2D;
-	textureDesc.format = wgpu::TextureFormat::Depth32Float;
+	textureDesc.format = format;
 	textureDesc.usage = static_cast<WGPUTextureUsage>(
 		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
 	);
 
 	wgpu::TextureViewDescriptor viewDesc{};
 	viewDesc.label = "Shadow Maps 2D Array View";
-	viewDesc.format = wgpu::TextureFormat::Depth32Float;
+	viewDesc.format = format;
 	viewDesc.dimension = wgpu::TextureViewDimension::_2DArray;
 	viewDesc.baseMipLevel = 0;
 	viewDesc.mipLevelCount = 1;
 	viewDesc.baseArrayLayer = 0;
 	viewDesc.arrayLayerCount = arrayLayers;
-	viewDesc.aspect = wgpu::TextureAspect::DepthOnly;
+	viewDesc.aspect = (format == wgpu::TextureFormat::Depth32Float
+					   || format == wgpu::TextureFormat::Depth32FloatStencil8
+					   || format == wgpu::TextureFormat::Depth24Plus
+					   || format == wgpu::TextureFormat::Depth24PlusStencil8
+					   || format == wgpu::TextureFormat::Depth16Unorm)
+						  ? wgpu::TextureAspect::DepthOnly
+						  : wgpu::TextureAspect::All;
 
 	return createFromDescriptors(textureDesc, viewDesc);
 }
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createShadowMapCubeArray(
 	uint32_t size,
-	uint32_t numCubes
+	uint32_t numCubes,
+	wgpu::TextureFormat format
 )
 {
+	if (format == wgpu::TextureFormat::Undefined)
+		format = wgpu::TextureFormat::Depth32Float;
+
 	wgpu::TextureDescriptor textureDesc{};
 	textureDesc.label = "Shadow Maps Cube Array";
 	textureDesc.size = {size, size, 6 * numCubes};
 	textureDesc.mipLevelCount = 1;
 	textureDesc.sampleCount = 1;
 	textureDesc.dimension = wgpu::TextureDimension::_2D;
-	textureDesc.format = wgpu::TextureFormat::Depth32Float;
+	textureDesc.format = format;
 	textureDesc.usage = static_cast<WGPUTextureUsage>(
 		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
 	);
 
-	// DEFAULT VIEW: 2D ARRAY
 	wgpu::TextureViewDescriptor viewDesc{};
-	viewDesc.label = "Shadow Maps Cube Array (2DArray View)";
-	viewDesc.format = wgpu::TextureFormat::Depth32Float;
+	viewDesc.label = "Shadow Maps Cube Array";
+	viewDesc.format = format;
 	viewDesc.dimension = wgpu::TextureViewDimension::CubeArray;
 	viewDesc.baseMipLevel = 0;
 	viewDesc.mipLevelCount = 1;
 	viewDesc.baseArrayLayer = 0;
 	viewDesc.arrayLayerCount = 6 * numCubes;
-	viewDesc.aspect = wgpu::TextureAspect::DepthOnly;
+	viewDesc.aspect = (format == wgpu::TextureFormat::Depth32Float
+					   || format == wgpu::TextureFormat::Depth32FloatStencil8
+					   || format == wgpu::TextureFormat::Depth24Plus
+					   || format == wgpu::TextureFormat::Depth24PlusStencil8
+					   || format == wgpu::TextureFormat::Depth16Unorm)
+						  ? wgpu::TextureAspect::DepthOnly
+						  : wgpu::TextureAspect::All;
 
 	return createFromDescriptors(textureDesc, viewDesc);
 }

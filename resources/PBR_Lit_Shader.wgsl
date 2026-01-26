@@ -289,31 +289,62 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
 
         return visibility / samples;
     } 
-    // Handle cube shadows (point lights)
     else if (light.light_type == 2u) {
         let shadow = u_shadows[light.shadow_index];
 
-        // Linear distance from light to fragment
-        let to_light = world_pos - shadow.light_pos;
-        let linear_depth = length(to_light);
+        // Vector from light to fragment
+        let to_frag = world_pos - shadow.light_pos;
+        let linear_depth = length(to_frag);
 
-        let current_depth = linear_depth - shadow.bias; // bias in world units
+        // Outside light range → fully lit
+        if (linear_depth >= shadow.far) {
+            return 1.0;
+        }
 
-        var visibility = 0.0;
+        // Compute normalized direction for cube map
+        let sample_dir = normalize(to_frag);
+
+        // Bias based on slope
+        let L_toward = -sample_dir; // direction toward light
+        let ndotl = max(dot(normal, L_toward), 0.0);
+        let slope_bias = shadow.normal_bias * (1.0 - ndotl);
+        let final_bias = shadow.bias + slope_bias;
+
+        // Compute linear depth normalized [0,1]
+        let current_depth = clamp((linear_depth - final_bias) / shadow.far, 0.0, 1.0);
+
+        // -------------------
+        // PCF sampling
+        // -------------------
+        var visibility: f32 = 0.0;
+        var samples: f32 = 0.0;
         let kernel = i32(shadow.pcf_kernel);
-        var samples = 0.0;
+        let radius = shadow.texel_size * (linear_depth / shadow.far);
 
-        // Use simple cube PCF: sample small offsets in 3D directions
+        // Create tangent space basis for sampling
+        let w = sample_dir;
+        var up = vec3f(0.0, 1.0, 0.0);
+        if (abs(w.y) > 0.999) { up = vec3f(1.0, 0.0, 0.0); }
+        let u = normalize(cross(up, w));
+        let v = cross(w, u);
+
         for (var x = -kernel; x <= kernel; x = x + 1) {
             for (var y = -kernel; y <= kernel; y = y + 1) {
                 for (var z = -kernel; z <= kernel; z = z + 1) {
-                    let offset = vec3f(f32(x), f32(y), f32(z)) * shadow.texel_size;
-                    let sample_dir = normalize(to_light + offset);
-                    visibility += textureSampleCompare(shadow_maps_cube, shadow_sampler, sample_dir, shadow.textureIndex, current_depth);
+                    let offset = u * f32(x) + v * f32(y) + w * f32(z);
+                    let sample_dir_offset = normalize(to_frag + offset * radius);
+
+                    visibility += textureSampleCompare(
+                        shadow_maps_cube,
+                        shadow_sampler,
+                        sample_dir_offset,
+                        shadow.textureIndex,
+                        current_depth
+                    );
                     samples += 1.0;
                 }
             }
-		} 
+        }
 
         return visibility / samples;
     }
@@ -348,35 +379,35 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let f0_dielectric = pow((ior - 1.0) / (ior + 1.0), 2.0);
     let f0 = mix(vec3f(f0_dielectric), base_color, metallic);
 
-    var lo = vec3f(0.0);
+    var Lo = vec3f(0.0);
     let world_pos = in.world_position.xyz;
 
     for (var i: u32 = 0u; i < u_lights.count; i = i + 1u) {
         let light = u_lights.lights[i];
         if (light.light_type == 0u) {
-            lo += base_color * u_material.ambient.rgb * u_material.ambient.w * light.color * light.intensity * ao;
+            Lo += base_color * u_material.ambient.rgb * u_material.ambient.w * light.color * light.intensity * ao;
             continue;
         }
 
-        var l = vec3f(0.0);
+        var L = vec3f(0.0);
         var attenuation = 1.0;
 
         if (light.light_type == 1u) {
-            l = get_direction_from_transform(light.transform);
+            L = get_direction_from_transform(light.transform);
         } else if (light.light_type == 2u) {
             let light_pos = get_position_from_transform(light.transform);
             let to_light = light_pos - world_pos;
             let dist = length(to_light);
-            l = normalize(to_light);
-            attenuation = 1.0 / max(dist * dist, 0.01);
+            L = normalize(to_light);
+            attenuation = 1.0 / max(dist * dist, 0.001);
         } else if (light.light_type == 3u) {
             let light_pos = get_position_from_transform(light.transform);
             let to_light = light_pos - world_pos;
             let dist = length(to_light);
-            l = normalize(to_light);
+            L = normalize(to_light);
 
             let spot_dir = get_direction_from_transform(light.transform);
-            let cos_theta = dot(l, spot_dir);
+            let cos_theta = dot(L, spot_dir);
             let inner_ratio = 1.0 - max(0.01, light.spot_softness);
             let cos_outer = cos(light.spot_angle);
             let cos_inner = cos(light.spot_angle * inner_ratio);
@@ -387,16 +418,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
             attenuation = select(0.0, spot_effect * dist_attenuation * range_factor, cos_theta > cos_outer);
         }
 
-        let h = normalize(v + l);
-        let n_dot_l = max(dot(normal, l), 0.0);
-        let n_dot_v = max(dot(normal, v), 0.0);
+        let H = normalize(v + L);
+        let n_dot_l = max(dot(normal, L), 0.0);
         if (n_dot_l <= 0.0) { continue; }
+        let n_dot_v = max(dot(normal, v), 0.0);
 
         let shadow = calculate_shadow(world_pos, normal, light);
 
-        let d = distribution_ggx(normal, h, roughness);
-        let g = geometry_smith(normal, v, l, roughness);
-        let f = fresnel_schlick(max(dot(h, v), 0.0), f0);
+        let d = distribution_ggx(normal, H, roughness);
+        let g = geometry_smith(normal, v, L, roughness);
+        let f = fresnel_schlick(max(dot(H, v), 0.0), f0);
 
         let numerator = d * g * f;
         let denominator = max(4.0 * n_dot_v * n_dot_l, 0.001);
@@ -406,9 +437,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let k_d = (vec3f(1.0) - k_s) * (1.0 - metallic);
 
         let radiance = light.color * light.intensity * attenuation;
-        lo += (k_d * base_color / PI + specular) * radiance * n_dot_l * shadow;
+        Lo += (k_d * base_color / PI + specular) * radiance * n_dot_l * shadow;
     }
 
-    let color = lo + emission;
-    return vec4f(color, u_material.diffuse.w);
+    let color = Lo + emission;
+    return vec4f(color, 1.0);
 }

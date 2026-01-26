@@ -64,10 +64,12 @@ class CompositePass : public RenderPass
 	/**
 	 * @brief Get or create a bind group for the given texture.
 	 * @param texture The texture to create a bind group for.
+	 * @param layerIndex Optional array layer index for array or cube map textures. Default is -1 (entire texture).
 	 * @return Cached or newly created bind group.
 	 */
 	std::shared_ptr<webgpu::WebGPUBindGroup> getOrCreateBindGroup(
-		const std::shared_ptr<webgpu::WebGPUTexture> &texture
+		const std::shared_ptr<webgpu::WebGPUTexture> &texture,
+		int layerIndex = -1
 	);
 
 	std::shared_ptr<webgpu::WebGPUPipeline> m_pipeline;

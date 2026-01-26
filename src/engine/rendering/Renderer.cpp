@@ -110,8 +110,16 @@ bool Renderer::renderFrame(
 		spdlog::warn("renderFrame called with no render targets");
 		return false;
 	}
+
+	std::unordered_map<uint64_t, RenderTarget> uniqueRenderTargets;
 	for (const auto &target : renderTargets)
 	{
+		if(uniqueRenderTargets.find(target.cameraId) != uniqueRenderTargets.end())
+		{
+			spdlog::warn("Duplicate render target for cameraId {} detected; skipping", target.cameraId);
+			continue;
+		}
+		uniqueRenderTargets[target.cameraId] = target;
 		if (m_frameCache.frameBindGroupCache[target.cameraId] == nullptr)
 		{
 			m_frameCache.frameBindGroupCache[target.cameraId] = m_context->bindGroupFactory().createBindGroup(m_frameBindGroupLayout);
@@ -126,7 +134,7 @@ bool Renderer::renderFrame(
 		);
 	}
 	m_frameCache.lights = renderCollector.getLights();
-	m_frameCache.renderTargets = std::move(renderTargets);
+	m_frameCache.renderTargets = std::move(uniqueRenderTargets);
 	m_frameCache.time = time;
 
 	// Extract lights and shadow requests (camera-independent)
@@ -139,10 +147,11 @@ bool Renderer::renderFrame(
 
 	// Render shadow maps (camera-aware - computes matrices per frame)
 	m_shadowPass->setRenderCollector(&renderCollector);
-	m_shadowPass->render(m_frameCache);
 
-	for (auto &target : m_frameCache.renderTargets)
+	for (auto &[targetId, target] : m_frameCache.renderTargets)
 	{
+		m_shadowPass->setCameraId(target.cameraId);
+		m_shadowPass->render(m_frameCache);
 		renderToTexture(
 			renderCollector,
 			target
@@ -301,13 +310,6 @@ void Renderer::compositeTexturesToSurface(
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
 )
 {
-	/* m_frameCache.renderTargets[0].gpuTexture = m_context->textureFactory().createRenderTarget(
-		-1,
-		2048,
-		2048,
-		wgpu::TextureFormat::RGBA8Unorm
-	); */
-
 	auto renderPassContext = m_context->renderPassFactory().create(m_surfaceTexture);
 	m_compositePass->setRenderPassContext(renderPassContext);
 	m_compositePass->render(m_frameCache);

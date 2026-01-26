@@ -85,6 +85,24 @@ class Renderer
 	 */
 	void onResize(uint32_t width, uint32_t height);
 
+	/**
+	 * @brief Get the ShadowPass instance.
+	 * @return Reference to ShadowPass.
+	 */
+	ShadowPass& getShadowPass() { return *m_shadowPass; }
+
+	/**
+	 * @brief Get the MeshPass instance.
+	 * @return Reference to MeshPass.
+	 */
+	MeshPass& getMeshPass() { return *m_meshPass; }
+
+	/**
+	 * @brief Get the CompositePass instance.
+	 * @return Reference to CompositePass.
+	 */
+	CompositePass& getCompositePass() { return *m_compositePass; }
+
   private:
 	// ========================================
 	// Frame Orchestration (High-Level Flow)

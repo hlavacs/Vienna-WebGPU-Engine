@@ -399,7 +399,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPass2DShad
 				engine::rendering::VertexLayout::Position
 			)
 			.addBindGroup(
-				bindgroup::defaults::SHADOW,
+				bindgroup::defaults::SHADOW_PASS_2D,
 				webgpu::BindGroupReuse::PerFrame,
 				webgpu::BindGroupType::Shadow
 			)
@@ -433,7 +433,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPassCubeSh
 				engine::rendering::VertexLayout::Position
 			)
 			.addBindGroup(
-				bindgroup::defaults::SHADOW,
+				bindgroup::defaults::SHADOW_PASS_CUBE,
 				webgpu::BindGroupReuse::PerFrame,
 				webgpu::BindGroupType::Shadow
 			)
@@ -443,6 +443,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPassCubeSh
 				sizeof(ShadowPassCubeUniforms),
 				WGPUShaderStage_Vertex | WGPUShaderStage_Fragment
 			)
+			.addObjectBindGroup()
 			.build();
 
 	return shaderInfo;

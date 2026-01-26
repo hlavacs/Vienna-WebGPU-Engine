@@ -135,6 +135,17 @@ int main(int argc, char **argv)
 	modelNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelPlane.value());
 	modelNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 0.0f, 0.0f));
 	modelNode->getTransform()->setLocalScale(glm::vec3(10.0f, 1.0f, 10.0f));
+	auto floorPBRProperties = engine::rendering::PBRProperties();
+	auto diffuseTexture = resourceManager->m_textureManager->createTextureFromFile(PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg"));
+	auto normalTexture = resourceManager->m_textureManager->createTextureFromFile(PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png"));
+	auto floorMaterial = resourceManager->m_materialManager->createPBRMaterial(
+		"Floor_Material",
+		floorPBRProperties,
+		{{engine::rendering::MaterialTextureSlots::DIFFUSE, diffuseTexture.value()->getHandle()},
+		 {engine::rendering::MaterialTextureSlots::NORMAL, normalTexture.value()->getHandle()}}
+	);
+	auto mesh = modelNode->getModel().get().value();
+	mesh->getSubmeshes()[0].material = floorMaterial.value()->getHandle();
 	rootNode->addChild(modelNode);
 
 	// Create an UpdateNode to handle orbit camera input
@@ -150,7 +161,10 @@ int main(int argc, char **argv)
 						   { mainDemoImGuiUI.render(); });
 	imguiManager->addFrame([&]()
 						   { mainDemoImGuiUI.renderPerformanceWindow(); });
-	imguiManager->addFrame([&]() {
+	imguiManager->addFrame([&]()
+						   { mainDemoImGuiUI.renderShadowDebugWindow(); });
+	imguiManager->addFrame([&]()
+						   {
 		ImGui::Begin("Day-Night Cycle Controls");
 		float hour = dayNightCycle->getHour();
 		if (ImGui::SliderFloat("Hour of Day", &hour, 0.0f, 24.0f))
@@ -167,8 +181,7 @@ int main(int argc, char **argv)
 		{
 			dayNightCycle->setCycleDuration(cycleDuration);
 		}
-		ImGui::End();
-	});
+		ImGui::End(); });
 
 	// Load the scene (makes it active)
 	sceneManager->loadScene("Main");

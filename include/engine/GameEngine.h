@@ -74,6 +74,8 @@ class GameEngine
 	// Access the engine context for nodes and subsystems
 	EngineContext *getEngineContext() { return &m_engineContext; }
 
+	std::weak_ptr<engine::rendering::Renderer> getRenderer() { return m_renderer; }
+
 	// Access the input manager
 	input::InputManager *getInputManager() { return &m_inputManager; }
 
