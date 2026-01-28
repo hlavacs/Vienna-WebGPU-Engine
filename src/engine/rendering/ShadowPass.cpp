@@ -38,12 +38,12 @@ struct CubeFace
 };
 
 constexpr CubeFace CUBE_FACES[6] = {
-    {glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0},   // -X (right)
-    {glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1},  // +X (left)
-    {glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), 2},  // +Y (up)
-    {glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 3},  // -Y (down)
-    {glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 4},   // +Z (forward)
-    {glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 5}   // -Z (backward)
+	{glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0}, // -X (right)
+	{glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1},	// +X (left)
+	{glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), 2}, // +Y (up)
+	{glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 3}, // -Y (down)
+	{glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 4},	// +Z (forward)
+	{glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 5}	// -Z (backward)
 };
 
 ShadowPass::ShadowPass(std::shared_ptr<webgpu::WebGPUContext> context) :
@@ -153,139 +153,96 @@ bool ShadowPass::initialize()
 	return true;
 }
 
-std::vector<float> ShadowPass::computeCascadeSplits(
-	uint32_t cascadeCount,
-	float cameraNear,
-	float cameraFar,
-	float lambda
-)
-{
-	std::vector<float> splits(cascadeCount + 1);
-	splits[0] = cameraNear;
-	splits[cascadeCount] = cameraFar;
-
-	float range = cameraFar - cameraNear;
-	float ratio = cameraFar / cameraNear;
-
-	for (uint32_t i = 1; i < cascadeCount; ++i)
-	{
-		float p = static_cast<float>(i) / static_cast<float>(cascadeCount);
-
-		// Uniform split
-		float uniformSplit = cameraNear + range * p;
-
-		// Logarithmic split
-		float logSplit = cameraNear * std::pow(ratio, p);
-
-		// Interpolate between uniform and logarithmic
-		splits[i] = lambda * logSplit + (1.0f - lambda) * uniformSplit;
-	}
-
-	return splits;
-}
-
-ShadowUniform ShadowPass::computeShadowUniform(
+std::vector<ShadowUniform> ShadowPass::computeShadowUniforms(
 	const ShadowRequest &request,
-	uint32_t cascadeIndex,
-	glm::vec3 cameraPosition,
-	float cameraNear,
-	float cameraFar,
+	const engine::rendering::RenderTarget &renderTarget,
 	float splitLambda
 )
 {
-	ShadowUniform shadowUniform{};
+	std::vector<ShadowUniform> result;
 	const Light *light = request.light;
+	auto cameraNear = renderTarget.nearPlane;
+	auto cameraFar = renderTarget.farPlane;
 
-	// Set common properties based on light type
-	std::visit(
-		[&](auto &&specificLight)
-		{
-			using T = std::decay_t<decltype(specificLight)>;
+	std::visit([&](auto &&specificLight)
+			   {
+		using T = std::decay_t<decltype(specificLight)>;
 
-			if constexpr (std::is_same_v<T, DirectionalLight>)
-			{
-				// Compute directional light shadow matrix
-				glm::vec3 dir = glm::normalize(light->getTransform()[2]); // Extract forward direction from transform
-				glm::vec3 pos = -dir * specificLight.range;
+		if constexpr (std::is_same_v<T, DirectionalLight>) {
+			glm::vec3 dir = glm::normalize(light->getTransform()[2]);
+			glm::mat4 lightView = glm::lookAt(-dir * specificLight.range, glm::vec3(0), glm::vec3(0, 1, 0));
 
-				glm::mat4 viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
+			if (request.cascadeCount > 1) {
+				auto cascades = engine::math::Frustum::computeCascades(
+					renderTarget.frustum, renderTarget.viewMatrix, lightView,
+					cameraNear, cameraFar, specificLight.range, request.cascadeCount, splitLambda
+				);
 
-				// For CSM, compute cascade-specific projection
-				if (request.cascadeCount > 1)
-				{
-					// Compute cascade splits
-					auto splits = computeCascadeSplits(request.cascadeCount, cameraNear, cameraFar, splitLambda);
-
-					float cascadeNear = splits[cascadeIndex];
-					float cascadeFar = splits[cascadeIndex + 1];
-
-					// Store the cascade split distance for shader selection
-					shadowUniform.cascadeSplit = cascadeFar;
-
-					// Compute orthographic bounds for this cascade
-					// TODO: This should ideally fit the camera frustum slice tightly
-					// For now, use a simple range based on cascade distance
-					float r = specificLight.range * (cascadeFar / cameraFar);
-					glm::mat4 projectionMatrix = glm::ortho(-r, r, -r, r, -specificLight.range, specificLight.range * 2.0f);
-
-					shadowUniform.viewProj = projectionMatrix * viewMatrix;
+				for (uint32_t i = 0; i < request.cascadeCount; ++i) {
+					ShadowUniform u;
+					u.viewProj = cascades[i].viewProj;
+					u.near = cascades[i].near;
+					u.far = cascades[i].far;
+					u.cascadeSplit = cascades[i].cascadeSplit;
+					
+					u.bias = specificLight.shadowBias;
+					u.normalBias = specificLight.shadowNormalBias;
+					u.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+					u.pcfKernel = specificLight.shadowPCFKernel;
+					u.shadowType = 0;
+					u.textureIndex = request.textureIndexStart + i;
+					result.push_back(u);
 				}
-				else
-				{
-					// Single shadow map (non-CSM)
-					float r = specificLight.range;
-					glm::mat4 projectionMatrix = glm::ortho(-r, r, -r, r, -specificLight.range, specificLight.range * 2.0f);
-					shadowUniform.viewProj = projectionMatrix * viewMatrix;
-					shadowUniform.cascadeSplit = cameraFar; // Use camera far as split
-				}
-
-				shadowUniform.bias = specificLight.shadowBias;
-				shadowUniform.normalBias = specificLight.shadowNormalBias;
-				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
-				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
-				shadowUniform.shadowType = 0; // 2D shadow
-				shadowUniform.far = specificLight.range;
-				shadowUniform.near = 0.1f;
+			} else {
+				ShadowUniform u;
+				float r = specificLight.range;
+				u.viewProj = glm::ortho(-r, r, -r, r, -specificLight.range, specificLight.range * 2.0f) * lightView;
+				u.near = cameraNear;
+				u.far = cameraFar;
+				u.cascadeSplit = cameraFar;
+				u.bias = specificLight.shadowBias;
+				u.normalBias = specificLight.shadowNormalBias;
+				u.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+				u.pcfKernel = specificLight.shadowPCFKernel;
+				u.shadowType = 0;
+				u.textureIndex = request.textureIndexStart;
+				result.push_back(u);
 			}
-			else if constexpr (std::is_same_v<T, SpotLight>)
-			{
-				// Compute spot light shadow matrix
-				glm::vec3 pos = light->getTransform()[3]; // Extract position from transform
-				// Extract forward direction from transform (spotlight points in -Z direction)
-				glm::vec3 dir = glm::normalize(light->getTransform()[2]);
+		}
+		else if constexpr (std::is_same_v<T, SpotLight>) {
+			ShadowUniform u;
+			glm::vec3 pos = light->getTransform()[3];
+			glm::vec3 dir = glm::normalize(light->getTransform()[2]);
+			u.viewProj = glm::perspective(specificLight.spotAngle * 2.0f, 1.0f, 0.1f, specificLight.range)
+				* glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
+			u.near = 0.1f;
+			u.far = specificLight.range;
+			u.cascadeSplit = specificLight.range;
+			u.bias = specificLight.shadowBias;
+			u.normalBias = specificLight.shadowNormalBias;
+			u.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+			u.pcfKernel = specificLight.shadowPCFKernel;
+			u.shadowType = 0;
+			u.textureIndex = request.textureIndexStart;
+			result.push_back(u);
+		}
+		else if constexpr (std::is_same_v<T, PointLight>) {
+			ShadowUniform u;
+			u.lightPos = light->getTransform()[3];
+			u.near = 0.1f;
+			u.far = specificLight.range;
+			u.cascadeSplit = specificLight.range;
+			u.bias = specificLight.shadowBias;
+			u.normalBias = specificLight.shadowNormalBias;
+			u.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
+			u.pcfKernel = specificLight.shadowPCFKernel;
+			u.shadowType = 1;
+			u.textureIndex = request.textureIndexStart;
+			result.push_back(u);
+		} },
+			   light->getData());
 
-				glm::mat4 viewMatrix = glm::lookAt(pos, pos + dir, glm::vec3(0, 1, 0));
-				glm::mat4 projectionMatrix = glm::perspective(specificLight.spotAngle * 2.0f, 1.0f, 0.1f, specificLight.range);
-
-				shadowUniform.viewProj = projectionMatrix * viewMatrix;
-				shadowUniform.bias = specificLight.shadowBias;
-				shadowUniform.normalBias = specificLight.shadowNormalBias;
-				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
-				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
-				shadowUniform.shadowType = 0;					  // 2D shadow
-				shadowUniform.cascadeSplit = specificLight.range; // Use range as split
-				shadowUniform.far = specificLight.range;
-				shadowUniform.near = 0.1f;
-			}
-			else if constexpr (std::is_same_v<T, PointLight>)
-			{
-				// Point light - store position for cube map rendering
-				shadowUniform.lightPos = light->getTransform()[3]; // Extract position from transform
-				shadowUniform.bias = specificLight.shadowBias;
-				shadowUniform.texelSize = 1.0f / static_cast<float>(specificLight.shadowMapSize);
-				shadowUniform.normalBias = specificLight.shadowNormalBias;
-				shadowUniform.pcfKernel = specificLight.shadowPCFKernel;
-				shadowUniform.shadowType = 1;					  // Cube shadow
-				shadowUniform.cascadeSplit = specificLight.range; // Use range as split
-				shadowUniform.far = specificLight.range;
-				shadowUniform.near = 0.1f;
-			}
-		},
-		light->getData()
-	);
-
-	shadowUniform.textureIndex = request.textureIndexStart + cascadeIndex;
-	return shadowUniform;
+	return result;
 }
 
 void ShadowPass::render(FrameCache &frameCache)
@@ -299,13 +256,7 @@ void ShadowPass::render(FrameCache &frameCache)
 	if (frameCache.shadowRequests.empty())
 		return;
 
-	// TODO: Get camera near/far from first render target (multi-camera CSM needs more work)
 	const auto &renderTarget = frameCache.renderTargets[m_cameraId];
-	glm::vec3 cameraPosition = renderTarget.cameraPosition;
-	float cameraNear = renderTarget.projectionMatrix[3][2] / (renderTarget.projectionMatrix[2][2] - 1.0f);
-	float cameraFar = renderTarget.projectionMatrix[3][2] / (renderTarget.projectionMatrix[2][2] + 1.0f);
-
-	// Compute shadow uniforms from requests (this is where matrices are computed per-camera)
 	frameCache.shadowUniforms.clear();
 
 	// Count total shadow uniforms needed (accounting for CSM cascades)
@@ -319,21 +270,16 @@ void ShadowPass::render(FrameCache &frameCache)
 	// Create shadow uniforms (one per cascade for CSM)
 	for (const auto &request : frameCache.shadowRequests)
 	{
-		if (request.type == ShadowType::Directional2D && request.cascadeCount > 1)
+		auto splitLambda = 0.5f;
+		if (request.type == ShadowType::Directional)
 		{
-			// CSM: Create multiple uniforms, one per cascade
 			const auto &dirLight = request.light->asDirectional();
-			for (uint32_t i = 0; i < request.cascadeCount; ++i)
-			{
-				frameCache.shadowUniforms.push_back(
-					computeShadowUniform(request, i, cameraPosition, cameraNear, cameraFar, dirLight.splitLambda)
-				);
-			}
+			splitLambda = dirLight.splitLambda;
 		}
-		else
+		auto shadowUniforms = computeShadowUniforms(request, renderTarget, splitLambda);
+		for(const auto &u : shadowUniforms)
 		{
-			// Non-CSM: Single uniform
-			frameCache.shadowUniforms.push_back(computeShadowUniform(request, 0, cameraPosition, cameraNear, cameraFar));
+			frameCache.shadowUniforms.push_back(u);
 		}
 	}
 
@@ -365,7 +311,7 @@ void ShadowPass::render(FrameCache &frameCache)
 				request.light->asPoint().range
 			);
 		}
-		else if (request.type == ShadowType::Directional2D && request.cascadeCount > 1)
+		else if (request.type == ShadowType::Directional && request.cascadeCount > 1)
 		{
 			// CSM: Render each cascade
 			for (uint32_t cascadeIdx = 0; cascadeIdx < request.cascadeCount; ++cascadeIdx)
@@ -638,6 +584,8 @@ void ShadowPass::renderItems(
 	bool isCubeShadow
 )
 {
+	if(indicesToRender.empty())
+		return;
 	std::shared_ptr<webgpu::WebGPUPipeline> currentPipeline = nullptr;
 	const webgpu::WebGPUMesh *currentMesh = nullptr;
 

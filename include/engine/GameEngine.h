@@ -39,6 +39,7 @@ struct GameEngineOptions
 
 	bool enableAudio = true;
 	float masterVolume = 1.0f;
+	int msaaSampleCount = 4; // Number of MSAA samples (1 = no MSAA)
 };
 
 class GameEngine

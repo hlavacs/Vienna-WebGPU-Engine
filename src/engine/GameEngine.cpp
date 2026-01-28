@@ -368,6 +368,11 @@ void GameEngine::renderFrame(float deltaTime)
 		target.projectionMatrix = camera->getProjectionMatrix();
 		target.viewProjectionMatrix = camera->getViewProjectionMatrix();
 		target.cameraPosition = camera->getPosition();
+		target.nearPlane = camera->getNear();
+		target.farPlane = camera->getFar();
+		target.depth = camera->getDepth();
+		target.frustum = camera->getFrustum();
+		target.msaa = camera->isMSAAEnabled() ? options.msaaSampleCount : 1; // ToDo: Allow per-camera MSAA settings
 		target.viewport = camera->getViewport();
 		target.clearFlags = camera->getClearFlags();
 		target.backgroundColor = camera->getBackgroundColor();
@@ -376,6 +381,15 @@ void GameEngine::renderFrame(float deltaTime)
 
 		renderTargets.push_back(target);
 	}
+
+	std::sort(
+		renderTargets.begin(),
+		renderTargets.end(),
+		[](const engine::rendering::RenderTarget &a, const engine::rendering::RenderTarget &b)
+		{
+			return a.depth < b.depth;
+		}
+	);
 
 	// Single call to renderer with frame cache
 	auto uiCallback = createUICallback();

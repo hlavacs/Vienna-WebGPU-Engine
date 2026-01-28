@@ -219,7 +219,6 @@ glm::vec3 CameraNode::getPosition() const
 
 const engine::math::Frustum &CameraNode::getFrustum() const
 {
-	// ToDo: Lazy update only when needed
 	updateFrustumPlanes();
 	return m_frustum;
 }
@@ -228,36 +227,9 @@ void CameraNode::updateFrustumPlanes() const
 {
 	if (!m_dirtyFrustum)
 		return;
+	updateMatrices();
 	glm::mat4 vp = m_viewProjectionMatrix;
-
-	// Left
-	m_frustum.leftPlane.normal = glm::vec3(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0], vp[2][3] + vp[2][0]);
-	m_frustum.leftPlane.d = vp[3][3] + vp[3][0];
-
-	// Right
-	m_frustum.rightPlane.normal = glm::vec3(vp[0][3] - vp[0][0], vp[1][3] - vp[1][0], vp[2][3] - vp[2][0]);
-	m_frustum.rightPlane.d = vp[3][3] - vp[3][0];
-
-	// Bottom
-	m_frustum.bottomPlane.normal = glm::vec3(vp[0][3] + vp[0][1], vp[1][3] + vp[1][1], vp[2][3] + vp[2][1]);
-	m_frustum.bottomPlane.d = vp[3][3] + vp[3][1];
-	// Top
-	m_frustum.topPlane.normal = glm::vec3(vp[0][3] - vp[0][1], vp[1][3] - vp[1][1], vp[2][3] - vp[2][1]);
-	m_frustum.topPlane.d = vp[3][3] - vp[3][1];
-
-	// Near
-	m_frustum.nearPlane.normal = glm::vec3(vp[0][3] + vp[0][2], vp[1][3] + vp[1][2], vp[2][3] + vp[2][2]);
-	m_frustum.nearPlane.d = vp[3][3] + vp[3][2];
-	// Far
-	m_frustum.farPlane.normal = glm::vec3(vp[0][3] - vp[0][2], vp[1][3] - vp[1][2], vp[2][3] - vp[2][2]);
-	m_frustum.farPlane.d = vp[3][3] - vp[3][2];
-
-	// Normalize
-	for (auto &p : m_frustum.asArray())
-	{
-		float len = glm::length(p->normal);
-		p->normal /= len;
-		p->d /= len;
-	}
+	m_frustum = engine::math::Frustum::fromViewProjection(vp);
+	m_dirtyFrustum = false;
 }
 } // namespace engine::scene::nodes

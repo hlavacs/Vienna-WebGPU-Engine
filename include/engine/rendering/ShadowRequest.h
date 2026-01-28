@@ -13,8 +13,8 @@ class Light;
  */
 enum class ShadowType : uint32_t
 {
-	Directional2D = 0, // Directional light with 2D shadow map (CSM cascades)
-	Spot2D = 1,		   // Spot light with single 2D shadow map
+	Directional = 0, // Directional light with 2D shadow map (CSM cascades)
+	Spot = 1,		   // Spot light with single 2D shadow map
 	PointCube = 2	   // Point light with cube shadow map (6 faces)
 };
 
