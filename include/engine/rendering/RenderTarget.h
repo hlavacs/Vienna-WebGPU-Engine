@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 
+#include "engine/math/Frustum.h"
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/Texture.h"
@@ -30,6 +31,11 @@ struct RenderTarget
 	glm::mat4 projectionMatrix;
 	glm::mat4 viewProjectionMatrix;
 	glm::vec3 cameraPosition;
+	float nearPlane;
+	float farPlane;
+	float depth; // camera depth for sorting
+	math::Frustum frustum;
+	int msaa{1};		// number of MSAA samples (1 = no MSAA)
 	glm::vec4 viewport; // (x, y, width, height) in normalized coordinates
 	ClearFlags clearFlags;
 	glm::vec4 backgroundColor;

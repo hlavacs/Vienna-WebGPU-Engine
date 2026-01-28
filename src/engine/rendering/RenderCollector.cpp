@@ -152,7 +152,7 @@ RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShado
 							return;
 
 						// Create shadow request for ShadowPass to process (with CSM cascades)
-						shadowRequests.emplace_back(&light, ShadowType::Directional2D, current2DIndex, cascades);
+						shadowRequests.emplace_back(&light, ShadowType::Directional, current2DIndex, cascades);
 
 						lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
 						lightUniform.shadowCount = cascades; // Multiple cascades
@@ -164,7 +164,7 @@ RenderCollector::extractLightsAndShadows(uint32_t maxShadow2D, uint32_t maxShado
 							return;
 
 						// Create shadow request for ShadowPass to process
-						shadowRequests.emplace_back(&light, ShadowType::Spot2D, current2DIndex, 1);
+						shadowRequests.emplace_back(&light, ShadowType::Spot, current2DIndex, 1);
 
 						lightUniform.shadowIndex = currentCubeIndex + current2DIndex;
 						lightUniform.shadowCount = 1;

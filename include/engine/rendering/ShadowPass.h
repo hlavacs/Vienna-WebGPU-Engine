@@ -24,6 +24,7 @@ namespace engine::rendering
 struct RenderItemGPU;
 struct FrameCache;
 class RenderCollector;
+struct RenderTarget;
 
 namespace webgpu
 {
@@ -176,34 +177,14 @@ class ShadowPass : public RenderPass
 	 * @brief Compute shadow matrix and create ShadowUniform from a ShadowRequest.
 	 * This is where per-camera shadow matrices are computed.
 	 * @param request Shadow request from RenderCollector
-	 * @param cascadeIndex For CSM, which cascade to compute (0 = near, N-1 = far)
-	 * @param cameraNear Camera near plane
-	 * @param cameraFar Camera far plane
+	 * @param renderTarget Current render target (provides camera info)
 	 * @param splitLambda CSM split lambda (0=uniform, 1=logarithmic)
 	 * @return ShadowUniform with computed view-projection matrix
 	 */
-	ShadowUniform computeShadowUniform(
+	std::vector<ShadowUniform> ShadowPass::computeShadowUniforms(
 		const ShadowRequest &request,
-		uint32_t cascadeIndex,
-		glm::vec3 cameraPosition,
-		float cameraNear = 0.1f,
-		float cameraFar = 100.0f,
+		const engine::rendering::RenderTarget &renderTarget,
 		float splitLambda = 0.5f
-	);
-
-	/**
-	 * @brief Compute CSM cascade split distances using PSSM (Practical Split Scheme).
-	 * @param cascadeCount Number of cascades
-	 * @param cameraNear Camera near plane
-	 * @param cameraFar Camera far plane
-	 * @param lambda Interpolation factor (0=uniform, 1=logarithmic)
-	 * @return Array of split distances (cascadeCount + 1 values, first=near, last=far)
-	 */
-	static std::vector<float> computeCascadeSplits(
-		uint32_t cascadeCount,
-		float cameraNear,
-		float cameraFar,
-		float lambda
 	);
 
 	/**
