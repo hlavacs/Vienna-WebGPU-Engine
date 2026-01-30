@@ -157,7 +157,7 @@ class Renderer
 		uint32_t renderTargetId,
 		std::shared_ptr<webgpu::WebGPUTexture> &gpuTexture,
 		const std::optional<Texture::Handle> &cpuTarget,
-		const glm::vec4 &viewport,
+		const math::Rect &viewport,
 		wgpu::TextureFormat format,
 		wgpu::TextureUsage usageFlags
 	);
@@ -172,7 +172,7 @@ class Renderer
 	FrameCache m_frameCache{};
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
-	std::shared_ptr<webgpu::WebGPUTexture> m_depthBuffer;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_depthBuffers;
 
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
 

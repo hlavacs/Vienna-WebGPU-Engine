@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "engine/math/Frustum.h"
+#include "engine/math/Rect.h"
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/Texture.h"
@@ -36,7 +37,7 @@ struct RenderTarget
 	float depth; // camera depth for sorting
 	math::Frustum frustum;
 	int msaa{1};		// number of MSAA samples (1 = no MSAA)
-	glm::vec4 viewport; // (x, y, width, height) in normalized coordinates
+	math::Rect viewport; 
 	ClearFlags clearFlags;
 	glm::vec4 backgroundColor;
 	std::optional<Texture::Handle> cpuTarget;
