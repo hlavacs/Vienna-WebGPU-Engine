@@ -1,6 +1,6 @@
 #pragma once
 
-#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/Light.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/scene/nodes/RenderNode.h"

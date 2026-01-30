@@ -4,8 +4,7 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
-    @location(0) depth: f32, // optional normalized depth
-    @location(1) world_position: vec3f,
+    @location(0) world_position: vec3f,
 };
 
 struct FragmentOutput {
@@ -38,9 +37,6 @@ fn vs_shadow_cube(in: VertexInput) -> VertexOutput {
 
     // Clip-space for rasterization
     out.position = uShadowCube.lightViewProjectionMatrix * vec4f(worldPos, 1.0);
-
-    // Compute distance to light and normalize
-    out.depth = 1.0 - length(worldPos - uShadowCube.lightPos) / uShadowCube.farPlane;
     
     return out;
 }

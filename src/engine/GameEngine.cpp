@@ -350,8 +350,10 @@ void GameEngine::renderFrame(float deltaTime)
 	engine::rendering::RenderCollector renderCollector;
 	// Collect render data directly from scene graph
 	scene->collectRenderData(renderCollector);
-	// Sort render items by material for batching
 	renderCollector.sort();
+
+	scene->collectDebugData();
+	auto debugCollector = scene->getDebugCollector();
 
 	float time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
 
@@ -393,7 +395,7 @@ void GameEngine::renderFrame(float deltaTime)
 
 	// Single call to renderer with frame cache
 	auto uiCallback = createUICallback();
-	m_renderer->renderFrame(renderTargets, renderCollector, time, uiCallback);
+	m_renderer->renderFrame(renderTargets, renderCollector, debugCollector, time, uiCallback);
 
 	scene->postRender();
 }

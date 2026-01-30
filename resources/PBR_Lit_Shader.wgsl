@@ -305,7 +305,7 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
         let sample_dir = normalize(to_frag);
 
         // Bias based on slope
-        let L_toward = -sample_dir; // direction toward light
+        let L_toward = sample_dir; // direction toward light
         let ndotl = max(dot(normal, L_toward), 0.0);
         let slope_bias = shadow.normal_bias * (1.0 - ndotl);
         let final_bias = shadow.bias + slope_bias;

@@ -198,7 +198,6 @@ bool WebGPUPipelineManager::createPipelineInternal(
 
 	outPipeline = m_pipelineFactory->createRenderPipeline(
 		shaderInfo,
-		shaderInfo, // Same shader info for both vertex and fragment
 		config.colorFormat,
 		config.depthFormat,
 		config.topology,

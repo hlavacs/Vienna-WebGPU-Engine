@@ -4,7 +4,7 @@
 #include <set>
 #include <vector>
 
-#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/scene/nodes/CameraNode.h"
 #include "engine/scene/nodes/Node.h"

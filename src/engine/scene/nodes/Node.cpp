@@ -1,6 +1,7 @@
 #include "engine/scene/nodes/Node.h"
+
 #include "engine/EngineContext.h"
-#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/DebugRenderCollector.h"
 #include "engine/scene/nodes/PhysicsNode.h"
 #include "engine/scene/nodes/RenderNode.h"
 #include "engine/scene/nodes/SpatialNode.h"

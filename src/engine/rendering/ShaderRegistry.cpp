@@ -3,7 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
-#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"

@@ -105,6 +105,12 @@ class WebGPUShaderInfo
 	 * @return True if depth testing is enabled.
 	 */
 	[[nodiscard]] bool isDepthEnabled() const { return m_enableDepth; }
+
+	/**
+	 * @brief Wether the shader has a fragment stage.
+	 * @return True if fragment stage exists.
+	 */
+	[[nodiscard]] bool hasFragmentStage() const { return !m_fragmentEntryPoint.empty(); }
 	/**
 	 * @brief Wether blending is enabled.
 	 * @return True if blending is enabled.
