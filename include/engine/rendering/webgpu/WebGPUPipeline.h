@@ -35,6 +35,7 @@ class WebGPUPipeline
 	 * @param depthStencil Depth stencil state used in the pipeline.
 	 * @param fragmentState Fragment state used in the pipeline.
 	 * @param vertexLayout The vertex layout (baked-in from shader, stored for reference).
+	 * @param shaderInfo The shader info associated with this pipeline.
 	 *
 	 * @throws Assertion failure if pipeline is invalid.
 	 */

@@ -1,5 +1,5 @@
 #include "engine/scene/nodes/SpatialNode.h"
-#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/DebugRenderCollector.h"
 
 namespace engine::scene::nodes
 {

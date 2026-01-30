@@ -1,4 +1,4 @@
-#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"

@@ -7,11 +7,12 @@
 
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/CompositePass.h"
-#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/MeshPass.h"
+#include "engine/rendering/DebugPass.h"
 #include "engine/rendering/Model.h"
 #include "engine/rendering/RenderPassManager.h"
 #include "engine/rendering/RenderingConstants.h"
@@ -32,8 +33,8 @@ class GameEngine; // forward declaration
 namespace engine::rendering
 {
 
-	class RenderCollector; // forward declaration
-	class RenderTarget;	 // forward declaration
+class RenderCollector; // forward declaration
+class RenderTarget;	   // forward declaration
 
 /**
  * @brief Central renderer that orchestrates the rendering pipeline.
@@ -68,6 +69,7 @@ class Renderer
 	bool renderFrame(
 		std::vector<RenderTarget> &renderTargets,
 		const RenderCollector &renderCollector,
+		const DebugRenderCollector &debugRenderCollector,
 		float time,
 		std::function<void(wgpu::RenderPassEncoder)> uiCallback = nullptr
 	);
@@ -89,19 +91,19 @@ class Renderer
 	 * @brief Get the ShadowPass instance.
 	 * @return Reference to ShadowPass.
 	 */
-	ShadowPass& getShadowPass() { return *m_shadowPass; }
+	ShadowPass &getShadowPass() { return *m_shadowPass; }
 
 	/**
 	 * @brief Get the MeshPass instance.
 	 * @return Reference to MeshPass.
 	 */
-	MeshPass& getMeshPass() { return *m_meshPass; }
+	MeshPass &getMeshPass() { return *m_meshPass; }
 
 	/**
 	 * @brief Get the CompositePass instance.
 	 * @return Reference to CompositePass.
 	 */
-	CompositePass& getCompositePass() { return *m_compositePass; }
+	CompositePass &getCompositePass() { return *m_compositePass; }
 
   private:
 	// ========================================
@@ -118,10 +120,12 @@ class Renderer
 	 * @brief Renders camera view to a texture.
 	 * Performs frustum culling, prepares GPU resources, delegates to MeshPass.
 	 * @param collector Scene data collector.
+	 * @param debugCollector Debug primitives collector.
 	 * @param renderTarget Render target information for this camera.
 	 */
 	void renderToTexture(
 		const RenderCollector &collector,
+		const DebugRenderCollector &debugCollector,
 		RenderTarget &renderTarget
 	);
 
@@ -158,23 +162,11 @@ class Renderer
 		wgpu::TextureUsage usageFlags
 	);
 
-	/**
-	 * @brief Lazily prepares GPU resources for given render item indices.
-	 */
-
-	// ========================================
-	// Deprecated / Debug Methods
-	// ========================================
-
-	void renderDebugPrimitives(
-		wgpu::RenderPassEncoder renderPass,
-		const DebugRenderCollector &debugCollector
-	);
-
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
 	// std::unique_ptr<RenderPassManager> m_renderPassManager; // ToDo: future use
 	std::unique_ptr<ShadowPass> m_shadowPass;
 	std::unique_ptr<MeshPass> m_meshPass;
+	std::unique_ptr<DebugPass> m_debugPass;
 	std::unique_ptr<CompositePass> m_compositePass;
 
 	FrameCache m_frameCache{};

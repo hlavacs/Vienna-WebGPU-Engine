@@ -8,7 +8,8 @@
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/CompositePass.h"
-#include "engine/rendering/DebugCollector.h"
+#include "engine/rendering/DebugRenderCollector.h"
+#include "engine/rendering/DebugPass.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
@@ -79,6 +80,13 @@ bool Renderer::initialize()
 		return false;
 	}
 
+	m_debugPass = std::make_unique<DebugPass>(m_context);
+	if (!m_debugPass->initialize())
+	{
+		spdlog::error("Failed to initialize DebugPass");
+		return false;
+	}
+
 	m_compositePass = std::make_unique<CompositePass>(m_context);
 	if (!m_compositePass->initialize())
 	{
@@ -100,6 +108,7 @@ bool Renderer::initialize()
 bool Renderer::renderFrame(
 	std::vector<RenderTarget> &renderTargets,
 	const RenderCollector &renderCollector,
+	const DebugRenderCollector &debugRenderCollector,
 	float time,
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
 )
@@ -114,7 +123,7 @@ bool Renderer::renderFrame(
 	std::unordered_map<uint64_t, RenderTarget> uniqueRenderTargets;
 	for (const auto &target : renderTargets)
 	{
-		if(uniqueRenderTargets.find(target.cameraId) != uniqueRenderTargets.end())
+		if (uniqueRenderTargets.find(target.cameraId) != uniqueRenderTargets.end())
 		{
 			spdlog::warn("Duplicate render target for cameraId {} detected; skipping", target.cameraId);
 			continue;
@@ -154,6 +163,7 @@ bool Renderer::renderFrame(
 		m_shadowPass->render(m_frameCache);
 		renderToTexture(
 			renderCollector,
+			debugRenderCollector,
 			target
 		);
 	}
@@ -245,6 +255,7 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 }
 void Renderer::renderToTexture(
 	const RenderCollector &collector,
+	const DebugRenderCollector &debugCollector,
 	RenderTarget &renderTarget
 )
 {
@@ -275,6 +286,13 @@ void Renderer::renderToTexture(
 		renderTarget.backgroundColor
 	);
 
+	auto debugRenderPassContext = m_context->renderPassFactory().create(
+		renderTarget.gpuTexture,
+		nullptr,
+		ClearFlags::None,
+		renderTarget.backgroundColor
+	);
+
 	auto cameraFrustum = engine::math::Frustum::fromViewProjection(renderTarget.viewProjectionMatrix);
 
 	std::vector<size_t> visibleIndices = collector.extractVisible(cameraFrustum);
@@ -292,6 +310,11 @@ void Renderer::renderToTexture(
 	// Render using MeshPass with FrameCache
 	spdlog::debug("Rendering {} GPU items using MeshPass", m_frameCache.gpuRenderItems.size());
 	m_meshPass->render(m_frameCache);
+
+	m_debugPass->setRenderPassContext(debugRenderPassContext);
+	m_debugPass->setCameraId(renderTarget.cameraId);
+	m_debugPass->setDebugCollector(&debugCollector);
+	m_debugPass->render(m_frameCache);
 
 	// Check if CPU readback was requested
 	if (renderTarget.cpuTarget.has_value() && renderTarget.cpuTarget->valid())
@@ -355,14 +378,6 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 		m_shadowPass->cleanup();
 
 	spdlog::info("Renderer resized to {}x{}", width, height);
-}
-
-void Renderer::renderDebugPrimitives(
-	wgpu::RenderPassEncoder renderPass,
-	const DebugRenderCollector &debugCollector
-)
-{
-	// ToDo: Implement debug primitive rendering (shader, pipeline, bind groups)
 }
 
 } // namespace engine::rendering

@@ -85,6 +85,9 @@ bool MeshPass::bindFrameUniforms(wgpu::RenderPassEncoder renderPass, FrameCache 
 		spdlog::error("Frame bind group not found in cache for camera ID {}", m_cameraId);
 		return false;
 	}
+	// Frame Bindgroup has to be at index 0 as per convention because otherwise we would need to rebind each pipeline
+	// which would be very inefficient. So Shaders must always have frame bindgroup at index 0.
+	// ToDo: Document this convention somewhere and enforce it in pipeline creation.
 	renderPass.setBindGroup(0, frameBindGroup->getBindGroup(), 0, nullptr);
 	return true;
 }
