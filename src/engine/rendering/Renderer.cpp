@@ -8,8 +8,8 @@
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/CompositePass.h"
-#include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/DebugPass.h"
+#include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
@@ -51,19 +51,6 @@ Renderer::~Renderer() = default;
 bool Renderer::initialize()
 {
 	spdlog::info("Initializing Renderer");
-
-	// Create depth buffer
-	m_depthBuffer = m_context->depthTextureFactory().createDefault(
-		m_context->surfaceManager().currentConfig().width,
-		m_context->surfaceManager().currentConfig().height,
-		wgpu::TextureFormat::Depth32Float
-	);
-
-	if (!m_depthBuffer)
-	{
-		spdlog::error("Failed to create depth buffer");
-		return false;
-	}
 
 	// Initialize rendering passes
 	m_shadowPass = std::make_unique<ShadowPass>(m_context);
@@ -145,6 +132,7 @@ bool Renderer::renderFrame(
 	m_frameCache.lights = renderCollector.getLights();
 	m_frameCache.renderTargets = std::move(uniqueRenderTargets);
 	m_frameCache.time = time;
+	m_renderTargets = m_frameCache.renderTargets; // ToDO: remove m_renderTargets member and use m_frameCache everywhere
 
 	// Extract lights and shadow requests (camera-independent)
 	auto [lightUniforms, shadowRequests] = renderCollector.extractLightsAndShadows(
@@ -204,7 +192,7 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 	uint32_t renderTargetId,
 	std::shared_ptr<webgpu::WebGPUTexture> &gpuTexture,
 	const std::optional<Texture::Handle> &cpuTarget,
-	const glm::vec4 &viewport,
+	const math::Rect &viewport,
 	wgpu::TextureFormat format,
 	wgpu::TextureUsage usageFlags
 )
@@ -216,8 +204,8 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 		return nullptr;
 	}
 
-	auto viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.z);
-	auto viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.w);
+	auto viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.width());
+	auto viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.height());
 
 	if (viewPortWidth == 0 || viewPortHeight == 0)
 	{
@@ -278,10 +266,23 @@ void Renderer::renderToTexture(
 		return;
 	}
 
+	auto viewport = renderTarget.viewport;
+	auto viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.width());
+	auto viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.height());
+
+	if (m_depthBuffers[renderTarget.cameraId] == nullptr)
+	{
+		m_depthBuffers[renderTarget.cameraId] = m_context->depthTextureFactory().createDefault(
+			viewPortWidth,
+			viewPortHeight,
+			wgpu::TextureFormat::Depth32Float
+		);
+	}
+
 	// Create render pass context
 	auto renderPassContext = m_context->renderPassFactory().create(
 		renderTarget.gpuTexture,
-		m_depthBuffer,
+		m_depthBuffers[renderTarget.cameraId],
 		renderTarget.clearFlags,
 		renderTarget.backgroundColor
 	);
@@ -359,13 +360,16 @@ void Renderer::compositeTexturesToSurface(
 
 void Renderer::onResize(uint32_t width, uint32_t height)
 {
-	if (m_depthBuffer)
-		m_depthBuffer->resize(*m_context, width, height);
-
 	for (auto &[id, target] : m_renderTargets)
 	{
 		if (target.gpuTexture && !target.cpuTarget.has_value())
 			target.gpuTexture.reset();
+		auto viewport = target.viewport;
+		auto viewPortWidth = static_cast<uint32_t>(width * viewport.width());
+		auto viewPortHeight = static_cast<uint32_t>(height * viewport.height());
+		auto depthBuffer = m_depthBuffers[id];
+		if (depthBuffer)
+			depthBuffer->resize(*m_context, viewPortWidth, viewPortHeight);
 	}
 
 	if (m_meshPass)

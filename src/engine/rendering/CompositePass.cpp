@@ -83,9 +83,13 @@ void CompositePass::render(FrameCache &frameCache)
 		if (!target.gpuTexture)
 			continue;
 
-		glm::vec4 vpPx = target.viewport * glm::vec4(surfaceW, surfaceH, surfaceW, surfaceH);
-		renderPass.setViewport(vpPx.x, vpPx.y, vpPx.z, vpPx.w, 0.f, 1.f);
-		renderPass.setScissorRect(uint32_t(vpPx.x), uint32_t(vpPx.y), uint32_t(vpPx.z), uint32_t(vpPx.w));
+		float x = target.viewport.min.x * surfaceW;
+		float y = target.viewport.min.y * surfaceH;
+		float w = target.viewport.width() * surfaceW;
+		float h = target.viewport.height() * surfaceH;
+
+		renderPass.setViewport(x, y, w, h, 0.f, 1.f);
+		renderPass.setScissorRect(uint32_t(x), uint32_t(y), uint32_t(w), uint32_t(h));
 
 		// --- Get or create bind group for this texture ---
 		auto bindGroup = getOrCreateBindGroup(target.gpuTexture, target.layerIndex);

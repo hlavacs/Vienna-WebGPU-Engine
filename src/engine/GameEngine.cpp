@@ -252,7 +252,7 @@ void GameEngine::physicsLoop()
 void GameEngine::gameLoop()
 {
 	double previousTime = getCurrentTime();
-
+	onWindowResize(options.windowWidth, options.windowHeight);
 	while (running)
 	{
 		processEvents();

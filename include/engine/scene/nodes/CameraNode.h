@@ -141,26 +141,28 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 
 	/**
 	 * @brief Set the viewport rectangle for this camera.
-	 * @param viewport Normalized coordinates (x, y, width, height), range 0..1.
-	 * @note (0,0) is bottom-left corner.
-	 * Width and height are fractions of the total render target size.
-	 * For example, (0.25, 0.25, 0.5, 0.5) sets a centered viewport covering half the width and height.
+	 * @param viewport Viewport defined by minimum and maximum normalized corners.
+	 * @note (0,0) is the top-left corner of the render target, (1,1) is the bottom-right.
+	 * min: top-left corner of the viewport (normalized)
+	 * max: bottom-right corner of the viewport (normalized)
+	 * Example: min = (0.25, 0.25), max = (0.75, 0.75) sets a centered viewport covering half the width and height.
 	 */
 	void setViewport(const glm::vec4 &viewport) { m_viewport = math::Rect(viewport); }
 
 	/**
 	 * @brief Set the viewport rectangle for this camera.
-	 * @param viewport Normalized rectangle.
-	 * @note (0,0) is bottom-left corner.
-	 * Width and height are fractions of the total render target size.
-	 * For example, (0.25, 0.25, 0.5, 0.5) sets a centered viewport covering half the width and height.
+	 * @param viewport Viewport defined by minimum and maximum normalized corners.
+	 * @note (0,0) is the top-left corner of the render target, (1,1) is the bottom-right.
+	 * min: top-left corner of the viewport (normalized)
+	 * max: bottom-right corner of the viewport (normalized)
+	 * Example: min = (0.25, 0.25), max = (0.75, 0.75) sets a centered viewport covering half the width and height.
 	 */
 	void setViewport(const math::Rect &viewport) { m_viewport = viewport; }
 
 	/**
 	 * @brief Get the camera viewport rectangle.
 	 */
-	const glm::vec4 getViewport() const { return m_viewport.toVec4(); }
+	const math::Rect getViewport() const { return m_viewport; }
 
 	/**
 	 * @brief Set the clear color for this camera.
