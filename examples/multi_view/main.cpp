@@ -112,17 +112,17 @@ int main(int argc, char **argv)
 	dirData.castShadows = true;
 	dirData.shadowPCFKernel = 2;
 	dirLightNode->getLight().setData(dirData);
-	dirLightNode->getTransform().setLocalRotation(glm::quat(glm::radians(glm::vec3(-45.0f, 0.0f, 0.0f))));
+	dirLightNode->getTransform().setLocalRotation(glm::quat(glm::radians(glm::vec3(20.0f, 60, 0.0f))));
 	rootNode->addChild(dirLightNode->asNode());
 
 	// Create spotlight
 	auto spotLightNode = std::make_shared<engine::scene::nodes::LightNode>();
 	engine::rendering::SpotLight spotData;
-	spotData.color = glm::vec3(1.0f, 0.8f, 0.6f);
+	spotData.color = glm::vec3(1.0f, 0.3f, 0.6f);
 	spotData.intensity = 50.0f;
 	spotData.castShadows = true;
 	spotData.range = 20.0f;
-	spotData.spotAngle = glm::radians(40.0f);
+	spotData.spotAngle = glm::radians(30.0f);
     spotData.spotSoftness = 0.8f;
 	spotData.shadowMapSize = 2048;
 	spotData.shadowPCFKernel = 3;
