@@ -100,6 +100,8 @@ bool Renderer::renderFrame(
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
 )
 {
+	// === PHASE 1: Frame Initialization ===
+	// Acquire swap chain texture and reset GPU resource cache
 	startFrame();
 	if (renderTargets.empty())
 	{
@@ -107,34 +109,35 @@ bool Renderer::renderFrame(
 		return false;
 	}
 
+	// === PHASE 2: Prepare Render Targets ===
+	// Deduplicate render targets (one per camera) and prepare per-camera frame uniforms.
+	// Frame uniforms contain: view matrix, projection matrix, camera position, time, etc.
 	std::unordered_map<uint64_t, RenderTarget> uniqueRenderTargets;
 	for (const auto &target : renderTargets)
 	{
-		if (uniqueRenderTargets.find(target.cameraId) != uniqueRenderTargets.end())
+		if (uniqueRenderTargets.count(target.cameraId))
 		{
 			spdlog::warn("Duplicate render target for cameraId {} detected; skipping", target.cameraId);
 			continue;
 		}
 		uniqueRenderTargets[target.cameraId] = target;
-		if (m_frameCache.frameBindGroupCache[target.cameraId] == nullptr)
-		{
-			m_frameCache.frameBindGroupCache[target.cameraId] = m_context->bindGroupFactory().createBindGroup(m_frameBindGroupLayout);
-		}
-		auto frameUniforms = target.getFrameUniforms(m_frameCache.time);
-		m_frameCache.frameBindGroupCache[target.cameraId]->updateBuffer(
-			0,
-			&frameUniforms,
-			sizeof(FrameUniforms),
-			0,
-			m_context->getQueue()
-		);
+		
+		// Create/update bind group with camera-specific uniforms (view, projection)
+		updateFrameBindGroup(target, time);
 	}
+
+	// === PHASE 3: Setup Frame-Wide Data ===
+	// FrameCache stores data shared across all render passes in this frame:
+	// - Lights (directional, point, spot)
+	// - Render targets (camera viewports)
+	// - Shadow maps and shadow matrices
+	// - GPU resources (meshes, materials)
 	m_frameCache.lights = renderCollector.getLights();
 	m_frameCache.renderTargets = std::move(uniqueRenderTargets);
 	m_frameCache.time = time;
 	m_renderTargets = m_frameCache.renderTargets; // ToDO: remove m_renderTargets member and use m_frameCache everywhere
 
-	// Extract lights and shadow requests (camera-independent)
+	// Extract light data and determine which lights need shadow maps
 	auto [lightUniforms, shadowRequests] = renderCollector.extractLightsAndShadows(
 		constants::MAX_SHADOW_MAPS_2D,
 		constants::MAX_SHADOW_MAPS_CUBE
@@ -142,28 +145,28 @@ bool Renderer::renderFrame(
 	m_frameCache.lightUniforms = std::move(lightUniforms);
 	m_frameCache.shadowRequests = std::move(shadowRequests);
 
-	// Render shadow maps (camera-aware - computes matrices per frame)
+	// === PHASE 4: Render Each Camera View ===
+	// Multi-camera rendering: each camera gets its own shadow maps and scene render
 	m_shadowPass->setRenderCollector(&renderCollector);
-
-	for (auto &[targetId, target] : m_frameCache.renderTargets)
+	for (auto &[cameraId, target] : m_frameCache.renderTargets)
 	{
+		// Render shadow maps from the perspective of lights visible to this camera
 		m_shadowPass->setCameraId(target.cameraId);
 		m_shadowPass->render(m_frameCache);
-		renderToTexture(
-			renderCollector,
-			debugRenderCollector,
-			target
-		);
+		
+		// Render scene from camera's perspective (with shadows applied)
+		renderToTexture(renderCollector, debugRenderCollector, target);
 	}
 
+	// === PHASE 5: Composite & Present ===
+	// Combine all camera render targets into final surface texture, then present to screen
 	compositeTexturesToSurface(uiCallback);
-
 	m_context->getSurface().present();
 	m_surfaceTexture.reset();
 
-	// Process any pending pipeline reloads after frame is complete
+	// === PHASE 6: Post-Frame Cleanup ===
+	// Hot-reload shaders if changed, clear frame cache for next frame
 	m_context->pipelineManager().processPendingReloads();
-	// Clear frame cache after rendering
 	m_frameCache.clear();
 
 	return true;
@@ -188,6 +191,33 @@ void Renderer::startFrame()
 	m_frameCache.gpuRenderItems.clear(); // Clear GPU render items at the start of each frame
 }
 
+void Renderer::updateFrameBindGroup(const RenderTarget &target, float time)
+{
+	// Bind groups are WebGPU's way of grouping resources (buffers, textures, samplers)
+	// that shaders need to access. They're organized into "sets" for efficient binding.
+	// This bind group contains per-frame, per-camera data (Group 0 in shader).
+	
+	// Create bind group on first use for this camera
+	if (!m_frameCache.frameBindGroupCache[target.cameraId])
+	{
+		m_frameCache.frameBindGroupCache[target.cameraId] = 
+			m_context->bindGroupFactory().createBindGroup(m_frameBindGroupLayout);
+	}
+
+	// Build frame uniforms structure with camera matrices and time
+	FrameUniforms frameUniforms = target.getFrameUniforms(time);
+	
+	// Update GPU buffer with new uniform data for this frame
+	// Binding 0 in the frame bind group = uniform buffer with camera data
+	m_frameCache.frameBindGroupCache[target.cameraId]->updateBuffer(
+		0,						// binding index
+		&frameUniforms,			// source data
+		sizeof(FrameUniforms),	// data size
+		0,						// buffer offset
+		m_context->getQueue()	// GPU queue for transfer
+	);
+}
+
 std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 	uint32_t renderTargetId,
 	std::shared_ptr<webgpu::WebGPUTexture> &gpuTexture,
@@ -197,31 +227,26 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 	wgpu::TextureUsage usageFlags
 )
 {
-	// Check if surface texture is valid
+	// Render targets are textures we render to (instead of directly to screen).
+	// Benefits: post-processing, multi-camera rendering, render-to-texture effects
+	
 	if (!m_surfaceTexture)
 	{
 		spdlog::error("Cannot update render texture: surface texture not acquired");
 		return nullptr;
 	}
 
-	auto viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.width());
-	auto viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.height());
-
-	if (viewPortWidth == 0 || viewPortHeight == 0)
-	{
-		spdlog::warn("Invalid viewport dimensions: {}x{}", viewPortWidth, viewPortHeight);
-		return nullptr;
-	}
-
+	// OPTION 1: Use CPU-provided texture (for render-to-texture effects)
+	// The CPU has created a specific texture we should render into
 	if (cpuTarget.has_value() && cpuTarget->valid())
 	{
-		auto textureOpt = cpuTarget->get();
-		if (textureOpt.has_value())
+		if (auto textureOpt = cpuTarget->get())
 		{
-			uint32_t cpuWidth = textureOpt.value()->getWidth();
-			uint32_t cpuHeight = textureOpt.value()->getHeight();
+			uint32_t targetWidth = textureOpt.value()->getWidth();
+			uint32_t targetHeight = textureOpt.value()->getHeight();
 
-			if (!gpuTexture || !gpuTexture->matches(cpuWidth, cpuHeight, format))
+			// Recreate GPU texture if dimensions or format changed
+			if (!gpuTexture || !gpuTexture->matches(targetWidth, targetHeight, format))
 			{
 				gpuTexture = m_context->textureFactory().createFromHandle(cpuTarget.value());
 			}
@@ -229,13 +254,22 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 		}
 	}
 
-	if (!gpuTexture || !gpuTexture->matches(viewPortWidth, viewPortHeight, format))
+	// OPTION 2: Use viewport-relative dimensions (for split-screen, picture-in-picture)
+	// Calculate texture size based on viewport percentage of surface
+	uint32_t targetWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.width());
+	uint32_t targetHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.height());
+
+	if (targetWidth == 0 || targetHeight == 0)
+	{
+		spdlog::warn("Invalid viewport dimensions: {}x{}", targetWidth, targetHeight);
+		return nullptr;
+	}
+
+	// Recreate render target if it doesn't exist or dimensions changed (e.g., window resize)
+	if (!gpuTexture || !gpuTexture->matches(targetWidth, targetHeight, format))
 	{
 		gpuTexture = m_context->textureFactory().createRenderTarget(
-			renderTargetId,
-			viewPortWidth,
-			viewPortHeight,
-			format
+			renderTargetId, targetWidth, targetHeight, format
 		);
 	}
 
@@ -247,8 +281,18 @@ void Renderer::renderToTexture(
 	RenderTarget &renderTarget
 )
 {
-	spdlog::debug("renderToTexture called: cameraId={}, renderItems={}, lights={}", renderTarget.cameraId, collector.getRenderItems().size(), collector.getLights().size());
+	spdlog::debug(
+		"renderToTexture: cameraId={}, renderItems={}, lights={}",
+		renderTarget.cameraId,
+		collector.getRenderItems().size(),
+		collector.getLights().size()
+	);
 
+	// ========================================
+	// STEP 1: Prepare Render Target Texture
+	// ========================================
+	// Update or create the texture we'll render this camera's view into.
+	// Uses HDR format (RGBA16Float) for better color precision in lighting calculations.
 	renderTarget.gpuTexture = updateRenderTexture(
 		renderTarget.cameraId,
 		renderTarget.gpuTexture,
@@ -256,7 +300,9 @@ void Renderer::renderToTexture(
 		renderTarget.viewport,
 		wgpu::TextureFormat::RGBA16Float,
 		static_cast<WGPUTextureUsage>(
-			wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc
+			wgpu::TextureUsage::RenderAttachment |	// Can render to it
+			wgpu::TextureUsage::TextureBinding |	// Can sample from it in shaders
+			wgpu::TextureUsage::CopySrc				// Can copy data from it (for readback)
 		)
 	);
 
@@ -266,66 +312,91 @@ void Renderer::renderToTexture(
 		return;
 	}
 
-	auto viewport = renderTarget.viewport;
-	auto viewPortWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.width());
-	auto viewPortHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.height());
-
-	if (m_depthBuffers[renderTarget.cameraId] == nullptr)
+	// ========================================
+	// STEP 2: Prepare Depth Buffer
+	// ========================================
+	// Depth buffer stores per-pixel depth values for depth testing.
+	// Essential for correct rendering of overlapping geometry.
+	if (!m_depthBuffers[renderTarget.cameraId])
 	{
 		m_depthBuffers[renderTarget.cameraId] = m_context->depthTextureFactory().createDefault(
-			viewPortWidth,
-			viewPortHeight,
+			renderTarget.gpuTexture->getWidth(),
+			renderTarget.gpuTexture->getHeight(),
 			wgpu::TextureFormat::Depth32Float
 		);
 	}
 
-	// Create render pass context
-	auto renderPassContext = m_context->renderPassFactory().create(
-		renderTarget.gpuTexture,
-		m_depthBuffers[renderTarget.cameraId],
-		renderTarget.clearFlags,
-		renderTarget.backgroundColor
-	);
-
-	auto debugRenderPassContext = m_context->renderPassFactory().create(
-		renderTarget.gpuTexture,
-		nullptr,
-		ClearFlags::None,
-		renderTarget.backgroundColor
-	);
-
+	// ========================================
+	// STEP 3: Frustum Culling
+	// ========================================
+	// Build camera frustum from view-projection matrix and cull objects outside view.
+	// Frustum culling optimization: don't render objects the camera can't see.
 	auto cameraFrustum = engine::math::Frustum::fromViewProjection(renderTarget.viewProjectionMatrix);
-
 	std::vector<size_t> visibleIndices = collector.extractVisible(cameraFrustum);
+	
+	spdlog::debug("Frustum culling: {} visible of {} total items", 
+		visibleIndices.size(), collector.getRenderItems().size());
 
-	// Prepare GPU resources once for this frame
-	spdlog::debug("Preparing GPU resources for {} render items", visibleIndices.size());
+	// ========================================
+	// STEP 4: Prepare GPU Resources
+	// ========================================
+	// Upload/update GPU buffers for visible meshes and materials.
+	// Only creates GPU resources for objects that passed frustum culling.
 	m_frameCache.prepareGPUResources(m_context, collector, visibleIndices);
 
-	// Set dependencies for MeshPass
-	m_meshPass->setRenderPassContext(renderPassContext);
-	m_meshPass->setCameraId(renderTarget.cameraId); // Use renderTargetId (which is the camera ID)
+	// ========================================
+	// STEP 5: Mesh Rendering Pass
+	// ========================================
+	// Render all visible opaque and transparent meshes with lighting and shadows.
+	auto meshPassContext = m_context->renderPassFactory().create(
+		renderTarget.gpuTexture,				// Color attachment
+		m_depthBuffers[renderTarget.cameraId],	// Depth attachment
+		renderTarget.clearFlags,				// Clear color/depth?
+		renderTarget.backgroundColor			// Clear color
+	);
+	
+	m_meshPass->setRenderPassContext(meshPassContext);
+	m_meshPass->setCameraId(renderTarget.cameraId);
 	m_meshPass->setVisibleIndices(visibleIndices);
 	m_meshPass->setShadowBindGroup(m_shadowPass->getShadowBindGroup());
-
-	// Render using MeshPass with FrameCache
-	spdlog::debug("Rendering {} GPU items using MeshPass", m_frameCache.gpuRenderItems.size());
+	
+	spdlog::debug("Rendering {} GPU mesh items", m_frameCache.gpuRenderItems.size());
 	m_meshPass->render(m_frameCache);
 
-	m_debugPass->setRenderPassContext(debugRenderPassContext);
+	// ========================================
+	// STEP 6: Debug Rendering Pass
+	// ========================================
+	// Render debug visualization (wireframes, bounding boxes, gizmos) on top.
+	// No depth clearing - renders over the scene.
+	auto debugPassContext = m_context->renderPassFactory().create(
+		renderTarget.gpuTexture,
+		nullptr,					// No depth attachment (use existing depth)
+		ClearFlags::None,			// Don't clear anything
+		renderTarget.backgroundColor
+	);
+	
+	m_debugPass->setRenderPassContext(debugPassContext);
 	m_debugPass->setCameraId(renderTarget.cameraId);
 	m_debugPass->setDebugCollector(&debugCollector);
 	m_debugPass->render(m_frameCache);
 
-	// Check if CPU readback was requested
+	// ========================================
+	// STEP 7: CPU Readback (Optional)
+	// ========================================
+	// If the application requested to read pixels back to CPU (e.g., for screenshots),
+	// initiate asynchronous GPU-to-CPU transfer.
 	if (renderTarget.cpuTarget.has_value() && renderTarget.cpuTarget->valid())
 	{
-		auto textureOpt = renderTarget.cpuTarget->get();
-		if (textureOpt.has_value() && textureOpt.value()->isReadbackRequested())
+		if (auto textureOpt = renderTarget.cpuTarget->get())
 		{
-			// Initiate async GPU-to-CPU readback
-			auto readbackFuture = renderTarget.gpuTexture->readbackToCPUAsync(*m_context, textureOpt.value());
-			textureOpt.value()->setReadbackFuture(std::move(readbackFuture));
+			if (textureOpt.value()->isReadbackRequested())
+			{
+				auto readbackFuture = renderTarget.gpuTexture->readbackToCPUAsync(
+					*m_context,
+					textureOpt.value()
+				);
+				textureOpt.value()->setReadbackFuture(std::move(readbackFuture));
+			}
 		}
 	}
 }
@@ -334,27 +405,39 @@ void Renderer::compositeTexturesToSurface(
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
 )
 {
-	auto renderPassContext = m_context->renderPassFactory().create(m_surfaceTexture);
-	m_compositePass->setRenderPassContext(renderPassContext);
+	// ========================================
+	// Compositing Phase
+	// ========================================
+	// Composite all camera render targets into the final surface texture.
+	// For single camera: simple copy/blit to surface
+	// For multiple cameras: arrange viewports (split-screen, picture-in-picture)
+	auto compositePassContext = m_context->renderPassFactory().create(m_surfaceTexture);
+	m_compositePass->setRenderPassContext(compositePassContext);
 	m_compositePass->render(m_frameCache);
 
-	// If UI callback is provided, render UI in a separate pass
+	// ========================================
+	// UI Rendering Phase (Optional)
+	// ========================================
+	// UI/ImGui rendering happens in a separate pass after all 3D rendering is complete.
+	// This ensures UI always renders on top of the scene.
 	if (uiCallback)
 	{
 		wgpu::CommandEncoderDescriptor encoderDesc{};
 		encoderDesc.label = "UI Command Encoder";
-		wgpu::CommandEncoder encoder = m_context->getDevice().createCommandEncoder(encoderDesc);
+		wgpu::CommandEncoder uiEncoder = m_context->getDevice().createCommandEncoder(encoderDesc);
 
+		// Create render pass that renders over existing surface (no clear)
 		auto uiPassContext = m_context->renderPassFactory().create(
 			m_surfaceTexture,
-			nullptr,
-			ClearFlags::None
+			nullptr,			// No depth buffer needed for 2D UI
+			ClearFlags::None	// Don't clear - render on top
 		);
-		wgpu::RenderPassEncoder renderPass = uiPassContext->begin(encoder);
-		uiCallback(renderPass);
-		uiPassContext->end(renderPass);
+		
+		wgpu::RenderPassEncoder uiRenderPass = uiPassContext->begin(uiEncoder);
+		uiCallback(uiRenderPass);	// Application draws UI (e.g., ImGui)
+		uiPassContext->end(uiRenderPass);
 
-		m_context->submitCommandEncoder(encoder, "UI Commands");
+		m_context->submitCommandEncoder(uiEncoder, "UI Commands");
 	}
 }
 

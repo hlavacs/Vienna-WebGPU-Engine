@@ -146,6 +146,13 @@ class Renderer
 	// ========================================
 
 	/**
+	 * @brief Updates or creates frame bind group for a render target.
+	 * @param target Render target to update frame uniforms for.
+	 * @param time Current frame time.
+	 */
+	void updateFrameBindGroup(const RenderTarget &target, float time);
+
+	/**
 	 * @brief Creates or resizes render target textures.
 	 * Handles both CPU-backed textures and dynamic viewport-sized targets.
 	 * @param renderTargetId ID for caching.
