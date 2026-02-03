@@ -38,11 +38,8 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	 */
 	void onRenderCollect(engine::rendering::RenderCollector &collector) override
 	{
-		if (getTransform())
-		{
-			// Update light transform from node's world transform
-			m_light.setTransform(getTransform()->getWorldMatrix());
-		}
+		// Update light transform from node's world transform
+		m_light.setTransform(m_transform.getWorldMatrix());
 
 		// Add light directly to collector
 		collector.addLight(m_light);
@@ -54,10 +51,7 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 	 */
 	void onDebugDraw(engine::rendering::DebugRenderCollector &collector) override
 	{
-		if (!getTransform())
-			return;
-
-		auto worldMatrix = getTransform()->getWorldMatrix();
+		auto worldMatrix = m_transform.getWorldMatrix();
 		auto position = glm::vec3(worldMatrix[3]);
 		glm::vec3 direction = -glm::vec3(worldMatrix[2]); // Forward direction
 

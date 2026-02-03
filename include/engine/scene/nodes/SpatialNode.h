@@ -25,25 +25,26 @@ class SpatialNode : public virtual nodes::Node
 	SpatialNode(std::optional<std::string> name = std::nullopt) : Node(name)
 	{
 		addNodeType(NodeType::Spatial);
-		m_transform = std::make_shared<Transform>();
+		m_lastTransformVersion = m_transform.getVersion();
 	}
 	~SpatialNode() override = default;
 
-	std::shared_ptr<Transform> getTransform() { return m_transform; }
-	void setTransform(const std::shared_ptr<Transform> &t) { m_transform = t; }
+	Transform &getTransform() { return m_transform; }
+	const Transform &getTransform() const { return m_transform; }
 
 	/** @brief Override to draw transform axes when debug is enabled */
 	void onDebugDraw(engine::rendering::DebugRenderCollector &collector) override;
 
   protected:
-	std::shared_ptr<Transform> m_transform;
+	Transform m_transform{};
+	mutable Transform::Versioned::version_t m_lastTransformVersion;
 
 	/**
 	 * @brief Helper to find the nearest spatial ancestor.
 	 * Traverses up the Node hierarchy until a SpatialNode is found.
 	 * @return Transform of the nearest spatial parent, or nullptr if none exists.
 	 */
-	std::shared_ptr<Transform> findSpatialParentTransform() const;
+	Transform *findSpatialParentTransform() const;
 
 	/**
 	 * @brief Updates the Transform parent to match Node hierarchy.

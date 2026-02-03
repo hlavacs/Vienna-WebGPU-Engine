@@ -1,4 +1,5 @@
 #pragma once
+
 #include <memory>
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_RIGHT_HANDED

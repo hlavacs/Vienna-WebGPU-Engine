@@ -50,6 +50,7 @@ class OrbitCameraController : public engine::scene::nodes::UpdateNode
 
 	std::shared_ptr<engine::scene::nodes::CameraNode> getCamera() const { return m_camera; }
 	OrbitCameraState &getOrbitState() const { return m_orbitState; }
+	void setOrbitState(const OrbitCameraState &state) { m_orbitState = state; }
 
   private:
 	OrbitCameraState &m_orbitState;

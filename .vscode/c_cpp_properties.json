@@ -1,7 +1,7 @@
 {
     "configurations": [
         {
-            "name": "Win64 MSVC (Debug)",
+            "name": "Win64 MSVC - Main Demo (Debug)",
             "includePath": [
                 "${workspaceFolder}/include",
                 "${workspaceFolder}/external/glm",
@@ -12,13 +12,33 @@
                 "${workspaceFolder}/external/tinygltf",
                 "${workspaceFolder}/external/sdl2webgpu",
                 "${workspaceFolder}/examples/main_demo",
-                "${workspaceFolder}/examples/build/Windows/Debug/engine/external/SDL/include",
-                "${workspaceFolder}/examples/build/Windows/Debug/engine/external/SDL/include/SDL2"
+                "${workspaceFolder}/examples/build/main_demo/Windows/Debug/engine/external/SDL/include",
+                "${workspaceFolder}/examples/build/main_demo/Windows/Debug/engine/external/SDL/include/SDL2" 
             ],
             "cStandard": "c17",
             "cppStandard": "c++17",
             "intelliSenseMode": "windows-msvc-x64",
-            "compileCommands": "${workspaceFolder}/examples/build/Windows/Debug/compile_commands.json"
+            "compileCommands": "${workspaceFolder}/examples/build/main_demo/Windows/Debug/compile_commands.json" 
+        },
+        {
+            "name": "Win64 MSVC - Multi View (Debug)",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/external/glm",
+                "${workspaceFolder}/external/SDL/include",
+                "${workspaceFolder}/external/webgpu/include",
+                "${workspaceFolder}/external/imgui",
+                "${workspaceFolder}/external/spdlog/include",
+                "${workspaceFolder}/external/tinygltf",
+                "${workspaceFolder}/external/sdl2webgpu",
+                "${workspaceFolder}/examples/multi_view",
+                "${workspaceFolder}/examples/build/multi_view/Windows/Debug/engine/external/SDL/include",
+                "${workspaceFolder}/examples/build/multi_view/Windows/Debug/engine/external/SDL/include/SDL2" 
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64",
+            "compileCommands": "${workspaceFolder}/examples/build/multi_view/Windows/Debug/compile_commands.json" 
         },
         {
             "name": "Emscripten (Debug)",

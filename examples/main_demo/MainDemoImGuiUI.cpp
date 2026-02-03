@@ -1,4 +1,5 @@
 #include "MainDemoImGuiUI.h"
+
 #include <imgui.h>
 #include <spdlog/spdlog.h>
 
@@ -48,86 +49,81 @@ void MainDemoImGuiUI::renderPerformanceWindow()
 
 void MainDemoImGuiUI::renderShadowDebugWindow()
 {
-    auto renderer = m_engine.getRenderer().lock();
-    if (!renderer || !renderer->getShadowPass().isDebugMode())
-        return;
+	auto renderer = m_engine.getRenderer().lock();
+	if (!renderer || !renderer->getShadowPass().isDebugMode())
+		return;
 
-    ImGui::Begin("Shadow Map Debug");
+	ImGui::Begin("Shadow Map Debug");
 
-    const int thumbSize = 128;
-    const int columns = 3;
+	const int thumbSize = 128;
+	const int columns = 3;
 
-    // --- Cube array debug ---
-    if (m_debugShadowCubeArray)
-    {
-        if (ImGui::CollapsingHeader("Cube Shadow Maps"))
-        {
-            const int totalLayers = m_debugShadowCubeArray->getTextureViewDescriptor().arrayLayerCount;
-            const int numCubes = totalLayers / 6;
+	// --- Cube array debug ---
+	if (m_debugShadowCubeArray)
+	{
+		if (ImGui::CollapsingHeader("Cube Shadow Maps"))
+		{
+			const int totalLayers = m_debugShadowCubeArray->getTextureViewDescriptor().arrayLayerCount;
+			const int numCubes = totalLayers / 6;
 
-            for (int cubeIndex = 0; cubeIndex < numCubes; ++cubeIndex)
-            {
-                if (ImGui::CollapsingHeader(("Cube " + std::to_string(cubeIndex)).c_str()))
-                {
-                    ImGui::Text("Cube Index: %d", cubeIndex);
-                    ImGui::Separator();
+			for (int cubeIndex = 0; cubeIndex < numCubes; ++cubeIndex)
+			{
+				if (ImGui::CollapsingHeader(("Cube " + std::to_string(cubeIndex)).c_str()))
+				{
+					ImGui::Text("Cube Index: %d", cubeIndex);
+					ImGui::Separator();
 
-                    ImGui::Columns(columns, nullptr, false);
+					ImGui::Columns(columns, nullptr, false);
 
-                    for (int faceIndex = 0; faceIndex < 6; ++faceIndex)
-                    {
-                        int layerIndex = cubeIndex * 6 + faceIndex;
-                        ImTextureID faceImguiId = m_debugShadowCubeArray->getTextureView(layerIndex);
+					for (int faceIndex = 0; faceIndex < 6; ++faceIndex)
+					{
+						int layerIndex = cubeIndex * 6 + faceIndex;
+						ImTextureID faceImguiId = m_debugShadowCubeArray->getTextureView(layerIndex);
 
-                        ImGui::Text("Face %d", faceIndex);
-                        ImGui::Image(faceImguiId, ImVec2((float)thumbSize, (float)thumbSize),
-                                     ImVec2(0,0), ImVec2(1,1),
-                                     ImVec4(1,1,1,1), ImVec4(0,0,0,0));
-                        ImGui::NextColumn();
-                    }
+						ImGui::Text("Face %d", faceIndex);
+						ImGui::Image(faceImguiId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
+						ImGui::NextColumn();
+					}
 
-                    ImGui::Columns(1);
-                    ImGui::Separator();
-                }
-            }
-        }
-    }
-    else
-    {
-        ImGui::Text("No cube shadow array texture available.");
-    }
+					ImGui::Columns(1);
+					ImGui::Separator();
+				}
+			}
+		}
+	}
+	else
+	{
+		ImGui::Text("No cube shadow array texture available.");
+	}
 
-    // --- 2D array debug ---
-    if (m_debugShadow2DArray)
-    {
-        if (ImGui::CollapsingHeader("2D Shadow Maps"))
-        {
-            const int totalLayers = m_debugShadow2DArray->getTextureViewDescriptor().arrayLayerCount;
-            ImGui::Columns(columns, nullptr, false);
+	// --- 2D array debug ---
+	if (m_debugShadow2DArray)
+	{
+		if (ImGui::CollapsingHeader("2D Shadow Maps"))
+		{
+			const int totalLayers = m_debugShadow2DArray->getTextureViewDescriptor().arrayLayerCount;
+			ImGui::Columns(columns, nullptr, false);
 
-            for (int layerIndex = 0; layerIndex < totalLayers; ++layerIndex)
-            {
-                ImTextureID texId = m_debugShadow2DArray->getTextureView(layerIndex);
+			for (int layerIndex = 0; layerIndex < totalLayers; ++layerIndex)
+			{
+				ImTextureID texId = m_debugShadow2DArray->getTextureView(layerIndex);
 
-                ImGui::Text("Layer %d", layerIndex);
-                ImGui::Image(texId, ImVec2((float)thumbSize, (float)thumbSize),
-                             ImVec2(0,0), ImVec2(1,1),
-                             ImVec4(1,1,1,1), ImVec4(0,0,0,0));
-                ImGui::NextColumn();
-            }
+				ImGui::Text("Layer %d", layerIndex);
+				ImGui::Image(texId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
+				ImGui::NextColumn();
+			}
 
-            ImGui::Columns(1);
-            ImGui::Separator();
-        }
-    }
-    else
-    {
-        ImGui::Text("No 2D shadow array texture available.");
-    }
+			ImGui::Columns(1);
+			ImGui::Separator();
+		}
+	}
+	else
+	{
+		ImGui::Text("No 2D shadow array texture available.");
+	}
 
-    ImGui::End();
+	ImGui::End();
 }
-
 
 void MainDemoImGuiUI::renderLightingAndCameraControls()
 {
@@ -281,7 +277,7 @@ void MainDemoImGuiUI::renderLightsSection()
 
 				float pitch = 140.0f, yaw = -30.0f, roll = 0.0f;
 				glm::quat rot = glm::quat(glm::radians(glm::vec3(pitch, yaw, roll)));
-				newLight->getTransform()->setLocalRotation(rot);
+				newLight->getTransform().setLocalRotation(rot);
 				m_lightDirectionsUI[m_lightNodes.size()] = glm::vec3(pitch, yaw, roll);
 			}
 			else
@@ -290,7 +286,7 @@ void MainDemoImGuiUI::renderLightsSection()
 				pointData.color = glm::vec3(1.0f);
 				pointData.intensity = 1.0f;
 				newLight->getLight().setData(pointData);
-				newLight->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 0.0f));
+				newLight->getTransform().setLocalPosition(glm::vec3(0.0f, 2.0f, 0.0f));
 			}
 			m_rootNode->addChild(newLight);
 			m_lightNodes.push_back(newLight);
@@ -365,60 +361,57 @@ void MainDemoImGuiUI::renderLightsSection()
 				{
 					light->setIntensity(intensity);
 				}
-				auto transform = light->getTransform();
-				if (transform)
+				auto &lightTransform = light->getTransform();
+				glm::vec3 position = lightTransform.getLocalPosition();
+				if (m_lightDirectionsUI.find(i) == m_lightDirectionsUI.end())
 				{
-					glm::vec3 position = transform->getLocalPosition();
-					if (m_lightDirectionsUI.find(i) == m_lightDirectionsUI.end())
+					// We store Euler angles separately for ImGui.
+					// Converting from quaternion every frame is unstable because
+					// Euler representations are not unique and can cause angle jumps
+					// and slider jitter in the UI.
+					glm::quat rotation = lightTransform.getRotation();
+					glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
+					m_lightDirectionsUI[i] = eulerAngles;
+				}
+				glm::vec3 &angles = m_lightDirectionsUI[i];
+				if (!light->getLight().isAmbient() && !light->getLight().isDirectional())
+				{
+					if (ImGui::DragFloat3("Position", glm::value_ptr(position), 0.1f))
 					{
-						// We store Euler angles separately for ImGui.
-						// Converting from quaternion every frame is unstable because
-						// Euler representations are not unique and can cause angle jumps
-						// and slider jitter in the UI.
-						glm::quat rotation = transform->getRotation();
-						glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
-						m_lightDirectionsUI[i] = eulerAngles;
+						lightTransform.setLocalPosition(position);
 					}
-					glm::vec3 &angles = m_lightDirectionsUI[i];
-					if (!light->getLight().isAmbient() && !light->getLight().isDirectional())
+				}
+				if (light->getLight().isDirectional() || light->getLight().isSpot())
+				{
+					if (ImGui::DragFloat3("Direction (degrees)", glm::value_ptr(angles), 0.5f))
 					{
-						if (ImGui::DragFloat3("Position", glm::value_ptr(position), 0.1f))
-						{
-							transform->setLocalPosition(position);
-						}
+						glm::quat rot = glm::quat(glm::radians(angles));
+						lightTransform.setLocalRotation(rot);
 					}
-					if (light->getLight().isDirectional() || light->getLight().isSpot())
+				}
+				if (light->getLight().isSpot())
+				{
+					// Access spot light data directly
+					auto &spotData = light->getLight().asSpot();
+					float spotAngleDegrees = glm::degrees(spotData.spotAngle) * 2.0f; // Full cone angle
+					if (ImGui::SliderFloat("Cone Angle (degrees)", &spotAngleDegrees, 1.0f, 180.0f))
 					{
-						if (ImGui::DragFloat3("Direction (degrees)", glm::value_ptr(angles), 0.5f))
-						{
-							glm::quat rot = glm::quat(glm::radians(angles));
-							transform->setLocalRotation(rot);
-						}
+						spotData.spotAngle = glm::radians(spotAngleDegrees / 2.0f);
 					}
-					if (light->getLight().isSpot())
+					float spotSoftness = spotData.spotSoftness;
+					if (ImGui::SliderFloat("Edge Softness", &spotSoftness, 0.0f, 0.99f, "%.2f"))
 					{
-						// Access spot light data directly
-						auto &spotData = light->getLight().asSpot();
-						float spotAngleDegrees = glm::degrees(spotData.spotAngle) * 2.0f; // Full cone angle
-						if (ImGui::SliderFloat("Cone Angle (degrees)", &spotAngleDegrees, 1.0f, 180.0f))
-						{
-							spotData.spotAngle = glm::radians(spotAngleDegrees / 2.0f);
-						}
-						float spotSoftness = spotData.spotSoftness;
-						if (ImGui::SliderFloat("Edge Softness", &spotSoftness, 0.0f, 0.99f, "%.2f"))
-						{
-							spotData.spotSoftness = spotSoftness;
-						}
+						spotData.spotSoftness = spotSoftness;
 					}
+				}
 
-					// Shadow casting controls (for directional, point, and spot lights)
-					if (!light->getLight().isAmbient())
+				// Shadow casting controls (for directional, point, and spot lights)
+				if (!light->getLight().isAmbient())
+				{
+					bool castShadows = light->getCastShadows();
+					if (ImGui::Checkbox("Cast Shadows", &castShadows))
 					{
-						bool castShadows = light->getCastShadows();
-						if (ImGui::Checkbox("Cast Shadows", &castShadows))
-						{
-							light->setCastShadows(castShadows);
-						}
+						light->setCastShadows(castShadows);
 					}
 				}
 				ImGui::TreePop();
@@ -449,31 +442,30 @@ void MainDemoImGuiUI::renderCameraControlsSection()
 {
 	if (ImGui::CollapsingHeader("Camera Controls", ImGuiTreeNodeFlags_DefaultOpen) && m_cameraNode)
 	{
-		glm::vec3 cameraPos = m_cameraNode->getTransform() ? m_cameraNode->getTransform()->getLocalPosition() : glm::vec3(0.0f);
+		auto &cameraTransform = m_cameraNode->getTransform();
+		glm::vec3 cameraPos = cameraTransform.getLocalPosition();
 		ImGui::Text("Position: (%.2f, %.2f, %.2f)", cameraPos.x, cameraPos.y, cameraPos.z);
 		float camDistance = glm::length(cameraPos);
 		ImGui::Text("Distance from origin: %.2f", camDistance);
-		if (auto transform = m_cameraNode->getTransform())
-		{
-			glm::vec3 forward = transform->forward();
-			glm::vec3 up = transform->up();
-			glm::vec3 right = transform->right();
-			ImGui::Separator();
-			ImGui::Text("Orientation Vectors:");
-			ImGui::Text("Forward: (%.2f, %.2f, %.2f)", forward.x, forward.y, forward.z);
-			ImGui::Text("Up: (%.2f, %.2f, %.2f)", up.x, up.y, up.z);
-			ImGui::Text("Right: (%.2f, %.2f, %.2f)", right.x, right.y, right.z);
-			ImGui::Text("Azimuth/Elevation: (%.2f / %.2f)", m_orbitState.azimuth, m_orbitState.elevation);
-			glm::quat rotation = transform->getRotation();
-			glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
-			if (eulerAngles.x > 90.0f)
-				eulerAngles.x -= 360.0f;
-			if (eulerAngles.y > 180.0f)
-				eulerAngles.y -= 360.0f;
-			if (eulerAngles.z > 180.0f)
-				eulerAngles.z -= 360.0f;
-			ImGui::Text("Rotation (degrees): (%.1f, %.1f, %.1f)", eulerAngles.x, eulerAngles.y, eulerAngles.z);
-		}
+		glm::vec3 forward = cameraTransform.forward();
+		glm::vec3 up = cameraTransform.up();
+		glm::vec3 right = cameraTransform.right();
+		ImGui::Separator();
+		ImGui::Text("Orientation Vectors:");
+		ImGui::Text("Forward: (%.2f, %.2f, %.2f)", forward.x, forward.y, forward.z);
+		ImGui::Text("Up: (%.2f, %.2f, %.2f)", up.x, up.y, up.z);
+		ImGui::Text("Right: (%.2f, %.2f, %.2f)", right.x, right.y, right.z);
+		ImGui::Text("Azimuth/Elevation: (%.2f / %.2f)", m_orbitState.azimuth, m_orbitState.elevation);
+		glm::quat rotation = cameraTransform.getRotation();
+		glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
+		if (eulerAngles.x > 90.0f)
+			eulerAngles.x -= 360.0f;
+		if (eulerAngles.y > 180.0f)
+			eulerAngles.y -= 360.0f;
+		if (eulerAngles.z > 180.0f)
+			eulerAngles.z -= 360.0f;
+		ImGui::Text("Rotation (degrees): (%.1f, %.1f, %.1f)", eulerAngles.x, eulerAngles.y, eulerAngles.z);
+
 		ImGui::Separator();
 		float zoomPercentage = (camDistance - 2.0f) / 8.0f * 100.0f;
 		zoomPercentage = glm::clamp(zoomPercentage, 0.0f, 100.0f);
@@ -490,9 +482,9 @@ void MainDemoImGuiUI::renderCameraControlsSection()
 		ImGui::SameLine();
 		if (ImGui::Button("Reset Camera"))
 		{
-			m_cameraNode->getTransform()->setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
+			m_cameraNode->getTransform().setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
 			m_cameraNode->lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-			glm::vec3 camPos = m_cameraNode->getTransform()->getLocalPosition();
+			glm::vec3 camPos = m_cameraNode->getTransform().getLocalPosition();
 			glm::vec3 toCam = camPos - m_orbitState.targetPoint;
 			m_orbitState.distance = glm::length(toCam);
 			if (m_orbitState.distance > 1e-5f)
