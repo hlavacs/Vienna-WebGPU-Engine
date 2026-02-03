@@ -27,9 +27,9 @@ void updateOrbitCamera(OrbitCameraState &state, std::shared_ptr<engine::scene::n
 	glm::vec3 position = state.targetPoint + glm::vec3(x, y, z) * state.distance;
 
 	// Update camera position and look-at
-	if (camera && camera->getTransform())
+	if (camera)
 	{
-		camera->getTransform()->setLocalPosition(position);
+		camera->getTransform().setLocalPosition(position);
 		camera->lookAt(state.targetPoint, glm::vec3(0.0f, 1.0f, 0.0f));
 	}
 }
@@ -67,7 +67,7 @@ void OrbitCameraController::update(float deltaTime)
 		return;
 
 	// Handle mouse drag for camera rotation
-	if (input->isMouseButtonPressed(SDL_BUTTON_LEFT))
+	if (input->isMouse(SDL_BUTTON_LEFT))
 	{
 		if (!m_orbitState.active)
 		{

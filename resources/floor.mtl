@@ -1,0 +1,22 @@
+# floor.mtl
+# Material definition for floor mesh
+
+newmtl FloorMaterial
+Ns 96.078431      # shininess / specular exponent
+Ka 1.0 1.0 1.0    # ambient color
+Kd 1.0 1.0 1.0    # diffuse color
+Ks 0.5 0.5 0.5    # specular color
+Ke 0.0 0.0 0.0    # emissive
+Ni 1.0            # index of refraction
+d 1.0             # opacity
+illum 2           # illumination model
+
+
+# Diffuse texture (albedo)
+map_Kd cobblestone_floor_08_diff_2k.jpg
+
+# Normal map (modern spec, preferred if supported)
+norm cobblestone_floor_08_nor_gl_2k.png
+
+# OR if using map_Bump, clarify it's a normal map and keep scale
+map_Bump -bm 0.300000 cobblestone_floor_08_nor_gl_2k.png

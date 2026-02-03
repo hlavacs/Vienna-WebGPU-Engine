@@ -54,7 +54,7 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 	 */
 	void onRenderCollect(engine::rendering::RenderCollector &collector) override
 	{
-		if (m_modelHandle.valid() && getTransform())
+		if (m_modelHandle.valid())
 		{
 			// Use node ID as object ID for bind group caching
 			uint64_t objectID = getId();
@@ -62,7 +62,7 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 			// Add model directly to collector
 			collector.addModel(
 				m_modelHandle,
-				getTransform()->getWorldMatrix(),
+				getTransform().getWorldMatrix(),
 				m_renderLayer,
 				objectID
 			);

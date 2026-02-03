@@ -12,6 +12,7 @@
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/Renderer.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/resources/ResourceManager.h"
 
 namespace engine
@@ -49,6 +50,56 @@ GameEngine::~GameEngine()
 {
 	stop();
 	cleanup();
+}
+
+std::shared_ptr<engine::scene::SceneManager> GameEngine::getSceneManager()
+{
+	return m_sceneManager;
+}
+
+std::shared_ptr<engine::rendering::webgpu::WebGPUContext> GameEngine::getContext()
+{
+	return m_context;
+}
+
+std::shared_ptr<engine::resources::ResourceManager> GameEngine::getResourceManager()
+{
+	return m_resourceManager;
+}
+
+SDL_Window *GameEngine::getWindow()
+{
+	return m_window;
+}
+
+std::shared_ptr<engine::ui::ImGuiManager> GameEngine::getImGuiManager()
+{
+	return m_imguiManager;
+}
+
+EngineContext *GameEngine::getEngineContext()
+{
+	return &m_engineContext;
+}
+
+std::weak_ptr<engine::rendering::Renderer> GameEngine::getRenderer()
+{
+	return m_renderer;
+}
+
+engine::input::InputManager *GameEngine::getInputManager()
+{
+	return &m_inputManager;
+}
+
+float GameEngine::getFPS() const
+{
+	return m_currentFPS;
+}
+
+float GameEngine::getFrameTime() const
+{
+	return m_currentFrameTime;
 }
 
 void GameEngine::setOptions(const GameEngineOptions &opts)
@@ -275,6 +326,9 @@ void GameEngine::gameLoop()
 
 void GameEngine::processEvents()
 {
+	// Poll mouse state once per frame before processing SDL events
+	m_inputManager.startFrame();
+
 	SDL_Event event;
 	while (SDL_PollEvent(&event))
 	{

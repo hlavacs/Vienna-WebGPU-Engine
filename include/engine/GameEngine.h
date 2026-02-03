@@ -1,4 +1,5 @@
 #pragma once
+
 #include <SDL.h>
 #include <atomic>
 #include <memory>
@@ -16,7 +17,7 @@
 
 namespace engine
 {
-
+	
 struct GameEngineOptions
 {
 	float fixedDeltaTime = 1.0f / 60.0f;
@@ -58,33 +59,33 @@ class GameEngine
 	bool initialize(std::optional<GameEngineOptions> opts = std::nullopt);
 
 	// Access the scene manager to create and load scenes
-	std::shared_ptr<engine::scene::SceneManager> getSceneManager() { return m_sceneManager; }
+	std::shared_ptr<engine::scene::SceneManager> getSceneManager();
 
 	// Access the WebGPU context for advanced setup
-	std::shared_ptr<engine::rendering::webgpu::WebGPUContext> getContext() { return m_context; }
+	std::shared_ptr<engine::rendering::webgpu::WebGPUContext> getContext();
 
 	// Access the resource manager for loading assets
-	std::shared_ptr<engine::resources::ResourceManager> getResourceManager() { return m_resourceManager; }
+	std::shared_ptr<engine::resources::ResourceManager> getResourceManager();
 
 	// Access the window for UI initialization
-	SDL_Window *getWindow() { return m_window; }
+	SDL_Window *getWindow();
 
 	// Access the ImGui manager for UI setup (available after initialize() is called)
-	std::shared_ptr<engine::ui::ImGuiManager> getImGuiManager() { return m_imguiManager; }
+	std::shared_ptr<engine::ui::ImGuiManager> getImGuiManager();
 
 	// Access the engine context for nodes and subsystems
-	EngineContext *getEngineContext() { return &m_engineContext; }
+	EngineContext *getEngineContext();
 
-	std::weak_ptr<engine::rendering::Renderer> getRenderer() { return m_renderer; }
+	std::weak_ptr<engine::rendering::Renderer> getRenderer();
 
 	// Access the input manager
-	input::InputManager *getInputManager() { return &m_inputManager; }
+	input::InputManager *getInputManager();
 
 	// Get current FPS
-	float getFPS() const { return m_currentFPS; }
+	float getFPS() const;
 
 	// Get current frame time in milliseconds
-	float getFrameTime() const { return m_currentFrameTime; }
+	float getFrameTime() const;
 
 	// Start the game engine (blocks until stopped or window closed)
 	// Automatically calls initialize() if not already called

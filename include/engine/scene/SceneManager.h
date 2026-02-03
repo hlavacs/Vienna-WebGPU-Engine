@@ -20,6 +20,8 @@ namespace engine::scene
  * - Creating and registering scenes
  * - Switching between scenes
  * - Managing the active scene lifecycle
+ * 
+ * ToDo: Lazy Loading of scenes from disk and async transitions with loading screens
  */
 class SceneManager
 {

@@ -146,7 +146,7 @@ class DayNightCycle : public engine::scene::nodes::UpdateNode
 			up = glm::vec3(1, 0, 0);
 		glm::vec3 right = glm::normalize(glm::cross(up, forward));
 		glm::vec3 actualUp = glm::cross(forward, right);
-		light->getTransform()->setLocalRotation(glm::quat_cast(glm::mat3(right, actualUp, forward)));
+		light->getTransform().setLocalRotation(glm::quat_cast(glm::mat3(right, actualUp, forward)));
 	}
 
 	// --------------------------------------------------------

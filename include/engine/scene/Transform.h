@@ -1,10 +1,13 @@
 #pragma once
 
+#include <memory>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
-#include <memory>
+
+#include "engine/core/Versioned.h"
 
 namespace engine::scene
 {
@@ -17,8 +20,13 @@ class SpatialNode; // Forward declaration for friend access
  * @brief Represents a position, rotation, and scale in 3D space.
  * Transform is hierarchy-agnostic - it only knows its parent, not its children.
  * The Node hierarchy is the single source of truth for the scene graph.
+ *
+ * Rotation Storage: This Transform stores rotations as Euler angles (primary)
+ * and computes quaternions on demand. This prevents angle discontinuities when
+ * repeatedly reading and modifying Euler angles (common in FPS cameras).
+ * This approach matches Unity's internal implementation.
  */
-class Transform : public std::enable_shared_from_this<Transform>
+class Transform : public engine::core::Versioned
 {
 	// Only SpatialNode can modify parent relationships
 	friend class nodes::SpatialNode;
@@ -27,7 +35,7 @@ class Transform : public std::enable_shared_from_this<Transform>
 	using Ptr = std::shared_ptr<Transform>;
 
 	/**
-	 * @brief Constructs a new Transform with default position (0), rotation (identity), and scale (1).
+	 * @brief Constructs a new Transform with default position (0), rotation (0), and scale (1).
 	 */
 	Transform();
 
@@ -46,13 +54,15 @@ class Transform : public std::enable_shared_from_this<Transform>
 
 	/**
 	 * @brief Sets the local rotation as a quaternion.
+	 * Converts to Euler angles internally, which may result in different but equivalent angles.
 	 * @param rotation Local space rotation.
 	 */
 	void setLocalRotation(const glm::quat &rotation);
 
 	/**
 	 * @brief Sets the local rotation from Euler angles in degrees.
-	 * @param euler Euler angles (degrees).
+	 * This is the preferred method for setting rotations to maintain angle continuity.
+	 * @param euler Euler angles (degrees) in XYZ order.
 	 */
 	void setLocalEulerAngles(const glm::vec3 &euler);
 
@@ -70,15 +80,17 @@ class Transform : public std::enable_shared_from_this<Transform>
 
 	/**
 	 * @brief Gets the local rotation as a quaternion.
+	 * Computed from Euler angles on demand and cached.
 	 * @return The local rotation.
 	 */
 	const glm::quat &getLocalRotation() const;
 
 	/**
 	 * @brief Gets the local Euler angles in degrees.
-	 * @return Euler angles in degrees.
+	 * Returns the stored Euler angles directly (no conversion).
+	 * @return Euler angles in degrees (XYZ order).
 	 */
-	glm::vec3 getLocalEulerAngles() const;
+	const glm::vec3 &getLocalEulerAngles() const;
 
 	/**
 	 * @brief Gets the local scale.
@@ -162,6 +174,24 @@ class Transform : public std::enable_shared_from_this<Transform>
 	 */
 	glm::vec3 up() const;
 
+	/**
+	 * @brief Gets the forward direction in local space.
+	 * @return Forward vector (-Z).
+	 */
+	glm::vec3 localForward() const;
+
+	/**
+	 * @brief Gets the right direction in local space.
+	 * @return Right vector (+X).
+	 */
+	glm::vec3 localRight() const;
+
+	/**
+	 * @brief Gets the up direction in local space.
+	 * @return Up vector (+Y).
+	 */
+	glm::vec3 localUp() const;
+
 	// --- Operations ---
 
 	/**
@@ -173,6 +203,7 @@ class Transform : public std::enable_shared_from_this<Transform>
 
 	/**
 	 * @brief Rotates the transform by the given Euler angles (in degrees).
+	 * Rotation is applied in XYZ order (pitch, yaw, roll).
 	 * @param eulerDegrees Rotation delta (degrees).
 	 * @param local Whether to apply in local space (true) or world space (false).
 	 */
@@ -192,25 +223,41 @@ class Transform : public std::enable_shared_from_this<Transform>
 	 * @return Parent transform or nullptr if root.
 	 * @note Parent can only be set by SpatialNode during hierarchy updates.
 	 */
-	Ptr getParent() const;
+	Transform *getParent() const;
 
   private:
-	// Local transform data
-	glm::vec3 _localPosition = glm::vec3(0.0f);
-	glm::quat _localRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-	glm::vec3 _localScale = glm::vec3(1.0f);
+	// Local transform data - Euler angles are the primary source of truth for rotation
+	glm::vec3 m_localPosition = glm::vec3(0.0f);
+	glm::vec3 m_localEulerAngles = glm::vec3(0.0f); // Primary storage for rotation
+	glm::vec3 m_localScale = glm::vec3(1.0f);
 
-	// Cached world matrix
-	mutable glm::mat4 _worldMatrixCache = glm::mat4(1.0f);
-	mutable bool _dirty = true;
+	// Cached quaternion rotation (computed from Euler angles when needed)
+	mutable glm::quat m_localRotationCache = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+	mutable bool m_dirtyRotation = true;
+
+	// Cached matrices
+	mutable glm::mat4 m_localMatrixCache = glm::mat4(1.0f);
+	mutable glm::mat4 m_worldMatrixCache = glm::mat4(1.0f);
+	mutable bool m_dirtyLocal = true;
+	mutable bool m_dirtyWorld = true;
 
 	// Hierarchy (parent only - children are managed by Node hierarchy)
-	Ptr _parent = nullptr;
+	Transform *m_parent = nullptr;
 
 	/**
 	 * @brief Marks this transform as needing matrix recomputation.
 	 */
 	void markDirty();
+
+	/**
+	 * @brief Updates the local rotation quaternion cache from Euler angles if dirty.
+	 */
+	void updateRotationFromEuler() const;
+
+	/**
+	 * @brief Updates the local matrix cache if dirty.
+	 */
+	void updateLocalMatrix() const;
 
 	/**
 	 * @brief Updates the world matrix cache if dirty.
@@ -223,7 +270,7 @@ class Transform : public std::enable_shared_from_this<Transform>
 	 * @param parent The new parent transform.
 	 * @param keepWorld If true, keeps the current world-space transform.
 	 */
-	void setParentInternal(Ptr parent, bool keepWorld = true);
+	void setParentInternal(Transform *parent, bool keepWorld = true);
 };
 
 } // namespace engine::scene

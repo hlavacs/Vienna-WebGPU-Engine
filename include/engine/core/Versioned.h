@@ -15,6 +15,8 @@ namespace engine::core
 class Versioned
 {
   public:
+	typedef uint64_t version_t; ///< Type for version numbers
+
 	Versioned() = default;
 	virtual ~Versioned() = default;
 
@@ -30,7 +32,7 @@ class Versioned
 	 * @brief Get the current version of this object.
 	 * @return The version number, which increments each time a property changes.
 	 */
-	uint64_t getVersion() const { return m_version; }
+	version_t getVersion() const { return m_version; }
 
   protected:
 	/**
@@ -39,7 +41,7 @@ class Versioned
 	void incrementVersion() { ++m_version; }
 
   private:
-	std::atomic<uint64_t> m_version{0};
+	std::atomic<version_t> m_version{0};
 };
 
 } // namespace engine::core

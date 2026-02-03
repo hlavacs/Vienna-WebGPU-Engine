@@ -11,69 +11,42 @@ CameraNode::CameraNode() : m_fov(45.0f), m_aspect(16.0f / 9.0f), m_near(0.1f), m
 {
 	addNodeType(nodes::NodeType::Camera);
 
-	// Initialize camera parameters
-
-	// Position the camera initially
-	if (m_transform)
-	{
-		// Set position looking toward origin (negative Z direction)
-		m_transform->setLocalPosition({0.0f, 0.0f, -5.0f});
-
-		// Default orientation looking down the Z axis (no rotation needed for -Z direction)
-		m_transform->setLocalRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
-	}
-
 	// Initial update
 	updateMatrices();
 }
 
-void CameraNode::setTransform(const std::shared_ptr<Transform> &t)
-{
-	m_transform = t;
-	m_dirtyView = m_dirtyFrustum = true;
-}
-
 void CameraNode::lookAt(const glm::vec3 &target, const glm::vec3 &up)
 {
-	if (!m_transform)
-		return;
-
-	m_transform->lookAt(target, up);
+	m_transform.lookAt(target, up);
 	m_dirtyView = m_dirtyFrustum = true;
 }
 
 void CameraNode::pan(float deltaX, float deltaY)
 {
-	if (!m_transform)
-		return;
-
 	// Calculate right vector in world space
-	glm::vec3 right = m_transform->right();
-	glm::vec3 up = m_transform->up();
+	glm::vec3 right = m_transform.right();
+	glm::vec3 up = m_transform.up();
 
 	// Calculate movement delta in world space
 	glm::vec3 movement = right * deltaX + up * deltaY;
 
 	// Apply movement to position
-	m_transform->translate(movement, false);
+	m_transform.translate(movement, false);
 	m_dirtyView = m_dirtyFrustum = true;
 }
 
 void CameraNode::tilt(float deltaX, float deltaY)
 {
-	if (!m_transform)
-		return;
-
 	// Create rotation quaternions for pitch and yaw
 	// Yaw around world up vector (Y-axis)
 	glm::quat yawQuat = glm::angleAxis(glm::radians(deltaX), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	// Pitch around local right vector (X-axis)
-	glm::vec3 rightAxis = m_transform->right();
+	glm::vec3 rightAxis = m_transform.right();
 	glm::quat pitchQuat = glm::angleAxis(glm::radians(deltaY), rightAxis);
 
 	// Apply yaw first (global) then pitch (local)
-	glm::quat currentRotation = m_transform->getRotation();
+	glm::quat currentRotation = m_transform.getRotation();
 	glm::quat newRotation = pitchQuat * currentRotation * yawQuat;
 
 	// Normalize to prevent drift
@@ -100,24 +73,19 @@ void CameraNode::tilt(float deltaX, float deltaY)
 	}
 
 	// Set new rotation
-	m_transform->setLocalRotation(newRotation);
+	m_transform.setLocalRotation(newRotation);
 	m_dirtyView = m_dirtyFrustum = true;
 }
 
 void CameraNode::dolly(float delta)
 {
-	if (!m_transform)
-		return;
+	glm::vec3 forward = glm::normalize(m_transform.forward());
 
-	// Use exponential zooming for more natural feel
-	// This provides smooth zooming at both close and far distances
-	float zoomFactor = std::exp(delta * 0.1f); // Scale factor to adjust zoom speed
+	// Pure geometric dolly: caller decides scaling/curve
+	m_transform.translate(forward * delta, false);
 
-	// Move camera along its forward vector based on exponential scale
-	glm::vec3 forward = m_transform->forward();
-	m_transform->translate(forward * delta * 2.0f, false); // Multiply by 2.0 for more responsive zooming
-
-	m_dirtyView = m_dirtyFrustum = true;
+	m_dirtyView = true;
+	m_dirtyFrustum = true;
 }
 
 void CameraNode::setFov(float fovDegrees)
@@ -165,24 +133,21 @@ void CameraNode::preRender()
 
 void CameraNode::updateMatrices() const
 {
-	if (!m_transform)
+	if (!m_dirtyView && !m_dirtyProjection && m_lastTransformVersion == m_transform.getVersion())
 		return;
 
-	if (!m_dirtyView && !m_dirtyProjection)
-		return;
-
-	if (m_dirtyView)
+	if (m_dirtyView || m_lastTransformVersion != m_transform.getVersion())
 	{
-		glm::vec3 pos = m_transform->getPosition();
+		glm::vec3 pos = m_transform.getPosition();
 		m_viewMatrix = glm::lookAt(
 			pos,
-			pos - m_transform->forward(),
-			glm::vec3(0.0f, 1.0f, 0.0f)
+			pos + m_transform.forward(),
+			m_transform.up() // Not world up, use transform's up because of tilt
 		);
 		m_dirtyView = false;
 	}
 
-	if (m_dirtyProjection)
+	if (m_dirtyProjection|| m_lastTransformVersion != m_transform.getVersion())
 	{
 		if (m_isPerspective)
 		{
@@ -209,12 +174,13 @@ void CameraNode::updateMatrices() const
 		m_dirtyProjection = false;
 	}
 
+	m_lastTransformVersion = m_transform.getVersion();
 	m_viewProjectionMatrix = m_projectionMatrix * m_viewMatrix;
 }
 
 glm::vec3 CameraNode::getPosition() const
 {
-	return m_transform ? m_transform->getPosition() : glm::vec3(0.0f);
+	return m_transform.getPosition();
 }
 
 const engine::math::Frustum &CameraNode::getFrustum() const

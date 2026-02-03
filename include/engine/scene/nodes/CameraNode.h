@@ -38,16 +38,6 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	CameraNode();
 	~CameraNode() override = default;
 
-	// =========================================================
-	// Transform and orientation
-	// =========================================================
-
-	/**
-	 * @brief Sets the transform for the camera node.
-	 * @param t Shared pointer to the Transform object.
-	 */
-	void setTransform(const std::shared_ptr<Transform> &t);
-
 	/**
 	 * @brief Rotate the camera to look at a target point in world space.
 	 * @param target Target point to look at.

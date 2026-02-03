@@ -35,12 +35,13 @@ if not exist "%~dp0%EXAMPLE_NAME%\CMakeLists.txt" (
 )
 
 :: Set the build directory
-set BUILD_DIR=build\%PROFILE_HOST%\%BUILDTYPE%
+set BUILD_DIR=build\%EXAMPLE_NAME%\%PROFILE_HOST%\%BUILDTYPE%
 
 echo ============================================
 echo Building Example: %EXAMPLE_NAME%
 echo Build Type: %BUILDTYPE%
 echo Backend: %WEBGPU_BACKEND%
+echo Build Directory: %BUILD_DIR%
 echo ============================================
 echo.
 

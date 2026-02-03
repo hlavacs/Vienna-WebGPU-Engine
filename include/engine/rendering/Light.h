@@ -1,8 +1,11 @@
 #pragma once
-#include "engine/rendering/LightUniforms.h"
+
+#include <variant>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <variant>
+
+#include "engine/rendering/LightUniforms.h"
 
 namespace engine::rendering
 {

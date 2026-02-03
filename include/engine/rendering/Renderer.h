@@ -7,20 +7,19 @@
 
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/CompositePass.h"
+#include "engine/rendering/DebugPass.h"
 #include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/MeshPass.h"
-#include "engine/rendering/DebugPass.h"
 #include "engine/rendering/Model.h"
-#include "engine/rendering/RenderPassManager.h"
+// #include "engine/rendering/RenderPassManager.h" ToDo: future use
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/Texture.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUModel.h"
 #include "engine/rendering/webgpu/WebGPUPipelineManager.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
@@ -32,6 +31,10 @@ class GameEngine; // forward declaration
 
 namespace engine::rendering
 {
+namespace webgpu
+{
+class WebGPUContext; // forward declaration
+} // namespace webgpu
 
 class RenderCollector; // forward declaration
 class RenderTarget;	   // forward declaration
