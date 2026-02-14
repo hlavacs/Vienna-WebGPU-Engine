@@ -279,7 +279,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 
 	void update(float deltaTime) override;
 	void lateUpdate(float deltaTime) override;
-	void preRender() override;
+	void preRender(std::vector<engine::rendering::BindGroupDataProvider> &outProviders) override;
 
 	/**
 	 * @brief Camera nodes don't add themselves to the render collector.

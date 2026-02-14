@@ -15,6 +15,11 @@ class EngineContext;
 class GameEngine;
 } // namespace engine
 
+namespace engine::rendering
+{
+struct BindGroupDataProvider;
+} // namespace engine::rendering
+
 namespace engine::scene
 {
 /**
@@ -85,6 +90,12 @@ class Scene
 	/** @brief Get the engine context */
 	[[nodiscard]] engine::EngineContext *getEngineContext() const { return m_engineContext; }
 
+	/** @brief Get the custom bind group providers collected during preRender() */
+	[[nodiscard]] const std::vector<engine::rendering::BindGroupDataProvider> &getCustomBindGroupProviders() const
+	{
+		return m_customBindGroupProviders;
+	}
+
   protected:
 	friend class engine::GameEngine;
 
@@ -119,5 +130,8 @@ class Scene
 	std::set<nodes::CameraNode::Ptr> m_cameras;
 	engine::rendering::DebugRenderCollector m_debugCollector;
 	engine::EngineContext *m_engineContext = nullptr;
+
+	/** @brief Custom bind group providers collected during preRender() */
+	std::vector<engine::rendering::BindGroupDataProvider> m_customBindGroupProviders;
 };
 } // namespace engine::scene

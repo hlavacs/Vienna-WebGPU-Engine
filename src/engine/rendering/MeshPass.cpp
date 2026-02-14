@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "engine/rendering/BindGroupBinder.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"
@@ -70,7 +71,7 @@ void MeshPass::render(FrameCache &frameCache)
 		bindLightUniforms(renderPass, frameCache);
 
 		// Draw items from frame cache
-		drawItems(encoder, renderPass, frameCache.gpuRenderItems, m_visibleIndices);
+		drawItems(encoder, renderPass, frameCache, frameCache.gpuRenderItems, m_visibleIndices);
 	}
 	m_renderPassContext->end(renderPass);
 
@@ -85,9 +86,10 @@ bool MeshPass::bindFrameUniforms(wgpu::RenderPassEncoder renderPass, FrameCache 
 		spdlog::error("Frame bind group not found in cache for camera ID {}", m_cameraId);
 		return false;
 	}
-	// Frame Bindgroup has to be at index 0 as per convention because otherwise we would need to rebind each pipeline
-	// which would be very inefficient. So Shaders must always have frame bindgroup at index 0.
-	// ToDo: Document this convention somewhere and enforce it in pipeline creation.
+	// CONVENTION: Frame bind group MUST always be at index 0
+	// This is required because frame data rarely changes (only per camera), so keeping it at a fixed
+	// position avoids rebinding on every pipeline change, which would be very inefficient.
+	// All shaders MUST define their frame bind group at @group(0).
 	renderPass.setBindGroup(0, frameBindGroup->getBindGroup(), 0, nullptr);
 	return true;
 }
@@ -107,6 +109,8 @@ bool MeshPass::bindLightUniforms(wgpu::RenderPassEncoder renderPass, FrameCache 
 	{
 		m_lightBindGroup->updateBuffer(0, lights.data(), lights.size() * sizeof(LightStruct), sizeof(LightsBuffer), m_context->getQueue());
 	}
+	// NOTE: Actual binding happens in bindShaderGroups() by name, not here at fixed index
+	// This is kept for compatibility but will be removed once bindShaderGroups handles all bindings
 	renderPass.setBindGroup(1, m_lightBindGroup->getBindGroup(), 0, nullptr);
 	return true;
 }
@@ -131,6 +135,7 @@ bool MeshPass::bindObjectUniforms(
 void MeshPass::drawItems(
 	wgpu::CommandEncoder &encoder,
 	wgpu::RenderPassEncoder renderPass,
+	FrameCache &frameCache,
 	const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 	const std::vector<size_t> &indicesToRender
 )
@@ -138,6 +143,9 @@ void MeshPass::drawItems(
 	std::shared_ptr<webgpu::WebGPUPipeline> currentPipeline = nullptr;
 	webgpu::WebGPUMesh *currentMesh = nullptr;
 	webgpu::WebGPUMaterial *currentMaterial = nullptr;
+
+	// Create bind group binder helper
+	BindGroupBinder binder(&frameCache);
 
 	spdlog::debug("MeshPass::drawItems() - Rendering {} items", indicesToRender.size());
 
@@ -167,7 +175,10 @@ void MeshPass::drawItems(
 			continue;
 		}
 
-		if (item.gpuMesh != currentMesh || item.gpuMaterial.get() != currentMaterial)
+		// Check if pipeline needs to change (mesh or material changed)
+		bool pipelineChanged = (item.gpuMesh != currentMesh || item.gpuMaterial.get() != currentMaterial);
+		
+		if (pipelineChanged)
 		{
 			auto cpuMesh = item.gpuMesh->getCPUHandle().get();
 			auto cpuMaterial = item.gpuMaterial->getCPUHandle().get();
@@ -193,30 +204,35 @@ void MeshPass::drawItems(
 			}
 			renderPass.setPipeline(currentPipeline->getPipeline());
 
-			if (item.gpuMaterial.get() != currentMaterial)
-			{
-				currentMaterial = item.gpuMaterial.get();
-				RenderPass::bind(renderPass, currentPipeline->getShaderInfo(), item.gpuMaterial->getBindGroup());
-			}
+			// Reset bind group tracking when pipeline changes
+			binder.reset();
+
+			currentMaterial = item.gpuMaterial.get();
 		}
 
-		if(!bindObjectUniforms(renderPass, currentPipeline->getShaderInfo(), item.objectBindGroup)) {
-			itemsSkipped++;
-			continue;
+		// Bind all shader groups - binder tracks what's already bound and skips redundant binds
+		// This handles per-object bind groups that change even with the same mesh/material
+		if (currentPipeline && currentPipeline->getShaderInfo())
+		{
+			binder.bind(
+				renderPass,
+				currentPipeline->getShaderInfo(),
+				m_cameraId,
+				{
+					{webgpu::BindGroupType::Object, item.objectBindGroup},
+					{webgpu::BindGroupType::Material, item.gpuMaterial->getBindGroup()},
+					{webgpu::BindGroupType::Light, m_lightBindGroup},
+					{webgpu::BindGroupType::Shadow, m_shadowBindGroup}
+				}
+			);
 		}
+
 		// Bind vertex/index buffers only when mesh changes
 		if (item.gpuMesh != currentMesh)
 		{
 			currentMesh = item.gpuMesh;
-			currentMesh->bindBuffers(renderPass,currentPipeline->getVertexLayout());
+			currentMesh->bindBuffers(renderPass, currentPipeline->getVertexLayout());
 		}
-
-		if (m_shadowBindGroup)
-		{
-			RenderPass::bind(renderPass, currentPipeline->getShaderInfo(), m_shadowBindGroup);
-		}
-
-		// ToDo: Bind other global bind groups as needed
 
 		// Draw submesh
 		item.gpuMesh->isIndexed()

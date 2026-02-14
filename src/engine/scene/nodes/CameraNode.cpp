@@ -123,7 +123,7 @@ void CameraNode::lateUpdate(float deltaTime)
 {
 }
 
-void CameraNode::preRender()
+void CameraNode::preRender(std::vector<engine::rendering::BindGroupDataProvider> &outProviders)
 {
 	// Final matrices update before rendering
 	// This is where matrices can be updated before being used by the renderer

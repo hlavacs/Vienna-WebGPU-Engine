@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/math/Frustum.h"
+#include "engine/rendering/BindGroupBinder.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/Light.h"
 #include "engine/rendering/RenderCollector.h"
@@ -269,7 +270,7 @@ void ShadowPass::render(FrameCache &frameCache)
 			const auto &u = frameCache.shadowUniforms[uniformIndex++];
 			auto visibleIndices = m_collector->extractForPointLight(u.lightPos, request.light->asPoint().range);
 			frameCache.prepareGPUResources(m_context, *m_collector, visibleIndices);
-			renderShadowCube(frameCache.gpuRenderItems, visibleIndices, m_shadowCubeArray, request.textureIndexStart, u.lightPos, request.light->asPoint().range);
+			renderShadowCube(frameCache, frameCache.gpuRenderItems, visibleIndices, m_shadowCubeArray, request.textureIndexStart, u.lightPos, request.light->asPoint().range);
 		}
 		else if (request.type == ShadowType::Directional && request.cascadeCount > 1)
 		{
@@ -280,7 +281,7 @@ void ShadowPass::render(FrameCache &frameCache)
 					engine::math::Frustum::fromViewProjection(u.viewProj)
 				);
 				frameCache.prepareGPUResources(m_context, *m_collector, visibleIndices);
-				renderShadow2D(frameCache.gpuRenderItems, visibleIndices, m_shadow2DArray, request.textureIndexStart + i, u.viewProj, u.lightPos, u.far);
+				renderShadow2D(frameCache, frameCache.gpuRenderItems, visibleIndices, m_shadow2DArray, request.textureIndexStart + i, u.viewProj, u.lightPos, u.far);
 			}
 		}
 		else
@@ -290,7 +291,7 @@ void ShadowPass::render(FrameCache &frameCache)
 				engine::math::Frustum::fromViewProjection(u.viewProj)
 			);
 			frameCache.prepareGPUResources(m_context, *m_collector, visibleIndices);
-			renderShadow2D(frameCache.gpuRenderItems, visibleIndices, m_shadow2DArray, request.textureIndexStart, u.viewProj, u.lightPos, u.far);
+			renderShadow2D(frameCache, frameCache.gpuRenderItems, visibleIndices, m_shadow2DArray, request.textureIndexStart, u.viewProj, u.lightPos, u.far);
 		}
 	}
 
@@ -302,6 +303,7 @@ void ShadowPass::render(FrameCache &frameCache)
 }
 
 void ShadowPass::renderShadow2D(
+	FrameCache &frameCache,
 	const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 	const std::vector<size_t> &indicesToRender,
 	const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
@@ -328,14 +330,15 @@ void ShadowPass::renderShadow2D(
 
 	renderPass.setViewport(0.0f, 0.0f, static_cast<float>(shadowMapSize), static_cast<float>(shadowMapSize), 0.0f, 1.0f);
 	renderPass.setScissorRect(0, 0, shadowMapSize, shadowMapSize);
-	renderPass.setBindGroup(0, m_shadowPass2DBindGroup->getBindGroup(), 0, nullptr);
 
-	renderItems(renderPass, gpuItems, indicesToRender, false);
+
+	renderItems(renderPass, frameCache, gpuItems, indicesToRender, false);
 	renderPassContext->end(renderPass);
 	m_context->submitCommandEncoder(encoder, "Shadow 2D Commands");
 }
 
 void ShadowPass::renderShadowCube(
+	FrameCache &frameCache,
 	const std::vector<std::optional<RenderItemGPU>> &items,
 	const std::vector<size_t> &indicesToRender,
 	const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
@@ -366,9 +369,8 @@ void ShadowPass::renderShadowCube(
 		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassContext->getRenderPassDescriptor());
 		renderPass.setViewport(0.0f, 0.0f, static_cast<float>(cubeMapSize), static_cast<float>(cubeMapSize), 0.0f, 1.0f);
 		renderPass.setScissorRect(0, 0, cubeMapSize, cubeMapSize);
-		renderPass.setBindGroup(0, m_shadowPassCubeBindGroup[face.faceIndex]->getBindGroup(), 0, nullptr);
 
-		renderItems(renderPass, items, indicesToRender, true);
+		renderItems(renderPass, frameCache, items, indicesToRender, true, face.faceIndex);
 		renderPassContext->end(renderPass);
 	}
 
@@ -426,17 +428,25 @@ void ShadowPass::cleanup()
 
 void ShadowPass::renderItems(
 	wgpu::RenderPassEncoder &renderPass,
+	FrameCache &frameCache,
 	const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 	const std::vector<size_t> &indicesToRender,
-	bool isCubeShadow
+	bool isCubeShadow,
+	uint32_t faceIndex
 )
 {
 	if (indicesToRender.empty())
 		return;
 
+	BindGroupBinder binder(&frameCache);
 	std::shared_ptr<webgpu::WebGPUPipeline> currentPipeline = nullptr;
 	const webgpu::WebGPUMesh *currentMesh = nullptr;
 	int renderedCount = 0;
+
+	// Get shadow pass bind group once
+	auto shadowPassBindGroup = isCubeShadow 
+		? m_shadowPassCubeBindGroup[faceIndex] 
+		: m_shadowPass2DBindGroup;
 
 	for (const auto &index : indicesToRender)
 	{
@@ -464,13 +474,21 @@ void ShadowPass::renderItems(
 			if (!currentPipeline || !currentPipeline->isValid())
 				continue;
 			renderPass.setPipeline(currentPipeline->getPipeline());
+			binder.reset();
+			
+			// Bind shadow pass bind group once per pipeline
+			binder.bind(
+				renderPass,
+				currentPipeline->getShaderInfo(),
+				0,
+				{
+					{isCubeShadow ? webgpu::BindGroupType::ShadowPassCube : webgpu::BindGroupType::ShadowPass2D, shadowPassBindGroup}
+				}
+			);
 		}
 
-		if (!RenderPass::bind(renderPass, currentPipeline->getShaderInfo(), item.objectBindGroup))
-		{
-			spdlog::warn("Failed to bind object bind group for shadow pass");
-			continue;
-		}
+		// Bind per-object bind group
+		binder.bindGroup(renderPass, currentPipeline->getShaderInfo(), item.objectBindGroup);
 
 		if (item.gpuMesh != currentMesh)
 		{

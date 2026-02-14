@@ -13,6 +13,9 @@
 #include "engine/rendering/Model.h"
 #include "engine/rendering/ShadowRequest.h"
 
+// Forward declaration
+namespace engine::scene::nodes { class Node; }
+
 namespace engine::rendering
 {
 
@@ -29,6 +32,7 @@ struct RenderItemCPU
 	engine::math::AABB worldBounds; // World-space bounding box for culling
 	uint32_t renderLayer = 0;
 	uint64_t objectID = 0; // Unique object ID for bind group caching
+	std::weak_ptr<engine::scene::nodes::Node> renderNode; // Source node for preRender() callback
 
 	bool operator<(const RenderItemCPU &other) const
 	{
@@ -68,12 +72,14 @@ class RenderCollector
 	 * @param transform World-space transform matrix.
 	 * @param layer Render layer for sorting.
 	 * @param objectID Unique ID for bind group caching (e.g., node ID).
+	 * @param node Source node for preRender() callbacks (can be nullptr).
 	 */
 	void addModel(
 		const engine::core::Handle<engine::rendering::Model> &model,
 		const glm::mat4 &transform,
 		uint32_t layer,
-		uint64_t objectID
+		uint64_t objectID,
+		std::shared_ptr<engine::scene::nodes::Node> node = nullptr
 	);
 
 	/**

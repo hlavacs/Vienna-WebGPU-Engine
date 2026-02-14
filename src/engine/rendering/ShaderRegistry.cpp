@@ -290,7 +290,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 			.addBindGroup(
 				bindgroup::defaults::DEBUG,
 				webgpu::BindGroupReuse::PerFrame,
-				webgpu::BindGroupType::Custom
+				webgpu::BindGroupType::Debug
 			)
 			.addStorageBuffer(
 				"uDebugPrimitives",
@@ -401,7 +401,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPass2DShad
 			.addBindGroup(
 				bindgroup::defaults::SHADOW_PASS_2D,
 				webgpu::BindGroupReuse::PerFrame,
-				webgpu::BindGroupType::Shadow
+				webgpu::BindGroupType::ShadowPass2D
 			)
 			// Group 0: Shadow uniforms (light view-projection matrix)
 			.addCustomUniform(
@@ -435,7 +435,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPassCubeSh
 			.addBindGroup(
 				bindgroup::defaults::SHADOW_PASS_CUBE,
 				webgpu::BindGroupReuse::PerFrame,
-				webgpu::BindGroupType::Shadow
+				webgpu::BindGroupType::ShadowPassCube
 			)
 			// Group 0: Shadow cube uniforms (light position and far plane)
 			.addCustomUniform(

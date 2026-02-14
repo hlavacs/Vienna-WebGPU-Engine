@@ -140,6 +140,7 @@ class ShadowPass : public RenderPass
 	 * - Calculate light view-projection matrix
 	 */
 	void renderShadow2D(
+		FrameCache &frameCache,
 		const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 		const std::vector<size_t> &indicesToRender, // only items visible to this light
 		const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
@@ -165,6 +166,7 @@ class ShadowPass : public RenderPass
 	 * - Ensure texture has 6 consecutive layers per cube (cubeIndex * 6 + faceIndex)
 	 */
 	void renderShadowCube(
+		FrameCache &frameCache,
 		const std::vector<std::optional<RenderItemGPU>> &items,
 		const std::vector<size_t> &indicesToRender,
 		const std::shared_ptr<webgpu::WebGPUTexture> shadowTexture,
@@ -200,15 +202,19 @@ class ShadowPass : public RenderPass
 	 * @brief Render items into the current render pass.
 	 * Handles pipeline binding, mesh binding, and draw calls.
 	 * @param renderPass The active render pass encoder.
+	 * @param frameCache Frame cache for bind group lookup.
 	 * @param gpuItems Filtered render items visible from light (caller performs culling).
 	 * @param indicesToRender Indices of items to render (subset of gpuItems).
 	 * @param isCubeShadow True if rendering to cube shadow map, false for 2D shadow.
+	 * @param faceIndex Face index for cube shadows (0-5), ignored for 2D shadows.
 	 */
 	void renderItems(
 		wgpu::RenderPassEncoder &renderPass,
+		FrameCache &frameCache,
 		const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 		const std::vector<size_t> &indicesToRender,
-		bool isCubeShadow
+		bool isCubeShadow,
+		uint32_t faceIndex = 0
 	);
 
 	// External dependencies (set via setters)

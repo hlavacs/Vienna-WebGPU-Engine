@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "engine/rendering/BindGroupBinder.h"
 #include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -101,15 +102,15 @@ void DebugPass::render(FrameCache &frameCache)
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 	{
 		renderPass.setPipeline(pipeline->getPipeline());
-		auto frameBindGroup = frameCache.frameBindGroupCache[m_cameraId];
-		if (!frameBindGroup)
-		{
-			spdlog::error("Frame bind group not found in cache for camera ID {}", m_cameraId);
-			return;
-		}
-		renderPass.setBindGroup(0, frameBindGroup->getBindGroup(), 0, nullptr);
-
-		RenderPass::bind(renderPass, pipeline->getShaderInfo(), m_debugBindGroup);
+		
+		// Use BindGroupBinder to bind frame and debug bind groups
+		BindGroupBinder binder(&frameCache);
+		binder.bind(
+			renderPass,
+			pipeline->getShaderInfo(),
+			m_cameraId,
+			{{webgpu::BindGroupType::Debug, m_debugBindGroup}}
+		);
 
 		constexpr uint32_t maxVertexCount = 32;
 		renderPass.draw(maxVertexCount, primitiveCount, 0, 0);

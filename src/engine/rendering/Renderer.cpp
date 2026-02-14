@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
+#include "engine/rendering/BindGroupDataProvider.h"
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/CompositePass.h"
 #include "engine/rendering/DebugPass.h"
@@ -36,6 +37,7 @@
 #include "engine/rendering/webgpu/WebGPUPipelineManager.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 #include "engine/scene/nodes/CameraNode.h"
+#include "engine/scene/nodes/RenderNode.h"
 
 namespace engine::rendering
 {
@@ -97,6 +99,7 @@ bool Renderer::renderFrame(
 	const RenderCollector &renderCollector,
 	const DebugRenderCollector &debugRenderCollector,
 	float time,
+	const std::vector<BindGroupDataProvider> &customBindGroupProviders,
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
 )
 {
@@ -155,7 +158,7 @@ bool Renderer::renderFrame(
 		m_shadowPass->render(m_frameCache);
 		
 		// Render scene from camera's perspective (with shadows applied)
-		renderToTexture(renderCollector, debugRenderCollector, target);
+		renderToTexture(renderCollector, debugRenderCollector, target, customBindGroupProviders);
 	}
 
 	// === PHASE 5: Composite & Present ===
@@ -278,7 +281,8 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 void Renderer::renderToTexture(
 	const RenderCollector &collector,
 	const DebugRenderCollector &debugCollector,
-	RenderTarget &renderTarget
+	RenderTarget &renderTarget,
+	const std::vector<BindGroupDataProvider> &customBindGroupProviders
 )
 {
 	spdlog::debug(
@@ -336,6 +340,17 @@ void Renderer::renderToTexture(
 	
 	spdlog::debug("Frustum culling: {} visible of {} total items", 
 		visibleIndices.size(), collector.getRenderItems().size());
+
+	// ========================================
+	// STEP 3.5: Process Custom Bind Group Data from Scene
+	// ========================================
+	// Process custom bind group providers collected by Scene during preRender().
+	// Scene traverses all enabled nodes and calls their preRender() methods.
+	if (!customBindGroupProviders.empty())
+	{
+		m_frameCache.processBindGroupProviders(m_context, customBindGroupProviders);
+		spdlog::debug("Processed {} custom bind group providers", customBindGroupProviders.size());
+	}
 
 	// ========================================
 	// STEP 4: Prepare GPU Resources

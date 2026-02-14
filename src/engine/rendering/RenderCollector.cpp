@@ -9,7 +9,8 @@ void RenderCollector::addModel(
 	const engine::core::Handle<engine::rendering::Model> &modelHandle,
 	const glm::mat4 &transform,
 	uint32_t layer,
-	uint64_t objectID
+	uint64_t objectID,
+	std::shared_ptr<engine::scene::nodes::Node> node
 )
 {
 	auto modelOpt = modelHandle.get();
@@ -40,6 +41,7 @@ void RenderCollector::addModel(
 		item.worldBounds = worldBounds;
 		item.renderLayer = layer;
 		item.objectID = objectID;
+		item.renderNode = node;
 
 		m_renderItems.push_back(item);
 	}
