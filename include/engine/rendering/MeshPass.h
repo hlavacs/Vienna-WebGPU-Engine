@@ -139,13 +139,14 @@ class MeshPass : public RenderPass
 	 * @brief Draw all prepared render items.
 	 * @param encoder The command encoder.
 	 * @param renderPass The render pass encoder.
-	 * @param renderPassContext The render pass context.
+	 * @param frameCache The frame cache containing custom bind groups.
 	 * @param gpuItems The GPU render items to draw.
 	 * @param indicesToRender The indices of items to render.
 	 */
 	void drawItems(
 		wgpu::CommandEncoder &encoder,
 		wgpu::RenderPassEncoder renderPass,
+		FrameCache &frameCache,
 		const std::vector<std::optional<RenderItemGPU>> &gpuItems,
 		const std::vector<size_t> &indicesToRender
 	);

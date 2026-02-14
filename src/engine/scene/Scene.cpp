@@ -1,4 +1,5 @@
 #include "engine/scene/Scene.h"
+#include "engine/rendering/BindGroupDataProvider.h"
 #include "engine/scene/nodes/CameraNode.h"
 #include "engine/scene/nodes/LightNode.h"
 #include "engine/scene/nodes/RenderNode.h"
@@ -152,15 +153,19 @@ void Scene::preRender()
 	if (!m_root)
 		return;
 
+	// Clear previous frame's providers
+	m_customBindGroupProviders.clear();
+
+	// Collect from cameras first
 	for (auto &cam : m_cameras)
 	{
 		if (cam->isEnabled())
-			cam->preRender();
+			cam->preRender(m_customBindGroupProviders);
 	}
 
 	// Process all RenderNodes in the scene graph for preRender
 	std::function<void(nodes::Node::Ptr)> processPreRenderNodes;
-	processPreRenderNodes = [&processPreRenderNodes](nodes::Node::Ptr node)
+	processPreRenderNodes = [&](nodes::Node::Ptr node)
 	{
 		if (node->isEnabled())
 		{
@@ -170,7 +175,7 @@ void Scene::preRender()
 				auto renderNode = node->asRenderNode();
 				if (renderNode)
 				{
-					renderNode->preRender();
+					renderNode->preRender(m_customBindGroupProviders);
 				}
 			}
 

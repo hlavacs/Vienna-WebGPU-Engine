@@ -74,6 +74,7 @@ class Renderer
 		const RenderCollector &renderCollector,
 		const DebugRenderCollector &debugRenderCollector,
 		float time,
+		const std::vector<BindGroupDataProvider> &customBindGroupProviders,
 		std::function<void(wgpu::RenderPassEncoder)> uiCallback = nullptr
 	);
 
@@ -129,7 +130,8 @@ class Renderer
 	void renderToTexture(
 		const RenderCollector &collector,
 		const DebugRenderCollector &debugCollector,
-		RenderTarget &renderTarget
+		RenderTarget &renderTarget,
+		const std::vector<BindGroupDataProvider> &customBindGroupProviders
 	);
 
 	/**

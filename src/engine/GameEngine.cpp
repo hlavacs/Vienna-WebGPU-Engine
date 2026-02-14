@@ -416,8 +416,6 @@ void GameEngine::renderFrame(float deltaTime)
 	// Extract RenderTarget from each camera
 	for (auto &camera : cameras)
 	{
-		camera->preRender();
-
 		engine::rendering::RenderTarget target{};
 		target.cameraId = camera->getId();
 		target.viewMatrix = camera->getViewMatrix();
@@ -449,7 +447,7 @@ void GameEngine::renderFrame(float deltaTime)
 
 	// Single call to renderer with frame cache
 	auto uiCallback = createUICallback();
-	m_renderer->renderFrame(renderTargets, renderCollector, debugCollector, time, uiCallback);
+	m_renderer->renderFrame(renderTargets, renderCollector, debugCollector, time, scene->getCustomBindGroupProviders(), uiCallback);
 
 	scene->postRender();
 }
