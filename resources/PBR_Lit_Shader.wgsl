@@ -293,7 +293,7 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
         let shadow = u_shadows[light.shadow_index];
 
         // Vector from light to fragment
-        let to_frag = world_pos - shadow.light_pos;
+        let to_frag = (world_pos - shadow.light_pos) * vec3f(-1.0, 1.0, 1.0); // Invert X for cube map lookup
         let linear_depth = length(to_frag);
 
         // Outside light range → fully lit
