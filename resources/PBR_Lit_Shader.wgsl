@@ -4,7 +4,7 @@ struct VertexInput {
     @location(2) tangent: vec4f,
     @location(3) uv: vec2f,
     @location(4) color: vec3f,
-};
+}
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
@@ -15,7 +15,7 @@ struct VertexOutput {
     @location(4) tangent: vec3f,
     @location(5) bitangent: vec3f,
     @location(6) world_position: vec4f,
-};
+}
 
 struct FrameUniforms {
     view_matrix: mat4x4f,
@@ -23,7 +23,7 @@ struct FrameUniforms {
     view_projection_matrix: mat4x4f,
     camera_world_position: vec3f,
     time: f32,
-};
+}
 
 struct Light {
     transform: mat4x4f,
@@ -38,7 +38,7 @@ struct Light {
     shadow_count: u32,    // HOW MANY shadow entries (0 = no shadow)
     _pad1: f32,
     _pad2: f32,
-};
+}
 
 struct LightsBuffer {
     count: u32,
@@ -46,12 +46,12 @@ struct LightsBuffer {
     _pad2: f32,
     _pad3: f32,
     lights: array<Light>,
-};
+}
 
 struct ObjectUniforms {
     model_matrix: mat4x4f,
     normal_matrix: mat4x4f,
-};
+}
 
 struct MaterialUniforms {
     diffuse: vec4f,
@@ -62,7 +62,7 @@ struct MaterialUniforms {
     metallic: f32,
     ior: f32,
     normal_strength: f32,
-};
+}
 
 
 struct ShadowUniform {
@@ -77,7 +77,7 @@ struct ShadowUniform {
     shadow_type: u32,       // 0 = 2D shadow (directional/spot), 1 = cube shadow (point) (4 bytes)
     textureIndex: u32,      // layer in correct texture array (4 bytes, total: 108)
     cascade_split: f32,     // far plane distance for this cascade (CSM only) (4 bytes, total: 112)
-};
+}
 
 @group(0) @binding(0)
 var<uniform> u_frame: FrameUniforms;

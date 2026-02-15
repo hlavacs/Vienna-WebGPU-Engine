@@ -13,8 +13,6 @@ struct FrameUniforms {
     time: f32,
 }
 
-;
-
 // Debug primitive structure (matches DebugCollector.h - 80 bytes total)
 struct DebugPrimitive {
     padding1: vec3<f32>,
@@ -26,14 +24,10 @@ struct DebugPrimitive {
     data2: vec4<f32>,
 }
 
-;
-
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
 }
-
-;
 
 @group(0) @binding(0)
 var<uniform> uFrame: FrameUniforms;
