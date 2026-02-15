@@ -474,12 +474,11 @@ void ShadowPass::renderItems(
 			if (!currentPipeline || !currentPipeline->isValid())
 				continue;
 			renderPass.setPipeline(currentPipeline->getPipeline());
-			binder.reset();
 			
 			// Bind shadow pass bind group once per pipeline
 			binder.bind(
 				renderPass,
-				currentPipeline->getShaderInfo(),
+				currentPipeline,
 				0,
 				{
 					{isCubeShadow ? BindGroupType::ShadowPassCube : BindGroupType::ShadowPass2D, shadowPassBindGroup}
@@ -487,8 +486,17 @@ void ShadowPass::renderItems(
 			);
 		}
 
-		// Bind per-object bind group
-		binder.bindGroup(renderPass, currentPipeline->getShaderInfo(), item.objectBindGroup);
+		// Bind per-object bind group - automatically handled by the next bind() call
+		// The binder tracks object changes and only rebinds when necessary
+		binder.bind(
+			renderPass,
+			currentPipeline,
+			0,
+			{
+				{BindGroupType::Object, item.objectBindGroup},
+				{isCubeShadow ? BindGroupType::ShadowPassCube : BindGroupType::ShadowPass2D, shadowPassBindGroup}
+			}
+		);
 
 		if (item.gpuMesh != currentMesh)
 		{

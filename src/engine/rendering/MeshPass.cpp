@@ -204,8 +204,6 @@ void MeshPass::drawItems(
 			}
 			renderPass.setPipeline(currentPipeline->getPipeline());
 
-			// Reset bind group tracking when pipeline changes
-			binder.reset();
 
 			currentMaterial = item.gpuMaterial.get();
 		}
@@ -214,16 +212,21 @@ void MeshPass::drawItems(
 		// This handles per-object bind groups that change even with the same mesh/material
 		if (currentPipeline && currentPipeline->getShaderInfo())
 		{
+			// Extract material ID from the material pointer for PerMaterial bind group tracking
+			uint64_t materialId = reinterpret_cast<uint64_t>(item.gpuMaterial.get());
+			
 			binder.bind(
 				renderPass,
-				currentPipeline->getShaderInfo(),
+				currentPipeline,
 				m_cameraId,
 				{
 					{BindGroupType::Object, item.objectBindGroup},
 					{BindGroupType::Material, item.gpuMaterial->getBindGroup()},
 					{BindGroupType::Light, m_lightBindGroup},
 					{BindGroupType::Shadow, m_shadowBindGroup}
-				}
+				},
+				std::nullopt, // objectId not needed - passed via objectBindGroup
+				materialId    // materialId for PerMaterial custom bind groups
 			);
 		}
 

@@ -19,6 +19,5 @@ add_engine_executable(MainDemo
     OrbitCamera.h
     MainDemoImGuiUI.cpp
     MainDemoImGuiUI.h
-    DayNightCycle.cpp
     DayNightCycle.h
 )
