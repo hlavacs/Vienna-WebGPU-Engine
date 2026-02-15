@@ -22,7 +22,9 @@ GameEngine::GameEngine() :
 	running(false)
 {
 #ifdef DEBUG_ROOT_DIR
-	engine::core::PathProvider::initialize(ASSETS_ROOT_DIR, DEBUG_ROOT_DIR);
+	// Debug: Use CMake-defined path for engine resources
+	// Engine doesn't use ASSETS_ROOT_DIR - that's for examples
+	engine::core::PathProvider::initialize("", DEBUG_ROOT_DIR);
 #else
 	engine::core::PathProvider::initialize();
 #endif

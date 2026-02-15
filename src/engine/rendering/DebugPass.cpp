@@ -107,7 +107,7 @@ void DebugPass::render(FrameCache &frameCache)
 		BindGroupBinder binder(&frameCache);
 		binder.bind(
 			renderPass,
-			pipeline->getShaderInfo(),
+			pipeline,
 			m_cameraId,
 			{{BindGroupType::Debug, m_debugBindGroup}}
 		);

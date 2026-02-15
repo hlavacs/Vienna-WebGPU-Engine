@@ -1,11 +1,10 @@
 #include "engine/rendering/BindGroupBinder.h"
-
 #include <spdlog/spdlog.h>
-
 #include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
+#include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
 namespace engine::rendering
@@ -13,220 +12,135 @@ namespace engine::rendering
 
 bool BindGroupBinder::bind(
 	wgpu::RenderPassEncoder &renderPass,
-	const std::shared_ptr<webgpu::WebGPUShaderInfo> &shaderInfo,
+	const std::shared_ptr<webgpu::WebGPUPipeline> &pipeline,
 	uint64_t cameraId,
 	const std::unordered_map<BindGroupType, std::shared_ptr<webgpu::WebGPUBindGroup>> &bindGroups,
-	std::optional<uint64_t> objectId
+	std::optional<uint64_t> objectId,
+	std::optional<uint64_t> materialId
 )
 {
-	if (!shaderInfo)
+	if (!pipeline || !pipeline->getShaderInfo())
 	{
-		spdlog::error("BindGroupBinder::bind() - Invalid shader info");
+		spdlog::error("BindGroupBinder: Invalid pipeline or shader info");
 		return false;
 	}
 
-	bool allBound = true;
+	auto shaderInfo = pipeline->getShaderInfo();
 
-	// Iterate through all bind group layouts defined in the shader
-	auto layouts = shaderInfo->getBindGroupLayoutVector();
-	for (const auto &layoutInfo : layouts)
+	// Detect render pass change
+	WGPURenderPassEncoder currentHandle = static_cast<WGPURenderPassEncoder>(renderPass);
+	if (m_lastRenderPassHandle != currentHandle)
 	{
-		if (!layoutInfo)
-			continue;
+		m_lastRenderPassHandle = currentHandle;
+		m_boundBindGroups.clear();
+		spdlog::trace("BindGroupBinder: New render pass");
+	}
 
-		// Get the group index for this layout
+	// Detect state changes
+	bool cameraChanged = (m_lastCameraId != cameraId);
+	bool objectChanged = (m_lastObjectId != objectId);
+	bool materialChanged = (m_lastMaterialId != materialId);
+
+	if (cameraChanged) m_lastCameraId = cameraId;
+	if (objectChanged) m_lastObjectId = objectId;
+	if (materialChanged) m_lastMaterialId = materialId;
+
+	// Bind all groups declared by shader
+	bool allBound = true;
+	for (const auto &layoutInfo : shaderInfo->getBindGroupLayoutVector())
+	{
+		if (!layoutInfo) continue;
+
+		// Get group index
 		auto indexOpt = shaderInfo->getBindGroupIndex(layoutInfo->getName());
-		if (!indexOpt.has_value())
-		{
-			spdlog::warn("BindGroupBinder: Could not find group index for bind group '{}'", layoutInfo->getName());
-			continue;
-		}
+		if (!indexOpt.has_value()) continue;
 		uint32_t groupIndex = static_cast<uint32_t>(indexOpt.value());
 
-		std::shared_ptr<webgpu::WebGPUBindGroup> bindGroup = nullptr;
-
-		switch (layoutInfo->getType())
+		// Check if we need to rebind based on reuse policy
+		bool needsRebind = false;
+		switch (layoutInfo->getReuse())
 		{
-		case BindGroupType::Frame:
-		{
-			auto it = m_frameCache->frameBindGroupCache.find(cameraId);
-			if (it != m_frameCache->frameBindGroupCache.end())
-			{
-				bindGroup = it->second;
-			}
-			else if (!m_frameCache->frameBindGroupCache.empty())
-			{
-				// Fallback to first available if camera ID not found
-				spdlog::warn("BindGroupBinder: Frame bind group not found for camera ID {}, using first available", cameraId);
-				bindGroup = m_frameCache->frameBindGroupCache.begin()->second;
-			}
-		}
-		break;
-
-		case BindGroupType::Light:
-		{
-			auto it = bindGroups.find(BindGroupType::Light);
-			if (it != bindGroups.end())
-				bindGroup = it->second;
-		}
-		break;
-
-		case BindGroupType::Object:
-		{
-			auto it = bindGroups.find(BindGroupType::Object);
-			if (it != bindGroups.end())
-			{
-				bindGroup = it->second;
-			}
-			else if (objectId.has_value())
-			{
-				auto cacheIt = m_frameCache->objectBindGroupCache.find(objectId.value());
-				if (cacheIt != m_frameCache->objectBindGroupCache.end())
-				{
-					bindGroup = cacheIt->second;
-				}
-			}
-		}
-		break;
-
-		case BindGroupType::Material:
-		{
-			auto it = bindGroups.find(BindGroupType::Material);
-			if (it != bindGroups.end())
-				bindGroup = it->second;
-		}
-		break;
-
-		case BindGroupType::Shadow:
-		{
-			auto it = bindGroups.find(BindGroupType::Shadow);
-			if (it != bindGroups.end())
-				bindGroup = it->second;
-		}
-		break;
-
-		case BindGroupType::ShadowPass2D:
-		{
-			auto it = bindGroups.find(BindGroupType::ShadowPass2D);
-			if (it != bindGroups.end())
-				bindGroup = it->second;
-		}
-		break;
-
-		case BindGroupType::ShadowPassCube:
-		{
-			auto it = bindGroups.find(BindGroupType::ShadowPassCube);
-			if (it != bindGroups.end())
-				bindGroup = it->second;
-		}
-		break;
-
-		case BindGroupType::Custom:
-		{
-			auto reuse = layoutInfo->getReuse();
-			std::optional<uint64_t> instanceId;
-
-			if (reuse == BindGroupReuse::PerObject || reuse == BindGroupReuse::PerMaterial)
-			{
-				instanceId = objectId;
-			}
-			// else: Global or PerFrame - no instance ID needed
-
-			std::string cacheKey = FrameCache::createCustomBindGroupCacheKey(
-				shaderInfo->getName(),
-				layoutInfo->getName(),
-				instanceId
-			);
-
-			auto it = m_frameCache->customBindGroupCache.find(cacheKey);
-			if (it != m_frameCache->customBindGroupCache.end())
-			{
-				bindGroup = it->second;
-			}
-			else
-			{
-				spdlog::debug(
-					"BindGroupBinder::bindShaderGroups() - Custom bind group '{}' not found for shader '{}' (may not be needed)",
-					layoutInfo->getName(),
-					shaderInfo->getName()
-				);
-				// Don't mark as error - custom groups are optional
-				continue;
-			}
-			break;
+			case BindGroupReuse::Global: needsRebind = false; break;
+			case BindGroupReuse::PerFrame: needsRebind = cameraChanged; break;
+			case BindGroupReuse::PerObject: needsRebind = objectChanged; break;
+			case BindGroupReuse::PerMaterial: needsRebind = materialChanged; break;
 		}
 
-		case BindGroupType::Debug:
+		// Find the bind group
+		std::shared_ptr<webgpu::WebGPUBindGroup> bindGroup = findBindGroup(
+			layoutInfo, 
+			shaderInfo->getName(),
+			bindGroups, 
+			cameraId, 
+			objectId, 
+			materialId
+		);
+
+		if (!bindGroup)
 		{
-			auto it = bindGroups.find(BindGroupType::Debug);
-			if (it != bindGroups.end())
-				bindGroup = it->second;
-		}
-		break;
-
-		case BindGroupType::Mipmap:
-			// Mipmap bind group is used in mipmap generation pass (not main rendering)
-			// Should not be bound here
-			spdlog::warn("Attempted to bind Mipmap bind group in main rendering - this should not happen");
-			break;
-
-		default:
-			spdlog::warn(
-				"BindGroupBinder::bind() - Unhandled bind group type {} for group {}",
-				static_cast<int>(layoutInfo->getType()),
-				groupIndex
-			);
-			allBound = false;
+			spdlog::trace("BindGroupBinder: No bind group for '{}' at group {}", layoutInfo->getName(), groupIndex);
 			continue;
 		}
 
-		// Bind the group if we found one
-		if (bindGroup)
+		// Bind if needed
+		if (needsRebind || m_boundBindGroups[groupIndex] != bindGroup.get())
 		{
 			if (!bindGroupAtIndex(renderPass, groupIndex, bindGroup))
-			{
 				allBound = false;
-			}
-		}
-		else
-		{
-			// Log missing bind groups but don't fail - shader will error if it actually needs it
-			spdlog::trace(
-				"BindGroupBinder::bind() - No bind group found for type {} at group {} (shader: {})",
-				static_cast<int>(layoutInfo->getType()),
-				groupIndex,
-				shaderInfo->getName()
-			);
 		}
 	}
 
 	return allBound;
 }
 
-bool BindGroupBinder::bindGroupByName(
-	wgpu::RenderPassEncoder &renderPass,
-	const std::shared_ptr<webgpu::WebGPUShaderInfo> &shaderInfo,
-	const std::string &bindGroupName,
-	const std::shared_ptr<webgpu::WebGPUBindGroup> &bindGroup
+std::shared_ptr<webgpu::WebGPUBindGroup> BindGroupBinder::findBindGroup(
+	const std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> &layoutInfo,
+	const std::string &shaderName,
+	const std::unordered_map<BindGroupType, std::shared_ptr<webgpu::WebGPUBindGroup>> &bindGroups,
+	uint64_t cameraId,
+	std::optional<uint64_t> objectId,
+	std::optional<uint64_t> materialId
 )
 {
-	if (!shaderInfo || !bindGroup)
-		return false;
+	auto type = layoutInfo->getType();
+	auto reuse = layoutInfo->getReuse();
 
-	// Get bind group index by name
-	auto indexOpt = shaderInfo->getBindGroupIndex(bindGroupName);
-	if (!indexOpt.has_value())
+	// Custom bind groups - look in cache
+	if (type == BindGroupType::Custom)
 	{
-		spdlog::warn(
-			"BindGroupBinder::bindGroupByName() - Bind group '{}' not found in shader '{}'",
-			bindGroupName,
-			shaderInfo->getName()
+		std::optional<uint64_t> instanceId;
+		if (reuse == BindGroupReuse::PerObject) instanceId = objectId;
+		if (reuse == BindGroupReuse::PerMaterial) instanceId = materialId;
+
+		std::string cacheKey = FrameCache::createCustomBindGroupCacheKey(
+			shaderName, 
+			layoutInfo->getName(), 
+			instanceId
 		);
-		return false;
+
+		auto it = m_frameCache->customBindGroupCache.find(cacheKey);
+		return (it != m_frameCache->customBindGroupCache.end()) ? it->second : nullptr;
 	}
 
-	uint32_t groupIndex = static_cast<uint32_t>(indexOpt.value());
-	return bindGroupAtIndex(renderPass, groupIndex, bindGroup);
+	// Built-in bind groups - check parameter first
+	auto it = bindGroups.find(type);
+	if (it != bindGroups.end())
+		return it->second;
+
+	// Fallback to caches
+	if (type == BindGroupType::Frame)
+	{
+		auto cacheIt = m_frameCache->frameBindGroupCache.find(cameraId);
+		return (cacheIt != m_frameCache->frameBindGroupCache.end()) ? cacheIt->second : nullptr;
+	}
+
+	if (type == BindGroupType::Object && objectId.has_value())
+	{
+		auto cacheIt = m_frameCache->objectBindGroupCache.find(objectId.value());
+		return (cacheIt != m_frameCache->objectBindGroupCache.end()) ? cacheIt->second : nullptr;
+	}
+
+	return nullptr;
 }
 
 bool BindGroupBinder::bindGroupAtIndex(
@@ -235,52 +149,22 @@ bool BindGroupBinder::bindGroupAtIndex(
 	const std::shared_ptr<webgpu::WebGPUBindGroup> &bindGroup
 )
 {
-	if (!bindGroup)
-		return false;
+	if (!bindGroup) return false;
 
 	// Check if already bound
 	auto it = m_boundBindGroups.find(groupIndex);
 	if (it != m_boundBindGroups.end() && it->second == bindGroup.get())
 	{
-		// Already bound, skip
+		spdlog::trace("BindGroupBinder: Group {} already bound", groupIndex);
 		return true;
 	}
 
-	// Bind the group
+	// Bind it
 	renderPass.setBindGroup(groupIndex, bindGroup->getBindGroup(), 0, nullptr);
 	m_boundBindGroups[groupIndex] = bindGroup.get();
 
-	spdlog::trace("Bound bind group at index {}", groupIndex);
+	spdlog::trace("BindGroupBinder: Bound group {}", groupIndex);
 	return true;
-}
-
-bool BindGroupBinder::bindGroup(
-	wgpu::RenderPassEncoder &renderPass,
-	const std::shared_ptr<webgpu::WebGPUShaderInfo> &shaderInfo,
-	const std::shared_ptr<webgpu::WebGPUBindGroup> &bindGroup
-)
-{
-	if (!bindGroup || !bindGroup->getLayoutInfo())
-	{
-		spdlog::warn("BindGroupBinder::bindGroup() - Invalid bind group or layout info");
-		return false;
-	}
-
-	// Extract name from bind group's layout info
-	const std::string &bindGroupName = bindGroup->getLayoutInfo()->getName();
-	return bindGroupByName(renderPass, shaderInfo, bindGroupName, bindGroup);
-}
-
-std::optional<uint64_t> BindGroupBinder::getBindGroupIndex(
-	const std::shared_ptr<webgpu::WebGPUShaderInfo> &shaderInfo,
-	const std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> &layoutInfo
-) const
-{
-	if (!shaderInfo || !layoutInfo)
-		return std::nullopt;
-
-	// Use shader's built-in getBindGroupIndex method
-	return shaderInfo->getBindGroupIndex(layoutInfo->getName());
 }
 
 } // namespace engine::rendering
