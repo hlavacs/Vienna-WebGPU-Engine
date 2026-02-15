@@ -109,7 +109,7 @@ void DebugPass::render(FrameCache &frameCache)
 			renderPass,
 			pipeline->getShaderInfo(),
 			m_cameraId,
-			{{webgpu::BindGroupType::Debug, m_debugBindGroup}}
+			{{BindGroupType::Debug, m_debugBindGroup}}
 		);
 
 		constexpr uint32_t maxVertexCount = 32;

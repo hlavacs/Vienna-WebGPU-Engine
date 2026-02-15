@@ -50,7 +50,7 @@ struct BindGroupDataProvider
 	std::string bindGroupName;						   ///< Name of bind group in shader (e.g., "MyCustomUniforms")
 	std::vector<uint8_t> data;						   ///< Raw uniform data to upload
 	size_t dataSize = 0;							   ///< Size of data in bytes
-	webgpu::BindGroupReuse reuse = webgpu::BindGroupReuse::PerFrame; ///< Reuse policy from shader layout
+	BindGroupReuse reuse = BindGroupReuse::PerFrame; ///< Reuse policy from shader layout
 	std::optional<uint64_t> instanceId = std::nullopt; ///< Instance ID: nullopt=shared (Global/PerFrame), value=per-instance (PerObject/PerMaterial)
 
 	/**
@@ -67,7 +67,7 @@ struct BindGroupDataProvider
 		const std::string &bindGroup,
 		const void *dataPtr,
 		size_t size,
-		webgpu::BindGroupReuse reuse = webgpu::BindGroupReuse::PerFrame,
+		BindGroupReuse reuse = BindGroupReuse::PerFrame,
 		std::optional<uint64_t> instanceId = std::nullopt
 	)
 	{
@@ -96,7 +96,7 @@ struct BindGroupDataProvider
 		const std::string &shader,
 		const std::string &bindGroup,
 		const T &uniforms,
-		webgpu::BindGroupReuse reuse = webgpu::BindGroupReuse::PerFrame,
+		BindGroupReuse reuse = BindGroupReuse::PerFrame,
 		std::optional<uint64_t> instanceId = std::nullopt
 	)
 	{

@@ -12,6 +12,7 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/FrameUniforms.h"
+#include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/ShaderType.h"

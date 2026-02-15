@@ -58,7 +58,7 @@ class ModelManager : public engine::resources::ResourceManagerBase<engine::rende
 	 * @return Optional containing the created model if successful
 	 */
 	std::optional<ModelPtr> createModel(
-		const std::string &filePath,
+		const std::filesystem::path &filePath,
 		const std::optional<std::string> &name = std::nullopt,
 		const engine::math::CoordinateSystem::Cartesian srcCoordSys = engine::math::CoordinateSystem::Cartesian::RH_Y_UP_NEGATIVE_Z_FORWARD,
 		const engine::math::CoordinateSystem::Cartesian dstCoordSys = engine::math::CoordinateSystem::DEFAULT

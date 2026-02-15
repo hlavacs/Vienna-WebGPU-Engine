@@ -22,7 +22,7 @@ GameEngine::GameEngine() :
 	running(false)
 {
 #ifdef DEBUG_ROOT_DIR
-	engine::core::PathProvider::initialize(DEBUG_ROOT_DIR, ASSETS_ROOT_DIR);
+	engine::core::PathProvider::initialize(ASSETS_ROOT_DIR, DEBUG_ROOT_DIR);
 #else
 	engine::core::PathProvider::initialize();
 #endif
