@@ -2,43 +2,95 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Main Demo (Debug)",
-            "type": "cppvsdbg",
+            "name": "Tutorial (Debug)",
+            "type": "${os:windows?cppvsdbg:cppdbg}",
             "request": "launch",
-            "program": "${workspaceFolder}/examples/build/main_demo/Windows/Debug/MainDemo.exe",
-            "symbolSearchPath": "${workspaceFolder}/examples/build/main_demo/Windows/Debug",
+            "program": "${workspaceFolder}/examples/build/tutorial/${os:windows?Windows:Linux}/Debug/Tutorial${os:windows?.exe:}",
+            "symbolSearchPath": "${workspaceFolder}/examples/build/tutorial/${os:windows?Windows:Linux}/Debug",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "preLaunchTask": "Build Example: Main Demo (Debug)"
+            "preLaunchTask": "Build Example: Tutorial (Debug)",
+            "linux": {
+                "MIMode": "gdb",
+                "setupCommands": [
+                    {
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
+                    }
+                ]
+            }
+        },
+        {
+            "name": "Main Demo (Debug)",
+            "type": "${os:windows?cppvsdbg:cppdbg}",
+            "request": "launch",
+            "program": "${workspaceFolder}/examples/build/main_demo/${os:windows?Windows:Linux}/Debug/MainDemo${os:windows?.exe:}",
+            "symbolSearchPath": "${workspaceFolder}/examples/build/main_demo/${os:windows?Windows:Linux}/Debug",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Example: Main Demo (Debug)",
+            "linux": {
+                "MIMode": "gdb",
+                "setupCommands": [
+                    {
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
+                    }
+                ]
+            }
         },
         {
             "name": "Multi View (Debug)",
-            "type": "cppvsdbg",
+            "type": "${os:windows?cppvsdbg:cppdbg}",
             "request": "launch",
-            "program": "${workspaceFolder}/examples/build/multi_view/Windows/Debug/MultiView.exe",
-            "symbolSearchPath": "${workspaceFolder}/examples/build/multi_view/Windows/Debug",
+            "program": "${workspaceFolder}/examples/build/multi_view/${os:windows?Windows:Linux}/Debug/MultiView${os:windows?.exe:}",
+            "symbolSearchPath": "${workspaceFolder}/examples/build/multi_view/${os:windows?Windows:Linux}/Debug",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "preLaunchTask": "Build Example: Multi View (Debug)"
+            "preLaunchTask": "Build Example: Multi View (Debug)",
+            "linux": {
+                "MIMode": "gdb",
+                "setupCommands": [
+                    {
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
+                    }
+                ]
+            }
         },
         {
             "name": "Scene Editor (Debug)",
-            "type": "cppvsdbg",
+            "type": "${os:windows?cppvsdbg:cppdbg}",
             "request": "launch",
-            "program": "${workspaceFolder}/examples/build/scene_editor/Windows/Debug/SceneEditor.exe",
-            "symbolSearchPath": "${workspaceFolder}/examples/build/scene_editor/Windows/Debug",
+            "program": "${workspaceFolder}/examples/build/scene_editor/${os:windows?Windows:Linux}/Debug/SceneEditor${os:windows?.exe:}",
+            "symbolSearchPath": "${workspaceFolder}/examples/build/scene_editor/${os:windows?Windows:Linux}/Debug",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "preLaunchTask": "Build Example: Scene Editor (Debug)"
+            "preLaunchTask": "Build Example: Scene Editor (Debug)",
+            "linux": {
+                "MIMode": "gdb",
+                "setupCommands": [
+                    {
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
+                    }
+                ]
+            }
         },
         {
-            "name": "Emscripten (Debug) [Host Windows]",
+            "name": "Emscripten (Debug)",
             "type": "chrome",
             "request": "launch",
             "url": "http://localhost:8080/examples/emscripten/build/Emscripten/Debug/WebGPU_Engine.html",
