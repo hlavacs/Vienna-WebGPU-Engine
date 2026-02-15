@@ -126,9 +126,10 @@ Open `examples/tutorial/assets/shaders/unlit.wgsl` and add:
 
 ```wgsl
 struct FrameUniforms {
-    viewMatrix: mat4x4f,
-    projectionMatrix: mat4x4f,
-    cameraPosition: vec3f,
+    viewMatrix: mat4x4<f32>,
+    projectionMatrix: mat4x4<f32>,
+    viewProjectionMatrix: mat4x4<f32>,
+    cameraPosition: vec3<f32>,
     time: f32,
 }
 
@@ -205,7 +206,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let worldPos = objectUniforms.modelMatrix * vec4f(input.position, 1.0);
     let viewPos = frameUniforms.viewMatrix * worldPos;
     output.position = frameUniforms.projectionMatrix * viewPos;
-    
     output.texCoord = input.texCoord;
     
     return output;
@@ -268,6 +268,44 @@ Now you should see:
 
 ---
 
+## Understanding What We Built
+
+You created a complete WebGPU rendering shader with three main components:
+
+**1. Data Structures**
+- `VertexInput` - Maps to vertex buffer attributes via `@location` decorators. WebGPU uses these to know which buffer data goes where (location 0 = position from buffer slot 0, etc.)
+- `VertexOutput` - Data passed from vertex to fragment stage. `@builtin(position)` is WebGPU's required clip-space output, `@location` attributes are interpolated by the rasterizer
+- Uniform structs - Declared as `var<uniform>` to indicate read-only GPU memory. WebGPU enforces memory alignment rules (vec3f followed by f32 requires padding)
+
+**2. Bind Groups (WebGPU's Resource Binding Model)**
+- `@group(0)` - Frame data: WebGPU lets you update bind groups independently. Group 0 changes once per frame
+- `@group(1)` - Object data: Rebound for each object, but Groups 0 stays bound
+- `@group(2)` - Material data: Contains uniform buffer (`@binding(0)`), sampler (`@binding(1)`), texture (`@binding(2)`)
+
+This is WebGPU's optimization strategy: group resources by update frequency. When you change an object, only Group 1 rebinds—the others stay cached in GPU state.
+
+**3. Shader Pipeline Stages**
+- `@vertex fn vs_main()` - Vertex stage: Transforms positions to clip-space. WebGPU's render pipeline invokes this once per vertex
+- `@fragment fn fs_main()` - Fragment stage: Determines pixel color. WebGPU's rasterizer interpolates vertex outputs across primitives, then invokes this per fragment
+
+Between stages, WebGPU's fixed-function rasterizer converts clip-space triangles to screen-space fragments, performing depth testing and face culling.
+
+**WebGPU Concepts:**
+- **Render Pipeline** - Combines shaders, vertex layout, blend state, depth state into a single GPU program
+- **Bind Groups** - Resource descriptors (buffers, textures, samplers) bound to `@group(N)` slots in shaders
+- **Command Encoding** - CPU records GPU commands (set pipeline, bind groups, draw), then submits batch to GPU queue
+
+**Where to Find These Concepts in the Engine:**
+
+If you want to understand how the engine implements these WebGPU features:
+
+- **Bind Group Creation** → [WebGPUBindGroupFactory.cpp](../../src/engine/rendering/webgpu/WebGPUBindGroupFactory.cpp) - See how `@group` and `@binding` map to WebGPU resources
+- **Pipeline Building** → [WebGPUPipelineFactory.cpp](../../src/engine/rendering/webgpu/WebGPUPipelineFactory.cpp) - See how shaders, vertex layouts, and state combine into pipelines
+- **Vertex Layout Definition** → [WebGPUPipelineManager.cpp](../../src/engine/rendering/webgpu/WebGPUPipelineManager.cpp) - Look for `VertexBufferLayout` with attribute formats and offsets
+- **Shader Compilation** → [WebGPUShaderFactory.cpp](../../src/engine/rendering/webgpu/WebGPUShaderFactory.cpp) - See WGSL → shader module → bind group layout extraction
+- **Bind Group Binding Logic** → [BindGroupBinder.cpp](../../src/engine/rendering/BindGroupBinder.cpp) - See reuse policies and automatic rebinding
+- **Frame Rendering Loop** → [Renderer.cpp](../../src/engine/rendering/Renderer.cpp) - See the complete flow from `renderFrame()` through all passes
+
 ## Experiments to Try
 
 Now that your shader works, try these quick modifications:
@@ -276,6 +314,14 @@ Now that your shader works, try these quick modifications:
 ```cpp
 unlitProperties.color = glm::vec4(1.0f, 0.5f, 0.5f, 1.0f);  // Red tint
 ```
+
+**2. Texture Tiling - In `unlit.wgsl` fragment shader:
+```wgsl
+let tiledUV = input.texCoord * 4.0; // Tile 4x4
+let textureColor = textureSample(baseColorTexture, textureSampler, tiledUV);
+```
+
+Will result in smaller stone tiles.
 
 **2. Animate with time** - In `unlit.wgsl` fragment shader:
 ```wgsl
@@ -315,12 +361,14 @@ let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 ## What's Next?
 
 In **Tutorial 02**, you'll learn:
-- Writing custom shaders with advanced features
-- Using time-based animations in shaders
-- Working with multiple textures
-- Creating visual effects (scrolling, tiling, distortion)
+- Creating custom bind groups beyond the standard Frame/Object/Material
+- Registering custom bind groups in shader reflection
+- Implementing `preRender()` to provide per-object data
+- Using `BindGroupDataProvider` to send custom data to GPU
+- Extending `ModelRenderNode` to add custom shader parameters
+- Practical example: Texture tiling and offset control per object
 
-**Next Tutorial:** [02_custom_bindgroup.md](02_custom_bindgroup.md)
+**Next Tutorial:** [02_custom_bindgroup.md](02_custom_bindgroup.md) / [02_custom_bindgroup.pdf](02_custom_bindgroup.pdf)
 
 ---
 
@@ -330,398 +378,3 @@ In **Tutorial 02**, you'll learn:
 - [Engine Bind Group System](../BindGroupSystem.md)
 - [Getting Started Guide](../GettingStarted.md)
 - [LearnWebGPU Tutorial](https://eliemichel.github.io/LearnWebGPU/)
-    modelMatrix: mat4x4f,          // Model-to-world transform
-    normalMatrix: mat4x4f,         // Normal transformation matrix
-}
-
-@group(1) @binding(0)
-var<uniform> objectUniforms: ObjectUniforms;
-```
-
-**Usage:**
-- Transform vertices from model space to world space
-- Transform normals correctly (using normalMatrix)
-
-### Bind Group 2: MaterialUniforms (Provided by material system)
-
-The engine's material system provides textures and properties:
-
-```wgsl
-@group(2) @binding(0) var materialTexture: texture_2d<f32>;
-@group(2) @binding(1) var materialSampler: sampler;
-```
-
-**Note:** For this tutorial, we'll use the default material's diffuse texture.
-
----
-
-## Step 1: Write the Vertex Shader
-
-Open `examples/tutorial/assets/unlit.wgsl` and let's start with the vertex shader.
-
-### Define Bind Groups
-
-First, declare the bind groups we'll use:
-
-```wgsl
-// ============================================================================
-// Bind Group 0: Frame Uniforms (Engine-provided, required)
-// ============================================================================
-struct FrameUniforms {
-    viewMatrix: mat4x4f,
-    projectionMatrix: mat4x4f,
-    cameraPosition: vec3f,
-    time: f32,
-}
-
-@group(0) @binding(0)
-var<uniform> frameUniforms: FrameUniforms;
-
-// ============================================================================
-// Bind Group 1: Object Uniforms (Engine-provided for model rendering)
-// ============================================================================
-struct ObjectUniforms {
-    modelMatrix: mat4x4f,
-    normalMatrix: mat4x4f,
-}
-
-@group(1) @binding(0)
-var<uniform> objectUniforms: ObjectUniforms;
-
-// ============================================================================
-// Bind Group 2: Material Texture (Engine material system)
-// ============================================================================
-@group(2) @binding(0)
-var materialTexture: texture_2d<f32>;
-
-@group(2) @binding(1)
-var materialSampler: sampler;
-```
-
-### Define Vertex Input/Output
-
-The engine provides vertex data in a specific format:
-
-```wgsl
-// ============================================================================
-// Vertex Shader Input/Output
-// ============================================================================
-struct VertexInput {
-    @location(0) position: vec3f,    // Vertex position in model space
-    @location(1) normal: vec3f,      // Vertex normal in model space
-    @location(2) texCoord: vec2f,    // UV texture coordinates
-}
-
-struct VertexOutput {
-    @builtin(position) position: vec4f,  // Clip-space position (required)
-    @location(0) worldPosition: vec3f,   // World-space position (for fragment)
-    @location(1) texCoord: vec2f,        // UV coordinates (for fragment)
-}
-```
-
-**Key Points:**
-- `@location(N)` maps to vertex buffer attributes
-- `@builtin(position)` is required - tells GPU where to draw the vertex
-- Output locations pass data to fragment shader
-
-### Implement Vertex Shader
-
-Now write the transformation logic:
-
-```wgsl
-// ============================================================================
-// Vertex Shader
-// ============================================================================
-@vertex
-fn vertexMain(input: VertexInput) -> VertexOutput {
-    var output: VertexOutput;
-    
-    // Transform vertex position: Model Space → World Space → View Space → Clip Space
-    let worldPos = objectUniforms.modelMatrix * vec4f(input.position, 1.0);
-    output.worldPosition = worldPos.xyz;
-    
-    // Apply camera transformation
-    let viewPos = frameUniforms.viewMatrix * worldPos;
-    output.position = frameUniforms.projectionMatrix * viewPos;
-    
-    // Pass through texture coordinates
-    output.texCoord = input.texCoord;
-    
-    return output;
-}
-```
-
-**Transformation Pipeline:**
-1. **Model → World:** `modelMatrix * position` transforms from model's local space to world space
-2. **World → View:** `viewMatrix * worldPos` transforms relative to camera
-3. **View → Clip:** `projectionMatrix * viewPos` applies perspective and prepares for screen mapping
-4. **Pass Data:** UV coordinates are passed unchanged to fragment shader
-
----
-
-## Step 2: Write the Fragment Shader
-
-The fragment shader determines the color of each pixel.
-
-### Implement Unlit Fragment Shader
-
-```wgsl
-// ============================================================================
-// Fragment Shader
-// ============================================================================
-@fragment
-fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
-    // Sample the diffuse texture at the given UV coordinates
-    let textureColor = textureSample(materialTexture, materialSampler, input.texCoord);
-    
-    // Return the texture color directly (unlit - no lighting calculations)
-    return textureColor;
-}
-```
-
-**What's happening:**
-- `textureSample()` reads color from texture at UV coordinates
-- We return the color directly without any lighting calculations
-- This creates an "unlit" look - the object shows its texture but doesn't respond to lights
-
----
-
-## Complete Shader Code
-
-Here's the complete `unlit.wgsl` shader:
-
-```wgsl
-// ============================================================================
-// Tutorial 01: Unlit Shader
-// A simple shader that displays textured geometry without lighting
-// ============================================================================
-
-// ============================================================================
-// Bind Group 0: Frame Uniforms (Engine-provided, required)
-// ============================================================================
-struct FrameUniforms {
-    viewMatrix: mat4x4f,
-    projectionMatrix: mat4x4f,
-    cameraPosition: vec3f,
-    time: f32,
-}
-
-@group(0) @binding(0)
-var<uniform> frameUniforms: FrameUniforms;
-
-// ============================================================================
-// Bind Group 1: Object Uniforms (Engine-provided for model rendering)
-// ============================================================================
-struct ObjectUniforms {
-    modelMatrix: mat4x4f,
-    normalMatrix: mat4x4f,
-}
-
-@group(1) @binding(0)
-var<uniform> objectUniforms: ObjectUniforms;
-
-// ============================================================================
-// Bind Group 2: Material Texture (Engine material system)
-// ============================================================================
-@group(2) @binding(0)
-var materialTexture: texture_2d<f32>;
-
-@group(2) @binding(1)
-var materialSampler: sampler;
-
-// ============================================================================
-// Vertex Shader Input/Output
-// ============================================================================
-struct VertexInput {
-    @location(0) position: vec3f,
-    @location(1) normal: vec3f,
-    @location(2) texCoord: vec2f,
-}
-
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    @location(0) worldPosition: vec3f,
-    @location(1) texCoord: vec2f,
-}
-
-// ============================================================================
-// Vertex Shader
-// ============================================================================
-@vertex
-fn vertexMain(input: VertexInput) -> VertexOutput {
-    var output: VertexOutput;
-    
-    // Transform vertex position: Model Space → World Space → View Space → Clip Space
-    let worldPos = objectUniforms.modelMatrix * vec4f(input.position, 1.0);
-    output.worldPosition = worldPos.xyz;
-    
-    // Apply camera transformation
-    let viewPos = frameUniforms.viewMatrix * worldPos;
-    output.position = frameUniforms.projectionMatrix * viewPos;
-    
-    // Pass through texture coordinates
-    output.texCoord = input.texCoord;
-    
-    return output;
-}
-
-// ============================================================================
-// Fragment Shader
-// ============================================================================
-@fragment
-fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
-    // Sample the diffuse texture at the given UV coordinates
-    let textureColor = textureSample(materialTexture, materialSampler, input.texCoord);
-    
-    // Return the texture color directly (unlit - no lighting calculations)
-    return textureColor;
-}
-```
-
----
-
-## Step 3: Understanding What We Built
-
-Let's break down the data flow:
-
-### Vertex Processing
-```
-Mesh Data (CPU)
-    ↓
-Vertex Input (position, normal, texCoord)
-    ↓
-Model Matrix (ObjectUniforms) → World Space
-    ↓
-View Matrix (FrameUniforms) → Camera Space
-    ↓
-Projection Matrix (FrameUniforms) → Clip Space
-    ↓
-Vertex Output (position, worldPosition, texCoord)
-```
-
-### Fragment Processing
-```
-Vertex Output (interpolated)
-    ↓
-Sample Texture at UV coordinates
-    ↓
-Fragment Color (RGBA)
-    ↓
-Screen Pixel
-```
-
-### Why "Unlit"?
-
-Compare with a lit shader:
-```wgsl
-// Lit shader (simplified)
-@fragment
-fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
-    let textureColor = textureSample(materialTexture, materialSampler, input.texCoord);
-    
-    // Calculate lighting (diffuse, specular, etc.)
-    let normal = normalize(input.worldNormal);
-    let lightDir = normalize(lightPosition - input.worldPosition);
-    let diffuse = max(dot(normal, lightDir), 0.0);
-    
-    // Apply lighting to texture color
-    return textureColor * diffuse * lightColor;
-}
-```
-
-**Our unlit shader skips all lighting calculations** - it just shows the raw texture color.
-
----
-
-## Next Steps
-
-In the next tutorial, we'll learn how to:
-1. **Register this shader** with the engine's shader system
-2. **Create a custom pipeline** that uses our shader
-3. **Use shader reflection** to automatically discover bind groups
-4. **Assign the shader** to specific render nodes
-
-For now, the shader is complete and ready to use!
-
----
-
-## Common Patterns
-
-### Texture Tiling
-Multiply UV coordinates to repeat the texture:
-```wgsl
-let tiledUV = input.texCoord * 2.0;  // Tile 2x2
-let textureColor = textureSample(materialTexture, materialSampler, tiledUV);
-```
-
-### Texture Scrolling
-Animate texture using time:
-```wgsl
-let scrolledUV = input.texCoord + vec2f(frameUniforms.time * 0.1, 0.0);
-let textureColor = textureSample(materialTexture, materialSampler, scrolledUV);
-```
-
-### Vertex Color Tinting
-Add color variation per vertex:
-```wgsl
-// In VertexInput, add:
-@location(3) color: vec3f,
-
-// In fragment shader:
-let textureColor = textureSample(materialTexture, materialSampler, input.texCoord);
-return vec4f(textureColor.rgb * input.color, textureColor.a);
-```
-
----
-
-## Key Takeaways
-
-✅ **Bind Group 0 (FrameUniforms)** - Always required, provides camera and time  
-✅ **Bind Group 1 (ObjectUniforms)** - Required for 3D models, provides transforms  
-✅ **Bind Group 2 (MaterialUniforms)** - Provided by material system, contains textures  
-✅ **Vertex Shader** - Transforms vertices through model → world → view → clip spaces  
-✅ **Fragment Shader** - Determines pixel color (texture sampling, lighting, effects)  
-✅ **Unlit Rendering** - No lighting calculations, just raw texture/color output  
-
----
-
-## Troubleshooting
-
-### Shader Compilation Errors
-
-**"unknown identifier 'frameUniforms'"**
-- Check that bind group is declared with `@group(0) @binding(0)`
-- Ensure struct and variable names match exactly
-
-**"'textureSample' requires sampler to be filtered"**
-- Verify materialSampler is declared with correct type
-- Check binding numbers match (texture=0, sampler=1)
-
-### Visual Issues
-
-**Black screen**
-- Verify bind group indices (0, 1, 2)
-- Check texture is loaded and bound correctly
-- Ensure matrices are not zero/identity incorrectly
-
-**Stretched/distorted textures**
-- Check UV coordinates are being passed correctly
-- Verify model has valid UV data (check in Blender/modeling tool)
-
-**Model not visible**
-- Verify transformation matrices are correct
-- Check camera position and look direction
-- Ensure model is within camera's view frustum
-
----
-
-## Further Reading
-
-- [WebGPU WGSL Specification](https://www.w3.org/TR/WGSL/)
-- [Bind Group System](../BindGroupSystem.md)
-- [Getting Started Guide](../GettingStarted.md)
-- [LearnWebGPU](https://eliemichel.github.io/LearnWebGPU/)
-
----
-
-**Next Tutorial:** [02_shader_registration.md](02_shader_registration.md) - Register and use your custom shader in the engine

@@ -1,5 +1,5 @@
 /**
- * Tutorial 01: Unlit Shader with Custom Bind Group
+ * Tutorials: Unlit Shader with Custom Bind Group
  * Learn how to create custom shaders and bind groups
  */
 #include "engine/EngineMain.h"
@@ -7,13 +7,14 @@
 #include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/ShaderType.h"
 
+#include "CustomRenderNode.h"
 #include "FreeFlyCamera.h"
 
 using PathProvider = engine::core::PathProvider;
 
 int main(int argc, char **argv)
 {
-	spdlog::info("Tutorial 01: Unlit Shader with Custom Bind Group");
+	spdlog::info("Tutorials: Unlit Shader with Custom Bind Group");
 
 	// Initialize engine
 	engine::GameEngineOptions options;
@@ -68,7 +69,7 @@ int main(int argc, char **argv)
 			.begin(
 				"unlit",
 				engine::rendering::ShaderType::Unlit,
-				PathProvider::getShaders("unlit.wgsl"),
+				PathProvider::getShaders("unlit_custom.wgsl"), // Adjust based on tutorial
 				"vs_main",
 				"fs_main",
 				engine::rendering::VertexLayout::PositionNormalUV,
@@ -99,7 +100,7 @@ int main(int argc, char **argv)
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				WGPUShaderStage_Fragment
-			)
+			) // Tutorial 2 - Step 6: Register Shader with Custom Bind Group
 			.build();
 
 	shaderRegistry.registerShader(shaderInfo);
@@ -126,15 +127,16 @@ int main(int argc, char **argv)
 	auto floorMaterial = maybeFloorMaterial.value();
 	auto floorModel = maybeModelFloor.value();
 
-	// TODO: Tutorial Step 9 - Uncomment this line after completing the shader
+	// Tutorial 1 - Step 9: Uncomment this line after completing the shader
 	// This assigns our custom material to the floor's only submesh.
 	// plane.obj has only one mesh, so we use [0] to access it.
+	// ------------------
 	// floorModel->getSubmeshes()[0].material = floorMaterial->getHandle();
 
+	// Tutorial 2: Step 8: Create CustomRenderNode Instance
 	auto floorNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(floorModel);
 	floorNode->getTransform().setLocalScale(glm::vec3(10.0f, 1.0f, 10.0f));
 	rootNode->addChild(floorNode);
-
 #pragma endregion
 
 #pragma region Setup Lights
