@@ -13,6 +13,63 @@ It reflects:
 
 ---
 
+## 0. Path Management
+
+### Two Path Systems
+
+**Application Assets** (`basePath`): Example-specific assets
+
+| Build | Location | Set By |
+| Debug | Example source directory | `ASSETS_ROOT_DIR` CMake define | `<example_dir>/assets/` (source) |
+| Release | Executable dir | `getExecutablePath()` at runtime | `<exe>/assets/` (deployed) |
+
+**2. Engine Library Resource Paths (`resourceRoot`)**
+
+| Build | `resourceRoot` Value | Determined By | Engine Resources Location |
+|-------|---------------------|---------------|---------------------------|
+| Debug | Project root + `/resources/` | `DEBUG_ROOT_DIR` + `/resources/` | `<project>/resources/` (source) |
+| Release | Library dir + `/resources/` | `getEnginePath()` + `/resources/` | `<lib>/resources/` (deployed) |
+
+**Usage:**
+
+```cpp
+// Application assets
+auto appTexture = PathProvider::getTextures("brick.png");
+
+// Engine resources
+auto engineShader = PathProvider::getResource("PBR_Lit_Shader.wgsl");
+```
+
+**Key Rules:**
+- Use `PathProvider` for all paths (never hardcode)
+- `assets/` = example-specific, `resources/` = engine-wide
+- Debug: CMake defines paths, Release: runtime detection
+
+### 0.2 Build Output Locations
+
+```
+Project Root/
+├── build/
+│   └── Windows/
+│       ├── Debug/          # Engine library + dependencies
+│       └── Release/
+├── examples/
+│   └── build/
+│       └── <example_name>/
+│           └── Windows/
+│               ├── Debug/  # Example executable + copied assets
+│               └── Release/
+└── resources/              # Source assets (Debug builds access directly)
+```
+
+**Key Points:**
+- Debug executables run from project root, accessing `resources/` directly
+- Release executables expect assets in their output directory
+- CMake automatically copies required assets to Release builds
+- Always use `PathProvider` to ensure path portability
+
+---
+
 ## 1. Core Design Principles
 
 ### 1.1 Single Responsibility

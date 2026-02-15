@@ -73,36 +73,36 @@ int main(int argc, char** argv)
 
 ## Project Structure and Asset Paths
 
+### ⚠️ Important: Debug vs Release Paths
+
+**Path behavior differs between Debug and Release builds:**
+
+- **Debug builds**: `PathProvider` uses the **project root directory** as `basePath`
+  - Example: `E:\Projects\MyGame\` (where CMakeLists.txt is)
+  - Resources are accessed directly from source directories
+
+- **Release builds**: `PathProvider` uses the **executable directory** as `basePath`
+  - Example: `E:\Projects\MyGame\build\Release\`
+  - Resources will be copied to the build output directory if named `assets` folder exist
+
+**Recommendation:** Always use `PathProvider` to abstract path differences between build configurations.
+
 ### Directory Layout
 
-Models are loaded from the `assets/models/` directory by default:
-
-```cpp
-auto resourceManager = engine.getResourceManager();
-
-// Option 1: Load from assets/models/ (recommended)
-auto modelPath = PathProvider::resolve("models") / "my_model.obj";
-auto maybeModel = resourceManager->m_modelManager->createModel(modelPath.string());
-
-// Option 2: Direct path (if model is in a custom location)
-auto maybeModel2 = resourceManager->m_modelManager->createModel("C:/Models/my_model.obj");
-
-// Option 3: Relative to executable
-auto maybeModel3 = resourceManager->m_modelManager->createModel("my_model.obj");
-
-if (!maybeModel.has_value()) {
-    spdlog::error("Failed to load model");
-    return -1;
-}
+**Your Application Structure:**
 ```
-
-**Recommended**: Place models in `{YourApp}/assets/models/` and use `PathProvider::resolve("models")  ├── materials/           # Material definitions
+YourApp/
+├── assets/                  # Application-specific assets
+│   ├── models/              # Your 3D models
+│   ├── textures/            # Your textures
+│   ├── shaders/             # Your custom shaders
+│   ├── materials/           # Material definitions
 │   └── audio/               # Audio files
 ├── configs/                 # Configuration files
 └── logs/                    # Log output
 ```
 
-The engine's built-in resources are in `Vienna-WebGPU-Engine/resources/`:
+**Engine Structure:**
 ```
 Vienna-WebGPU-Engine/
 └── resources/               # Engine resources (shaders, default assets)
@@ -112,38 +112,87 @@ Vienna-WebGPU-Engine/
     └── ...
 ```
 
+### Loading Resources - Best Practices
+
+**Always use `PathProvider` to avoid hardcoded paths:**
+// ToDo: Improve example
+```cpp
+auto resourceManager = engine.getResourceManager();
+
+// ✅ RECOMMENDED: Use PathProvider for application assets
+auto modelPath = PathProvider::resolve("models") / "my_model.obj";
+auto maybeModel = resourceManager->m_modelManager->createModel(modelPath.string());
+
+// ✅ RECOMMENDED: Use PathProvider for engine resources
+auto engineTexture = PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg");
+auto texture = resourceManager->m_textureManager->createTextureFromFile(engineTexture);
+
+// ⚠️ AVOID: Hardcoded paths won't work across Debug/Release
+auto maybeModel2 = resourceManager->m_modelManager->createModel("C:/Models/my_model.obj");
+
+// ⚠️ AVOID: Relative paths depend on working directory
+auto maybeModel3 = resourceManager->m_modelManager->createModel("my_model.obj");
+
+if (!maybeModel.has_value()) {
+    spdlog::error("Failed to load model");
+    return -1;
+}
+```
+
 ### Using PathProvider
 
 `PathProvider` resolves paths based on two roots:
 
-1. **Executable Root** (`basePath`) - Your application directory
+1. **Base Path** (`basePath`) - Application root directory
+   - **Debug**: Project root (where CMakeLists.txt is)
+   - **Release**: Executable directory
+   
 2. **Library Root** (`libraryRoot`) - Engine installation directory
+   - Always points to Vienna-WebGPU-Engine root
 
-**Access application assets:**
+**⚠️ Critical: Default behavior uses `basePath` for resources**
+
 ```cpp
-// Load from assets/models/
+// By default, resources/ is resolved relative to basePath (NOT libraryRoot)
+// This means in Debug: project_root/resources/
+//           in Release: executable_dir/resources/
+```
+
+**Access application assets (recommended):**
+```cpp
+// Load from assets/models/ (relative to basePath)
 auto modelPath = PathProvider::resolve("models") / "my_model.obj";
 auto model = resourceManager->m_modelManager->createModel(modelPath.string());
 
-// Load from assets/textures/
+// Load from assets/textures/ (relative to basePath)
 auto texturePath = PathProvider::resolve("textures") / "albedo.png";
 auto texture = resourceManager->m_textureManager->createTextureFromFile(texturePath.string());
 
-// Shorthand for common paths
-auto modelsDir = PathProvider::resolve("models");    // -> YourApp/assets/models/
-auto texturesDir = PathProvider::resolve("textures"); // -> YourApp/assets/textures/
-auto shadersDir = PathProvider::resolve("shaders");   // -> YourApp/assets/shaders/
+// Shorthand for common paths (all relative to basePath)
+auto modelsDir = PathProvider::resolve("models");    // -> {basePath}/assets/models/
+auto texturesDir = PathProvider::resolve("textures"); // -> {basePath}/assets/textures/
+auto shadersDir = PathProvider::resolve("shaders");   // -> {basePath}/assets/shaders/
 ```
 
-**Access engine resources:**
-```cpp
-// Load from Vienna-WebGPU-Engine/resources/
-auto engineTexture = PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg");
-auto texture = resourceManager->m_textureManager->createTextureFromFile(engineTexture);
+**Function | Resolves To | Debug | Release | Use Case |
+|----------|-------------|-------|---------|----------|
+| `resolve("models")` | `{basePath}/assets/models/` | `ProjectRoot/assets/models/` | `ExeDir/assets/models/` | Your 3D models |
+| `resolve("textures")` | `{basePath}/assets/textures/` | `ProjectRoot/assets/textures/` | `ExeDir/assets/textures/` | Your textures |
+| `resolve("shaders")` | `{basePath}/assets/shaders/` | `ProjectRoot/assets/shaders/` | `ExeDir/assets/shaders/` | Your custom shaders |
+| `resolve("materials")` | `{basePath}/assets/materials/` | `ProjectRoot/assets/materials/` | `ExeDir/assets/materials/` | Material files |
+| `resolve("scenes")` | `{basePath}/assets/scenes/` | `ProjectRoot/assets/scenes/` | `ExeDir/assets/scenes/` | Scene files |
+| `resolve("configs")` | `{basePath}/configs/` | `ProjectRoot/configs/` | `ExeDir/configs/` | Config files |
+| `resolve("logs")` | `{basePath}/logs/` | `ProjectRoot/logs/` | `ExeDir/logs/` | Log output |
+| `getResource(file)` | `{libraryRoot}/resources/{file}` | `EngineRoot/resources/{file}` | `EngineRoot/resources/{file}` | Engine resources |
 
-// Engine shaders are automatically loaded from resources/
-// No need to specify path for engine shaders
-```
+**Important Notes:**
+- `basePath` changes between Debug/Release builds
+- `libraryRoot` always points to engine directory
+- Always use `getResource()` for engine resources, not `resolve("resources")`
+
+**Key Distinction:**
+- **`resolve(key)`** → Application assets in `{basePath}/assets/{key}/`
+- **`getResource(file)`** → Engine resources in `{libraryRoot}/resources/{file}`
 
 ### Path Resolution Rules
 

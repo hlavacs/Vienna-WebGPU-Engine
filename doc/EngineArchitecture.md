@@ -15,6 +15,20 @@ This document describes the fundamental architecture, design patterns, and codin
 
 ---
 
+## Path Management
+
+**Two path systems via `PathProvider`:**
+
+1. **Application Assets**: `getTextures()`, `getModels()` → `<example>/assets/`
+2. **Engine Resources**: `getResource()` → `<engine>/resources/`
+
+**Rules:**
+- Always use `PathProvider` (never hardcode paths)
+- Debug: CMake defines, Release: runtime detection
+- See [CorePrinciples.md](CorePrinciples.md#0-path-management) for details
+
+---
+
 ## Core Architecture
 
 The engine follows a **layered architecture** with clear separation of concerns:
@@ -68,7 +82,11 @@ Manages CPU-side resources:
 - **Loaders**: `TextureLoader`, `ObjLoader`, `GltfLoader`
 - **CPU Resources**: `Texture`, `Mesh`, `Material`, `Model`
 
-**Key Rule:** All resource loading goes through managers. Never load resources directly.
+**Key Rules:** 
+- All resource loading goes through managers. Never load resources directly.
+- Always use `PathProvider` for path resolution
+- Use `resolve(key)` for application assets
+- Use `getResource(file)` for engine resources
 
 ### 3. Rendering Layer
 **Location:** `include/engine/rendering/`
@@ -189,23 +207,15 @@ auto pipeline = context.pipelineFactory().createPipeline(descriptor, layouts, co
 
 ### Bind Group System
 
-**Modern API:** Use `BindGroupBinder` for centralized bind group management.
-
 ```cpp
-BindGroupBinder binder(&frameCache);
-binder.bind(renderPass, shaderInfo, cameraId, {
-    {BindGroupType::Object, objectBindGroup},
-    {BindGroupType::Material, materialBindGroup},
-    {BindGroupType::Light, lightBindGroup},
-    {BindGroupType::Shadow, shadowBindGroup}
-});
+binder.bind(renderPass, pipeline, cameraId, bindGroups, objectId, materialId);
 ```
 
 **Features:**
-- Automatic redundant bind detection
-- Cache-based lookup for Frame and Object bind groups
-- Support for custom user-defined bind groups
-- Optional parameters - only provide what you need
+- Name-based resolution (not fixed indices)
+- Automatic state tracking (only rebinds on state change)
+- Unified handling via reuse policies
+- See [BindGroupSystem.md](BindGroupSystem.md) for details
 
 ### Render Passes
 
@@ -409,10 +419,16 @@ pipelineManager->reloadPipeline("myShader");
 | `BindGroupBinder` | Centralized bind group binding | `rendering/` |
 | `Scene` | Scene graph root | `scene/` |
 | `ResourceManager` | Aggregate resource manager | `resources/` |
-| `GameEngine` | Main game loop | `engine/` |
+| `GameEngipplication assets (correct path usage):**
+```cpp
+// ✅ Application texture
+auto texturePath = PathProvider::resolve("textures") / "myTexture.png";
+auto handle = engine()->resources()->m_textureManager->loadTexture(texturePath.string());
+auto gpuTexture = engine()->gpu()->textureFactory().createFromHandle(handle);
 
-### Common Patterns
-
+// ✅ Engine resource
+auto engineTexture = PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg");
+auto handle2 = engine()->resources()->m_textureManager->loadTexture(engineTextur
 **Loading and using a texture:**
 ```cpp
 auto handle = engine()->resources()->m_textureManager->loadTexture("texture.png");
@@ -431,7 +447,3 @@ binder.bind(renderPass, shader, cameraId, {
     {BindGroupType::Material, materialBindGroup}
 });
 ```
-
----
-
-**For detailed implementation guidance, see the inline documentation in header files and the comprehensive [copilot-instructions.md](../.github/copilot-instructions.md) file.**
