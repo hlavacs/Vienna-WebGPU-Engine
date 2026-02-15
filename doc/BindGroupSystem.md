@@ -1,54 +1,36 @@
-# Custom Bind Group System
+# Bind Group System
 
 ## Overview
 
-The custom bind group system provides a flexible, declarative way for scene nodes to provide uniform data to shaders without directly managing WebGPU resources. The system automatically handles bind group creation, caching, binding, and resource management.
+The bind group system provides automatic bind group management with name-based resolution and smart state tracking. All bind groups are resolved by shader-defined names, not fixed indices.
 
-**IMPORTANT**: Bind groups are **resolved by name**, not by fixed indices. The only requirement is that `FrameUniforms` (if used) must be at group index 0. All other bind groups can be at any index and are resolved dynamically based on their name in the shader.
+**Key Features:**
+- **Name-based resolution**: Bind groups found by name, not index
+- **Automatic state tracking**: Only rebinds when state changes (camera, object, material)
+- **Reuse policies**: Global, PerFrame, PerObject, PerMaterial
+- **Unified handling**: Custom and built-in bind groups use the same logic
 
 ## Architecture
 
 ### Components
 
-1. **BindGroupDataProvider** - Data provider struct for custom uniforms
-2. **BindGroupBinder** - Centralized bind group binding system with name-based resolution
-3. **FrameCache** - Frame-wide resource cache and manager
-4. **Scene Integration** - Automatic collection and processing pipeline
-5. **WebGPUShaderInfo** - Stores name-to-index mappings for bind groups
+- **BindGroupBinder**: Centralized binding with automatic state tracking
+- **FrameCache**: Frame-wide bind group cache (frame, object, custom)
+- **WebGPUShaderInfo**: Stores bind group name → index mappings
+- **BindGroupDataProvider**: Custom uniform data provider for scene nodes
 
-### Data Flow
+### Flow
 
 ```
-Scene Node (preRender)
-    │
-    ├──> Creates BindGroupDataProvider
-    │
-    ▼
-Scene::preRender()
-    │
-    ├──> Collects providers from all enabled nodes
-    │
-    ▼
-Renderer::renderFrame()
-    │
-    ├──> FrameCache::processBindGroupProviders()
-    │    │
-    │    ├──> Creates/updates bind groups
-    │    └──> Caches in customBindGroupCache
-    │
-    ▼
-RenderPass (MeshPass, ShadowPass, etc.)
-    │
-    ├──> BindGroupBinder::bind()
-    │    │
-    │    ├──> Iterates shader's bind group layouts
-    │    ├──> Resolves each by name via shaderInfo->getBindGroupIndex(name)
-    │    ├──> Fetches from caches based on type
-    │    ├──> Binds to correct group index
-    │    └──> Tracks to avoid redundant binds
-    │
-    ▼
-GPU Rendering
+1. Scene collects BindGroupDataProviders from nodes
+2. FrameCache processes providers → creates/caches bind groups
+3. RenderPass calls binder.bind(renderPass, pipeline, cameraId, bindGroups, objectId, materialId)
+4. Binder:
+   - Iterates shader's bind groups (by name)
+   - Resolves index via shaderInfo->getBindGroupIndex(name)
+   - Fetches from cache/parameter based on type and reuse policy
+   - Only binds if state changed or not yet bound
+5. GPU rendering
 ```
 
 ## Bind Group Index Resolution
@@ -79,35 +61,27 @@ renderPass.setBindGroup(2, objectBindGroup, 0, nullptr);
 
 ## Bind Group Types
 
-### Engine-Defined Bind Groups
+### Built-in Bind Groups
 
-| Type | Description | Resolution | Typical Index* |
-|------|-------------|------------|---------------|
-| Frame | Camera uniforms (view, projection, position) | `frameBindGroupCache[cameraId]` | 0 (required) |
-| Light | Light array for scene | Parameter to `bind()` | 1 |
-| Object | Model/normal matrices | Parameter or `objectBindGroupCache[objectId]` | 2 |
-| Material | Material properties and textures | Parameter to `bind()` | 3 |
-| Shadow | Shadow maps and sampler | Parameter to `bind()` | 4 |
-
-*Indices are examples from PBR_Lit_Shader.wgsl - actual indices are shader-specific and resolved by name
-
-### Specialized Pass Bind Groups
-
-| Type | Description | Usage | Index Resolution |
-|------|-------------|-------|------------------|
-| ShadowPass2D | Uniforms for 2D shadow rendering | Shadow map rendering pass | By name in shadow shader |
-| ShadowPassCube | Uniforms for cube shadow rendering | Cube shadow map rendering pass | By name in shadow shader |
-| Debug | Debug primitives data | Debug visualization pass | By name in debug shader |
-| Mipmap | Mipmap generation parameters | Mipmap generation pass | By name in mipmap shader |
+| Type | Reuse Policy | Source | Description |
+|------|--------------|--------|-------------|
+| Frame | PerFrame | Cache (cameraId) | Camera view/projection |
+| Light | PerFrame | Parameter | Scene lights |
+| Object | PerObject | Parameter or cache (objectId) | Model matrices |
+| Material | PerObject | Parameter | Material properties/textures |
+| Shadow | PerFrame | Parameter | Shadow maps |
+| Debug | Global | Parameter | Debug primitives |
 
 ### Custom Bind Groups
 
-User-defined bind groups created via `BindGroupDataProvider` with configurable reuse policies:
+User-defined via `BindGroupDataProvider`:
 
-- **Global/PerFrame**: Shared across all objects (e.g., global time, settings)
-- **PerObject/PerMaterial**: Unique per instance (e.g., animation state, per-object data)
+- **Global**: Never changes (app settings)
+- **PerFrame**: Changes per camera (time, frame data)
+- **PerObject**: Unique per object (animation state)
+- **PerMaterial**: Unique per material (variants)
 
-Custom bind groups are resolved by name and can use any available index in the shader.
+**All bind groups** (built-in and custom) use the same unified logic based on reuse policy.
 
 ## Usage
 
@@ -214,37 +188,21 @@ auto shader = shaderBuilder
 // 3. Use these mappings during rendering
 ```
 
-## Caching Strategy
+## Automatic State Tracking
 
-### Cache Keys
+### How It Works
 
-Custom bind groups use string keys for caching:
-
-- **Shared (Global/PerFrame)**: `"ShaderName:BindGroupName"`
-- **Per-Instance (PerObject/PerMaterial)**: `"ShaderName:BindGroupName:InstanceId"`
-
-Example:
 ```cpp
-// Shared cache key
-"MyShader:MyCustomData"
+// First object - all groups bound
+binder.bind(renderPass, pipeline, cameraId, bindGroups, objectId1, materialId1);
 
+// Second object - only Object group rebound (same camera, different object)
+binder.bind(renderPass, pipeline, cameraId, bindGroups, objectId2, materialId1);
 
-// First call - binds all groups
-binder.bind(renderPass, shaderInfo, cameraId, bindGroups, objectId);
+// Third object - Object + Material rebound
+binder.bind(renderPass, pipeline, cameraId, bindGroups, objectId2, materialId2);
 
-// Subsequent calls - only binds changed groups
-for (const auto& item : items) {
-    binder.bind(renderPass, shaderInfo, cameraId, 
-                {{BindGroupType::Object, item.objectBindGroup}}, 
-                item.objectId);
-    // Only object bind group rebound if different
-    // Frame, Light, etc. remain bound from previous call
-}
-
-// Reset tracking when pipeline changes
-binder.reset();
-```
-
+// New render pass - all groups rebound automatically 
 **How Tracking Works:**
 ```cpp
 // BindGroupBinder::bindGroupAtIndex()
@@ -255,26 +213,6 @@ if (it != m_boundBindGroups.end() && it->second == bindGroup.get()) {
 }
 renderPass.setBindGroup(groupIndex, bindGroup->getBindGroup(), 0, nullptr);
 m_boundBindGroups[groupIndex] = bindGroup.get();  // Track
-### Bind Group Binding Optimization
-
-`BindGroupBinder` tracks currently bound bind groups to avoid redundant `setBindGroup()` calls:
-
-```cpp
-BindGroupBinder binder(&frameCache);
-binder.setCameraId(cameraId);
-
-// First call - binds all groups
-binder.bindShaderGroups(renderPass, shaderInfo, ...);
-
-// Subsequent calls - only binds changed groups
-for (const auto& item : items) {
-    binder.setObjectId(item.id);
-    binder.bindShaderGroups(renderPass, shaderInfo, item.objectBindGroup, ...);
-    // Only object bind group rebound if different
-}
-
-// Reset tracking when pipeline changes
-binder.reset();
 ```
 
 ### Reuse Policy Selection
@@ -338,14 +276,18 @@ binder.bind(renderPass, shaderInfo, cameraId, {
 }
 ```
 
-### 4. Call reset() on Pipeline Changes
+### 4. Understand State Tracking
 
-When changing render pipelines, call `binder.reset()` to clear tracking state:
+The binder automatically optimizes bind group bindings:
 ```cpp
-if (newPipeline != currentPipeline) {
-    renderPass.setPipeline(newPipeline->getPipeline());
-    binder.reset();  // Force rebind of all groups
-}
+// Automatic detection of changes
+binder.bind(renderPass, shaderInfo, cameraId1, bindGroups, objectId1);
+binder.bind(renderPass, shaderInfo, cameraId1, bindGroups, objectId2);  // Only Object rebound
+binder.bind(renderPass, shaderInfo, cameraId2, bindGroups, objectId2);  // Only Frame rebound
+
+// New render pass automatically detected
+auto newPass = encoder.beginRenderPass(&desc);
+binder.bind(newPass, shaderInfo, cameraId2, bindGroups, objectId2);  // All rebound
 ```
  **exactly** (case-sensitive)
 3. Ensure `preRender()` is being called and providing data
@@ -372,44 +314,13 @@ if (newPipeline != currentPipeline) {
 3. Ensure bind group name is unique in the shader
 4. Check shader compilation succeeded with correct group indic
 
-### Render Pass Integration
-
-All render passes use `BindGroupBinder` for consistent binding:
-
-- **MeshPass**: Main geometry rendering
-- **ShadowPass**: Shadow map rendering
-- **DebugPass**: Debug visualization
-- **CompositePass**: Post-processing (manual binding for dynamic textures)
-
 ## Troubleshooting
 
-### Bind Group Not Found
+**Bind Group Not Found**: Verify shader name and bind group name match exactly (case-sensitive).
 
-**Error**: `Custom bind group 'X' not found for shader 'Y'`
+**Data Not Updating**: Ensure `preRender()` provides data every frame and data size matches shader struct.
 
-**Solutions**:
-1. Verify shader name matches exactly
-2. Check bind group name matches shader definition
-3. Ensure `preRender()` is being called
-4. Verify shader has the bind group layout defined
-
-### Wrong Bind Group Bound
-
-**Error**: WebGPU validation error about incompatible bind groups
-
-**Solutions**:
-1. Check instance ID matches reuse policy (PerObject should have ID)
-2. Verify `setCameraId()` or `setObjectId()` called before binding
-3. Ensure `reset()` called when pipeline changes
-
-### Data Not Updating
-
-**Problem**: Uniform data doesn't reflect in shader
-
-**Solutions**:
-1. Verify data is being provided every frame via `preRender()`
-2. Check data size matches shader struct
-3. Ensure cache key is correct for reuse policy
+**Wrong Bind Group Bound**: Check instance ID provided for PerObject/PerMaterial reuse policies.
 
 ## Example: Time-Based Animation
 
