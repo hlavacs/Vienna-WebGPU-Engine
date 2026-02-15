@@ -6,63 +6,66 @@ Each example is a standalone project with its own CMakeLists.txt, showing how yo
 
 ## Building Examples
 
-### Quick Build (Default: MainDemo)
+### Quick Build (Default: main_demo, Debug, WGPU)
 
 ```bash
-# From examples/ directory, build main_demo in Debug mode with WGPU
-cd examples
-build.bat
+# From repository root
+scripts/build-example.bat main_demo
 
-# Or from root directory
-cd examples && build.bat
+# Or build with specific configuration
+scripts/build-example.bat main_demo Debug WGPU
 ```
 
 ### Build Specific Example
 
 ```bash
-# Syntax: build.bat [example_name] [Debug|Release] [WGPU|DAWN|Emscripten]
+# Syntax: scripts/build-example.bat [example_name] [Debug|Release] [WGPU|DAWN|Emscripten]
 
-# Build MainDemo in Debug with WGPU (default)
-build.bat main_demo
+# Build main_demo in Debug with WGPU (default)
+scripts/build-example.bat main_demo
 
-# Build GameEngineExample in Release with WGPU
-build.bat game_engine_example Release WGPU
+# Build scene_editor in Release with WGPU
+scripts/build-example.bat scene_editor Release WGPU
 
-# Build HelloWebGPU in Debug with Emscripten
-build.bat hello-webgpu Debug Emscripten
+# Build multi_view in Debug
+scripts/build-example.bat multi_view Debug WGPU
+```
+
+### Available Examples List
+
+If you try to build a non-existent example, the script will show available examples:
+```bash
+scripts/build-example.bat nonexistent
+# Shows list of all available examples
 ```
 
 ## Available Examples
 
-### MainDemo
+### main_demo
 The main comprehensive demo showcasing:
-- Scene graph system
+- Scene graph system with hierarchical transforms
 - Orbit camera controls
-- Model loading (OBJ/glTF)
-- Material system with PBR
-- Multiple lights
+- Model loading (OBJ format)
+- Material system with PBR textures
+- Multiple light types (ambient, directional, point, spot)
+- Shadow mapping
+- Day-night cycle system
 - ImGui debug interface
 
-**Location:** `examples/main_demo/main.cpp`
+**Location:** `examples/main_demo/main.cpp`  
+**Build:** `scripts/build-example.bat main_demo`
 
-### GameEngineExample
-Simple example showing basic GameEngine API usage:
-- Engine initialization
-- Scene creation
-- Loading models
-- Basic camera setup
+### scene_editor
+Scene editor example (work in progress).
 
-**Location:** `examples/game_engine_example/main.cpp`
+**Location:** `examples/scene_editor/main.cpp`  
+**Build:** `scripts/build-example.bat scene_editor`
 
-### HelloWebGPU
-Minimal WebGPU example (if available).
+### multi_view
+Multiple viewport rendering example.
 
-**Location:** `examples/hello-webgpu/main.cpp`
-
-### SceneEditor
-Scene editor example (if available).
-
-**Location:** `examples/scene_editor/main.cpp`
+**Location:** `examples/multi_view/main.cpp`  
+**Build:** `scripts/build-example.bat multi_view`
 
 ## Output
 
@@ -70,14 +73,23 @@ Built examples will be located in their respective build directories:
 - Windows: `examples/[example_name]/build/Windows/[Debug|Release]/`
 - Emscripten: `examples/[example_name]/build/Emscripten/[Debug|Release]/`
 
-## Running Examples
-
-### Windows
-Simply run the executable:
+## Running Examples:
+```
+examples/build/[example_name]/[Platform]/[Config]/
+``` from the build directory:
 ```bash
-# From examples directory
-main_demo\build\Windows\Debug\MainDemo.exe
+# Run from repository root
+examples\build\main_demo\Windows\Debug\MainDemo.exe
 
+# Or navigate to build directory
+cd examples\build\main_demo\Windows\Debug
+MainDemo.exe
+```
+
+### Emscripten (Not Currently Supported)
+Emscripten builds are not yet functional. Future usage:
+```bash
+cd examples\build\main_demo
 # Or navigate to the build directory
 cd main_demo\build\Windows\Debug
 MainDemo.exe
@@ -86,28 +98,28 @@ MainDemo.exe
 ### Emscripten
 Start a local server from the example's build directory:
 ```bash
-cd main_demo\build\Emscripten\Debug
-python -m http.server 8080
-# Then open: http://localhost:8080/MainDemo.html
-```
-
-## Project Structure
-
-```
-examples/
-├── build.bat                # Build script for examples
-├── README.md
+cd mREADME.md
+├── build/                   # Build output for all examples (gitignored)
+│   ├── main_demo/
+│   │   └── Windows/
+│   │       ├── Debug/
+│   │       └── Release/
+│   ├── scene_editor/
+│   └── multi_view/
 ├── main_demo/
 │   ├── CMakeLists.txt       # Standalone CMake for this example
 │   ├── main.cpp
-│   └── build/               # Build output (gitignored)
-├── game_engine_example/
+│   ├── OrbitCamera.h
+│   ├── OrbitCamera.cpp
+│   ├── MainDemoImGuiUI.h
+│   ├── MainDemoImGuiUI.cpp
+│   └── DayNightCycle.h
+├── scene_editor/
 │   ├── CMakeLists.txt
-│   ├── main.cpp
-│   └── build/
-├── hello-webgpu/
-│   ├── CMakeLists.txt
-│   ├── main.cpp
+│   └── main.cpp
+└── multi_view/
+    ├── CMakeLists.txt
+    └── main.cpppp
 │   └── build/
 └── scene_editor/
     ├── CMakeLists.txt
@@ -115,13 +127,9 @@ examples/
     └── build/
 ```
 
-## Creating Your Own Example
-
-Each example is a standalone project. To create a new one:
-
-1. Create a new directory under `examples/` (e.g., `my_example/`)
-2. Add your `main.cpp` file
-3. Create a minimal `CMakeLists.txt`:
+## **Create directory:** `examples/my_example/`
+2. **Add your source:** `main.cpp` and any additional files
+3. **Create CMakeLists.txt:**
 
 ```cmake
 cmake_minimum_required(VERSION 3.15)
@@ -138,7 +146,10 @@ if(NOT TARGET WebGPU_Engine_Lib)
 endif()
 
 # Create executable
-add_executable(MyExample main.cpp)
+add_executable(MyExample 
+    main.cpp
+    # Add other source files here
+)
 
 # Link against the engine
 target_link_libraries(MyExample PRIVATE WebGPU_Engine_Lib)
@@ -147,14 +158,24 @@ target_link_libraries(MyExample PRIVATE WebGPU_Engine_Lib)
 configure_engine_executable(MyExample)
 ```
 
-4. Build it:
+4. **Build it:**
 ```bash
-cd examples
-build.bat my_example
+scripts/build-example.bat my_example
 ```
 
-That's it! The `configure_engine_executable` function automatically handles:
-- DLL copying on Windows
+5. **Optional: Add assets**
+   - Create `examples/my_example/assets/` directory
+   - Add models, textures, etc.
+   - Release builds will automatically copy to output
+
+### What configure_engine_executable Does
+
+The `configure_engine_executable` function automatically handles:
+- **Windows:** Copies DLLs (SDL2, wgpu_native) to output directory
+- **Release builds:** Copies engine resources and example assets
+- **Debug builds:** Uses source directories directly (no copying for fast iteration)
+- **Emscripten:** Configures shell file, preloads resources, source maps
+- **Debugger setup:** Sets VS debugger environment variables
 - WebGPU binaries
 - Emscripten configuration
 - Resource copying

@@ -50,7 +50,7 @@
 		{
 			"label": "Build Example: Main Demo (Debug)",
 			"type": "shell",
-			"command": "examples/build.bat",
+			"command": "scripts/build-example.bat",
 			"args": [
 				"main_demo",
 				"Debug",
@@ -62,7 +62,7 @@
 		{
 			"label": "Build Example: Main Demo (Release)",
 			"type": "shell",
-			"command": "examples/build.bat",
+			"command": "scripts/build-example.bat",
 			"args": [
 				"main_demo",
 				"Release",
@@ -74,7 +74,7 @@
 		{
 			"label": "Build Example: Multi View (Debug)",
 			"type": "shell",
-			"command": "examples/build.bat",
+			"command": "scripts/build-example.bat",
 			"args": [
 				"multi_view",
 				"Debug",
@@ -86,7 +86,7 @@
 		{
 			"label": "Build Example: Scene Editor (Debug)",
 			"type": "shell",
-			"command": "examples/build.bat",
+			"command": "scripts/build-example.bat",
 			"args": [
 				"scene_editor",
 				"Debug",
