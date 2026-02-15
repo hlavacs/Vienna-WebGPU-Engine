@@ -60,16 +60,14 @@ void MeshPass::render(FrameCache &frameCache)
 
 	spdlog::debug("MeshPass::render() - visibleIndices count: {}, gpuItems count: {}", m_visibleIndices.size(), frameCache.gpuRenderItems.size());
 
+	updateLightUniforms(frameCache);
+
 	// Create command encoder
 	auto encoder = m_context->createCommandEncoder("MeshPass Encoder");
 
 	// Begin render pass using context's begin() method
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 	{
-		// Bind frame and light uniforms
-		bindFrameUniforms(renderPass, frameCache);
-		bindLightUniforms(renderPass, frameCache);
-
 		// Draw items from frame cache
 		drawItems(encoder, renderPass, frameCache, frameCache.gpuRenderItems, m_visibleIndices);
 	}
@@ -78,23 +76,7 @@ void MeshPass::render(FrameCache &frameCache)
 	m_context->submitCommandEncoder(encoder, "MeshPass Commands");
 }
 
-bool MeshPass::bindFrameUniforms(wgpu::RenderPassEncoder renderPass, FrameCache &frameCache)
-{
-	auto frameBindGroup = frameCache.frameBindGroupCache[m_cameraId];
-	if (!frameBindGroup)
-	{
-		spdlog::error("Frame bind group not found in cache for camera ID {}", m_cameraId);
-		return false;
-	}
-	// CONVENTION: Frame bind group MUST always be at index 0
-	// This is required because frame data rarely changes (only per camera), so keeping it at a fixed
-	// position avoids rebinding on every pipeline change, which would be very inefficient.
-	// All shaders MUST define their frame bind group at @group(0).
-	renderPass.setBindGroup(0, frameBindGroup->getBindGroup(), 0, nullptr);
-	return true;
-}
-
-bool MeshPass::bindLightUniforms(wgpu::RenderPassEncoder renderPass, FrameCache &frameCache)
+bool MeshPass::updateLightUniforms(FrameCache &frameCache)
 {
 	const auto &lights = frameCache.lightUniforms;
 	// Always write the header, even if there are no lights (count = 0)
@@ -109,9 +91,6 @@ bool MeshPass::bindLightUniforms(wgpu::RenderPassEncoder renderPass, FrameCache 
 	{
 		m_lightBindGroup->updateBuffer(0, lights.data(), lights.size() * sizeof(LightStruct), sizeof(LightsBuffer), m_context->getQueue());
 	}
-	// NOTE: Actual binding happens in bindShaderGroups() by name, not here at fixed index
-	// This is kept for compatibility but will be removed once bindShaderGroups handles all bindings
-	renderPass.setBindGroup(1, m_lightBindGroup->getBindGroup(), 0, nullptr);
 	return true;
 }
 
@@ -177,7 +156,7 @@ void MeshPass::drawItems(
 
 		// Check if pipeline needs to change (mesh or material changed)
 		bool pipelineChanged = (item.gpuMesh != currentMesh || item.gpuMaterial.get() != currentMaterial);
-		
+
 		if (pipelineChanged)
 		{
 			auto cpuMesh = item.gpuMesh->getCPUHandle().get();
@@ -204,7 +183,6 @@ void MeshPass::drawItems(
 			}
 			renderPass.setPipeline(currentPipeline->getPipeline());
 
-
 			currentMaterial = item.gpuMaterial.get();
 		}
 
@@ -214,19 +192,17 @@ void MeshPass::drawItems(
 		{
 			// Extract material ID from the material pointer for PerMaterial bind group tracking
 			uint64_t materialId = reinterpret_cast<uint64_t>(item.gpuMaterial.get());
-			
+
 			binder.bind(
 				renderPass,
 				currentPipeline,
 				m_cameraId,
-				{
-					{BindGroupType::Object, item.objectBindGroup},
-					{BindGroupType::Material, item.gpuMaterial->getBindGroup()},
-					{BindGroupType::Light, m_lightBindGroup},
-					{BindGroupType::Shadow, m_shadowBindGroup}
-				},
+				{{BindGroupType::Object, item.objectBindGroup},
+				 {BindGroupType::Material, item.gpuMaterial->getBindGroup()},
+				 {BindGroupType::Light, m_lightBindGroup},
+				 {BindGroupType::Shadow, m_shadowBindGroup}},
 				std::nullopt, // objectId not needed - passed via objectBindGroup
-				materialId    // materialId for PerMaterial custom bind groups
+				materialId	  // materialId for PerMaterial custom bind groups
 			);
 		}
 

@@ -106,21 +106,13 @@ class MeshPass : public RenderPass
 	void cleanup() override;
 
   private:
-	/**
-	 * @brief Bind frame uniforms (camera, view-projection, time).
-	 * @param renderPass The render pass encoder.
-	 * @param frameCache The frame cache containing frame bind groups.
-	 * @return True if binding succeeded.
-	 */
-	bool bindFrameUniforms(wgpu::RenderPassEncoder renderPass, FrameCache &frameCache);
 
 	/**
-	 * @brief Bind light uniforms.
-	 * @param renderPass The render pass encoder.
+	 * @brief Update light uniforms.
 	 * @param frameCache The frame cache containing light bind groups.
-	 * @return True if binding succeeded.
+	 * @return True if update succeeded.
 	 */
-	bool bindLightUniforms(wgpu::RenderPassEncoder renderPass, FrameCache &frameCache);
+	bool updateLightUniforms(FrameCache &frameCache);
 
 	/**
 	 * @brief Bind object uniforms.

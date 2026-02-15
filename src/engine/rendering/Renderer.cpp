@@ -209,7 +209,6 @@ void Renderer::updateFrameBindGroup(const RenderTarget &target, float time)
 
 	// Build frame uniforms structure with camera matrices and time
 	FrameUniforms frameUniforms = target.getFrameUniforms(time);
-	
 	// Update GPU buffer with new uniform data for this frame
 	// Binding 0 in the frame bind group = uniform buffer with camera data
 	m_frameCache.frameBindGroupCache[target.cameraId]->updateBuffer(
