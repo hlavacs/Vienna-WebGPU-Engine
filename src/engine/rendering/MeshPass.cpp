@@ -201,7 +201,7 @@ void MeshPass::drawItems(
 				 {BindGroupType::Material, item.gpuMaterial->getBindGroup()},
 				 {BindGroupType::Light, m_lightBindGroup},
 				 {BindGroupType::Shadow, m_shadowBindGroup}},
-				std::nullopt, // objectId not needed - passed via objectBindGroup
+				item.objectID, // objectId for PerObject custom bind groups
 				materialId	  // materialId for PerMaterial custom bind groups
 			);
 		}

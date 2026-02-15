@@ -1,4 +1,4 @@
-// TODO: Tutorial 01 - Complete this shader step by step
+// Tutorial 01 - Complete this shader step by step
 // Follow the guide in doc/tutorials/01_unlit_shader.md
 
 // Step 2: Define vertex input structure

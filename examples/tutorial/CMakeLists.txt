@@ -17,4 +17,5 @@ add_engine_executable(Tutorial
     main.cpp
     FreeFlyCamera.h
     FreeFlyCamera.cpp
+    CustomRenderNode.h
 )
