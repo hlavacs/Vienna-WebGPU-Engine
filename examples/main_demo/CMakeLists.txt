@@ -12,17 +12,13 @@ if(NOT TARGET WebGPU_Engine_Lib)
     add_subdirectory(${ENGINE_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/engine)
 endif()
 
-# Create executable
-add_executable(MainDemo 
+add_engine_executable(MainDemo
+    SOURCES
     main.cpp
     OrbitCamera.cpp
     OrbitCamera.h
     MainDemoImGuiUI.cpp
     MainDemoImGuiUI.h
+    DayNightCycle.cpp
+    DayNightCycle.h
 )
-
-# Link against the engine
-target_link_libraries(MainDemo PRIVATE WebGPU_Engine_Lib)
-
-# Configure using engine's helper function
-configure_engine_executable(MainDemo)

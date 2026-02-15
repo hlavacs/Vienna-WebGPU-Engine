@@ -12,17 +12,11 @@ if(NOT TARGET WebGPU_Engine_Lib)
     add_subdirectory(${ENGINE_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/engine)
 endif()
 
-# Create executable
-add_executable(MultiView 
+add_engine_executable(MultiView
+    SOURCES
     main.cpp
     FreeFlyCamera.cpp
     FreeFlyCamera.h
     CameraSwitcher.cpp
     CameraSwitcher.h
 )
-
-# Link against the engine
-target_link_libraries(MultiView PRIVATE WebGPU_Engine_Lib)
-
-# Configure using engine's helper function
-configure_engine_executable(MultiView)

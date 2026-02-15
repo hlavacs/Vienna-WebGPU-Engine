@@ -12,11 +12,7 @@ if(NOT TARGET WebGPU_Engine_Lib)
     add_subdirectory(${ENGINE_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/engine)
 endif()
 
-# Create executable
-add_executable(SceneEditor main.cpp)
-
-# Link against the engine
-target_link_libraries(SceneEditor PRIVATE WebGPU_Engine_Lib)
-
-# Configure using engine's helper function
-configure_engine_executable(SceneEditor)
+add_engine_executable(SceneEditor
+    SOURCES
+    main.cpp
+)
