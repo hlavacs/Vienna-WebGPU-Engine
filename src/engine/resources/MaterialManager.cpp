@@ -301,17 +301,11 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	return mat;
 }
 
-std::optional<MaterialManager::MaterialPtr> MaterialManager::createPBRMaterial(
-	std::string name,
-	engine::rendering::PBRProperties pbrProperties,
+MaterialManager::MaterialFeature::Flag MaterialManager::applyTexturesAndGetFeatures(
+	MaterialPtr mat,
 	const std::unordered_map<std::string, TextureHandle> &textures
 )
 {
-	auto mat = std::make_shared<Material>();
-
-	mat->setName(name);
-	mat->setProperties(pbrProperties);
-
 	MaterialFeature::Flag features = MaterialFeature::Flag::None;
 
 	// Check which textures are provided
@@ -330,8 +324,31 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createPBRMaterial(
 			features |= MaterialFeature::Flag::UsesMetallicMap;
 		else if (slotName == engine::rendering::MaterialTextureSlots::ROUGHNESS)
 			features |= MaterialFeature::Flag::UsesRoughnessMap;
+		else if (slotName == engine::rendering::MaterialTextureSlots::METALLIC)
+			features |= MaterialFeature::Flag::UsesMetallicMap;
+		else if (slotName == engine::rendering::MaterialTextureSlots::EMISSIVE)
+			features |= MaterialFeature::Flag::UsesEmissiveMap;
+		else if (slotName == engine::rendering::MaterialTextureSlots::OCCLUSION)
+			features |= MaterialFeature::Flag::UsesOcclusionMap;
+		// ToDo: Add more slots and corresponding features as needed
 	}
 
+	return features;
+}
+
+std::optional<MaterialManager::MaterialPtr> MaterialManager::createPBRMaterial(
+	std::string name,
+	engine::rendering::PBRProperties pbrProperties,
+	const std::unordered_map<std::string, TextureHandle> &textures
+)
+{
+	auto mat = std::make_shared<Material>();
+
+	mat->setName(name);
+	mat->setProperties(pbrProperties);
+
+	// Apply textures and determine features
+	MaterialFeature::Flag features = applyTexturesAndGetFeatures(mat, textures);
 	mat->setFeatureMask(features);
 
 	// Default shader

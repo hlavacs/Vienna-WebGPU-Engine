@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <webgpu/webgpu.hpp>
 
+#include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 
 namespace engine::rendering
@@ -53,7 +54,7 @@ class BindGroupBinder
 		wgpu::RenderPassEncoder &renderPass,
 		const std::shared_ptr<webgpu::WebGPUShaderInfo> &shaderInfo,
 		uint64_t cameraId,
-		const std::unordered_map<webgpu::BindGroupType, std::shared_ptr<webgpu::WebGPUBindGroup>> &bindGroups = {},
+		const std::unordered_map<BindGroupType, std::shared_ptr<webgpu::WebGPUBindGroup>> &bindGroups = {},
 		std::optional<uint64_t> objectId = std::nullopt
 	);
 

@@ -219,10 +219,10 @@ void MeshPass::drawItems(
 				currentPipeline->getShaderInfo(),
 				m_cameraId,
 				{
-					{webgpu::BindGroupType::Object, item.objectBindGroup},
-					{webgpu::BindGroupType::Material, item.gpuMaterial->getBindGroup()},
-					{webgpu::BindGroupType::Light, m_lightBindGroup},
-					{webgpu::BindGroupType::Shadow, m_shadowBindGroup}
+					{BindGroupType::Object, item.objectBindGroup},
+					{BindGroupType::Material, item.gpuMaterial->getBindGroup()},
+					{BindGroupType::Light, m_lightBindGroup},
+					{BindGroupType::Shadow, m_shadowBindGroup}
 				}
 			);
 		}

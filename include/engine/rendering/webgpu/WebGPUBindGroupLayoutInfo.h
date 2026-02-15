@@ -9,48 +9,10 @@
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
+#include "engine/rendering/BindGroupEnums.h"
+
 namespace engine::rendering::webgpu
 {
-
-/**
- * @brief Determines whether a bind group can be reused across shaders/objects.
- */
-enum class BindGroupReuse
-{
-	Global,		 //< device-wide, never changes
-	PerFrame,	 //< per camera or per frame
-	PerMaterial, //< tied to material instance
-	PerObject	 //< per render item / draw call
-};
-
-/**
- * @brief Semantic type of a bind group.
- */
-enum class BindGroupType
-{
-	Frame,
-	Light,
-	Mipmap,
-	Object,
-	Material,
-	Shadow,
-	ShadowPass2D,
-	ShadowPassCube,
-	Debug,
-	Custom,
-};
-
-/**
- * @brief Type of a single binding inside a bind group.
- */
-enum class BindingType
-{
-	UniformBuffer,
-	StorageBuffer,
-	Texture,
-	MaterialTexture,
-	Sampler
-};
 
 /**
  * @brief Metadata describing a single binding in a bind group layout.
@@ -177,8 +139,8 @@ class WebGPUBindGroupLayoutInfo
 
 	[[nodiscard]] const BindGroupBinding *getBinding(uint32_t bindingIndex) const
 	{
-		if(m_bindings.size() <= bindingIndex)
-            return nullptr;
+		if (m_bindings.size() <= bindingIndex)
+			return nullptr;
 		return &m_bindings[bindingIndex];
 	}
 
@@ -210,8 +172,8 @@ class WebGPUBindGroupLayoutInfo
 	 */
 	[[nodiscard]] const wgpu::BindGroupLayoutEntry *getLayoutEntry(uint32_t bindingIndex) const
 	{
-		if(m_entries.size() <= bindingIndex)
-            return nullptr;
+		if (m_entries.size() <= bindingIndex)
+			return nullptr;
 		return &m_entries[bindingIndex];
 	}
 

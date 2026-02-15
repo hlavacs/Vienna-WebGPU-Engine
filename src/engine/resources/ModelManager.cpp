@@ -3,14 +3,16 @@
 namespace engine::resources
 {
 
+
+
 std::optional<ModelManager::ModelPtr> ModelManager::createModel(
-	const std::string &filePath,
+	const std::filesystem::path &filePath,
 	const std::optional<std::string> &name,
 	const engine::math::CoordinateSystem::Cartesian srcCoordSys,
 	const engine::math::CoordinateSystem::Cartesian dstCoordSys
 )
 {
-	std::string modelName = name.value_or(filePath);
+	std::string modelName = name.value_or(filePath.string());
 	auto existing = getByName(modelName);
 	if (existing.has_value())
 		return *existing;
@@ -43,7 +45,7 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 	}
 	else
 	{
-		logError("Unsupported model format: '{}'", filePath);
+		logError("Unsupported model format: '{}'", filePath.string());
 		return std::nullopt;
 	}
 }

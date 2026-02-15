@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
+#include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -191,7 +192,7 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	bindGroupBuilder.isEngineDefault = true;
 	bindGroupBuilder.name = bindgroup::defaults::OBJECT;
 	bindGroupBuilder.type = BindGroupType::Object;
-	bindGroupBuilder.reuse = BindGroupReuse::PerFrame;
+	bindGroupBuilder.reuse = BindGroupReuse::PerObject;
 
 	ShaderBinding buffer;
 	buffer.type = BindingType::UniformBuffer;

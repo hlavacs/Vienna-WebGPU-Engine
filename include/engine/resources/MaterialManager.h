@@ -77,6 +77,41 @@ class MaterialManager : public ResourceManagerBase<engine::rendering::Material>
 	);
 
 	/**
+	 * @brief Creates a Material with specified properties and associated textures.
+	 * @param name The name of the material.
+	 * @param properties The material properties data (type-erased).
+	 * @param shader The shader to use for the material.
+	 * @param textures A map of texture slot names to texture handles.
+	 */
+	template <typename T>
+	[[nodiscard]]
+	std::optional<MaterialPtr> createMaterial(
+		std::string name,
+		T properties,
+		std::string shader,
+		const std::unordered_map<std::string, TextureHandle> &textures
+	)
+	{
+		auto mat = std::make_shared<Material>();
+
+		mat->setName(name);
+		mat->setProperties(properties);
+
+		// Apply textures and determine features
+		MaterialFeature::Flag features = applyTexturesAndGetFeatures(mat, textures);
+		mat->setFeatureMask(features);
+
+		// Set shader
+		mat->setShader(shader);
+
+		auto handleOpt = add(mat);
+		if (!handleOpt)
+			return std::nullopt;
+
+		return mat;
+	}
+
+	/**
 	 * @brief Access the underlying TextureManager.
 	 * @return Shared pointer to the TextureManager.
 	 */
@@ -86,6 +121,17 @@ class MaterialManager : public ResourceManagerBase<engine::rendering::Material>
 	MaterialHandle getDefaultMaterial() const;
 
   private:
+	/**
+	 * @brief Applies textures to a material and determines feature flags based on texture slots.
+	 * @param mat The material to apply textures to.
+	 * @param textures A map of texture slot names to texture handles.
+	 * @return MaterialFeature flags indicating which texture maps are used.
+	 */
+	MaterialFeature::Flag applyTexturesAndGetFeatures(
+		MaterialPtr mat,
+		const std::unordered_map<std::string, TextureHandle> &textures
+	);
+
 	mutable MaterialHandle m_defaultMaterial;
 	std::shared_ptr<TextureManager> m_textureManager;
 };

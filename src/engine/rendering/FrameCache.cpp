@@ -93,8 +93,8 @@ bool FrameCache::processBindGroupProviders(
 		}
 
 		// Validate instanceId matches reuse policy (only on first creation)
-		bool needsInstance = (shaderReuse == webgpu::BindGroupReuse::PerObject || 
-		                      shaderReuse == webgpu::BindGroupReuse::PerMaterial);
+		bool needsInstance = (shaderReuse == BindGroupReuse::PerObject || 
+		                      shaderReuse == BindGroupReuse::PerMaterial);
 		bool hasInstance = provider.instanceId.has_value();
 		
 		if (needsInstance && !hasInstance)

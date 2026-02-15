@@ -59,6 +59,14 @@ class ShaderRegistry
 	explicit ShaderRegistry(webgpu::WebGPUContext &context);
 	~ShaderRegistry() = default;
 
+	// Delete copy constructor and copy assignment operator
+	ShaderRegistry(const ShaderRegistry &) = delete;
+	ShaderRegistry &operator=(const ShaderRegistry &) = delete;
+
+	// Allow move semantics
+	ShaderRegistry(ShaderRegistry &&) = default;
+	ShaderRegistry &operator=(ShaderRegistry &&) = default;
+
 	/**
 	 * @brief Initialize default engine shaders.
 	 * @return True if all default shaders were created successfully.

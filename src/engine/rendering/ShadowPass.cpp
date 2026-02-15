@@ -482,7 +482,7 @@ void ShadowPass::renderItems(
 				currentPipeline->getShaderInfo(),
 				0,
 				{
-					{isCubeShadow ? webgpu::BindGroupType::ShadowPassCube : webgpu::BindGroupType::ShadowPass2D, shadowPassBindGroup}
+					{isCubeShadow ? BindGroupType::ShadowPassCube : BindGroupType::ShadowPass2D, shadowPassBindGroup}
 				}
 			);
 		}

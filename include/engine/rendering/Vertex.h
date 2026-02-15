@@ -52,8 +52,8 @@ struct Vertex
 {
 	glm::vec3 position{};
 	glm::vec3 normal{};
-	glm::vec4 tangent{};
 	glm::vec2 uv{};
+	glm::vec4 tangent{};
 	glm::vec3 color{};
 	float _pad;
 
@@ -163,7 +163,7 @@ struct Vertex
 	static std::vector<uint8_t> repackVertices(const std::vector<Vertex> &vertices, VertexLayout layout)
 	{
 		size_t stride = Vertex::getStride(layout);
-		std::vector<uint8_t> packed(vertices.size() * stride);
+		std::vector<uint8_t> packed(vertices.size() * stride, 0); // Initialize to zero for proper padding
 
 		auto vertexAttributes = Vertex::requiredAttributes(layout);
 		for (size_t i = 0; i < vertices.size(); ++i)
@@ -182,16 +182,16 @@ struct Vertex
 				dst += sizeof(Vertex::normal);
 			}
 
-			if (hasFlag(vertexAttributes, VertexAttribute::Tangent))
-			{
-				memcpy(dst, &vertices[i].tangent, sizeof(Vertex::tangent));
-				dst += sizeof(Vertex::tangent);
-			}
-
 			if (hasFlag(vertexAttributes, VertexAttribute::UV))
 			{
 				memcpy(dst, &vertices[i].uv, sizeof(Vertex::uv));
 				dst += sizeof(Vertex::uv);
+			}
+
+			if (hasFlag(vertexAttributes, VertexAttribute::Tangent))
+			{
+				memcpy(dst, &vertices[i].tangent, sizeof(Vertex::tangent));
+				dst += sizeof(Vertex::tangent);
 			}
 
 			if (hasFlag(vertexAttributes, VertexAttribute::Color))

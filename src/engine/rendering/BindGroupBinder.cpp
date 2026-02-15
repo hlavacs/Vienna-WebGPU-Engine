@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -14,7 +15,7 @@ bool BindGroupBinder::bind(
 	wgpu::RenderPassEncoder &renderPass,
 	const std::shared_ptr<webgpu::WebGPUShaderInfo> &shaderInfo,
 	uint64_t cameraId,
-	const std::unordered_map<webgpu::BindGroupType, std::shared_ptr<webgpu::WebGPUBindGroup>> &bindGroups,
+	const std::unordered_map<BindGroupType, std::shared_ptr<webgpu::WebGPUBindGroup>> &bindGroups,
 	std::optional<uint64_t> objectId
 )
 {
@@ -46,86 +47,86 @@ bool BindGroupBinder::bind(
 
 		switch (layoutInfo->getType())
 		{
-		case webgpu::BindGroupType::Frame:
+		case BindGroupType::Frame:
+		{
+			auto it = m_frameCache->frameBindGroupCache.find(cameraId);
+			if (it != m_frameCache->frameBindGroupCache.end())
 			{
-				auto it = m_frameCache->frameBindGroupCache.find(cameraId);
-				if (it != m_frameCache->frameBindGroupCache.end())
+				bindGroup = it->second;
+			}
+			else if (!m_frameCache->frameBindGroupCache.empty())
+			{
+				// Fallback to first available if camera ID not found
+				spdlog::warn("BindGroupBinder: Frame bind group not found for camera ID {}, using first available", cameraId);
+				bindGroup = m_frameCache->frameBindGroupCache.begin()->second;
+			}
+		}
+		break;
+
+		case BindGroupType::Light:
+		{
+			auto it = bindGroups.find(BindGroupType::Light);
+			if (it != bindGroups.end())
+				bindGroup = it->second;
+		}
+		break;
+
+		case BindGroupType::Object:
+		{
+			auto it = bindGroups.find(BindGroupType::Object);
+			if (it != bindGroups.end())
+			{
+				bindGroup = it->second;
+			}
+			else if (objectId.has_value())
+			{
+				auto cacheIt = m_frameCache->objectBindGroupCache.find(objectId.value());
+				if (cacheIt != m_frameCache->objectBindGroupCache.end())
 				{
-					bindGroup = it->second;
-				}
-				else if (!m_frameCache->frameBindGroupCache.empty())
-				{
-					// Fallback to first available if camera ID not found
-					spdlog::warn("BindGroupBinder: Frame bind group not found for camera ID {}, using first available", cameraId);
-					bindGroup = m_frameCache->frameBindGroupCache.begin()->second;
+					bindGroup = cacheIt->second;
 				}
 			}
-			break;
+		}
+		break;
 
-		case webgpu::BindGroupType::Light:
-			{
-				auto it = bindGroups.find(webgpu::BindGroupType::Light);
-				if (it != bindGroups.end())
-					bindGroup = it->second;
-			}
-			break;
+		case BindGroupType::Material:
+		{
+			auto it = bindGroups.find(BindGroupType::Material);
+			if (it != bindGroups.end())
+				bindGroup = it->second;
+		}
+		break;
 
-		case webgpu::BindGroupType::Object:
-			{
-				auto it = bindGroups.find(webgpu::BindGroupType::Object);
-				if (it != bindGroups.end())
-				{
-					bindGroup = it->second;
-				}
-				else if (objectId.has_value())
-				{
-					auto cacheIt = m_frameCache->objectBindGroupCache.find(objectId.value());
-					if (cacheIt != m_frameCache->objectBindGroupCache.end())
-					{
-						bindGroup = cacheIt->second;
-					}
-				}
-			}
-			break;
+		case BindGroupType::Shadow:
+		{
+			auto it = bindGroups.find(BindGroupType::Shadow);
+			if (it != bindGroups.end())
+				bindGroup = it->second;
+		}
+		break;
 
-		case webgpu::BindGroupType::Material:
-			{
-				auto it = bindGroups.find(webgpu::BindGroupType::Material);
-				if (it != bindGroups.end())
-					bindGroup = it->second;
-			}
-			break;
+		case BindGroupType::ShadowPass2D:
+		{
+			auto it = bindGroups.find(BindGroupType::ShadowPass2D);
+			if (it != bindGroups.end())
+				bindGroup = it->second;
+		}
+		break;
 
-		case webgpu::BindGroupType::Shadow:
-			{
-				auto it = bindGroups.find(webgpu::BindGroupType::Shadow);
-				if (it != bindGroups.end())
-					bindGroup = it->second;
-			}
-			break;
+		case BindGroupType::ShadowPassCube:
+		{
+			auto it = bindGroups.find(BindGroupType::ShadowPassCube);
+			if (it != bindGroups.end())
+				bindGroup = it->second;
+		}
+		break;
 
-		case webgpu::BindGroupType::ShadowPass2D:
-			{
-				auto it = bindGroups.find(webgpu::BindGroupType::ShadowPass2D);
-				if (it != bindGroups.end())
-					bindGroup = it->second;
-			}
-			break;
-
-		case webgpu::BindGroupType::ShadowPassCube:
-			{
-				auto it = bindGroups.find(webgpu::BindGroupType::ShadowPassCube);
-				if (it != bindGroups.end())
-					bindGroup = it->second;
-			}
-			break;
-
-		case webgpu::BindGroupType::Custom:
+		case BindGroupType::Custom:
 		{
 			auto reuse = layoutInfo->getReuse();
 			std::optional<uint64_t> instanceId;
 
-			if (reuse == webgpu::BindGroupReuse::PerObject || reuse == webgpu::BindGroupReuse::PerMaterial)
+			if (reuse == BindGroupReuse::PerObject || reuse == BindGroupReuse::PerMaterial)
 			{
 				instanceId = objectId;
 			}
@@ -155,15 +156,15 @@ bool BindGroupBinder::bind(
 			break;
 		}
 
-		case webgpu::BindGroupType::Debug:
-			{
-				auto it = bindGroups.find(webgpu::BindGroupType::Debug);
-				if (it != bindGroups.end())
-					bindGroup = it->second;
-			}
-			break;
+		case BindGroupType::Debug:
+		{
+			auto it = bindGroups.find(BindGroupType::Debug);
+			if (it != bindGroups.end())
+				bindGroup = it->second;
+		}
+		break;
 
-		case webgpu::BindGroupType::Mipmap:
+		case BindGroupType::Mipmap:
 			// Mipmap bind group is used in mipmap generation pass (not main rendering)
 			// Should not be bound here
 			spdlog::warn("Attempted to bind Mipmap bind group in main rendering - this should not happen");
