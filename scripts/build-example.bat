@@ -1,13 +1,14 @@
 @echo off
 setlocal
 
-:: Args: build type, backend, optional example name
-set BUILDTYPE=%1
-set WEBGPU_BACKEND=%2
-set EXAMPLE_NAME=%3
+:: Args: example name (optional, defaults to main_demo), build type (optional, defaults to Debug), backend (optional, defaults to WGPU)
+set EXAMPLE_NAME=%1
+set BUILDTYPE=%2
+set WEBGPU_BACKEND=%3
 set PROFILE_HOST=Windows
 
 :: Defaults
+if "%EXAMPLE_NAME%"=="" set EXAMPLE_NAME=main_demo
 if "%BUILDTYPE%"=="" set BUILDTYPE=Debug
 if "%WEBGPU_BACKEND%"=="" set WEBGPU_BACKEND=WGPU
 
@@ -22,49 +23,62 @@ if /I "%WEBGPU_BACKEND%"=="Emscripten" (
     set PROFILE_HOST=Emscripten
 )
 
-:: Set the build directory
-set BUILD_DIR=build\%PROFILE_HOST%\%BUILDTYPE%
-set EXAMPLES_BUILD_DIR=%BUILD_DIR%\examples
+:: Normalize paths - convert to absolute paths
+set SCRIPT_DIR=%~dp0
+pushd "%SCRIPT_DIR%.."
+set PROJECT_ROOT=%CD%
+popd
+
+set EXAMPLES_DIR=%PROJECT_ROOT%\examples
+set EXAMPLE_SOURCE_DIR=%EXAMPLES_DIR%\%EXAMPLE_NAME%
+set BUILD_DIR=%EXAMPLES_DIR%\build\%EXAMPLE_NAME%\%PROFILE_HOST%\%BUILDTYPE%
+
+:: Check if example exists
+if not exist "%EXAMPLE_SOURCE_DIR%\CMakeLists.txt" (
+    echo [ERROR] Example '%EXAMPLE_NAME%' not found or has no CMakeLists.txt
+    echo.
+    echo Available examples:
+    for /d %%d in ("%EXAMPLES_DIR%\*") do (
+        if exist "%%d\CMakeLists.txt" echo   - %%~nxd
+    )
+    exit /b 1
+)
 
 echo ============================================
-echo Building Examples
+echo Building Example: %EXAMPLE_NAME%
 echo Build Type: %BUILDTYPE%
 echo Backend: %WEBGPU_BACKEND%
-if not "%EXAMPLE_NAME%"=="" (
-    echo Target: %EXAMPLE_NAME%
-)
+echo Source Directory: %EXAMPLE_SOURCE_DIR%
+echo Build Directory: %BUILD_DIR%
 echo ============================================
+echo.
 
-:: Configure and build examples based on the backend
+:: Configure and build example based on the backend
 if /I "%WEBGPU_BACKEND%"=="Emscripten" (
-    echo [BUILD] Emscripten examples build
-    emcmake cmake -S examples -B "%EXAMPLES_BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=%BUILDTYPE%
+    echo [BUILD] Emscripten build
+    emcmake cmake -S "%EXAMPLE_SOURCE_DIR%" -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=%BUILDTYPE%
     if errorlevel 1 (
         echo [ERROR] CMake configuration failed.
         exit /b 1
     )
     
-    if not "%EXAMPLE_NAME%"=="" (
-        cmake --build "%EXAMPLES_BUILD_DIR%" --target %EXAMPLE_NAME%
-    ) else (
-        cmake --build "%EXAMPLES_BUILD_DIR%" --parallel
-    )
+    cmake --build "%BUILD_DIR%"
     if errorlevel 1 (
         echo [ERROR] Build failed.
         exit /b 1
     )
 ) else (
-    call scripts\launch-vsdevcmd.bat
+    call "%SCRIPT_DIR%launch-vsdevcmd.bat"
     
     if /I "%WEBGPU_BACKEND%"=="DAWN" (
-        echo [BUILD] Dawn backend examples
-        cmake -S examples -B "%EXAMPLES_BUILD_DIR%" -G Ninja ^
+        echo [BUILD] Dawn backend
+        cmake -S "%EXAMPLE_SOURCE_DIR%" -B "%BUILD_DIR%" -G Ninja ^
             -DCMAKE_BUILD_TYPE=%BUILDTYPE% ^
             -DWEBGPU_BACKEND=DAWN ^
             -DWEBGPU_BUILD_FROM_SOURCE=ON
     ) else (
-        echo [BUILD] WGPU backend examples
-        cmake -S examples -B "%EXAMPLES_BUILD_DIR%" -G Ninja ^
+        echo [BUILD] WGPU backend
+        cmake -S "%EXAMPLE_SOURCE_DIR%" -B "%BUILD_DIR%" -G Ninja ^
             -DCMAKE_BUILD_TYPE=%BUILDTYPE% ^
             -DWEBGPU_BACKEND=WGPU ^
             -DWEBGPU_BUILD_FROM_SOURCE=OFF
@@ -75,15 +89,9 @@ if /I "%WEBGPU_BACKEND%"=="Emscripten" (
         exit /b 1
     )
     
-    :: Build specific example or all examples
+    :: Build example
     echo [BUILD] Starting build...
-    if not "%EXAMPLE_NAME%"=="" (
-        echo Building target: %EXAMPLE_NAME%
-        cmake --build "%EXAMPLES_BUILD_DIR%" --target %EXAMPLE_NAME%
-    ) else (
-        echo Building all examples...
-        cmake --build "%EXAMPLES_BUILD_DIR%" --parallel
-    )
+    cmake --build "%BUILD_DIR%"
     if errorlevel 1 (
         echo [ERROR] Build failed.
         exit /b 1
@@ -91,8 +99,15 @@ if /I "%WEBGPU_BACKEND%"=="Emscripten" (
 )
 
 :: If we got here, build succeeded
-echo [SUCCESS] Examples build completed successfully!
 echo.
-echo Built examples are in: %EXAMPLES_BUILD_DIR%
+echo [SUCCESS] Example '%EXAMPLE_NAME%' built successfully!
+echo.
+echo Executable location: %BUILD_DIR%
+if /I "%WEBGPU_BACKEND%"=="Emscripten" (
+echo.:
+echo To run
+    echo   Start a web server in project root: python -m http.server 8080
+    echo   Then open: http://localhost:8080/examples/build/%EXAMPLE_NAME%/%PROFILE_HOST%/%BUILDTYPE%/
+)
 
 endlocal

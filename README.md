@@ -1,28 +1,42 @@
 # Vienna-WebGPU-Engine
 
-Vienna-WebGPU-Engine is a WebGPU-based game engine designed for educational purposes. It is built with modern graphics APIs to provide a hands-on learning experience in game engine development, using the WebGPU API. The project is still under development, and features will be added progressively as it matures.
+Vienna-WebGPU-Engine is a **cross-platform, WebGPU-based game engine** designed for educational purposes. Built with modern graphics APIs, it provides a hands-on learning experience in game engine development using the WebGPU API.
 
-## Features (Under Development)
+**Current Platform Support:** Windows (Native WebGPU via wgpu-native)  
+**Status:** Active development - features are being added progressively
 
-- Real-time graphics rendering using WebGPU
-- Cross-platform support (Windows, Web)
-- Educational resources and examples to help you learn about game engine architecture and modern rendering techniques
+## Features
+
+- ✅ Real-time graphics rendering using WebGPU (wgpu-native)
+- ✅ Cross-platform architecture (Windows native, Web support planned)
+- ✅ Modern rendering pipeline with shadow mapping and PBR materials
+- ✅ Scene graph system with hierarchical transforms
+- ✅ Resource management with hot-reloading support
+- ✅ Factory pattern for GPU resource creation
+- ✅ Model loading: OBJ (stable), GLTF/GLB (work in progress)
+- ✅ Educational resources and comprehensive documentation
+
+**Note:** Emscripten/Web support is **not currently available** and is planned for future releases.
 
 
 ## Getting Started
 
-The Project uses the [**wgpu-native** v0.19.4.1]() 
-
 ### Prerequisites
 
-Ensure you have the following installed on your system:
+Ensure you have the following installed:
 
-- [CMake](https://cmake.org/download/)
-- [Ninja](https://ninja-build.org/) (optional, but recommended for building)
-- [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) Version **4.0.6** is required for emscripten build. Can be installed 
-- [http-server](https://www.npmjs.com/package/http-server) for emscripten debuging.
+- **[CMake](https://cmake.org/download/)** (3.15+)
+- **[Ninja](https://ninja-build.org/)** (recommended build system)
+- **C++17 compatible compiler** (MSVC 2019+, GCC 9+, Clang 10+)
+- **Python 3.x** (for build scripts)
 
-You may use `pip install -r requirements.txt`. It will install the versions used while development. Other versions may work as well.
+The engine uses **[wgpu-native v0.19.4.1](https://github.com/gfx-rs/wgpu-native)** as the WebGPU implementation.
+
+### Optional Tools
+
+- **[Visual Studio 2022](https://visualstudio.microsoft.com/)** - For native debugging and crash analysis
+- **[Emscripten 4.0.6](https://emscripten.org/)** - Web support (not yet functional)
+- **[http-server](https://www.npmjs.com/package/http-server)** - For web builds (future use)
 
 ## Setup
 
@@ -39,26 +53,46 @@ You may use `pip install -r requirements.txt`. It will install the versions used
    git submodule update --init --recursive
    ```
 
-3. **Install the Prerequisites**
+3. **Install Python dependencies (optional):**
    
    ```shell
    pip install -r requirements.txt
    ```
 
+## Documentation
+
+- **[Getting Started Guide](doc/GettingStarted.md)** - Learn how to use the engine for your own projects
+- **[Engine Architecture](doc/EngineArchitecture.md)** - Technical architecture and design patterns
+- **[Bind Group System](doc/BindGroupSystem.md)** - Advanced rendering system details
+- **[Core Principles](doc/CorePrinciples.md)** - Engine design philosophy
+- **[Building Dawn](doc/BuildingDawn.md)** - Instructions for building with Dawn backend (experimental)
+
 ## Building the Project
 
-### Building WebGPU Native
+### Windows Native (wgpu-native)
 
-Use the provided VS Code tasks or launch settings.
+**Recommended:** Use VS Code tasks or the provided build scripts.
 
-Alternatively build manually:
+#### Using Build Scripts
 
 ```shell
-cmake -S . -B ./bin/Windows -DCMAKE_BUILD_TYPE=Debug -DWEBGPU_BACKEND=WGPU -DWEBGPU_BUILD_FROM_SOURCE=OFF
-cmake --build ./bin/Windows --config Debug
+# Debug build
+scripts/build.bat Debug WGPU
 
-cmake -S . -B ./bin/Windows -DCMAKE_BUILD_TYPE=Release -DWEBGPU_BACKEND=WGPU -DWEBGPU_BUILD_FROM_SOURCE=OFF
-cmake --build ./bin/Windows --config Release
+# Release build
+scripts/build.bat Release WGPU
+```
+
+#### Manual CMake Build
+
+```shell
+# Debug
+cmake -S . -B build/Windows/Debug -DCMAKE_BUILD_TYPE=Debug -DWEBGPU_BACKEND=WGPU -DWEBGPU_BUILD_FROM_SOURCE=OFF -G Ninja
+cmake --build build/Windows/Debug
+
+# Release
+cmake -S . -B build/Windows/Release -DCMAKE_BUILD_TYPE=Release -DWEBGPU_BACKEND=WGPU -DWEBGPU_BUILD_FROM_SOURCE=OFF -G Ninja
+cmake --build build/Windows/Release
 ```
 
 #### Generating Visual Studio Solution for Debugging
@@ -84,49 +118,108 @@ This is especially useful for debugging crashes that occur before `main()` or du
 
 **Note:** The Visual Studio solution includes the engine library and all dependencies (SDL2, WebGPU, etc.), so everything is built together.
 
-### Building WebGPU Dawn
-
-ToDo
-
-
-### Building WebGPU for Web
-
-**Required:** [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) Version **4.0.6** is required for emscripten build. Can be installed based on the given tutorial on the download side. <br>
-Use the provided VS Code tasks or launch settings. 
-
-Alternatively build manually:
+### Building Examples
 
 ```shell
-emcmake cmake -B bin/Emscripten/Release
-cmake --build bin/Emscripten/Release
+# Build specific example
+scripts/build-example.bat main_demo Debug WGPU
+scripts/build-example.bat scene_editor Debug WGPU
+
+# Build with defaults (main_demo, Debug, WGPU)
+scripts/build-example.bat main_demo
 ```
 
-And Run using:
+### Web Build (Emscripten) - Not Currently Supported
+
+**Status:** Web builds are currently non-functional and under development.
+
+Emscripten support is planned for future releases. The build infrastructure exists but requires significant work to be operational.
+
+<details>
+<summary>Experimental Emscripten Build (Non-Functional)</summary>
 
 ```shell
-python -m http.server 8080 -d bin/Emscripten/Release
+# Requires Emscripten 4.0.6
+emcmake cmake -B build/Emscripten/Release
+cmake --build build/Emscripten/Release
+
+# Run local server
+python -m http.server 8080 -d build/Emscripten/Release
 ```
 
-### Recommended Extensions:
+**Warning:** This build is currently broken and not supported.
+</details>
 
-- [WGSL-Lang](https://marketplace.visualstudio.com/items/?itemName=noah-labrecque.wgsl-lang)
-- [CMake Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools)
-- [Cpp Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools)
-- [WebAssembly DWARF Debugging](https://marketplace.visualstudio.com/items?itemName=ms-vscode.wasm-dwarf-debugging) (Debugging in Browser for Emscripten build)
-- [Live Preview](https://marketplace.visualstudio.com/items?itemName=ms-vscode.live-server) (Debugging in Browser for Emscripten build)
+### Recommended VS Code Extensions
 
-### Contributing
+- **[WGSL-Lang](https://marketplace.visualstudio.com/items?itemName=noah-labrecque.wgsl-lang)** - WGSL syntax highlighting and language support
+- **[CMake Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools)** - CMake integration
+- **[C/C++](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools)** - C++ IntelliSense and debugging
+- **[WebAssembly DWARF Debugging](https://marketplace.visualstudio.com/items?itemName=ms-vscode.wasm-dwarf-debugging)** - For future web debugging
+- **[Live Preview](https://marketplace.visualstudio.com/items?itemName=ms-vscode.live-server)** - For future web builds
 
-Feel free to contribute to the project by forking the repository and submitting pull requests. Contributions are welcome, especially in areas such as optimization, feature development, and educational content.
+## Project Structure
 
-### License
+```
+Vienna-WebGPU-Engine/
+├── include/engine/         # Engine headers
+│   ├── core/              # Core utilities (Handle, Identifiable)
+│   ├── resources/         # Resource management
+│   ├── rendering/         # Rendering system
+│   ├── scene/             # Scene graph
+│   └── input/             # Input handling
+├── src/engine/            # Engine implementation
+├── resources/             # Shaders and assets
+├── examples/              # Example applications
+│   ├── main_demo/         # Main demo application
+│   └── scene_editor/      # Scene editor (WIP)
+├── external/              # Third-party libraries
+├── doc/                   # Documentation
+└── scripts/               # Build scripts
+```
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+## Getting Help
+
+- **Start here:** Read the **[Getting Started Guide](doc/GettingStarted.md)** to build your first application
+- Check the **[Engine Architecture](doc/EngineArchitecture.md)** for technical details
+- Review the **[copilot-instructions.md](.github/copilot-instructions.md)** for detailed implementation guidance
+- Explore the **examples/** folder for usage patterns
+- Look at inline documentation in header files
+
+## Contributing
+
+Contributions are welcome! This is an educational project, so contributions in the following areas are especially appreciated:
+
+- **Documentation improvements** - Help make the engine more accessible to learners
+- **Feature development** - Implement new rendering features or engine capabilities
+- **Bug fixes** - Help improve stability and correctness
+- **Examples** - Create new example applications demonstrating engine features
+- **Optimization** - Performance improvements and profiling
+
+**Before contributing:**
+1. Read the **[Engine Architecture](doc/EngineArchitecture.md)** documentation
+2. Follow the coding conventions outlined in the documentation
+3. Ensure your code builds successfully on Windows
+4. Add appropriate documentation for new features
+
+Fork the repository and submit pull requests with clear descriptions of your changes.
+
+## License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-This project is based in part on the excellent [Learn WebGPU for C++](https://github.com/eliemichel/LearnWebGPU) tutorial by Elie Michel.
-Significant modifications, refactoring, and extensions have been made for this project.
-Original code © 2022-2024 Elie Michel, MIT License.
+This project builds upon excellent work from the community:
+
+- Based in part on the [Learn WebGPU for C++](https://github.com/eliemichel/LearnWebGPU) tutorial by **Elie Michel**
+- Significant modifications, refactoring, and extensions have been made for this project
+- Original code © 2022-2024 Elie Michel, MIT License
+- Uses [wgpu-native](https://github.com/gfx-rs/wgpu-native) as the WebGPU implementation
+- Leverages [SDL2](https://www.libsdl.org/), [GLM](https://github.com/g-truc/glm), [ImGui](https://github.com/ocornut/imgui), and other excellent libraries
+
+---
+
+**Happy Learning and Building! 🚀**
 
 

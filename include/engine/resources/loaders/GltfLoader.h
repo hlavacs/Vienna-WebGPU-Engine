@@ -5,6 +5,12 @@
 
 namespace engine::resources::loaders
 {
+/**
+ * @brief GLTF/GLB model loader.
+ *
+ * @warning This loader is currently WORK IN PROGRESS and may not function correctly.
+ *          Use ObjLoader for stable model loading.
+ */
 class GltfLoader : public GeometryLoader<engine::resources::GltfGeometryData>
 {
   public:

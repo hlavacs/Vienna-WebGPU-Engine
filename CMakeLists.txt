@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
+set(ENGINE_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE INTERNAL "Engine root directory")
+
 project(WebGPU_Engine VERSION 0.1.0 LANGUAGES C CXX)
 
 include(utils.cmake)
@@ -61,7 +63,7 @@ target_link_libraries(WebGPU_Engine_Lib PUBLIC
     imgui
     sdl2webgpu
     webgpu
-	spdlog
+    spdlog
 )
 
 # Link SDL2main for Windows (required for proper WinMain entry point)
@@ -83,21 +85,21 @@ endif()
 # Build type options for library (use generator expressions for multi-config generators like Visual Studio)
 if(MSVC)
     # Debug flags
-    target_compile_options(WebGPU_Engine_Lib PUBLIC 
+    target_compile_options(WebGPU_Engine_Lib PUBLIC
         $<$<CONFIG:Debug>:/Zi /Od /RTC1 /diagnostics:caret>
         $<$<CONFIG:Release>:/O2>
     )
-    target_compile_definitions(WebGPU_Engine_Lib PUBLIC 
+    target_compile_definitions(WebGPU_Engine_Lib PUBLIC
         $<$<CONFIG:Debug>:DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
         $<$<CONFIG:Debug>:ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
     )
 else()
     # Non-MSVC compilers
-    target_compile_options(WebGPU_Engine_Lib PUBLIC 
+    target_compile_options(WebGPU_Engine_Lib PUBLIC
         $<$<CONFIG:Debug>:-g -O0 -ferror-limit=0>
         $<$<CONFIG:Release>:-O3>
     )
-    target_compile_definitions(WebGPU_Engine_Lib PUBLIC 
+    target_compile_definitions(WebGPU_Engine_Lib PUBLIC
         $<$<CONFIG:Debug>:DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
         $<$<CONFIG:Debug>:ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
     )
@@ -130,7 +132,7 @@ if(EMSCRIPTEN)
         target_compile_options(WebGPU_Engine_Lib PUBLIC -g -gsource-map -gno-column-info)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWGPU_LOG=trace")
     endif()
-    
+
     # Base Emscripten link options that all consumers will need
     target_link_options(WebGPU_Engine_Lib INTERFACE
         -sUSE_WEBGPU
@@ -147,16 +149,16 @@ function(configure_engine_executable TARGET_NAME)
     set(oneValueArgs SHELL_FILE)
     set(multiValueArgs "")
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-    
+
     # Set default shell file if not provided
     if(NOT ARG_SHELL_FILE)
         set(ARG_SHELL_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/shell_minimal.html")
     endif()
-    
+
     if(EMSCRIPTEN)
         # Set HTML output
         set_target_properties(${TARGET_NAME} PROPERTIES SUFFIX ".html")
-        
+
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             target_link_options(${TARGET_NAME} PRIVATE
                 --preload-file "${CMAKE_CURRENT_SOURCE_DIR}/resources"
@@ -164,32 +166,32 @@ function(configure_engine_executable TARGET_NAME)
                 -gsource-map
                 --source-map-base "http://localhost:8080/build/Emscripten/Debug/"
             )
-            
+
             # Copy source files for debugging
             add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_directory 
-                    "${CMAKE_CURRENT_SOURCE_DIR}/src" 
-                    "$<TARGET_FILE_DIR:${TARGET_NAME}>/src")
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/src"
+                "$<TARGET_FILE_DIR:${TARGET_NAME}>/src")
             add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_directory 
-                    "${CMAKE_CURRENT_SOURCE_DIR}/external" 
-                    "$<TARGET_FILE_DIR:${TARGET_NAME}>/external")
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/external"
+                "$<TARGET_FILE_DIR:${TARGET_NAME}>/external")
         else()
             target_link_options(${TARGET_NAME} PRIVATE
                 --shell-file "${ARG_SHELL_FILE}"
             )
         endif()
-        
+
         # Set shell file dependency
         set_property(TARGET ${TARGET_NAME}
             PROPERTY LINK_DEPENDS "${ARG_SHELL_FILE}"
         )
     else()
         # Native build: Copy DLLs and WebGPU binaries
-        
+
         # Copy WebGPU binaries
         target_copy_webgpu_binaries(${TARGET_NAME})
-        
+
         # Copy SDL2 DLL (if it exists as a shared library)
         if(TARGET SDL2::SDL2)
             # Get the actual SDL2 library file
@@ -203,26 +205,26 @@ function(configure_engine_executable TARGET_NAME)
                 if(TARGET SDL2)
                     add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
                         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                            $<TARGET_FILE:SDL2>
-                            $<TARGET_FILE_DIR:${TARGET_NAME}>
+                        $<TARGET_FILE:SDL2>
+                        $<TARGET_FILE_DIR:${TARGET_NAME}>
                         COMMENT "Copying SDL2 DLL to output directory"
                     )
                 endif()
             elseif(EXISTS "${SDL2_DLL_LOCATION}")
                 add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${SDL2_DLL_LOCATION}"
-                        $<TARGET_FILE_DIR:${TARGET_NAME}>
+                    "${SDL2_DLL_LOCATION}"
+                    $<TARGET_FILE_DIR:${TARGET_NAME}>
                     COMMENT "Copying SDL2 DLL to output directory"
                 )
             endif()
         endif()
-        
+
         # Set debugger environment
         set_target_properties(${TARGET_NAME} PROPERTIES
             VS_DEBUGGER_ENVIRONMENT "DAWN_DEBUG_BREAK_ON_ERROR=1"
         )
-        
+
         # Xcode scheme for Metal capture
         if(XCODE)
             set_target_properties(${TARGET_NAME} PROPERTIES
@@ -231,21 +233,25 @@ function(configure_engine_executable TARGET_NAME)
             )
         endif()
     endif()
-    
-    # Copy resources if they exist (for release builds or if resources are in the project directory)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources")
-        # Use generator expression to skip debug builds for both single-config and multi-config generators
-        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Debug>,echo,copy_directory>
-                "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+
+    message("${ENGINE_ROOT_DIR}/resources") 
+    # Copy engine resources from root (Release builds only)
+    if(EXISTS "${ENGINE_ROOT_DIR}/resources")
+        if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+            add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${ENGINE_ROOT_DIR}/resources"
                 $<TARGET_FILE_DIR:${TARGET_NAME}>/resources
-            COMMENT "Copying resources directory (skipped in Debug)")
+                COMMENT "Copying engine resources")
+        endif()
+    endif()
+
+    # Copy example assets from example directory (always)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+            $<TARGET_FILE_DIR:${TARGET_NAME}>/assets
+            COMMENT "Copying example assets")
     endif()
 endfunction()
-
-# Add examples if requested (and not being built as a subdirectory by an example)
-if(BUILD_EXAMPLES AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    message(STATUS "Building examples")
-    add_subdirectory(examples/main_demo)
-    add_subdirectory(examples/scene_editor)
-endif()
