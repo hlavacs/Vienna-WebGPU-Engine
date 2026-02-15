@@ -15,4 +15,6 @@ endif()
 add_engine_executable(Tutorial
     SOURCES
     main.cpp
+    FreeFlyCamera.h
+    FreeFlyCamera.cpp
 )
