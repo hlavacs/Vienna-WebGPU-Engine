@@ -91,7 +91,6 @@ if(MSVC)
     )
     target_compile_definitions(WebGPU_Engine_Lib PUBLIC
         $<$<CONFIG:Debug>:DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
-        $<$<CONFIG:Debug>:ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
     )
 else()
     # Non-MSVC compilers
@@ -101,7 +100,6 @@ else()
     )
     target_compile_definitions(WebGPU_Engine_Lib PUBLIC
         $<$<CONFIG:Debug>:DEBUG_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
-        $<$<CONFIG:Debug>:ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
     )
 endif()
 
@@ -142,17 +140,30 @@ if(EMSCRIPTEN)
     )
 endif()
 
-# Helper function to configure an executable that uses the engine
-function(configure_engine_executable TARGET_NAME)
-    # Parse optional arguments
+# Helper function to create and configure an engine executable
+function(add_engine_executable TARGET_NAME)
+    # Parse arguments: source files and optional shell file
     set(options "")
     set(oneValueArgs SHELL_FILE)
-    set(multiValueArgs "")
+    set(multiValueArgs SOURCES)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    # Create the executable
+    add_executable(${TARGET_NAME} ${ARG_SOURCES})
+    
+    # Link against the engine
+    target_link_libraries(${TARGET_NAME} PRIVATE WebGPU_Engine_Lib)
+    
+    message("Configuring executable ${TARGET_NAME} with sources: ${ARG_SOURCES}")
+    message("${CMAKE_CURRENT_SOURCE_DIR}")
+    # Set ASSETS_ROOT_DIR to the example's source directory
+    target_compile_definitions(WebGPU_Engine_Lib PRIVATE
+        $<$<CONFIG:Debug>:ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
+    )
 
     # Set default shell file if not provided
     if(NOT ARG_SHELL_FILE)
-        set(ARG_SHELL_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/shell_minimal.html")
+        set(ARG_SHELL_FILE "${ENGINE_ROOT_DIR}/src/shell_minimal.html")
     endif()
 
     if(EMSCRIPTEN)
@@ -234,7 +245,6 @@ function(configure_engine_executable TARGET_NAME)
         endif()
     endif()
 
-    message("${ENGINE_ROOT_DIR}/resources") 
     # Copy engine resources from root (Release builds only)
     if(EXISTS "${ENGINE_ROOT_DIR}/resources")
         if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
