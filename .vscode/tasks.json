@@ -1,9 +1,9 @@
 {
 	"version": "2.0.0",
 	"tasks": [
-		// 🟢 Windows
+		// 🟢 Engine Build
 		{
-			"label": "Build Windows (Debug)",
+			"label": "Build (Debug)",
 			"type": "shell",
 			"command": "scripts/build.bat",
 			"args": [
@@ -11,10 +11,17 @@
 				"WGPU"
 			],
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"windows": {
+				"command": "scripts/build.bat"
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["scripts/build.sh", "Debug", "WGPU"]
+			}
 		},
 		{
-			"label": "Build Windows (Release)",
+			"label": "Build (Release)",
 			"type": "shell",
 			"command": "scripts/build.bat",
 			"args": [
@@ -22,10 +29,17 @@
 				"WGPU"
 			],
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"windows": {
+				"command": "scripts/build.bat"
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["scripts/build.sh", "Release", "WGPU"]
+			}
 		},
 		{
-			"label": "Build Emscripten (Debug) [Host Windows]",
+			"label": "Build Emscripten (Debug)",
 			"type": "shell",
 			"command": "scripts/build.bat",
 			"args": [
@@ -33,10 +47,17 @@
 				"Emscripten"
 			],
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"windows": {
+				"command": "scripts/build.bat"
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["scripts/build.sh", "Debug", "Emscripten"]
+			}
 		},
 		{
-			"label": "Build Emscripten (Release) [Host Windows]",
+			"label": "Build Emscripten (Release)",
 			"type": "shell",
 			"command": "scripts/build.bat",
 			"args": [
@@ -44,9 +65,35 @@
 				"Emscripten"
 			],
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"windows": {
+				"command": "scripts/build.bat"
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["scripts/build.sh", "Release", "Emscripten"]
+			}
 		},
 		// 🟢 Examples
+		{
+			"label": "Build Example: Tutorial (Debug)",
+			"type": "shell",
+			"command": "scripts/build-example.bat",
+			"args": [
+				"tutorial",
+				"Debug",
+				"WGPU"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"windows": {
+				"command": "scripts/build-example.bat"
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["scripts/build-example.sh", "tutorial", "Debug", "WGPU"]
+			}
+		},
 		{
 			"label": "Build Example: Main Demo (Debug)",
 			"type": "shell",
@@ -57,7 +104,14 @@
 				"WGPU"
 			],
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"windows": {
+				"command": "scripts/build-example.bat"
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["scripts/build-example.sh", "main_demo", "Debug", "WGPU"]
+			}
 		},
 		{
 			"label": "Build Example: Main Demo (Release)",
@@ -69,7 +123,14 @@
 				"WGPU"
 			],
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"windows": {
+				"command": "scripts/build-example.bat"
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["scripts/build-example.sh", "main_demo", "Release", "WGPU"]
+			}
 		},
 		{
 			"label": "Build Example: Multi View (Debug)",
@@ -81,7 +142,14 @@
 				"WGPU"
 			],
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"windows": {
+				"command": "scripts/build-example.bat"
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["scripts/build-example.sh", "multi_view", "Debug", "WGPU"]
+			}
 		},
 		{
 			"label": "Build Example: Scene Editor (Debug)",
@@ -93,7 +161,14 @@
 				"WGPU"
 			],
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"windows": {
+				"command": "scripts/build-example.bat"
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["scripts/build-example.sh", "scene_editor", "Debug", "WGPU"]
+			}
 		},
 		// 🟢 Other
 		{
@@ -125,7 +200,7 @@
 					},
 					"endsPattern": {
 						"regexp": "."
-					},
+					}
 				}
 			}
 		},
@@ -159,7 +234,7 @@
 						"endsPattern": {
 							"regexp": "."
 						}
-					},
+					}
 				}
 			]
 		},
@@ -218,6 +293,6 @@
 			"type": "command",
 			"command": "workbench.action.tasks.terminate",
 			"args": "terminateAll"
-		},
+		}
 	]
 }
