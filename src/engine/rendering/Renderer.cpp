@@ -341,9 +341,9 @@ void Renderer::renderToTexture(
 			wgpu::TextureFormat::Depth32Float
 		);
 	}
-	// Tutorial 4 - Step 10: Prepare post-processing texture
+	// Tutorial 4 - Step 11: Prepare post-processing texture
 	// Post-processing texture is an intermediate render target for effects like bloom, tone mapping, etc.
-	
+	// Use negative ID to differentiate post-process textures from main render targets
 
 	// ========================================
 	// STEP 3: Frustum Culling
