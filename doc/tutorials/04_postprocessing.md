@@ -27,44 +27,47 @@ This tutorial implements **one hardcoded post-processing effect (vignette)** add
 - Shader registration - Already set up in `ShaderRegistry.cpp`
 - Renderer integration points - Already marked with tutorial comments
 
-**Prerequisites:**
-- Completed Tutorial 01 (shader basics and WebGPU fundamentals)
-- Understanding of bind groups (Tutorial 02)
-- Familiarity with RenderPass pattern (look at `MeshPass`, `ShadowPass`, `CompositePass`)
-
 ---
 
 ## Understanding the Architecture
 
-Steps 1-4 (Shadow, Mesh, Debug, PostProcessing) are **per-camera operations**. If multiple cameras, each one:
+Steps 1-4 (Shadow, Mesh, Debug, PostProcessing) are **per-camera operations**. If multiple cameras are specified, each one will have:
+
 - Its own shadow maps
 - Its own scene render
 - Its own debug overlays
 - Its own post-processing
   
+\
 **Frame Rendering Pipeline:**
 
-```
-Frame Start
-    ↓
-PER-CAMERA LOOP (for each camera):
-    ├─ [1] Shadow Pass        → Render shadow maps from light perspective
-    ├─ [2] Mesh Pass          → Render 3D scene to HDR texture (with lighting/shadows)
-    ├─ [3] Debug Pass         → Render debug overlays (wireframes, gizmos)
-    └─ [4] POST-PROCESSING    → Apply vignette effect (darkens edges) ← THIS TUTORIAL
-    ↓
-[5] Composite Pass   → Combine all camera render targets into surface texture
-    ↓
-[6] UI Pass          → Render ImGui on top
-    ↓
-Present to screen
+```mermaid
+graph LR
+    Start([Frame Start]) --> Loop{For each camera}
+    
+    Loop --> Shadow["[1] Shadow Pass"]
+    Shadow --> Mesh["[2] Mesh Pass"]
+    Mesh --> Debug["[3] Debug Pass"]
+    Debug --> Post["[4] Post-Processing ⭐<br/>← THIS TUTORIAL"]
+    
+    Post --> LoopEnd{More<br/>cameras?}
+    LoopEnd -->|Yes| Loop
+    LoopEnd -->|No| Composite
+    
+    Composite["[5] Composite Pass"]
+    Composite --> UI["[6] UI Pass"]
+    UI --> Present([Present])
+    
+    style Post fill:#ff9,stroke:#f66,stroke-width:2px
+    style Start fill:#9f9
+    style Present fill:#9f9
 ```
 
 Then **Composite Pass** (step 5) combines all camera results together and renders to the final surface.
 
 **Why Post-Process After Debug Pass?**
 
-Post-processing should affect the entire rendered image for that camera. If we placed it before debug pass, wireframes and gizmos would not receive the vignette effect. By placing it after debug pass, all rendered content (scene + debug overlays) gets processed together.
+If we placed it before debug pass, wireframes and gizmos would not receive the vignette effect. By placing it after debug pass, all rendered content (scene + debug overlays) gets processed together.
 
 **Pattern Overview:**
 
@@ -88,8 +91,6 @@ pass->cleanup();
 
 ---
 
-<div style="page-break-after: always;"></div>
-
 ## Step 1: PostProcessingPass::initialize()
 
 This method performs one-time setup: loading the shader and creating the rendering pipeline.
@@ -101,17 +102,17 @@ This method performs one-time setup: loading the shader and creating the renderi
 
 **What to understand:**
 
-1. **Shader Registry Pattern** - Instead of loading shaders directly, we use `shaderRegistry().getShader()`. This allows:
+1. **Sampler Reuse** - We get a pre-made sampler (`getClampLinearSampler()`) instead of creating one. This is more efficient and reuses GPU resources.
+   
+2. **Shader Registry Pattern** - Instead of loading shaders directly, we use `shaderRegistry().getShader()`. This allows:
    - Centralized shader management
    - Hot-reloading support (shaders can be updated without recompiling)
    - Bind group layout information already parsed from shader
-   
-2. **Lazy Pipeline Creation** - The pipeline is created in `render()`, not `initialize()`. This allows:
+
+3. **Lazy Pipeline Creation** - The pipeline is created in `render()`, not `initialize()`. This allows:
    - Different output formats for different render targets
    - Pipeline recreation if shader reloads
    - Pattern used by `MeshPass` and `CompositePass`
-
-3. **Sampler Reuse** - We get a pre-made sampler (`getClampLinearSampler()`) instead of creating one. This is more efficient and reuses GPU resources.
 
 **Your Task:**
 
@@ -123,7 +124,6 @@ bool PostProcessingPass::initialize()
 	spdlog::info("Initializing PostProcessingPass");
 
 	// Tutorial 4 - Step 1: Get vignette shader from registry
-	// The shader registry was populated in ShaderRegistry.cpp with createVignetteShader()
 	// The shader contains:
 	// - Vertex shader (vs_main): Generates fullscreen triangle
 	// - Fragment shader (fs_main): Applies vignette darkening
@@ -224,23 +224,17 @@ void PostProcessingPass::render(FrameCache &frameCache)
 	// The pipeline is created lazily (on first use) because:
 	// 1. Output format depends on render pass context (determined at runtime)
 	// 2. Shader might be hot-reloaded, needing a new pipeline
-	// 3. Follows the pattern used by MeshPass
 	auto pipeline = m_pipeline.lock();  // Try to get weak_ptr
 	if (!pipeline)
 	{
-		// Create new pipeline with:
-		// - Shader info (loaded in initialize())
-		// - Output format from render pass (the texture we're writing to)
-		// - No depth buffer needed
-		// - Triangle list topology (for fullscreen triangle)
-		// - No culling (both sides of triangle must be visible)
+		// Create new pipeline with, Shader info (loaded in initialize()) and Output format from render pass (the texture we're writing to)
 		m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
-			m_shaderInfo,
-			m_renderPassContext->getColorTexture(0)->getFormat(),  // Match output format
-			wgpu::TextureFormat::Undefined,  // No depth needed for post-processing
-			Topology::Triangles,
-			wgpu::CullMode::None,
-			1  // Sample count
+			m_shaderInfo, // Shader info contains shader modules and bind groups
+			m_renderPassContext->getColorTexture(0)->getFormat(), // Output format
+			wgpu::TextureFormat::Undefined,	// No depth needed for post-processing
+			Topology::Triangles, // Triangle list topology (for fullscreen triangle)
+			wgpu::CullMode::None, // No culling (both sides of triangle must be visible)
+			1 // Sample count
 		);
 		pipeline = m_pipeline.lock();
 
@@ -274,27 +268,20 @@ void PostProcessingPass::render(FrameCache &frameCache)
 		spdlog::warn("PostProcessingPass: Failed to create bind group");
 		return;
 	}
-
 	// Tutorial 4 - Step 4D: Record and submit draw commands
 	// Create command encoder (WebGPU's command recording object)
 	auto encoder = m_context->createCommandEncoder("PostProcessingPass Encoder");
-	
 	// Begin render pass (starts recording commands into this pass)
 	auto renderPass = m_renderPassContext->begin(encoder);
-	
 	// Set the pipeline (tells GPU which shader to use)
 	renderPass.setPipeline(pipeline->getPipeline());
-	
 	// Bind the group 0 (texture + sampler for shader to use)
 	renderPass.setBindGroup(0, bindGroup->getBindGroup(), 0, nullptr);
-	
 	// Draw 3 vertices (fullscreen triangle)
 	// Vertices are generated in shader's vs_main using vertex_index
 	renderPass.draw(3, 1, 0, 0);
-	
 	// End render pass
 	m_renderPassContext->end(renderPass);
-	
 	// Submit commands to GPU
 	m_context->submitCommandEncoder(encoder, "PostProcessingPass Commands");
 }
@@ -332,21 +319,21 @@ std::shared_ptr<webgpu::WebGPUBindGroup> PostProcessingPass::getOrCreateBindGrou
 	int layerIndex
 )
 {
-	// Tutorial 4 - Step 5A: Validate input
+	// Tutorial 4 - Step 6A: Validate input
 	if (!texture)
 		return nullptr;
 
-	// Tutorial 4 - Step 5B: Create cache key
+	// Tutorial 4 - Step 6B: Create cache key
 	// We cache bind groups by texture pointer + layer index
 	// This avoids recreating the same bind group multiple times per frame
 	auto cacheKey = std::make_pair(reinterpret_cast<uint64_t>(texture.get()), layerIndex);
 
-	// Tutorial 4 - Step 5C: Check if bind group already cached
+	// Tutorial 4 - Step 6C: Check if bind group already cached
 	auto it = m_bindGroupCache.find(cacheKey);
 	if (it != m_bindGroupCache.end())
 		return it->second;  // Reuse cached bind group
 
-	// Tutorial 4 - Step 5D: Get bind group layout from shader
+	// Tutorial 4 - Step 6D: Get bind group layout from shader
 	// The shader info was loaded in initialize()
 	// The layout describes what resources Group 0 expects:
 	// - Binding 0: sampler (for texture filtering)
@@ -362,12 +349,14 @@ Without caching, we'd create a new bind group every frame for the same texture, 
 
 ---
 
+<div style="page-break-after: always;"></div>
+
 ## Step 7: PostProcessingPass::getOrCreateBindGroup() - Part B (Create & Cache)
 
 **Part B: Create new bind group**
 
 ```cpp
-	// Tutorial 4 - Step 5E: Create bind group entries matching shader layout
+	// Tutorial 4 - Step 7E: Create bind group entries matching shader layout
 	// The shader defines:
 	// @group(0) @binding(0) var inputSampler: sampler;
 	// @group(0) @binding(1) var inputTexture: texture_2d<f32>;
@@ -381,16 +370,16 @@ Without caching, we'd create a new bind group every frame for the same texture, 
 		// binding=1, texture resource
 	};
 
-	// Tutorial 4 - Step 5F: Create WebGPU bind group descriptor
+	// Tutorial 4 - Step 7F: Create WebGPU bind group descriptor
 	wgpu::BindGroupDescriptor desc = {};
 	desc.layout = bindGroupLayout->getLayout();
 	desc.entryCount = static_cast<uint32_t>(entries.size());
 	desc.entries = entries.data();
 
-	// Tutorial 4 - Step 5G: Create raw WebGPU bind group
+	// Tutorial 4 - Step 7G: Create raw WebGPU bind group
 	auto bindGroupRaw = m_context->getDevice().createBindGroup(desc);
 	
-	// Tutorial 4 - Step 5H: Wrap in engine's bind group object
+	// Tutorial 4 - Step 7H: Wrap in engine's bind group object
 	// WebGPUBindGroup is a wrapper that tracks resources and provides utilities
 	auto bindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
 		bindGroupRaw,
@@ -398,11 +387,13 @@ Without caching, we'd create a new bind group every frame for the same texture, 
 		std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{}  // No buffers in this bind group
 	);
 
-	// Tutorial 4 - Step 5I: Cache for future use
+	// Tutorial 4 - Step 7I: Cache for future use
 	m_bindGroupCache[cacheKey] = bindGroup;
 	return bindGroup;
 }
 ```
+
+<div style="page-break-after: always;"></div>
 
 **Binding Details:**
 
@@ -449,17 +440,15 @@ void PostProcessingPass::cleanup()
 
 ---
 
+<div style="page-break-after: always;"></div>
+
 ## Step 9: Renderer::initialize() - Add PostProcessingPass Setup
 
 Now integrate the pass into the renderer.
 
 **Your Task:**
 
-Open `src/engine/rendering/Renderer.cpp` and find the initialize() method. Look for the comment:
-
-```cpp
-// Tutorial 4 - Step xx: Initialize PostProcessingPass here
-```
+Open `src/engine/rendering/Renderer.cpp` and find the initialize() method. Look for the comment: `// Tutorial 4 - Step 9`
 
 Add this code:
 
@@ -482,24 +471,27 @@ During initialization, we create the PostProcessingPass object and call its `ini
 
 ---
 
+
+<div style="page-break-after: always;"></div>
+
 ## Step 10: Prepare Post-Processing Texture
 
 Before we can render to a post-process texture, we need to create it.
 
-**Location:** In `Renderer::renderToTexture()`, find the comment:
+**Location:** In `Renderer::renderToTexture()`, find the comment: `// Tutorial 4 - Step 10:`
+
+**Your Task:**
+
+After the depth buffer setup (and before the Culling step), add this code to create the post-processing texture:
 
 ```cpp
-// STEP 2: Prepare Depth Buffer and Post-Processing Texture
-```
-
-This code should already exist (the engine creates it for you):
-
-```cpp
+	// Tutorial 4 - Step 10: Prepare post-processing texture
 	// Post-processing texture is an intermediate render target for effects like bloom, tone mapping, etc.
+	// Use negative ID to differentiate post-process textures from main render targets
 	if (!m_postProcessTextures[renderTargetId])
 	{
 		m_postProcessTextures[renderTargetId] = m_context->textureFactory().createRenderTarget(
-			-renderTargetId - 1, // Use negative ID to differentiate post-process textures from main render targets
+			-renderTargetId - 1,
 			renderFromTexture->getWidth(),
 			renderFromTexture->getHeight(),
 			renderFromTexture->getFormat() // match format of main render target
@@ -519,24 +511,16 @@ This code should already exist (the engine creates it for you):
 
 This is where post-processing actually executes each frame.
 
-**Location:** Find this comment in `renderToTexture()`:
-
-```cpp
-// Tutorial 4 - Step 10: Apply vignette effect
-```
+**Location:** Find this comment in `renderToTexture()`: `Tutorial 4 - Step 11`
 
 **Your Task:**
 
-Uncomment and implement this code after the Debug Pass section:
+Add this code after the Debug Pass section:
 
 ```cpp
-	// ========================================
-	// STEP 7: Post-Processing Pass
-	// ========================================
-	// Tutorial 4 - Step 10: Apply vignette effect
+	// Tutorial 4 - Step 11: Apply vignette effect
 	// Texture swapping: MeshPass/DebugPass output → input for post-processing
 	// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)
-	
 	renderFromTexture = renderToTexture; // Post-processing reads from the main render target
 	renderToTexture = m_postProcessTextures[renderTargetId];
 	auto postProcessingContext = m_context->renderPassFactory().create(
@@ -602,7 +586,7 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 	// ... cleanup passes ...
 	
 	if (m_postProcessingPass)
-		m_postProcessingPass->cleanup();  // Clear bind group cache and reset
+		m_postProcessingPass->cleanup();  // Tutorial 4 - Step 12: Clear bind group cache and reset
 	
 	spdlog::info("Renderer resized to {}x{}", width, height);
 }
@@ -614,35 +598,6 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 - Calls `cleanup()` on PostProcessingPass to clear the bind group cache
   - The cached bind groups are tied to the old texture dimensions
   - Next frame, new bind groups will be created with the correct dimensions
-
----
-
-## Summary: Complete Post-Processing Pipeline
-
-After implementing all steps, here's the complete flow each frame:
-
-```
-Frame Setup
-  └─ For each camera:
-       └─ renderToTexture(camera)
-            ├─ STEP 1: Create/update main render target texture
-            │
-            ├─ STEP 2: Create/update depth buffer
-            │          Create/update post-process texture  ← Step 10
-            │
-            ├─ STEP 3-6: Culling, GPU prep, Mesh Pass, Debug Pass
-            │
-            ├─ STEP 7: Post-Processing Pass  ← Step 11
-            │   ├─ setInputTexture(scene + debug output)
-            │   ├─ setRenderPassContext(post-process texture)
-            │   └─ render() → Apply vignette effect
-            │
-            ├─ STEP 8: Store final texture for compositing
-            │
-            └─ Window Resize: onResize() → Resize all textures  ← Step 12
-```
-
-No action needed - this is automatic.
 
 ---
 
@@ -677,28 +632,19 @@ Here's what happens each frame:
 
 ---
 
-## Building and Testing
-
-### Build the Engine
+## Rebuild and Run
 
 ```bash
-# Windows
-scripts\build.bat Debug WGPU
-
-# Linux
-bash scripts/build.sh Debug WGPU
-```
-
-### Run a Tutorial Example
-
-Any example that renders a 3D scene will show the vignette effect:
-
-```bash
-examples/build/main_demo/Windows/Debug/MainDemo.exe
+# Rebuild and run
+scripts\build-example.bat tutorial Debug WGPU
 examples/build/tutorial/Windows/Debug/Tutorial.exe
 ```
 
-### Expected Result
+**VS Code shortcuts:**
+- Press `F5` to build and run with debugger
+- Or open **Run and Debug** panel (`Ctrl+Shift+D`) → select **"Tutorial (Debug)"** → click green play button
+
+## Expected Result
 
 You should see:
 ✅ **Vignette Effect** - Screen edges are darker, center is brighter
@@ -718,29 +664,87 @@ You should see:
 
 The vignette effect happens in `resources/postprocess_vignette.wgsl`:
 
-**Vertex Shader (`vs_main`):**
+**Shader Structure:**
+
 ```wgsl
-// Generate fullscreen triangle without vertex buffers
-let x = f32((vertexIndex << 1u) & 2u);  // 0, 2, 0
-let y = f32(vertexIndex & 2u);          // 0, 0, 2
-// Converts to NDC: (-1,-1), (3,-1), (-1,3)
-// This covers entire screen
+// Bind Group 0: Input texture from previous render pass
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+
+// Vertex shader output / Fragment shader input
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) texCoord: vec2f,
+}
 ```
+
+**Vertex Shader (`vs_main`):**
+
+Generates a fullscreen triangle without vertex buffers using bit manipulation on the vertex index:
+
+```wgsl
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var output: VertexOutput;
+    
+    // Bit manipulation to generate triangle coordinates
+    // vertexIndex: 0 -> (0, 0), 1 -> (2, 0), 2 -> (0, 2)
+    let x = f32((vertexIndex << 1u) & 2u);
+    let y = f32(vertexIndex & 2u);
+    
+    // Convert to NDC: (0,0) -> (-1,1), (2,0) -> (3,1), (0,2) -> (-1,-3)
+    output.position = vec4f(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
+    
+    // Pass through texture coordinates (0 to 1 range)
+    output.texCoord = vec2f(x, y);
+    
+    return output;
+}
+```
+
+This creates a triangle that covers the entire screen:
+- Vertex 0: (-1, -1) bottom-left  → UV (0, 0)
+- Vertex 1: (3, -1) bottom-right  → UV (1, 0) [off-screen]
+- Vertex 2: (-1, 3) top-left      → UV (0, 1) [off-screen]
 
 **Fragment Shader (`fs_main`):**
+
+Applies the vignette effect by darkening edges based on distance from center:
+
 ```wgsl
-// Calculate distance from center
-let dist = distance(input.texCoord, vec2f(0.5, 0.5));
-
-// Smooth falloff: 1.0 at center, 0.0 at edges
-let vignette = 1.0 - smoothstep(0.0, 1.0, dist * vignetteFalloff);
-
-// Mix between darkened edges (0.5) and normal brightness (1.0)
-let vignetteFactor = mix(1.0 - vignetteIntensity, 1.0, vignette);
-
-// Apply effect by multiplying color
-finalColor = sceneColor * vignetteFactor;
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4f {
+    // Sample the rendered scene color
+    let sceneColor = textureSample(inputTexture, inputSampler, input.texCoord);
+    
+    // Calculate distance from screen center (0.5, 0.5)
+    let center = vec2f(0.5, 0.5);
+    let dist = distance(input.texCoord, center);
+    
+    // Vignette parameters
+    let vignetteIntensity = 0.85;  // How dark edges get (0.0 = no effect, 1.0 = black)
+    let vignetteFalloff = 2.0;    // Transition sharpness (higher = sharper edge)
+    
+    // Calculate vignette factor (1.0 at center, approaches 0.0 at edges)
+    // smoothstep creates a smooth S-curve interpolation
+    let vignette = 1.0 - smoothstep(0.0, 1.0, dist * vignetteFalloff);
+    
+    // Mix between darkened (1.0 - intensity) and full brightness (1.0)
+    let vignetteFactor = mix(1.0 - vignetteIntensity, 1.0, vignette);
+    
+    // Apply vignette by multiplying scene color
+    let finalColor = sceneColor * vignetteFactor;
+    
+    return finalColor;
+}
 ```
+
+**How the Vignette Calculation Works:**
+
+1. **Distance from Center** - Calculate how far each pixel is from screen center (0.5, 0.5)
+2. **Smoothstep Transition** - Use `smoothstep()` to create a smooth falloff curve
+3. **Mix Factor** - Interpolate between darkened edges and full brightness
+4. **Apply Effect** - Multiply scene color by the vignette factor to darken edges
 
 ---
 
@@ -798,3 +802,12 @@ Future tutorials could cover these advanced topics!
 - Renderer integration: `src/engine/rendering/Renderer.cpp`
 - Shader registration: `src/engine/rendering/ShaderRegistry.cpp`
 - Similar passes: `CompositePass.cpp`, `MeshPass.cpp`, `ShadowPass.cpp`
+
+---
+
+## Further Reading
+
+- [WebGPU WGSL Specification](https://www.w3.org/TR/WGSL/)
+- [Engine Bind Group System](../BindGroupSystem.md)
+- [Getting Started Guide](../GettingStarted.md)
+- [LearnWebGPU Tutorial](https://eliemichel.github.io/LearnWebGPU/)

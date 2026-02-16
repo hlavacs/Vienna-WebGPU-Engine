@@ -315,7 +315,7 @@ bash scripts/build-example.sh tutorial Debug WGPU
 
 **VS Code:** Press `F5` to build and run.
 
-### Expected Result
+## Expected Result
 
 You should see:
 - ✅ **Floor** with tiled cobblestone (4×4 repetitions)
