@@ -69,7 +69,7 @@ int main(int argc, char **argv)
 			.begin(
 				"unlit",
 				engine::rendering::ShaderType::Unlit,
-				PathProvider::getShaders("unlit_custom.wgsl"), // Adjust based on tutorial
+				PathProvider::getShaders("unlit.wgsl"), // Adjust based on tutorial
 				"vs_main",
 				"fs_main",
 				engine::rendering::VertexLayout::PositionNormalUV,
