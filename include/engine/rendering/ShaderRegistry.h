@@ -25,6 +25,7 @@ constexpr const char *MIPMAP_BLIT = "Mipmap_Blit_Shader";
 constexpr const char *SHADOW_PASS_2D = "ShadowPass2D_Shader";
 constexpr const char *SHADOW_PASS_CUBE = "ShadowPassCube_Shader";
 constexpr const char *VISUALIZE_DEPTH = "Visualize_Depth_Shader";
+constexpr const char *VIGNETTE = "Vignette_Shader";
 } // namespace shader::defaults
 
 namespace bindgroup::defaults
@@ -40,6 +41,7 @@ constexpr const char *MIPMAP_BLIT = "MipmapBlit_BindGroup";
 constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_BindGroup";
 constexpr const char *VISUALIZE_DEPTH = "Visualize_Depth_BindGroup";
 constexpr const char *DEBUG = "Debug_BindGroup";
+constexpr const char *VIGNETTE = "Vignette_BindGroup";
 } // namespace bindgroup::defaults
 namespace bindgroup::entry::defaults
 {
@@ -127,6 +129,7 @@ class ShaderRegistry
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createShadowPass2DShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createShadowPassCubeShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createVisualizeDepthShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createVignetteShader();
 };
 
 } // namespace engine::rendering
