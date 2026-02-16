@@ -93,6 +93,8 @@ Each `vec2f` is 8 bytes, so total is 16 bytes - perfect for uniform buffer align
 
 ---
 
+<div style="page-break-after: always;"></div>
+
 ## Step 4: Declare Custom Bind Group
 
 Add the bind group declaration after Group 2 (Material):
@@ -189,6 +191,7 @@ auto shaderInfo =
         )
 ```
 
+<div style="page-break-after: always;"></div>
 Now add the custom bind group at the end (before `.build()`):
 
 ```cpp
@@ -228,6 +231,8 @@ struct TileUniforms
     glm::vec2 tileSize;
 };
 ```
+
+<div style="page-break-after: always;"></div>
 
 Now implement the `preRender()` method:
 
@@ -321,6 +326,8 @@ You should see:
 
 ---
 
+<div style="page-break-after: always;"></div>
+
 ## Understanding the Data Flow
 
 **Lifecycle of custom bind group data:**
@@ -366,6 +373,8 @@ This is why updating `tileUniforms` in `preRender()` works - the data reaches th
 
 ---
 
+<div style="page-break-after: always;"></div>
+
 ## Understanding BindGroupReuse Policies
 
 **Why PerObject for TileUniforms?**
@@ -396,6 +405,13 @@ The engine's `BindGroupBinder` handles all caching - you just specify the policy
 
 **1. Animate the offset** - In `CustomRenderNode`, add an `update()` method:
 
+Implement the `UpdateNode` behavior.
+
+```cpp
+class CustomRenderNode : public engine::scene::nodes::ModelRenderNode, public engine::scene::nodes::UpdateNode
+```
+
+Override the default `update(float deltaTime)` method.
 ```cpp
 virtual void update(float deltaTime) override {
     tileUniforms.tileOffset.x += deltaTime * 0.1f; // Scroll right
@@ -420,33 +436,44 @@ rootNode->addChild(floor2);
 
 **3. Add rotation** - Extend TileUniforms:
 
+Adjust C++ Struct
+
 ```cpp
-// In CustomRenderNode.h
+// CustomRenderNode.h
 struct TileUniforms {
-    glm::vec2 tileOffset;
-    glm::vec2 tileSize;
-    float rotation;     // Add rotation
-    float _padding[3];  // Maintain 16-byte alignment
+    glm::vec2 tileOffset;  // Offset of the tile
+    glm::vec2 tileSize;    // Scale/size of the tile
+    glm::vec4 rotation;    // Rotation in .x, padding in .yzw for 16-byte alignment
 };
 ```
 
+Adjust WGSL Struct
+
 ```wgsl
-// In shader
 struct TileUniforms {
-    tileOffset: vec2f,
-    tileSize: vec2f,
-    rotation: f32,
-    _padding: vec3f,
+    tileOffset: vec2f,   // Offset
+    tileSize: vec2f,     // Scale
+    rotation: vec4f,     // rotation.x = angle in radians, yzw = padding
 }
+```
 
-// In fragment shader
-fn rotate2D(v: vec2f, angle: f32) -> vec2f {
-    let c = cos(angle);
-    let s = sin(angle);
-    return vec2f(v.x * c - v.y * s, v.x * s + v.y * c);
+Define WGSL Helper Function
+
+```wgsl
+fn rotate2D(uv: vec2f, angle: f32) -> vec2f {
+    let cosA = cos(angle);
+    let sinA = sin(angle);
+    return vec2f(
+        uv.x * cosA - uv.y * sinA,
+        uv.x * sinA + uv.y * cosA
+    );
 }
+```
 
-let rotatedUV = rotate2D(input.texCoord - 0.5, tileUniforms.rotation) + 0.5;
+Update Fragment Shader
+
+```wgsl
+let rotatedUV = rotate2D(input.texCoord - 0.5, tileUniforms.rotation.x) + 0.5;
 let tiledUV = rotatedUV * tileUniforms.tileSize + tileUniforms.tileOffset;
 ```
 

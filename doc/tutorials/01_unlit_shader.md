@@ -82,6 +82,8 @@ The engine's mesh loader provides these three attributes for every vertex. The `
 
 ---
 
+<div style="page-break-after: always;"></div>
+
 ## Step 3: Define Vertex Output Structure
 
 Now define what the vertex shader outputs (and what the fragment shader receives):
@@ -176,6 +178,8 @@ Every vertex needs to be transformed from world space to screen space. The Frame
 
 ---
 
+<div style="page-break-after: always;"></div>
+
 ## Step 5: Declare Bind Group 1 - Object Uniforms
 
 ```wgsl
@@ -224,6 +228,8 @@ Different materials have different appearances. This bind group provides the mat
 
 ---
 
+<div style="page-break-after: always;"></div>
+
 ## Step 7: Write the Vertex Shader
 
 ```wgsl
@@ -254,6 +260,8 @@ When you uncomment the material assignment in Step 9, the engine creates a **ren
 This pipeline is created once and reused every frame. It's WebGPU's way of "freezing" all rendering state into a single object for performance.
 
 ---
+
+<div style="page-break-after: always;"></div>
 
 ## Step 8: Write the Fragment Shader
 
@@ -360,7 +368,7 @@ A render pass defines **what you're drawing to**:
 
 Your fragment shader's `@location(0) vec4f` output goes directly to the color attachment.
 
-**Where to see this:** Check [Renderer.cpp:renderToTexture()](../../src/engine/rendering/Renderer.cpp) - line 250+ shows the full command recording sequence.
+**Where to see this:** Check [Renderer.cpp:renderToTexture()](../../src/engine/rendering/Renderer.cpp) - line 270+ shows the full command recording sequence.
 
 ---
 
@@ -402,8 +410,8 @@ All bind groups must be set before the draw call - that's why Groups 0, 1, 2 are
 **Performance Insight:**
 
 The floor has:
-- 4 vertices \u2192 `vs_main()` runs 4 times
-- ~10,000 visible pixels \u2192 `fs_main()` runs ~10,000 times
+- 4 vertices → `vs_main()` runs 4 times
+- ~10,000 visible pixels → `fs_main()` runs ~10,000 times
 
 This is why fragment shaders are performance-critical - they run far more often than vertex shaders!
 
@@ -432,7 +440,7 @@ Now that your shader works, try these quick modifications:
 unlitProperties.color = glm::vec4(1.0f, 0.5f, 0.5f, 1.0f);  // Red tint
 ```
 
-**2. Texture Tiling - In `unlit.wgsl` fragment shader:
+**2. Texture Tiling** - In `unlit.wgsl` fragment shader:
 ```wgsl
 let tiledUV = input.texCoord * 4.0; // Tile 4x4
 let textureColor = textureSample(baseColorTexture, textureSampler, tiledUV);
@@ -440,7 +448,7 @@ let textureColor = textureSample(baseColorTexture, textureSampler, tiledUV);
 
 Will result in smaller stone tiles.
 
-**2. Animate with time** - In `unlit.wgsl` fragment shader:
+**3. Animate with time** - In `unlit.wgsl` fragment shader:
 ```wgsl
 let scrolledUV = input.texCoord + vec2f(frameUniforms.time * 0.1, 0.0);
 let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
