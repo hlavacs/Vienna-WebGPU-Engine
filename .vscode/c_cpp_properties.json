@@ -40,7 +40,29 @@
             "intelliSenseMode": "windows-msvc-x64",
             "compileCommands": "${workspaceFolder}/examples/build/multi_view/Windows/Debug/compile_commands.json" 
         },
+        
         {
+            "name": "Win64 MSVC - Tutorial (Debug)",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/external/glm",
+                "${workspaceFolder}/external/SDL/include",
+                "${workspaceFolder}/external/webgpu/include",
+                "${workspaceFolder}/external/imgui",
+                "${workspaceFolder}/external/spdlog/include",
+                "${workspaceFolder}/external/tinygltf",
+                "${workspaceFolder}/external/sdl2webgpu",
+                "${workspaceFolder}/examples/tutorial",
+                "${workspaceFolder}/examples/build/tutorial/Windows/Debug/engine/external/SDL/include",
+                "${workspaceFolder}/examples/build/tutorial/Windows/Debug/engine/external/SDL/include/SDL2" 
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64",
+            "compileCommands": "${workspaceFolder}/examples/build/tutorial/Windows/Debug/compile_commands.json" 
+        },
+        
+        /* {
             "name": "Emscripten (Debug)",
             "includePath": [
                 "${workspaceFolder}/external/glm",
@@ -55,7 +77,7 @@
             "compileCommands": [
                 "${workspaceFolder}/examples/build/Emscripten/Debug/compile_commands.json"
             ]
-        }
+        } */
     ],
     "version": 4
 }
