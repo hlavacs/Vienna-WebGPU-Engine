@@ -19,6 +19,7 @@
 #include "engine/rendering/MeshPass.h"
 #include "engine/rendering/Model.h"
 #include "engine/rendering/ObjectUniforms.h"
+#include "engine/rendering/PostProcessingPass.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderItemGPU.h"
 #include "engine/rendering/RenderPassManager.h"
@@ -76,6 +77,7 @@ bool Renderer::initialize()
 		return false;
 	}
 
+	// Tutorial 4 - Step 9: Initialize PostProcessingPass
 	m_compositePass = std::make_unique<CompositePass>(m_context);
 	if (!m_compositePass->initialize())
 	{
@@ -124,7 +126,7 @@ bool Renderer::renderFrame(
 			continue;
 		}
 		uniqueRenderTargets[target.cameraId] = target;
-		
+
 		// Create/update bind group with camera-specific uniforms (view, projection)
 		updateFrameBindGroup(target, time);
 	}
@@ -156,7 +158,7 @@ bool Renderer::renderFrame(
 		// Render shadow maps from the perspective of lights visible to this camera
 		m_shadowPass->setCameraId(target.cameraId);
 		m_shadowPass->render(m_frameCache);
-		
+
 		// Render scene from camera's perspective (with shadows applied)
 		renderToTexture(renderCollector, debugRenderCollector, target, customBindGroupProviders);
 	}
@@ -199,11 +201,11 @@ void Renderer::updateFrameBindGroup(const RenderTarget &target, float time)
 	// Bind groups are WebGPU's way of grouping resources (buffers, textures, samplers)
 	// that shaders need to access. They're organized into "sets" for efficient binding.
 	// This bind group contains per-frame, per-camera data (Group 0 in shader).
-	
+
 	// Create bind group on first use for this camera
 	if (!m_frameCache.frameBindGroupCache[target.cameraId])
 	{
-		m_frameCache.frameBindGroupCache[target.cameraId] = 
+		m_frameCache.frameBindGroupCache[target.cameraId] =
 			m_context->bindGroupFactory().createBindGroup(m_frameBindGroupLayout);
 	}
 
@@ -212,11 +214,11 @@ void Renderer::updateFrameBindGroup(const RenderTarget &target, float time)
 	// Update GPU buffer with new uniform data for this frame
 	// Binding 0 in the frame bind group = uniform buffer with camera data
 	m_frameCache.frameBindGroupCache[target.cameraId]->updateBuffer(
-		0,						// binding index
-		&frameUniforms,			// source data
-		sizeof(FrameUniforms),	// data size
-		0,						// buffer offset
-		m_context->getQueue()	// GPU queue for transfer
+		0,					   // binding index
+		&frameUniforms,		   // source data
+		sizeof(FrameUniforms), // data size
+		0,					   // buffer offset
+		m_context->getQueue()  // GPU queue for transfer
 	);
 }
 
@@ -231,7 +233,7 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 {
 	// Render targets are textures we render to (instead of directly to screen).
 	// Benefits: post-processing, multi-camera rendering, render-to-texture effects
-	
+
 	if (!m_surfaceTexture)
 	{
 		spdlog::error("Cannot update render texture: surface texture not acquired");
@@ -271,7 +273,10 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 	if (!gpuTexture || !gpuTexture->matches(targetWidth, targetHeight, format))
 	{
 		gpuTexture = m_context->textureFactory().createRenderTarget(
-			renderTargetId, targetWidth, targetHeight, format
+			renderTargetId,
+			targetWidth,
+			targetHeight,
+			format
 		);
 	}
 
@@ -284,9 +289,10 @@ void Renderer::renderToTexture(
 	const std::vector<BindGroupDataProvider> &customBindGroupProviders
 )
 {
+	auto renderTargetId = renderTarget.cameraId;
 	spdlog::debug(
 		"renderToTexture: cameraId={}, renderItems={}, lights={}",
-		renderTarget.cameraId,
+		renderTargetId,
 		collector.getRenderItems().size(),
 		collector.getLights().size()
 	);
@@ -297,15 +303,15 @@ void Renderer::renderToTexture(
 	// Update or create the texture we'll render this camera's view into.
 	// Uses HDR format (RGBA16Float) for better color precision in lighting calculations.
 	renderTarget.gpuTexture = updateRenderTexture(
-		renderTarget.cameraId,
+		renderTargetId,
 		renderTarget.gpuTexture,
 		renderTarget.cpuTarget,
 		renderTarget.viewport,
 		wgpu::TextureFormat::RGBA16Float,
 		static_cast<WGPUTextureUsage>(
-			wgpu::TextureUsage::RenderAttachment |	// Can render to it
-			wgpu::TextureUsage::TextureBinding |	// Can sample from it in shaders
-			wgpu::TextureUsage::CopySrc				// Can copy data from it (for readback)
+			wgpu::TextureUsage::RenderAttachment | // Can render to it
+			wgpu::TextureUsage::TextureBinding |   // Can sample from it in shaders
+			wgpu::TextureUsage::CopySrc			   // Can copy data from it (for readback)
 		)
 	);
 
@@ -315,16 +321,21 @@ void Renderer::renderToTexture(
 		return;
 	}
 
+	// Output texture by default is the same as input (rendering directly into it), but can be changed to a different texture for post-processing effects.
+	auto renderFromTexture = renderTarget.gpuTexture;
+	// This is the texture that MeshPass (as well as DebugPass) will render into, and that PostProcessingPass will read from.
+	auto renderToTexture = renderTarget.gpuTexture;
+
 	// ========================================
-	// STEP 2: Prepare Depth Buffer
+	// STEP 2: Prepare Depth Buffer and Post-Processing Texture
 	// ========================================
 	// Depth buffer stores per-pixel depth values for depth testing.
 	// Essential for correct rendering of overlapping geometry.
-	if (!m_depthBuffers[renderTarget.cameraId])
+	if (!m_depthBuffers[renderTargetId])
 	{
-		m_depthBuffers[renderTarget.cameraId] = m_context->depthTextureFactory().createDefault(
-			renderTarget.gpuTexture->getWidth(),
-			renderTarget.gpuTexture->getHeight(),
+		m_depthBuffers[renderTargetId] = m_context->depthTextureFactory().createDefault(
+			renderFromTexture->getWidth(),
+			renderFromTexture->getHeight(),
 			wgpu::TextureFormat::Depth32Float
 		);
 	}
@@ -336,9 +347,8 @@ void Renderer::renderToTexture(
 	// Frustum culling optimization: don't render objects the camera can't see.
 	auto cameraFrustum = engine::math::Frustum::fromViewProjection(renderTarget.viewProjectionMatrix);
 	std::vector<size_t> visibleIndices = collector.extractVisible(cameraFrustum);
-	
-	spdlog::debug("Frustum culling: {} visible of {} total items", 
-		visibleIndices.size(), collector.getRenderItems().size());
+
+	spdlog::debug("Frustum culling: {} visible of {} total items", visibleIndices.size(), collector.getRenderItems().size());
 
 	// ========================================
 	// STEP 3.5: Process Custom Bind Group Data from Scene
@@ -361,19 +371,19 @@ void Renderer::renderToTexture(
 	// ========================================
 	// STEP 5: Mesh Rendering Pass
 	// ========================================
-	// Render all visible opaque and transparent meshes with lighting and shadows.
+	// Render all visible based on material and mesh configurations.
 	auto meshPassContext = m_context->renderPassFactory().create(
-		renderTarget.gpuTexture,				// Color attachment
-		m_depthBuffers[renderTarget.cameraId],	// Depth attachment
-		renderTarget.clearFlags,				// Clear color/depth?
-		renderTarget.backgroundColor			// Clear color
+		renderToTexture,				// Color attachment
+		m_depthBuffers[renderTargetId], // Depth attachment
+		renderTarget.clearFlags,		// Clear color/depth?
+		renderTarget.backgroundColor	// Clear color
 	);
-	
+
 	m_meshPass->setRenderPassContext(meshPassContext);
-	m_meshPass->setCameraId(renderTarget.cameraId);
+	m_meshPass->setCameraId(renderTargetId);
 	m_meshPass->setVisibleIndices(visibleIndices);
 	m_meshPass->setShadowBindGroup(m_shadowPass->getShadowBindGroup());
-	
+
 	spdlog::debug("Rendering {} GPU mesh items", m_frameCache.gpuRenderItems.size());
 	m_meshPass->render(m_frameCache);
 
@@ -383,17 +393,23 @@ void Renderer::renderToTexture(
 	// Render debug visualization (wireframes, bounding boxes, gizmos) on top.
 	// No depth clearing - renders over the scene.
 	auto debugPassContext = m_context->renderPassFactory().create(
-		renderTarget.gpuTexture,
-		nullptr,					// No depth attachment (use existing depth)
-		ClearFlags::None,			// Don't clear anything
+		renderToTexture,  // Color attachment (same as main render pass)
+		nullptr,		  // No depth attachment (use existing depth)
+		ClearFlags::None, // Don't clear anything
 		renderTarget.backgroundColor
 	);
-	
+
 	m_debugPass->setRenderPassContext(debugPassContext);
-	m_debugPass->setCameraId(renderTarget.cameraId);
+	m_debugPass->setCameraId(renderTargetId);
 	m_debugPass->setDebugCollector(&debugCollector);
 	m_debugPass->render(m_frameCache);
 
+	// ========================================
+	// STEP 7: Post-Processing Pass
+	// ========================================
+	// Tutorial 4 - Step 10: Apply vignette effect
+	// Texture swapping: MeshPass/DebugPass output → input for post-processing
+	// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)
 	// ========================================
 	// STEP 7: CPU Readback (Optional)
 	// ========================================
@@ -405,7 +421,7 @@ void Renderer::renderToTexture(
 		{
 			if (textureOpt.value()->isReadbackRequested())
 			{
-				auto readbackFuture = renderTarget.gpuTexture->readbackToCPUAsync(
+				auto readbackFuture = renderToTexture->readbackToCPUAsync(
 					*m_context,
 					textureOpt.value()
 				);
@@ -413,6 +429,10 @@ void Renderer::renderToTexture(
 			}
 		}
 	}
+	// ========================================
+	// STEP 8: Store Final Texture for Compositing
+	// ========================================
+	m_frameCache.finalTextures[renderTargetId] = renderToTexture; // Store post-processed texture for compositing pass
 }
 
 void Renderer::compositeTexturesToSurface(
@@ -443,12 +463,12 @@ void Renderer::compositeTexturesToSurface(
 		// Create render pass that renders over existing surface (no clear)
 		auto uiPassContext = m_context->renderPassFactory().create(
 			m_surfaceTexture,
-			nullptr,			// No depth buffer needed for 2D UI
-			ClearFlags::None	// Don't clear - render on top
+			nullptr,		 // No depth buffer needed for 2D UI
+			ClearFlags::None // Don't clear - render on top
 		);
-		
+
 		wgpu::RenderPassEncoder uiRenderPass = uiPassContext->begin(uiEncoder);
-		uiCallback(uiRenderPass);	// Application draws UI (e.g., ImGui)
+		uiCallback(uiRenderPass); // Application draws UI (e.g., ImGui)
 		uiPassContext->end(uiRenderPass);
 
 		m_context->submitCommandEncoder(uiEncoder, "UI Commands");
@@ -467,6 +487,9 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 		auto depthBuffer = m_depthBuffers[id];
 		if (depthBuffer)
 			depthBuffer->resize(*m_context, viewPortWidth, viewPortHeight);
+		auto postProcessingTexture = m_postProcessTextures[id];
+		if (postProcessingTexture)
+			postProcessingTexture->resize(*m_context, viewPortWidth, viewPortHeight);
 	}
 
 	if (m_meshPass)
@@ -477,6 +500,9 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 
 	if (m_shadowPass)
 		m_shadowPass->cleanup();
+
+	if (m_postProcessingPass)
+		m_postProcessingPass->cleanup();
 
 	spdlog::info("Renderer resized to {}x{}", width, height);
 }
