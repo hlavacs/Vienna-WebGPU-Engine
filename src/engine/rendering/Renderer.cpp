@@ -78,6 +78,8 @@ bool Renderer::initialize()
 	}
 
 	// Tutorial 4 - Step 9: Initialize PostProcessingPass
+	
+
 	m_compositePass = std::make_unique<CompositePass>(m_context);
 	if (!m_compositePass->initialize())
 	{
@@ -339,6 +341,9 @@ void Renderer::renderToTexture(
 			wgpu::TextureFormat::Depth32Float
 		);
 	}
+	// Tutorial 4 - Step 10: Prepare post-processing texture
+	// Post-processing texture is an intermediate render target for effects like bloom, tone mapping, etc.
+	
 
 	// ========================================
 	// STEP 3: Frustum Culling
@@ -407,9 +412,11 @@ void Renderer::renderToTexture(
 	// ========================================
 	// STEP 7: Post-Processing Pass
 	// ========================================
-	// Tutorial 4 - Step 10: Apply vignette effect
+	// Tutorial 4 - Step 11: Apply vignette effect
 	// Texture swapping: MeshPass/DebugPass output → input for post-processing
 	// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)
+	
+
 	// ========================================
 	// STEP 7: CPU Readback (Optional)
 	// ========================================
@@ -487,9 +494,8 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 		auto depthBuffer = m_depthBuffers[id];
 		if (depthBuffer)
 			depthBuffer->resize(*m_context, viewPortWidth, viewPortHeight);
-		auto postProcessingTexture = m_postProcessTextures[id];
-		if (postProcessingTexture)
-			postProcessingTexture->resize(*m_context, viewPortWidth, viewPortHeight);
+		// Tutorial 4 - Step 12: Handle window resize
+		// When the window resizes, we need to resize all render targets and depth buffers accordingly
 	}
 
 	if (m_meshPass)
@@ -500,9 +506,9 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 
 	if (m_shadowPass)
 		m_shadowPass->cleanup();
-
-	if (m_postProcessingPass)
-		m_postProcessingPass->cleanup();
+	// Tutorial 4 - Step 12: Handle window resize (continued)
+	// Post-processing pass also needs to clean up GPU resources so it can recreate them with new sizes.
+	// If we don't clean up, we'll have dangling GPU resources with old dimensions that cause rendering issues.
 
 	spdlog::info("Renderer resized to {}x{}", width, height);
 }

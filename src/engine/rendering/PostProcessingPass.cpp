@@ -23,20 +23,24 @@ PostProcessingPass::PostProcessingPass(std::shared_ptr<webgpu::WebGPUContext> co
 
 bool PostProcessingPass::initialize()
 {
+	spdlog::info("Initializing PostProcessingPass");
+	// Tutorial 4 - Step 1: Initialize PostProcessingPass
+	return true; // Remove this placeholder return statement when implementing the method
 }
 
 void PostProcessingPass::setInputTexture(const std::shared_ptr<webgpu::WebGPUTexture> &texture)
 {
-	m_inputTexture = texture;
+	// Tutorial 4 - Step 2: Set input texture
 }
 
 void PostProcessingPass::setRenderPassContext(const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext)
 {
-	m_renderPassContext = renderPassContext;
+	// Tutorial 4 - Step 3: Set render pass context
 }
 
 void PostProcessingPass::render(FrameCache &frameCache)
 {
+	// Tutorial 4 - Step 4 & 5: Render with validation and bind groups
 }
 
 std::shared_ptr<webgpu::WebGPUBindGroup> PostProcessingPass::getOrCreateBindGroup(
@@ -44,11 +48,13 @@ std::shared_ptr<webgpu::WebGPUBindGroup> PostProcessingPass::getOrCreateBindGrou
 	int layerIndex
 )
 {
+	// Tutorial 4 - Step 6 & 7: Create or retrieve cached bind group
+	return nullptr; // Remove this placeholder return statement when implementing the method
 }
 
 void PostProcessingPass::cleanup()
 {
-	// Tutorial 4 - Step 6: Release bind group cache
+	// Tutorial 4 - Step 8: Cleanup bind group cache
 	// Called on shutdown or window resize
 	// The pipeline and sampler are managed by pipeline manager and sampler factory
 	// We only need to clear bind group cache
