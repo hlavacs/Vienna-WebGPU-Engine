@@ -354,7 +354,7 @@ code {
 
 </style>
 
-<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+<script src="https://unpkg.com/mermaid@9.4.0/dist/mermaid.min.js"></script>
 </head>
 <body>
   <script>
@@ -593,7 +593,7 @@ fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
 </div></code></pre>
 <p><strong>Why <code>[0]</code>?</strong> The plane.obj has only one submesh. Models with multiple parts (like a car) would have multiple submeshes that can each have different materials.</p>
 <p><strong>Note:</strong> The shader won't be loaded and validated until runtime. The C++ build only compiles the application - shader errors will appear in the console when you run the program.</p>
-<h3 id="rebuild-and-run">Rebuild and Run</h3>
+<h2 id="rebuild-and-run">Rebuild and Run</h2>
 <pre class="hljs"><code><div><span class="hljs-comment"># Rebuild and run</span>
 scripts\build-example.bat tutorial Debug WGPU
 examples/build/tutorial/Windows/Debug/Tutorial.exe
@@ -603,7 +603,7 @@ examples/build/tutorial/Windows/Debug/Tutorial.exe
 <li>Press <code>F5</code> to build and run with debugger</li>
 <li>Or open <strong>Run and Debug</strong> panel (<code>Ctrl+Shift+D</code>) → select <strong>&quot;Tutorial (Debug)&quot;</strong> → click green play button</li>
 </ul>
-<h3 id="expected-result">Expected Result</h3>
+<h2 id="expected-result">Expected Result</h2>
 <p>Now you should see:</p>
 <ul>
 <li>✅ <strong>Floor</strong> with cobblestone texture (unlit, flat appearance)</li>

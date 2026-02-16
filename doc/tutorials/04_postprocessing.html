@@ -354,7 +354,7 @@ code {
 
 </style>
 
-<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+<script src="https://unpkg.com/mermaid@9.4.0/dist/mermaid.min.js"></script>
 </head>
 <body>
   <script>
@@ -395,39 +395,40 @@ This tutorial implements <strong>one hardcoded post-processing effect (vignette)
 <li>Shader registration - Already set up in <code>ShaderRegistry.cpp</code></li>
 <li>Renderer integration points - Already marked with tutorial comments</li>
 </ul>
-<p><strong>Prerequisites:</strong></p>
-<ul>
-<li>Completed Tutorial 01 (shader basics and WebGPU fundamentals)</li>
-<li>Understanding of bind groups (Tutorial 02)</li>
-<li>Familiarity with RenderPass pattern (look at <code>MeshPass</code>, <code>ShadowPass</code>, <code>CompositePass</code>)</li>
-</ul>
 <hr>
 <h2 id="understanding-the-architecture">Understanding the Architecture</h2>
-<p>Steps 1-4 (Shadow, Mesh, Debug, PostProcessing) are <strong>per-camera operations</strong>. If multiple cameras, each one:</p>
+<p>Steps 1-4 (Shadow, Mesh, Debug, PostProcessing) are <strong>per-camera operations</strong>. If multiple cameras are specified, each one will have:</p>
 <ul>
 <li>Its own shadow maps</li>
 <li>Its own scene render</li>
 <li>Its own debug overlays</li>
 <li>Its own post-processing</li>
 </ul>
-<p><strong>Frame Rendering Pipeline:</strong></p>
-<pre class="hljs"><code><div>Frame Start
-    ↓
-PER-CAMERA LOOP (for each camera):
-    ├─ [1] Shadow Pass        → Render shadow maps from light perspective
-    ├─ [2] Mesh Pass          → Render 3D scene to HDR texture (with lighting/shadows)
-    ├─ [3] Debug Pass         → Render debug overlays (wireframes, gizmos)
-    └─ [4] POST-PROCESSING    → Apply vignette effect (darkens edges) ← THIS TUTORIAL
-    ↓
-[5] Composite Pass   → Combine all camera render targets into surface texture
-    ↓
-[6] UI Pass          → Render ImGui on top
-    ↓
-Present to screen
+<p><br>
+<strong>Frame Rendering Pipeline:</strong></p>
+<pre><code class="language-mermaid"><div class="mermaid">graph LR
+    Start([Frame Start]) --> Loop{For each camera}
+    
+    Loop --> Shadow["[1] Shadow Pass"]
+    Shadow --> Mesh["[2] Mesh Pass"]
+    Mesh --> Debug["[3] Debug Pass"]
+    Debug --> Post["[4] Post-Processing ⭐<br/>← THIS TUTORIAL"]
+    
+    Post --> LoopEnd{More<br/>cameras?}
+    LoopEnd -->|Yes| Loop
+    LoopEnd -->|No| Composite
+    
+    Composite["[5] Composite Pass"]
+    Composite --> UI["[6] UI Pass"]
+    UI --> Present([Present])
+    
+    style Post fill:#ff9,stroke:#f66,stroke-width:2px
+    style Start fill:#9f9
+    style Present fill:#9f9
 </div></code></pre>
 <p>Then <strong>Composite Pass</strong> (step 5) combines all camera results together and renders to the final surface.</p>
 <p><strong>Why Post-Process After Debug Pass?</strong></p>
-<p>Post-processing should affect the entire rendered image for that camera. If we placed it before debug pass, wireframes and gizmos would not receive the vignette effect. By placing it after debug pass, all rendered content (scene + debug overlays) gets processed together.</p>
+<p>If we placed it before debug pass, wireframes and gizmos would not receive the vignette effect. By placing it after debug pass, all rendered content (scene + debug overlays) gets processed together.</p>
 <p><strong>Pattern Overview:</strong></p>
 <p>All render passes in this engine follow the same lifecycle:</p>
 <pre class="hljs"><code><div><span class="hljs-comment">// Step 1: Create pass</span>
@@ -445,7 +446,6 @@ pass-&gt;render(frameCache);                  <span class="hljs-comment">// Exec
 pass-&gt;cleanup();
 </div></code></pre>
 <hr>
-<div style="page-break-after: always;"></div>
 <h2 id="step-1-postprocessingpassinitialize">Step 1: PostProcessingPass::initialize()</h2>
 <p>This method performs one-time setup: loading the shader and creating the rendering pipeline.</p>
 <p><strong>Overview:</strong></p>
@@ -456,6 +456,9 @@ pass-&gt;cleanup();
 </ul>
 <p><strong>What to understand:</strong></p>
 <ol>
+<li>
+<p><strong>Sampler Reuse</strong> - We get a pre-made sampler (<code>getClampLinearSampler()</code>) instead of creating one. This is more efficient and reuses GPU resources.</p>
+</li>
 <li>
 <p><strong>Shader Registry Pattern</strong> - Instead of loading shaders directly, we use <code>shaderRegistry().getShader()</code>. This allows:</p>
 <ul>
@@ -472,9 +475,6 @@ pass-&gt;cleanup();
 <li>Pattern used by <code>MeshPass</code> and <code>CompositePass</code></li>
 </ul>
 </li>
-<li>
-<p><strong>Sampler Reuse</strong> - We get a pre-made sampler (<code>getClampLinearSampler()</code>) instead of creating one. This is more efficient and reuses GPU resources.</p>
-</li>
 </ol>
 <p><strong>Your Task:</strong></p>
 <p>Open <code>src/engine/rendering/PostProcessingPass.cpp</code> and implement the <code>initialize()</code> method:</p>
@@ -483,7 +483,6 @@ pass-&gt;cleanup();
 	spdlog::info(<span class="hljs-string">"Initializing PostProcessingPass"</span>);
 
 	<span class="hljs-comment">// Tutorial 4 - Step 1: Get vignette shader from registry</span>
-	<span class="hljs-comment">// The shader registry was populated in ShaderRegistry.cpp with createVignetteShader()</span>
 	<span class="hljs-comment">// The shader contains:</span>
 	<span class="hljs-comment">// - Vertex shader (vs_main): Generates fullscreen triangle</span>
 	<span class="hljs-comment">// - Fragment shader (fs_main): Applies vignette darkening</span>
@@ -566,23 +565,17 @@ pass-&gt;cleanup();
 	<span class="hljs-comment">// The pipeline is created lazily (on first use) because:</span>
 	<span class="hljs-comment">// 1. Output format depends on render pass context (determined at runtime)</span>
 	<span class="hljs-comment">// 2. Shader might be hot-reloaded, needing a new pipeline</span>
-	<span class="hljs-comment">// 3. Follows the pattern used by MeshPass</span>
 	<span class="hljs-keyword">auto</span> pipeline = m_pipeline.lock();  <span class="hljs-comment">// Try to get weak_ptr</span>
 	<span class="hljs-keyword">if</span> (!pipeline)
 	{
-		<span class="hljs-comment">// Create new pipeline with:</span>
-		<span class="hljs-comment">// - Shader info (loaded in initialize())</span>
-		<span class="hljs-comment">// - Output format from render pass (the texture we're writing to)</span>
-		<span class="hljs-comment">// - No depth buffer needed</span>
-		<span class="hljs-comment">// - Triangle list topology (for fullscreen triangle)</span>
-		<span class="hljs-comment">// - No culling (both sides of triangle must be visible)</span>
+		<span class="hljs-comment">// Create new pipeline with, Shader info (loaded in initialize()) and Output format from render pass (the texture we're writing to)</span>
 		m_pipeline = m_context-&gt;pipelineManager().getOrCreatePipeline(
-			m_shaderInfo,
-			m_renderPassContext-&gt;getColorTexture(<span class="hljs-number">0</span>)-&gt;getFormat(),  <span class="hljs-comment">// Match output format</span>
-			wgpu::TextureFormat::Undefined,  <span class="hljs-comment">// No depth needed for post-processing</span>
-			Topology::Triangles,
-			wgpu::CullMode::None,
-			<span class="hljs-number">1</span>  <span class="hljs-comment">// Sample count</span>
+			m_shaderInfo, <span class="hljs-comment">// Shader info contains shader modules and bind groups</span>
+			m_renderPassContext-&gt;getColorTexture(<span class="hljs-number">0</span>)-&gt;getFormat(), <span class="hljs-comment">// Output format</span>
+			wgpu::TextureFormat::Undefined,	<span class="hljs-comment">// No depth needed for post-processing</span>
+			Topology::Triangles, <span class="hljs-comment">// Triangle list topology (for fullscreen triangle)</span>
+			wgpu::CullMode::None, <span class="hljs-comment">// No culling (both sides of triangle must be visible)</span>
+			<span class="hljs-number">1</span> <span class="hljs-comment">// Sample count</span>
 		);
 		pipeline = m_pipeline.lock();
 
@@ -611,27 +604,20 @@ pass-&gt;cleanup();
 		spdlog::warn(<span class="hljs-string">"PostProcessingPass: Failed to create bind group"</span>);
 		<span class="hljs-keyword">return</span>;
 	}
-
 	<span class="hljs-comment">// Tutorial 4 - Step 4D: Record and submit draw commands</span>
 	<span class="hljs-comment">// Create command encoder (WebGPU's command recording object)</span>
 	<span class="hljs-keyword">auto</span> encoder = m_context-&gt;createCommandEncoder(<span class="hljs-string">"PostProcessingPass Encoder"</span>);
-	
 	<span class="hljs-comment">// Begin render pass (starts recording commands into this pass)</span>
 	<span class="hljs-keyword">auto</span> renderPass = m_renderPassContext-&gt;begin(encoder);
-	
 	<span class="hljs-comment">// Set the pipeline (tells GPU which shader to use)</span>
 	renderPass.setPipeline(pipeline-&gt;getPipeline());
-	
 	<span class="hljs-comment">// Bind the group 0 (texture + sampler for shader to use)</span>
 	renderPass.setBindGroup(<span class="hljs-number">0</span>, bindGroup-&gt;getBindGroup(), <span class="hljs-number">0</span>, <span class="hljs-literal">nullptr</span>);
-	
 	<span class="hljs-comment">// Draw 3 vertices (fullscreen triangle)</span>
 	<span class="hljs-comment">// Vertices are generated in shader's vs_main using vertex_index</span>
 	renderPass.draw(<span class="hljs-number">3</span>, <span class="hljs-number">1</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
-	
 	<span class="hljs-comment">// End render pass</span>
 	m_renderPassContext-&gt;end(renderPass);
-	
 	<span class="hljs-comment">// Submit commands to GPU</span>
 	m_context-&gt;submitCommandEncoder(encoder, <span class="hljs-string">"PostProcessingPass Commands"</span>);
 }
@@ -660,21 +646,21 @@ pass-&gt;cleanup();
 	<span class="hljs-keyword">int</span> layerIndex
 )</span>
 </span>{
-	<span class="hljs-comment">// Tutorial 4 - Step 5A: Validate input</span>
+	<span class="hljs-comment">// Tutorial 4 - Step 6A: Validate input</span>
 	<span class="hljs-keyword">if</span> (!texture)
 		<span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;
 
-	<span class="hljs-comment">// Tutorial 4 - Step 5B: Create cache key</span>
+	<span class="hljs-comment">// Tutorial 4 - Step 6B: Create cache key</span>
 	<span class="hljs-comment">// We cache bind groups by texture pointer + layer index</span>
 	<span class="hljs-comment">// This avoids recreating the same bind group multiple times per frame</span>
 	<span class="hljs-keyword">auto</span> cacheKey = <span class="hljs-built_in">std</span>::make_pair(<span class="hljs-keyword">reinterpret_cast</span>&lt;<span class="hljs-keyword">uint64_t</span>&gt;(texture.get()), layerIndex);
 
-	<span class="hljs-comment">// Tutorial 4 - Step 5C: Check if bind group already cached</span>
+	<span class="hljs-comment">// Tutorial 4 - Step 6C: Check if bind group already cached</span>
 	<span class="hljs-keyword">auto</span> it = m_bindGroupCache.find(cacheKey);
 	<span class="hljs-keyword">if</span> (it != m_bindGroupCache.end())
 		<span class="hljs-keyword">return</span> it-&gt;second;  <span class="hljs-comment">// Reuse cached bind group</span>
 
-	<span class="hljs-comment">// Tutorial 4 - Step 5D: Get bind group layout from shader</span>
+	<span class="hljs-comment">// Tutorial 4 - Step 6D: Get bind group layout from shader</span>
 	<span class="hljs-comment">// The shader info was loaded in initialize()</span>
 	<span class="hljs-comment">// The layout describes what resources Group 0 expects:</span>
 	<span class="hljs-comment">// - Binding 0: sampler (for texture filtering)</span>
@@ -686,9 +672,10 @@ pass-&gt;cleanup();
 <p><strong>Why Caching?</strong></p>
 <p>Without caching, we'd create a new bind group every frame for the same texture, wasting GPU memory and CPU time. By caching, we only create it once per unique texture.</p>
 <hr>
+<div style="page-break-after: always;"></div>
 <h2 id="step-7-postprocessingpassgetorcreatebindgroup---part-b-create--cache">Step 7: PostProcessingPass::getOrCreateBindGroup() - Part B (Create &amp; Cache)</h2>
 <p><strong>Part B: Create new bind group</strong></p>
-<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 5E: Create bind group entries matching shader layout</span>
+<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 7E: Create bind group entries matching shader layout</span>
 	<span class="hljs-comment">// The shader defines:</span>
 	<span class="hljs-comment">// @group(0) @binding(0) var inputSampler: sampler;</span>
 	<span class="hljs-comment">// @group(0) @binding(1) var inputTexture: texture_2d&lt;f32&gt;;</span>
@@ -702,16 +689,16 @@ pass-&gt;cleanup();
 		<span class="hljs-comment">// binding=1, texture resource</span>
 	};
 
-	<span class="hljs-comment">// Tutorial 4 - Step 5F: Create WebGPU bind group descriptor</span>
+	<span class="hljs-comment">// Tutorial 4 - Step 7F: Create WebGPU bind group descriptor</span>
 	wgpu::BindGroupDescriptor desc = {};
 	desc.layout = bindGroupLayout-&gt;getLayout();
 	desc.entryCount = <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-keyword">uint32_t</span>&gt;(entries.size());
 	desc.entries = entries.data();
 
-	<span class="hljs-comment">// Tutorial 4 - Step 5G: Create raw WebGPU bind group</span>
+	<span class="hljs-comment">// Tutorial 4 - Step 7G: Create raw WebGPU bind group</span>
 	<span class="hljs-keyword">auto</span> bindGroupRaw = m_context-&gt;getDevice().createBindGroup(desc);
 	
-	<span class="hljs-comment">// Tutorial 4 - Step 5H: Wrap in engine's bind group object</span>
+	<span class="hljs-comment">// Tutorial 4 - Step 7H: Wrap in engine's bind group object</span>
 	<span class="hljs-comment">// WebGPUBindGroup is a wrapper that tracks resources and provides utilities</span>
 	<span class="hljs-keyword">auto</span> bindGroup = <span class="hljs-built_in">std</span>::make_shared&lt;webgpu::WebGPUBindGroup&gt;(
 		bindGroupRaw,
@@ -719,11 +706,12 @@ pass-&gt;cleanup();
 		<span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">shared_ptr</span>&lt;webgpu::WebGPUBuffer&gt;&gt;{}  <span class="hljs-comment">// No buffers in this bind group</span>
 	);
 
-	<span class="hljs-comment">// Tutorial 4 - Step 5I: Cache for future use</span>
+	<span class="hljs-comment">// Tutorial 4 - Step 7I: Cache for future use</span>
 	m_bindGroupCache[cacheKey] = bindGroup;
 	<span class="hljs-keyword">return</span> bindGroup;
 }
 </div></code></pre>
+<div style="page-break-after: always;"></div>
 <p><strong>Binding Details:</strong></p>
 <p>The WGPUBindGroupEntry structure is initialized as:</p>
 <pre class="hljs"><code><div>WGPUBindGroupEntry{
@@ -759,12 +747,11 @@ pass-&gt;cleanup();
 <li><code>m_bindGroupCache</code> - <strong>We</strong> own this, so we must clean it</li>
 </ul>
 <hr>
+<div style="page-break-after: always;"></div>
 <h2 id="step-9-rendererinitialize---add-postprocessingpass-setup">Step 9: Renderer::initialize() - Add PostProcessingPass Setup</h2>
 <p>Now integrate the pass into the renderer.</p>
 <p><strong>Your Task:</strong></p>
-<p>Open <code>src/engine/rendering/Renderer.cpp</code> and find the initialize() method. Look for the comment:</p>
-<pre class="hljs"><code><div><span class="hljs-comment">// Tutorial 4 - Step xx: Initialize PostProcessingPass here</span>
-</div></code></pre>
+<p>Open <code>src/engine/rendering/Renderer.cpp</code> and find the initialize() method. Look for the comment: <code>// Tutorial 4 - Step 9</code></p>
 <p>Add this code:</p>
 <pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 9: Initialize PostProcessingPass</span>
 	m_postProcessingPass = <span class="hljs-built_in">std</span>::make_unique&lt;PostProcessingPass&gt;(m_context);
@@ -782,17 +769,19 @@ pass-&gt;cleanup();
 <li>Prepares the pass for rendering (actual rendering happens in the render phase, not initialization)</li>
 </ul>
 <hr>
+<div style="page-break-after: always;"></div>
 <h2 id="step-10-prepare-post-processing-texture">Step 10: Prepare Post-Processing Texture</h2>
 <p>Before we can render to a post-process texture, we need to create it.</p>
-<p><strong>Location:</strong> In <code>Renderer::renderToTexture()</code>, find the comment:</p>
-<pre class="hljs"><code><div><span class="hljs-comment">// STEP 2: Prepare Depth Buffer and Post-Processing Texture</span>
-</div></code></pre>
-<p>This code should already exist (the engine creates it for you):</p>
-<pre class="hljs"><code><div>	<span class="hljs-comment">// Post-processing texture is an intermediate render target for effects like bloom, tone mapping, etc.</span>
+<p><strong>Location:</strong> In <code>Renderer::renderToTexture()</code>, find the comment: <code>// Tutorial 4 - Step 10:</code></p>
+<p><strong>Your Task:</strong></p>
+<p>After the depth buffer setup (and before the Culling step), add this code to create the post-processing texture:</p>
+<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 10: Prepare post-processing texture</span>
+	<span class="hljs-comment">// Post-processing texture is an intermediate render target for effects like bloom, tone mapping, etc.</span>
+	<span class="hljs-comment">// Use negative ID to differentiate post-process textures from main render targets</span>
 	<span class="hljs-keyword">if</span> (!m_postProcessTextures[renderTargetId])
 	{
 		m_postProcessTextures[renderTargetId] = m_context-&gt;textureFactory().createRenderTarget(
-			-renderTargetId - <span class="hljs-number">1</span>, <span class="hljs-comment">// Use negative ID to differentiate post-process textures from main render targets</span>
+			-renderTargetId - <span class="hljs-number">1</span>,
 			renderFromTexture-&gt;getWidth(),
 			renderFromTexture-&gt;getHeight(),
 			renderFromTexture-&gt;getFormat() <span class="hljs-comment">// match format of main render target</span>
@@ -808,18 +797,12 @@ pass-&gt;cleanup();
 <hr>
 <h2 id="step-11-rendererrendertotexture---call-postprocessingpass">Step 11: Renderer::renderToTexture() - Call PostProcessingPass</h2>
 <p>This is where post-processing actually executes each frame.</p>
-<p><strong>Location:</strong> Find this comment in <code>renderToTexture()</code>:</p>
-<pre class="hljs"><code><div><span class="hljs-comment">// Tutorial 4 - Step 10: Apply vignette effect</span>
-</div></code></pre>
+<p><strong>Location:</strong> Find this comment in <code>renderToTexture()</code>: <code>Tutorial 4 - Step 11</code></p>
 <p><strong>Your Task:</strong></p>
-<p>Uncomment and implement this code after the Debug Pass section:</p>
-<pre class="hljs"><code><div>	<span class="hljs-comment">// ========================================</span>
-	<span class="hljs-comment">// STEP 7: Post-Processing Pass</span>
-	<span class="hljs-comment">// ========================================</span>
-	<span class="hljs-comment">// Tutorial 4 - Step 10: Apply vignette effect</span>
+<p>Add this code after the Debug Pass section:</p>
+<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 11: Apply vignette effect</span>
 	<span class="hljs-comment">// Texture swapping: MeshPass/DebugPass output → input for post-processing</span>
 	<span class="hljs-comment">// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)</span>
-	
 	renderFromTexture = renderToTexture; <span class="hljs-comment">// Post-processing reads from the main render target</span>
 	renderToTexture = m_postProcessTextures[renderTargetId];
 	<span class="hljs-keyword">auto</span> postProcessingContext = m_context-&gt;renderPassFactory().create(
@@ -889,7 +872,7 @@ pass-&gt;cleanup();
 	<span class="hljs-comment">// ... cleanup passes ...</span>
 	
 	<span class="hljs-keyword">if</span> (m_postProcessingPass)
-		m_postProcessingPass-&gt;cleanup();  <span class="hljs-comment">// Clear bind group cache and reset</span>
+		m_postProcessingPass-&gt;cleanup();  <span class="hljs-comment">// Tutorial 4 - Step 12: Clear bind group cache and reset</span>
 	
 	spdlog::info(<span class="hljs-string">"Renderer resized to {}x{}"</span>, width, height);
 }
@@ -904,29 +887,6 @@ pass-&gt;cleanup();
 </ul>
 </li>
 </ul>
-<hr>
-<h2 id="summary-complete-post-processing-pipeline">Summary: Complete Post-Processing Pipeline</h2>
-<p>After implementing all steps, here's the complete flow each frame:</p>
-<pre class="hljs"><code><div>Frame Setup
-  └─ For each camera:
-       └─ renderToTexture(camera)
-            ├─ STEP 1: Create/update main render target texture
-            │
-            ├─ STEP 2: Create/update depth buffer
-            │          Create/update post-process texture  ← Step 10
-            │
-            ├─ STEP 3-6: Culling, GPU prep, Mesh Pass, Debug Pass
-            │
-            ├─ STEP 7: Post-Processing Pass  ← Step 11
-            │   ├─ setInputTexture(scene + debug output)
-            │   ├─ setRenderPassContext(post-process texture)
-            │   └─ render() → Apply vignette effect
-            │
-            ├─ STEP 8: Store final texture for compositing
-            │
-            └─ Window Resize: onResize() → Resize all textures  ← Step 12
-</div></code></pre>
-<p>No action needed - this is automatic.</p>
 <hr>
 <h2 id="summary-complete-flow">Summary: Complete Flow</h2>
 <p>Here's what happens each frame:</p>
@@ -954,20 +914,17 @@ pass-&gt;cleanup();
                 └─ Output: Final image on screen
 </span></div></code></pre>
 <hr>
-<h2 id="building-and-testing">Building and Testing</h2>
-<h3 id="build-the-engine">Build the Engine</h3>
-<pre class="hljs"><code><div><span class="hljs-comment"># Windows</span>
-scripts\build.bat Debug WGPU
-
-<span class="hljs-comment"># Linux</span>
-bash scripts/build.sh Debug WGPU
-</div></code></pre>
-<h3 id="run-a-tutorial-example">Run a Tutorial Example</h3>
-<p>Any example that renders a 3D scene will show the vignette effect:</p>
-<pre class="hljs"><code><div>examples/build/main_demo/Windows/Debug/MainDemo.exe
+<h2 id="rebuild-and-run">Rebuild and Run</h2>
+<pre class="hljs"><code><div><span class="hljs-comment"># Rebuild and run</span>
+scripts\build-example.bat tutorial Debug WGPU
 examples/build/tutorial/Windows/Debug/Tutorial.exe
 </div></code></pre>
-<h3 id="expected-result">Expected Result</h3>
+<p><strong>VS Code shortcuts:</strong></p>
+<ul>
+<li>Press <code>F5</code> to build and run with debugger</li>
+<li>Or open <strong>Run and Debug</strong> panel (<code>Ctrl+Shift+D</code>) → select <strong>&quot;Tutorial (Debug)&quot;</strong> → click green play button</li>
+</ul>
+<h2 id="expected-result">Expected Result</h2>
 <p>You should see:
 ✅ <strong>Vignette Effect</strong> - Screen edges are darker, center is brighter
 ✅ <strong>Smooth Falloff</strong> - Gradual transition from center to edges
@@ -982,26 +939,78 @@ examples/build/tutorial/Windows/Debug/Tutorial.exe
 <hr>
 <h2 id="understanding-the-vignette-shader">Understanding the Vignette Shader</h2>
 <p>The vignette effect happens in <code>resources/postprocess_vignette.wgsl</code>:</p>
+<p><strong>Shader Structure:</strong></p>
+<pre class="hljs"><code><div>// Bind Group 0: Input texture from previous render pass
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d&lt;f32&gt;;
+
+// Vertex shader output / Fragment shader input
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) texCoord: vec2f,
+}
+</div></code></pre>
 <p><strong>Vertex Shader (<code>vs_main</code>):</strong></p>
-<pre class="hljs"><code><div>// Generate fullscreen triangle without vertex buffers
-let x = f32((vertexIndex &lt;&lt; 1u) &amp; 2u);  // 0, 2, 0
-let y = f32(vertexIndex &amp; 2u);          // 0, 0, 2
-// Converts to NDC: (-1,-1), (3,-1), (-1,3)
-// This covers entire screen
+<p>Generates a fullscreen triangle without vertex buffers using bit manipulation on the vertex index:</p>
+<pre class="hljs"><code><div>@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -&gt; VertexOutput {
+    var output: VertexOutput;
+    
+    // Bit manipulation to generate triangle coordinates
+    // vertexIndex: 0 -&gt; (0, 0), 1 -&gt; (2, 0), 2 -&gt; (0, 2)
+    let x = f32((vertexIndex &lt;&lt; 1u) &amp; 2u);
+    let y = f32(vertexIndex &amp; 2u);
+    
+    // Convert to NDC: (0,0) -&gt; (-1,1), (2,0) -&gt; (3,1), (0,2) -&gt; (-1,-3)
+    output.position = vec4f(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
+    
+    // Pass through texture coordinates (0 to 1 range)
+    output.texCoord = vec2f(x, y);
+    
+    return output;
+}
 </div></code></pre>
+<p>This creates a triangle that covers the entire screen:</p>
+<ul>
+<li>Vertex 0: (-1, -1) bottom-left  → UV (0, 0)</li>
+<li>Vertex 1: (3, -1) bottom-right  → UV (1, 0) [off-screen]</li>
+<li>Vertex 2: (-1, 3) top-left      → UV (0, 1) [off-screen]</li>
+</ul>
 <p><strong>Fragment Shader (<code>fs_main</code>):</strong></p>
-<pre class="hljs"><code><div>// Calculate distance from center
-let dist = distance(input.texCoord, vec2f(0.5, 0.5));
-
-// Smooth falloff: 1.0 at center, 0.0 at edges
-let vignette = 1.0 - smoothstep(0.0, 1.0, dist * vignetteFalloff);
-
-// Mix between darkened edges (0.5) and normal brightness (1.0)
-let vignetteFactor = mix(1.0 - vignetteIntensity, 1.0, vignette);
-
-// Apply effect by multiplying color
-finalColor = sceneColor * vignetteFactor;
+<p>Applies the vignette effect by darkening edges based on distance from center:</p>
+<pre class="hljs"><code><div>@fragment
+fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
+    // Sample the rendered scene color
+    let sceneColor = textureSample(inputTexture, inputSampler, input.texCoord);
+    
+    // Calculate distance from screen center (0.5, 0.5)
+    let center = vec2f(0.5, 0.5);
+    let dist = distance(input.texCoord, center);
+    
+    // Vignette parameters
+    let vignetteIntensity = 0.85;  // How dark edges get (0.0 = no effect, 1.0 = black)
+    let vignetteFalloff = 2.0;    // Transition sharpness (higher = sharper edge)
+    
+    // Calculate vignette factor (1.0 at center, approaches 0.0 at edges)
+    // smoothstep creates a smooth S-curve interpolation
+    let vignette = 1.0 - smoothstep(0.0, 1.0, dist * vignetteFalloff);
+    
+    // Mix between darkened (1.0 - intensity) and full brightness (1.0)
+    let vignetteFactor = mix(1.0 - vignetteIntensity, 1.0, vignette);
+    
+    // Apply vignette by multiplying scene color
+    let finalColor = sceneColor * vignetteFactor;
+    
+    return finalColor;
+}
 </div></code></pre>
+<p><strong>How the Vignette Calculation Works:</strong></p>
+<ol>
+<li><strong>Distance from Center</strong> - Calculate how far each pixel is from screen center (0.5, 0.5)</li>
+<li><strong>Smoothstep Transition</strong> - Use <code>smoothstep()</code> to create a smooth falloff curve</li>
+<li><strong>Mix Factor</strong> - Interpolate between darkened edges and full brightness</li>
+<li><strong>Apply Effect</strong> - Multiply scene color by the vignette factor to darken edges</li>
+</ol>
 <hr>
 <h2 id="key-concepts-learned">Key Concepts Learned</h2>
 <p>✅ <strong>Render Pass Lifecycle</strong> - initialize() → render() → cleanup()
@@ -1051,6 +1060,14 @@ let vignetteFalloff = 2.0;    // Transition speed (higher=sharper)
 <li>Renderer integration: <code>src/engine/rendering/Renderer.cpp</code></li>
 <li>Shader registration: <code>src/engine/rendering/ShaderRegistry.cpp</code></li>
 <li>Similar passes: <code>CompositePass.cpp</code>, <code>MeshPass.cpp</code>, <code>ShadowPass.cpp</code></li>
+</ul>
+<hr>
+<h2 id="further-reading">Further Reading</h2>
+<ul>
+<li><a href="https://www.w3.org/TR/WGSL/">WebGPU WGSL Specification</a></li>
+<li><a href="../BindGroupSystem.md">Engine Bind Group System</a></li>
+<li><a href="../GettingStarted.md">Getting Started Guide</a></li>
+<li><a href="https://eliemichel.github.io/LearnWebGPU/">LearnWebGPU Tutorial</a></li>
 </ul>
 
 </body>

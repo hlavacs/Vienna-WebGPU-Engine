@@ -292,7 +292,7 @@ floorModel->getSubmeshes()[0].material = floorMaterial->getHandle();
 
 **Note:** The shader won't be loaded and validated until runtime. The C++ build only compiles the application - shader errors will appear in the console when you run the program.
 
-### Rebuild and Run
+## Rebuild and Run
 
 ```bash
 # Rebuild and run
@@ -304,7 +304,7 @@ examples/build/tutorial/Windows/Debug/Tutorial.exe
 - Press `F5` to build and run with debugger
 - Or open **Run and Debug** panel (`Ctrl+Shift+D`) → select **"Tutorial (Debug)"** → click green play button
 
-### Expected Result
+## Expected Result
 
 Now you should see:
 - ✅ **Floor** with cobblestone texture (unlit, flat appearance)
