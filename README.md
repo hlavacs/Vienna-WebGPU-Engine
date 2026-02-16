@@ -1,9 +1,11 @@
 # Vienna-WebGPU-Engine
 
+> **Version:** v0.1-alpha | **Status:** Active Development
+
 Vienna-WebGPU-Engine is a **cross-platform, WebGPU-based game engine** designed for educational purposes. Built with modern graphics APIs, it provides a hands-on learning experience in game engine development using the WebGPU API.
 
 **Current Platform Support:** Windows (Native WebGPU via wgpu-native)  
-**Status:** Active development - features are being added progressively
+**Note:** Emscripten/Web support planned for future releases
 
 ## Features
 
@@ -14,8 +16,7 @@ Vienna-WebGPU-Engine is a **cross-platform, WebGPU-based game engine** designed 
 - ✅ Factory pattern for GPU resources
 - ✅ Model loading: OBJ (stable), GLTF/GLB (WIP)
 - ✅ Comprehensive documentation
-
-**Note:** Emscripten/Web support planned for future releases.
+- ✅ Tutorial series (4 tutorials: shaders, bind groups, shadows, post-processing)
 
 
 ## Getting Started
@@ -27,13 +28,16 @@ Ensure you have the following installed:
 - **[CMake](https://cmake.org/download/)** (3.15+)
 - **[Ninja](https://ninja-build.org/)** (recommended build system)
 - **C++17 compatible compiler** (MSVC 2019+, GCC 9+, Clang 10+)
+  - **Windows:** MSVC Build Tools recommended. Install via:
+    - [Visual Studio](https://visualstudio.microsoft.com/) (includes Build Tools), or
+    - [Visual Studio Build Tools](https://aka.ms/vs/stable/vs_BuildTools.exe) (standalone) from [visualstudio.microsoft.com/downloads](https://visualstudio.microsoft.com/de/downloads/?q=build+tools)
 - **Python 3.x** (for build scripts)
 
 The engine uses **[wgpu-native v0.19.4.1](https://github.com/gfx-rs/wgpu-native)** as the WebGPU implementation.
 
 ### Optional Tools
 
-- **[Visual Studio 2022](https://visualstudio.microsoft.com/)** - For native debugging and crash analysis
+- **[Visual Studio Code](https://code.visualstudio.com/)** - Recommended for native debugging and crash analysis
 - **[Emscripten 4.0.6](https://emscripten.org/)** - Web support (not yet functional)
 - **[http-server](https://www.npmjs.com/package/http-server)** - For web builds (future use)
 
@@ -62,7 +66,7 @@ The engine uses **[wgpu-native v0.19.4.1](https://github.com/gfx-rs/wgpu-native)
 
 ### Getting Started
 - **[Getting Started Guide](doc/GettingStarted.md)** - Build your first application
-- **[Tutorials](foc/tutorials/01_unlit_shader.md)** - Simple example demonstrating basics
+- **[Tutorial Series (4 Parts)](doc/tutorials/01_unlit_shader.md)** - Learn shaders, bind groups, shadows (WIP), and post-processing
 
 ### Technical Documentation
 - **[Engine Architecture](doc/EngineArchitecture.md)** - Design patterns and architecture
@@ -89,6 +93,13 @@ auto path = "E:/Project/resources/texture.png";
 ```
 
 See [CorePrinciples.md](doc/CorePrinciples.md#0-path-management) for details.
+
+## Known Limitations
+
+- **Web Support:** Emscripten/WebAssembly support is planned but not yet functional
+- **Platform Coverage:** Windows only (Linux/macOS support planned might work with modifications)
+- **Model Format:** GLTF/GLB loading is work-in-progress; OBJ fully supported
+- **Editor:** Scene editor (WIP) not yet feature-complete
 
 ## Building the Project
 
@@ -155,7 +166,7 @@ Vienna-WebGPU-Engine/
 ## Getting Help
 
 1. **[Getting Started Guide](doc/GettingStarted.md)** - Build your first app
-2. **[Tutorials](examples/tutorials/01_unlit_shader.md)** - Tutorials
+2. **[Tutorials](doc/tutorials/01_unlit_shader.md)** - Tutorials
 3. **[Engine Architecture](doc/EngineArchitecture.md)** - Technical reference
 4. Browse **examples/** for usage patterns
 
