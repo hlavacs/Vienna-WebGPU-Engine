@@ -22,8 +22,16 @@ Welcome to your first shader tutorial! In this guide, you'll learn how to write 
 
 The C++ code handles scene setup, shader registration, and material creation. The only missing piece is the material assignment (commented out until the shader is complete).
 
+**CPU vs GPU: Who Does What?**
+
+This tutorial teaches both sides of rendering:
+- **CPU Side (C++)**: Creates resources, records commands, manages data
+- **GPU Side (WGSL Shader)**: Executes commands in parallel, transforms geometry, colors pixels
+
+The C++ code prepares everything the GPU needs, but the actual drawing happens on the GPU running your shader code.
+
 **Why is material assignment commented out?**
-Without a complete shader file, the engine can't create a render pipeline. We'll uncomment it in Step 10.
+Without a complete shader file, the engine can't create a **render pipeline** (the GPU program combining your shaders with rendering state). We'll uncomment it in Step 10.
 
 ### File: `examples/tutorial/assets/shaders/unlit.wgsl`
 
@@ -94,6 +102,26 @@ The GPU needs 4D homogeneous coordinates (x, y, z, w) for perspective-correct re
 
 **Data interpolation:**
 Values with `@location` are automatically interpolated across the triangle. If a triangle has UV (0,0) at one corner and (1,1) at another, pixels in between get smoothly interpolated values.
+
+**The Rendering Pipeline Flow:**
+
+Your shader participates in WebGPU's three-stage pipeline:
+
+1. **Vertex Stage** → Your `vs_main()` runs once per vertex
+2. **Rasterization** → GPU's fixed-function hardware converts triangles to pixels  
+3. **Fragment Stage** → Your `fs_main()` runs once per pixel
+
+Data flows: Vertex shader outputs → Rasterizer interpolates → Fragment shader inputs. This is why `VertexOutput` has `@location` attributes - they're the bridge between stages.
+
+**The Rendering Pipeline Flow:**
+
+Your shader participates in WebGPU's three-stage pipeline:
+
+1. **Vertex Stage** → Your `vs_main()` runs once per vertex
+2. **Rasterization** → GPU's fixed-function hardware converts triangles to pixels
+3. **Fragment Stage** → Your `fs_main()` runs once per pixel
+
+Data flows: Vertex shader outputs → Rasterizer interpolates → Fragment shader inputs. This is why `VertexOutput` has `@location` attributes - they're the bridge between stages.
 
 ---
 
@@ -214,6 +242,17 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 This transforms the vertex position through three matrices (model, view, projection) to get screen coordinates. The `1.0` in `vec4f(input.position, 1.0)` indicates this is a position (not a direction).
 
+**What happens when this shader runs:**
+
+When you uncomment the material assignment in Step 9, the engine creates a **render pipeline** - a compiled GPU program containing:
+- Your vertex and fragment shaders
+- Vertex buffer layout (position, normal, UV)
+- Depth testing settings (enabled)
+- Blend mode (opaque)
+- Face culling (back faces)
+
+This pipeline is created once and reused every frame. It's WebGPU's way of "freezing" all rendering state into a single object for performance.
+
 ---
 
 ## Step 8: Write the Fragment Shader
@@ -268,6 +307,63 @@ Now you should see:
 
 ---
 
+## How Your Shader Gets Executed
+
+Before understanding what we built, let's see how your shader actually runs on the GPU:
+
+**The Command Recording Model:**
+
+WebGPU doesn't execute commands immediately. Instead:
+
+1. **CPU Records Commands** - The engine uses two encoder types:
+   ```cpp
+   // Step 1: Create command encoder (organizes work into command buffer)
+   CommandEncoder commandEncoder = device.createCommandEncoder();
+   
+   // Step 2: Begin render pass (creates RenderPassEncoder for drawing)
+   RenderPassEncoder renderPass = commandEncoder.beginRenderPass(colorTexture, depthTexture);
+   
+   // Step 3: Record drawing commands using RenderPassEncoder
+   renderPass.setPipeline(yourShaderPipeline);
+   renderPass.setBindGroup(0, frameBindGroup);  // Camera data
+   renderPass.setBindGroup(1, objectBindGroup);  // Transform
+   renderPass.setBindGroup(2, materialBindGroup); // Textures
+   renderPass.draw(vertexCount);                  // "Draw this mesh!"
+   
+   // Step 4: End render pass
+   renderPass.end();
+   
+   // Step 5: Finish encoding to get command buffer
+   CommandBuffer commandBuffer = commandEncoder.finish();
+   ```
+   
+   **Key distinction:**
+   - `CommandEncoder` - Top-level container for all GPU work (can create multiple render passes, compute passes, copy operations)
+   - `RenderPassEncoder` - Specific to drawing operations (setPipeline, setBindGroup, draw)
+
+2. **CPU Submits to GPU** - Command buffer sent to GPU queue:
+   ```cpp
+   queue.submit(commandBuffer);
+   ```
+
+3. **GPU Executes Asynchronously** - Your shaders run in parallel:
+   - `vs_main()` runs for all 4 floor vertices simultaneously
+   - Rasterizer generates ~10,000 pixels for the floor
+   - `fs_main()` runs for all pixels simultaneously
+
+**Render Pass = Drawing Phase:**
+
+A render pass defines **what you're drawing to**:
+- **Color Attachment**: Texture receiving pixel colors (your screen or a render target)
+- **Depth Attachment**: Texture storing depth values (for depth testing)
+- **Load/Store Operations**: Clear before drawing? Save result after?
+
+Your fragment shader's `@location(0) vec4f` output goes directly to the color attachment.
+
+**Where to see this:** Check [Renderer.cpp:renderToTexture()](../../src/engine/rendering/Renderer.cpp) - line 250+ shows the full command recording sequence.
+
+---
+
 ## Understanding What We Built
 
 You created a complete WebGPU rendering shader with three main components:
@@ -289,6 +385,27 @@ This is WebGPU's optimization strategy: group resources by update frequency. Whe
 - `@fragment fn fs_main()` - Fragment stage: Determines pixel color. WebGPU's rasterizer interpolates vertex outputs across primitives, then invokes this per fragment
 
 Between stages, WebGPU's fixed-function rasterizer converts clip-space triangles to screen-space fragments, performing depth testing and face culling.
+
+**How a Draw Call Works:**
+
+When the engine issues `encoder.draw(vertexCount)`, the GPU:
+
+1. **Fetches Vertices**: Reads position/normal/UV from vertex buffer using the pipeline's vertex layout
+2. **Runs Vertex Shader**: Executes `vs_main()` in parallel for all vertices (4 for our plane)
+3. **Assembles Primitives**: Groups vertices into triangles (2 triangles for our plane)
+4. **Rasterizes**: Converts triangles to fragments (pixels), discarding anything outside screen or behind other geometry
+5. **Runs Fragment Shader**: Executes `fs_main()` in parallel for all visible pixels
+6. **Outputs to Attachments**: Writes colors to render target, depth values to depth buffer
+
+All bind groups must be set before the draw call - that's why Groups 0, 1, 2 are bound in [Renderer.cpp](../../src/engine/rendering/Renderer.cpp) before calling `draw()`.
+
+**Performance Insight:**
+
+The floor has:
+- 4 vertices \u2192 `vs_main()` runs 4 times
+- ~10,000 visible pixels \u2192 `fs_main()` runs ~10,000 times
+
+This is why fragment shaders are performance-critical - they run far more often than vertex shaders!
 
 **WebGPU Concepts:**
 - **Render Pipeline** - Combines shaders, vertex layout, blend state, depth state into a single GPU program
