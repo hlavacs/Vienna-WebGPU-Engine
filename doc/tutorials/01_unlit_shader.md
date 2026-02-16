@@ -1,5 +1,7 @@
 # Tutorial 01: Writing a Custom Unlit Shader
 
+> **💡 Tip:** It's recommended using the [01_unlit_shader.html](01_unlit_shader.html) version of this tutorial as copying code works best there regarding padding and formatting.
+
 Welcome to your first shader tutorial! In this guide, you'll learn how to write a custom WGSL shader from scratch for the Vienna WebGPU Engine. We'll create a simple unlit shader that displays textured geometry.
 
 **What you'll learn:**
@@ -493,7 +495,7 @@ In **Tutorial 02**, you'll learn:
 - Extending `ModelRenderNode` to add custom shader parameters
 - Practical example: Texture tiling and offset control per object
 
-**Next Tutorial:** [02_custom_bindgroup.md](02_custom_bindgroup.md) / [02_custom_bindgroup.pdf](02_custom_bindgroup.pdf)
+**Next Tutorial:** [02_custom_bindgroup.md](02_custom_bindgroup.md) / [02_custom_bindgroup.pdf](02_custom_bindgroup.pdf) / [02_custom_bindgroup.html](02_custom_bindgroup.html)
 
 ---
 

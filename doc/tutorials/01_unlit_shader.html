@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>01_unlit_shader.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="tutorial-01-writing-a-custom-unlit-shader">Tutorial 01: Writing a Custom Unlit Shader</h1>
+<blockquote>
+<p><strong>💡 Tip:</strong> It's recommended using the <a href="01_unlit_shader.html">01_unlit_shader.html</a> version of this tutorial as copying code works best there regarding padding and formatting.</p>
+</blockquote>
+<p>Welcome to your first shader tutorial! In this guide, you'll learn how to write a custom WGSL shader from scratch for the Vienna WebGPU Engine. We'll create a simple unlit shader that displays textured geometry.</p>
+<p><strong>What you'll learn:</strong></p>
+<ul>
+<li>Engine bind group requirements (Frame, Object, Material)</li>
+<li>WGSL vertex and fragment shader structure</li>
+<li>Matrix transformations (model → world → view → clip space)</li>
+<li>Texture sampling in shaders</li>
+<li>Material assignment to model submeshes</li>
+</ul>
+<p><strong>What's provided:</strong></p>
+<ul>
+<li>Complete C++ setup in <code>examples/tutorial/main.cpp</code> (scene, models, lighting)</li>
+<li>Empty shader file at <code>examples/tutorial/assets/shaders/unlit.wgsl</code></li>
+<li>Tutorial project ready to build and run</li>
+</ul>
+<hr>
+<h2 id="step-1-understanding-the-project-structure">Step 1: Understanding the Project Structure</h2>
+<h3 id="file-examplestutorialmaincpp">File: <code>examples/tutorial/main.cpp</code></h3>
+<p>The C++ code handles scene setup, shader registration, and material creation. The only missing piece is the material assignment (commented out until the shader is complete).</p>
+<p><strong>CPU vs GPU: Who Does What?</strong></p>
+<p>This tutorial teaches both sides of rendering:</p>
+<ul>
+<li><strong>CPU Side (C++)</strong>: Creates resources, records commands, manages data</li>
+<li><strong>GPU Side (WGSL Shader)</strong>: Executes commands in parallel, transforms geometry, colors pixels</li>
+</ul>
+<p>The C++ code prepares everything the GPU needs, but the actual drawing happens on the GPU running your shader code.</p>
+<p><strong>Why is material assignment commented out?</strong>
+Without a complete shader file, the engine can't create a <strong>render pipeline</strong> (the GPU program combining your shaders with rendering state). We'll uncomment it in Step 10.</p>
+<h3 id="file-examplestutorialassetsshadersunlitwgsl">File: <code>examples/tutorial/assets/shaders/unlit.wgsl</code></h3>
+<p><strong>Currently empty</strong> - you'll write this! The engine expects:</p>
+<ul>
+<li>Vertex shader: <code>vs_main</code></li>
+<li>Fragment shader: <code>fs_main</code></li>
+<li>Three bind groups (Frame, Object, Material)</li>
+</ul>
+<h3 id="building-the-project">Building the Project</h3>
+<p>You can build the tutorial at any time to check for errors. Before starting, try building once:</p>
+<pre class="hljs"><code><div><span class="hljs-comment"># Windows</span>
+scripts\build-example.bat tutorial Debug WGPU
+
+<span class="hljs-comment"># Linux</span>
+bash scripts/build-example.sh tutorial Debug WGPU
+</div></code></pre>
+<p><strong>VS Code shortcuts:</strong></p>
+<ul>
+<li><strong>Build</strong>: Press <code>Ctrl+Shift+B</code> → select <strong>&quot;Build Example: Tutorial (Debug)&quot;</strong></li>
+<li><strong>Run</strong>: Press <code>F5</code> or use the <strong>Run and Debug</strong> panel (<code>Ctrl+Shift+D</code>) → select <strong>&quot;Tutorial (Debug)&quot;</strong></li>
+</ul>
+<p>Since the shader file is empty, the build will succeed but the the floor won't render yet (only magenta as its the fallback color) until we assign the material in a later step.</p>
+<hr>
+<h2 id="step-2-define-vertex-input-structure">Step 2: Define Vertex Input Structure</h2>
+<p>Before we write shaders, we need to understand what data flows through them. Let's start with what the vertex shader receives from the mesh.</p>
+<pre class="hljs"><code><div>struct VertexInput {
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) texCoord: vec2f,
+}
+</div></code></pre>
+<p><strong>What it contains:</strong></p>
+<ul>
+<li><code>position</code> - 3D vertex position in model space (where the vertex is in the model)</li>
+<li><code>normal</code> - Surface normal vector (which way the surface faces, used for lighting)</li>
+<li><code>texCoord</code> - UV coordinates (where on the texture to sample, range 0-1)</li>
+</ul>
+<p><strong>Why these attributes?</strong>
+The engine's mesh loader provides these three attributes for every vertex. The <code>@location(N)</code> numbers map to the vertex buffer layout defined in C++. While the engine's mesh format includes other properties (tangents, vertex colors), you only need to declare the attributes your shader actually uses. We'll cover shader reflection in detail in Tutorial 03.</p>
+<hr>
+<div style="page-break-after: always;"></div>
+<h2 id="step-3-define-vertex-output-structure">Step 3: Define Vertex Output Structure</h2>
+<p>Now define what the vertex shader outputs (and what the fragment shader receives):</p>
+<pre class="hljs"><code><div>struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) texCoord: vec2f,
+}
+</div></code></pre>
+<p><strong>What it contains:</strong></p>
+<ul>
+<li><code>@builtin(position)</code> - <strong>Required!</strong> Final clip-space position (tells GPU where to draw)</li>
+<li><code>texCoord</code> - UV coordinates passed through to fragment shader</li>
+</ul>
+<p><strong>Why vec4f for position?</strong>
+The GPU needs 4D homogeneous coordinates (x, y, z, w) for perspective-correct rendering. The w component handles perspective division.</p>
+<p><strong>Data interpolation:</strong>
+Values with <code>@location</code> are automatically interpolated across the triangle. If a triangle has UV (0,0) at one corner and (1,1) at another, pixels in between get smoothly interpolated values.</p>
+<p><strong>The Rendering Pipeline Flow:</strong></p>
+<p>Your shader participates in WebGPU's three-stage pipeline:</p>
+<ol>
+<li><strong>Vertex Stage</strong> → Your <code>vs_main()</code> runs once per vertex</li>
+<li><strong>Rasterization</strong> → GPU's fixed-function hardware converts triangles to pixels</li>
+<li><strong>Fragment Stage</strong> → Your <code>fs_main()</code> runs once per pixel</li>
+</ol>
+<p>Data flows: Vertex shader outputs → Rasterizer interpolates → Fragment shader inputs. This is why <code>VertexOutput</code> has <code>@location</code> attributes - they're the bridge between stages.</p>
+<p><strong>The Rendering Pipeline Flow:</strong></p>
+<p>Your shader participates in WebGPU's three-stage pipeline:</p>
+<ol>
+<li><strong>Vertex Stage</strong> → Your <code>vs_main()</code> runs once per vertex</li>
+<li><strong>Rasterization</strong> → GPU's fixed-function hardware converts triangles to pixels</li>
+<li><strong>Fragment Stage</strong> → Your <code>fs_main()</code> runs once per pixel</li>
+</ol>
+<p>Data flows: Vertex shader outputs → Rasterizer interpolates → Fragment shader inputs. This is why <code>VertexOutput</code> has <code>@location</code> attributes - they're the bridge between stages.</p>
+<hr>
+<h2 id="understanding-bind-groups">Understanding Bind Groups</h2>
+<p>Now let's understand the external data shaders receive via bind groups.</p>
+<p><strong>What are bind groups?</strong>
+Bind groups are &quot;data packages&quot; from CPU to GPU containing uniforms, textures, and samplers.</p>
+<p><strong>Why three separate groups?</strong>
+Each has different update frequency:</p>
+<ul>
+<li><strong>Group 0 (Frame)</strong> - Once per frame (camera, time)</li>
+<li><strong>Group 1 (Object)</strong> - Per object (transform)</li>
+<li><strong>Group 2 (Material)</strong> - Per material (textures, properties)</li>
+</ul>
+<p>This separation enables efficient reuse. When rendering 100 objects with the same material, only Group 1 changes.</p>
+<p><strong>⚠️ CRITICAL: FrameUniforms MUST be at @group(0)</strong></p>
+<p>The engine <strong>requires</strong> <code>FrameUniforms</code> at bind group 0. This is not optional - the rendering system expects camera data there. However, if your shader doesn't use any frame uniforms (rare cases like post-processing or utility shaders), you can omit the bind group entirely. Most gameplay shaders need camera transforms, so you'll typically declare this in every shader you write.</p>
+<hr>
+<h2 id="step-4-declare-bind-group-0---frame-uniforms">Step 4: Declare Bind Group 0 - Frame Uniforms</h2>
+<p><strong>Required at @group(0)</strong> - This must always be bind group 0 in all engine shaders.</p>
+<p>Open <code>examples/tutorial/assets/shaders/unlit.wgsl</code> and add:</p>
+<pre class="hljs"><code><div>struct FrameUniforms {
+    viewMatrix: mat4x4&lt;f32&gt;,
+    projectionMatrix: mat4x4&lt;f32&gt;,
+    viewProjectionMatrix: mat4x4&lt;f32&gt;,
+    cameraPosition: vec3&lt;f32&gt;,
+    time: f32,
+}
+
+@group(0) @binding(0)
+var&lt;uniform&gt; frameUniforms: FrameUniforms;
+</div></code></pre>
+<p><strong>What it contains:</strong></p>
+<ul>
+<li><code>viewMatrix</code> - Camera's view matrix (transforms world space to camera space)</li>
+<li><code>projectionMatrix</code> - Projection matrix (applies perspective/orthographic)</li>
+<li><code>cameraPosition</code> - Camera world position (useful for effects like reflections, fog)</li>
+<li><code>time</code> - Time since engine start in seconds (useful for animations)</li>
+</ul>
+<p><strong>Why it's needed:</strong>
+Every vertex needs to be transformed from world space to screen space. The Frame bind group provides the camera matrices to do this. Without it, the GPU wouldn't know where to draw objects on screen.</p>
+<hr>
+<div style="page-break-after: always;"></div>
+<h2 id="step-5-declare-bind-group-1---object-uniforms">Step 5: Declare Bind Group 1 - Object Uniforms</h2>
+<pre class="hljs"><code><div>struct ObjectUniforms {
+    modelMatrix: mat4x4f,
+    normalMatrix: mat4x4f,
+}
+
+@group(1) @binding(0)
+var&lt;uniform&gt; objectUniforms: ObjectUniforms;
+</div></code></pre>
+<p><strong>What it contains:</strong></p>
+<ul>
+<li><code>modelMatrix</code> - Transforms vertices from model space to world space (position, rotation, scale)</li>
+<li><code>normalMatrix</code> - Correctly transforms normals (handles non-uniform scaling)</li>
+</ul>
+<p><strong>Why it's needed:</strong>
+Each object has a different position, rotation, and scale in the scene. This bind group provides the object's transform so vertices can be placed correctly in the world.</p>
+<hr>
+<h2 id="step-6-declare-bind-group-2---material-uniforms">Step 6: Declare Bind Group 2 - Material Uniforms</h2>
+<pre class="hljs"><code><div>struct UnlitMaterialUniforms {
+    color: vec4f,
+}
+
+@group(2) @binding(0)
+var&lt;uniform&gt; unlitMaterialUniforms: UnlitMaterialUniforms;
+
+@group(2) @binding(1)
+var textureSampler: sampler;
+
+@group(2) @binding(2)
+var baseColorTexture: texture_2d&lt;f32&gt;;
+</div></code></pre>
+<p><strong>What it contains:</strong></p>
+<ul>
+<li><code>UnlitMaterialUniforms</code> - Material properties (color tint in this case)</li>
+<li><code>textureSampler</code> - How to sample the texture (filtering: linear/nearest, wrapping: repeat/clamp)</li>
+<li><code>baseColorTexture</code> - The actual texture image data</li>
+</ul>
+<p><strong>Why it's needed:</strong>
+Different materials have different appearances. This bind group provides the material-specific data (textures, colors, properties) that determine how the object looks.</p>
+<hr>
+<div style="page-break-after: always;"></div>
+<h2 id="step-7-write-the-vertex-shader">Step 7: Write the Vertex Shader</h2>
+<pre class="hljs"><code><div>@vertex
+fn vs_main(input: VertexInput) -&gt; VertexOutput {
+    var output: VertexOutput;
+    
+    let worldPos = objectUniforms.modelMatrix * vec4f(input.position, 1.0);
+    let viewPos = frameUniforms.viewMatrix * worldPos;
+    output.position = frameUniforms.projectionMatrix * viewPos;
+    output.texCoord = input.texCoord;
+    
+    return output;
+}
+</div></code></pre>
+<p>This transforms the vertex position through three matrices (model, view, projection) to get screen coordinates. The <code>1.0</code> in <code>vec4f(input.position, 1.0)</code> indicates this is a position (not a direction).</p>
+<p><strong>What happens when this shader runs:</strong></p>
+<p>When you uncomment the material assignment in Step 9, the engine creates a <strong>render pipeline</strong> - a compiled GPU program containing:</p>
+<ul>
+<li>Your vertex and fragment shaders</li>
+<li>Vertex buffer layout (position, normal, UV)</li>
+<li>Depth testing settings (enabled)</li>
+<li>Blend mode (opaque)</li>
+<li>Face culling (back faces)</li>
+</ul>
+<p>This pipeline is created once and reused every frame. It's WebGPU's way of &quot;freezing&quot; all rendering state into a single object for performance.</p>
+<hr>
+<div style="page-break-after: always;"></div>
+<h2 id="step-8-write-the-fragment-shader">Step 8: Write the Fragment Shader</h2>
+<pre class="hljs"><code><div>@fragment
+fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
+    let textureColor = textureSample(baseColorTexture, textureSampler, input.texCoord);
+    let finalColor = textureColor * unlitMaterialUniforms.color;
+    return finalColor;
+}
+</div></code></pre>
+<p>This samples the texture at the UV coordinates and multiplies by the tint color. No lighting calculations - that's why it's &quot;unlit&quot;.</p>
+<hr>
+<h2 id="step-9-assign-material-to-the-floor">Step 9: Assign Material to the Floor</h2>
+<p>In <code>examples/tutorial/main.cpp</code> (line ~127), uncomment:</p>
+<pre class="hljs"><code><div>floorModel-&gt;getSubmeshes()[<span class="hljs-number">0</span>].material = floorMaterial-&gt;getHandle();
+</div></code></pre>
+<p><strong>Why <code>[0]</code>?</strong> The plane.obj has only one submesh. Models with multiple parts (like a car) would have multiple submeshes that can each have different materials.</p>
+<p><strong>Note:</strong> The shader won't be loaded and validated until runtime. The C++ build only compiles the application - shader errors will appear in the console when you run the program.</p>
+<h3 id="rebuild-and-run">Rebuild and Run</h3>
+<pre class="hljs"><code><div><span class="hljs-comment"># Rebuild and run</span>
+scripts\build-example.bat tutorial Debug WGPU
+examples/build/tutorial/Windows/Debug/Tutorial.exe
+</div></code></pre>
+<p><strong>VS Code shortcuts:</strong></p>
+<ul>
+<li>Press <code>F5</code> to build and run with debugger</li>
+<li>Or open <strong>Run and Debug</strong> panel (<code>Ctrl+Shift+D</code>) → select <strong>&quot;Tutorial (Debug)&quot;</strong> → click green play button</li>
+</ul>
+<h3 id="expected-result">Expected Result</h3>
+<p>Now you should see:</p>
+<ul>
+<li>✅ <strong>Floor</strong> with cobblestone texture (unlit, flat appearance)</li>
+<li>✅ <strong>Fourareen object</strong> above the floor (uses default PBR shader, has lighting)</li>
+<li>✅ <strong>Dark background</strong> (background color set to dark gray)</li>
+</ul>
+<p><strong>Visual comparison:</strong></p>
+<ul>
+<li><strong>Floor (your unlit shader)</strong>: Texture appears flat, no shadows or highlights</li>
+<li><strong>Fourareen (PBR shader)</strong>: Has realistic lighting, shadows, and material response</li>
+</ul>
+<hr>
+<h2 id="how-your-shader-gets-executed">How Your Shader Gets Executed</h2>
+<p>Before understanding what we built, let's see how your shader actually runs on the GPU:</p>
+<p><strong>The Command Recording Model:</strong></p>
+<p>WebGPU doesn't execute commands immediately. Instead:</p>
+<ol>
+<li>
+<p><strong>CPU Records Commands</strong> - The engine uses two encoder types:</p>
+<pre class="hljs"><code><div><span class="hljs-comment">// Step 1: Create command encoder (organizes work into command buffer)</span>
+CommandEncoder commandEncoder = device.createCommandEncoder();
+
+<span class="hljs-comment">// Step 2: Begin render pass (creates RenderPassEncoder for drawing)</span>
+RenderPassEncoder renderPass = commandEncoder.beginRenderPass(colorTexture, depthTexture);
+
+<span class="hljs-comment">// Step 3: Record drawing commands using RenderPassEncoder</span>
+renderPass.setPipeline(yourShaderPipeline);
+renderPass.setBindGroup(<span class="hljs-number">0</span>, frameBindGroup);  <span class="hljs-comment">// Camera data</span>
+renderPass.setBindGroup(<span class="hljs-number">1</span>, objectBindGroup);  <span class="hljs-comment">// Transform</span>
+renderPass.setBindGroup(<span class="hljs-number">2</span>, materialBindGroup); <span class="hljs-comment">// Textures</span>
+renderPass.draw(vertexCount);                  <span class="hljs-comment">// "Draw this mesh!"</span>
+
+<span class="hljs-comment">// Step 4: End render pass</span>
+renderPass.end();
+
+<span class="hljs-comment">// Step 5: Finish encoding to get command buffer</span>
+CommandBuffer commandBuffer = commandEncoder.finish();
+</div></code></pre>
+<p><strong>Key distinction:</strong></p>
+<ul>
+<li><code>CommandEncoder</code> - Top-level container for all GPU work (can create multiple render passes, compute passes, copy operations)</li>
+<li><code>RenderPassEncoder</code> - Specific to drawing operations (setPipeline, setBindGroup, draw)</li>
+</ul>
+</li>
+<li>
+<p><strong>CPU Submits to GPU</strong> - Command buffer sent to GPU queue:</p>
+<pre class="hljs"><code><div><span class="hljs-built_in">queue</span>.submit(commandBuffer);
+</div></code></pre>
+</li>
+<li>
+<p><strong>GPU Executes Asynchronously</strong> - Your shaders run in parallel:</p>
+<ul>
+<li><code>vs_main()</code> runs for all 4 floor vertices simultaneously</li>
+<li>Rasterizer generates ~10,000 pixels for the floor</li>
+<li><code>fs_main()</code> runs for all pixels simultaneously</li>
+</ul>
+</li>
+</ol>
+<p><strong>Render Pass = Drawing Phase:</strong></p>
+<p>A render pass defines <strong>what you're drawing to</strong>:</p>
+<ul>
+<li><strong>Color Attachment</strong>: Texture receiving pixel colors (your screen or a render target)</li>
+<li><strong>Depth Attachment</strong>: Texture storing depth values (for depth testing)</li>
+<li><strong>Load/Store Operations</strong>: Clear before drawing? Save result after?</li>
+</ul>
+<p>Your fragment shader's <code>@location(0) vec4f</code> output goes directly to the color attachment.</p>
+<p><strong>Where to see this:</strong> Check <a href="../../src/engine/rendering/Renderer.cpp">Renderer.cpp:renderToTexture()</a> - line 270+ shows the full command recording sequence.</p>
+<hr>
+<h2 id="understanding-what-we-built">Understanding What We Built</h2>
+<p>You created a complete WebGPU rendering shader with three main components:</p>
+<p><strong>1. Data Structures</strong></p>
+<ul>
+<li><code>VertexInput</code> - Maps to vertex buffer attributes via <code>@location</code> decorators. WebGPU uses these to know which buffer data goes where (location 0 = position from buffer slot 0, etc.)</li>
+<li><code>VertexOutput</code> - Data passed from vertex to fragment stage. <code>@builtin(position)</code> is WebGPU's required clip-space output, <code>@location</code> attributes are interpolated by the rasterizer</li>
+<li>Uniform structs - Declared as <code>var&lt;uniform&gt;</code> to indicate read-only GPU memory. WebGPU enforces memory alignment rules (vec3f followed by f32 requires padding)</li>
+</ul>
+<p><strong>2. Bind Groups (WebGPU's Resource Binding Model)</strong></p>
+<ul>
+<li><code>@group(0)</code> - Frame data: WebGPU lets you update bind groups independently. Group 0 changes once per frame</li>
+<li><code>@group(1)</code> - Object data: Rebound for each object, but Groups 0 stays bound</li>
+<li><code>@group(2)</code> - Material data: Contains uniform buffer (<code>@binding(0)</code>), sampler (<code>@binding(1)</code>), texture (<code>@binding(2)</code>)</li>
+</ul>
+<p>This is WebGPU's optimization strategy: group resources by update frequency. When you change an object, only Group 1 rebinds—the others stay cached in GPU state.</p>
+<p><strong>3. Shader Pipeline Stages</strong></p>
+<ul>
+<li><code>@vertex fn vs_main()</code> - Vertex stage: Transforms positions to clip-space. WebGPU's render pipeline invokes this once per vertex</li>
+<li><code>@fragment fn fs_main()</code> - Fragment stage: Determines pixel color. WebGPU's rasterizer interpolates vertex outputs across primitives, then invokes this per fragment</li>
+</ul>
+<p>Between stages, WebGPU's fixed-function rasterizer converts clip-space triangles to screen-space fragments, performing depth testing and face culling.</p>
+<p><strong>How a Draw Call Works:</strong></p>
+<p>When the engine issues <code>encoder.draw(vertexCount)</code>, the GPU:</p>
+<ol>
+<li><strong>Fetches Vertices</strong>: Reads position/normal/UV from vertex buffer using the pipeline's vertex layout</li>
+<li><strong>Runs Vertex Shader</strong>: Executes <code>vs_main()</code> in parallel for all vertices (4 for our plane)</li>
+<li><strong>Assembles Primitives</strong>: Groups vertices into triangles (2 triangles for our plane)</li>
+<li><strong>Rasterizes</strong>: Converts triangles to fragments (pixels), discarding anything outside screen or behind other geometry</li>
+<li><strong>Runs Fragment Shader</strong>: Executes <code>fs_main()</code> in parallel for all visible pixels</li>
+<li><strong>Outputs to Attachments</strong>: Writes colors to render target, depth values to depth buffer</li>
+</ol>
+<p>All bind groups must be set before the draw call - that's why Groups 0, 1, 2 are bound in <a href="../../src/engine/rendering/Renderer.cpp">Renderer.cpp</a> before calling <code>draw()</code>.</p>
+<p><strong>Performance Insight:</strong></p>
+<p>The floor has:</p>
+<ul>
+<li>4 vertices → <code>vs_main()</code> runs 4 times</li>
+<li>~10,000 visible pixels → <code>fs_main()</code> runs ~10,000 times</li>
+</ul>
+<p>This is why fragment shaders are performance-critical - they run far more often than vertex shaders!</p>
+<p><strong>WebGPU Concepts:</strong></p>
+<ul>
+<li><strong>Render Pipeline</strong> - Combines shaders, vertex layout, blend state, depth state into a single GPU program</li>
+<li><strong>Bind Groups</strong> - Resource descriptors (buffers, textures, samplers) bound to <code>@group(N)</code> slots in shaders</li>
+<li><strong>Command Encoding</strong> - CPU records GPU commands (set pipeline, bind groups, draw), then submits batch to GPU queue</li>
+</ul>
+<p><strong>Where to Find These Concepts in the Engine:</strong></p>
+<p>If you want to understand how the engine implements these WebGPU features:</p>
+<ul>
+<li><strong>Bind Group Creation</strong> → <a href="../../src/engine/rendering/webgpu/WebGPUBindGroupFactory.cpp">WebGPUBindGroupFactory.cpp</a> - See how <code>@group</code> and <code>@binding</code> map to WebGPU resources</li>
+<li><strong>Pipeline Building</strong> → <a href="../../src/engine/rendering/webgpu/WebGPUPipelineFactory.cpp">WebGPUPipelineFactory.cpp</a> - See how shaders, vertex layouts, and state combine into pipelines</li>
+<li><strong>Vertex Layout Definition</strong> → <a href="../../src/engine/rendering/webgpu/WebGPUPipelineManager.cpp">WebGPUPipelineManager.cpp</a> - Look for <code>VertexBufferLayout</code> with attribute formats and offsets</li>
+<li><strong>Shader Compilation</strong> → <a href="../../src/engine/rendering/webgpu/WebGPUShaderFactory.cpp">WebGPUShaderFactory.cpp</a> - See WGSL → shader module → bind group layout extraction</li>
+<li><strong>Bind Group Binding Logic</strong> → <a href="../../src/engine/rendering/BindGroupBinder.cpp">BindGroupBinder.cpp</a> - See reuse policies and automatic rebinding</li>
+<li><strong>Frame Rendering Loop</strong> → <a href="../../src/engine/rendering/Renderer.cpp">Renderer.cpp</a> - See the complete flow from <code>renderFrame()</code> through all passes</li>
+</ul>
+<h2 id="experiments-to-try">Experiments to Try</h2>
+<p>Now that your shader works, try these quick modifications:</p>
+<p><strong>1. Change the tint color</strong> - In <code>main.cpp</code>:</p>
+<pre class="hljs"><code><div>unlitProperties.color = glm::vec4(<span class="hljs-number">1.0f</span>, <span class="hljs-number">0.5f</span>, <span class="hljs-number">0.5f</span>, <span class="hljs-number">1.0f</span>);  <span class="hljs-comment">// Red tint</span>
+</div></code></pre>
+<p><strong>2. Texture Tiling</strong> - In <code>unlit.wgsl</code> fragment shader:</p>
+<pre class="hljs"><code><div>let tiledUV = input.texCoord * 4.0; // Tile 4x4
+let textureColor = textureSample(baseColorTexture, textureSampler, tiledUV);
+</div></code></pre>
+<p>Will result in smaller stone tiles.</p>
+<p><strong>3. Animate with time</strong> - In <code>unlit.wgsl</code> fragment shader:</p>
+<pre class="hljs"><code><div>let scrolledUV = input.texCoord + vec2f(frameUniforms.time * 0.1, 0.0);
+let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
+</div></code></pre>
+<hr>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<p><strong>Shader compilation failed</strong></p>
+<ul>
+<li>Check semicolons, struct syntax, and WGSL types</li>
+<li>Verify bind group numbers are 0, 1, 2</li>
+<li>Check entry point names match <code>vs_main</code> and <code>fs_main</code></li>
+</ul>
+<p><strong>Floor appears black/white</strong></p>
+<ul>
+<li>Ensure texture file exists in <code>resources/</code></li>
+<li>Check material assignment line is uncommented</li>
+</ul>
+<p><strong>Floor doesn't render</strong></p>
+<ul>
+<li>Verify material assignment is uncommented (Step 10)</li>
+<li>Check shader name matches in registration and material creation</li>
+</ul>
+<hr>
+<h2 id="key-takeaways">Key Takeaways</h2>
+<p>✅ <strong>Bind Groups</strong> - Engine provides Frame (0), Object (1), Material (2)<br>
+✅ <strong>Vertex Shader</strong> - Transforms vertices through matrix pipeline<br>
+✅ <strong>Fragment Shader</strong> - Samples textures and outputs color<br>
+✅ <strong>Material Assignment</strong> - Connect materials to model submeshes<br>
+✅ <strong>WGSL Syntax</strong> - Strict typing with <code>@group/@binding/@location</code></p>
+<hr>
+<h2 id="whats-next">What's Next?</h2>
+<p>In <strong>Tutorial 02</strong>, you'll learn:</p>
+<ul>
+<li>Creating custom bind groups beyond the standard Frame/Object/Material</li>
+<li>Registering custom bind groups in shader reflection</li>
+<li>Implementing <code>preRender()</code> to provide per-object data</li>
+<li>Using <code>BindGroupDataProvider</code> to send custom data to GPU</li>
+<li>Extending <code>ModelRenderNode</code> to add custom shader parameters</li>
+<li>Practical example: Texture tiling and offset control per object</li>
+</ul>
+<p><strong>Next Tutorial:</strong> <a href="02_custom_bindgroup.md">02_custom_bindgroup.md</a> / <a href="02_custom_bindgroup.pdf">02_custom_bindgroup.pdf</a> / <a href="02_custom_bindgroup.html">02_custom_bindgroup.html</a></p>
+<hr>
+<h2 id="further-reading">Further Reading</h2>
+<ul>
+<li><a href="https://www.w3.org/TR/WGSL/">WebGPU WGSL Specification</a></li>
+<li><a href="../BindGroupSystem.md">Engine Bind Group System</a></li>
+<li><a href="../GettingStarted.md">Getting Started Guide</a></li>
+<li><a href="https://eliemichel.github.io/LearnWebGPU/">LearnWebGPU Tutorial</a></li>
+</ul>
+
+</body>
+</html>
