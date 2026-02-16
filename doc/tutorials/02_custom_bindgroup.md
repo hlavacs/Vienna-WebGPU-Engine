@@ -353,6 +353,17 @@ You should see:
 
 **Key insight:** You provide data in `preRender()`, the engine handles caching and GPU upload automatically.
 
+**Why preRender() Works - The Timing:**
+
+Remember WebGPU's command recording model:
+1. **Scene Traversal**: Scene calls `preRender()` on all nodes \u2192 Collects bind group providers
+2. **GPU Upload**: Engine processes providers \u2192 Creates buffers \u2192 Writes data with `queue.writeBuffer()`
+3. **Command Recording**: Engine records draw commands \u2192 Binds groups \u2192 Issues `draw()`
+4. **Submission**: Complete command buffer sent to GPU queue
+5. **GPU Execution**: Commands execute, reading the fresh data you provided
+
+This is why updating `tileUniforms` in `preRender()` works - the data reaches the GPU before the draw command executes!
+
 ---
 
 ## Understanding BindGroupReuse Policies
