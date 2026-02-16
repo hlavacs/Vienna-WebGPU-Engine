@@ -56,7 +56,7 @@ void DebugPass::setDebugCollector(const DebugRenderCollector *collector)
 
 void DebugPass::setRenderPassContext(const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext)
 {
-	if(renderPassContext->getDepthTexture())
+	if (renderPassContext->getDepthTexture())
 	{
 		spdlog::warn("DebugPass::setRenderPassContext() - render pass context contains a depth texture, which is not supported.");
 		return;
@@ -102,7 +102,7 @@ void DebugPass::render(FrameCache &frameCache)
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 	{
 		renderPass.setPipeline(pipeline->getPipeline());
-		
+
 		// Use BindGroupBinder to bind frame and debug bind groups
 		BindGroupBinder binder(&frameCache);
 		binder.bind(

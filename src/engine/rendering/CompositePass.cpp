@@ -80,8 +80,12 @@ void CompositePass::render(FrameCache &frameCache)
 
 	for (const auto &[targetId, target] : frameCache.renderTargets)
 	{
-		if (!target.gpuTexture)
+		auto renderToTexture = frameCache.finalTextures[targetId];
+		if (!renderToTexture)
+		{
+			spdlog::warn("CompositePass: No final texture found for target {}, skipping", targetId);
 			continue;
+		}
 
 		float x = target.viewport.min.x * surfaceW;
 		float y = target.viewport.min.y * surfaceH;
@@ -92,7 +96,7 @@ void CompositePass::render(FrameCache &frameCache)
 		renderPass.setScissorRect(uint32_t(x), uint32_t(y), uint32_t(w), uint32_t(h));
 
 		// --- Get or create bind group for this texture ---
-		auto bindGroup = getOrCreateBindGroup(target.gpuTexture, target.layerIndex);
+		auto bindGroup = getOrCreateBindGroup(renderToTexture, target.layerIndex);
 		if (!bindGroup)
 		{
 			spdlog::warn("CompositePass: Failed to create bind group for texture");
@@ -122,6 +126,7 @@ std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
 	if (!texture)
 		return nullptr;
 
+	// ToDo: optimize cache key by using texture ID and layer index instead of pointer. Have a cachekey system for the engine
 	auto cacheKey = reinterpret_cast<uint64_t>(texture.get()) ^ static_cast<uint64_t>(layerIndex);
 
 	auto it = m_bindGroupCache.find(cacheKey);

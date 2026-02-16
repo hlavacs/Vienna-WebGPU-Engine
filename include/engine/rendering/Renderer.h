@@ -14,6 +14,7 @@
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/MeshPass.h"
 #include "engine/rendering/Model.h"
+#include "engine/rendering/PostProcessingPass.h"
 // #include "engine/rendering/RenderPassManager.h" ToDo: future use
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowPass.h"
@@ -180,11 +181,18 @@ class Renderer
 	std::unique_ptr<MeshPass> m_meshPass;
 	std::unique_ptr<DebugPass> m_debugPass;
 	std::unique_ptr<CompositePass> m_compositePass;
+	std::unique_ptr<PostProcessingPass> m_postProcessingPass;
 
 	FrameCache m_frameCache{};
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_depthBuffers;
+	struct PostProcessTextures // This would be used if we have multiple intermediate textures for post-processing (e.g., ping-ponging between two textures for multi-pass effects)
+	{
+		std::shared_ptr<webgpu::WebGPUTexture> a;
+		std::shared_ptr<webgpu::WebGPUTexture> b;
+	};
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_postProcessTextures; ///< Cache of intermediate textures for post-processing per camera (key: cameraId)
 
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
 

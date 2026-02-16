@@ -106,7 +106,6 @@ class MeshPass : public RenderPass
 	void cleanup() override;
 
   private:
-
 	/**
 	 * @brief Update light uniforms.
 	 * @param frameCache The frame cache containing light bind groups.
