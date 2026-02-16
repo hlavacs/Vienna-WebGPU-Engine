@@ -86,6 +86,16 @@ bool ShaderRegistry::initializeDefaultShaders()
 		registerShader(visualizeDepthShader);
 	}
 
+	auto vignetteShader = createVignetteShader();
+	if (!vignetteShader || !vignetteShader->isValid())
+	{
+		spdlog::warn("Failed to create Vignette shader - vignette post-processing will be unavailable");
+	}
+	else
+	{
+		registerShader(vignetteShader);
+	}
+
 	spdlog::info("Default shaders initialized successfully");
 	return true;
 }
@@ -490,6 +500,48 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVisualizeDepthSh
 			.addCustomUniform(
 				"layer",
 				sizeof(uint32_t),
+				WGPUShaderStage_Fragment
+			)
+			.build();
+
+	return shaderInfo;
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVignetteShader()
+{
+	// Vignette post-processing shader - darkens screen edges for cinematic effect
+	// postprocess.wgsl structure:
+	// @group(0) @binding(0) var inputSampler: sampler;
+	// @group(0) @binding(1) var inputTexture: texture_2d<f32>;
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin(
+				shader::defaults::VIGNETTE,
+				ShaderType::Unlit,
+				PathProvider::getResource("postprocess_vignette.wgsl"),
+				"vs_main",
+				"fs_main",
+				VertexLayout::None,  // No vertex buffers (fullscreen triangle)
+				false,  // depthEnabled
+				false,  // blendEnabled
+				false   // cullBackFaces
+			)
+			// Group 0: Input texture from previous render pass
+			.addBindGroup(
+				bindgroup::defaults::VIGNETTE,
+				BindGroupReuse::PerFrame,
+				BindGroupType::Custom
+			)
+			.addSampler(
+				"inputSampler",
+				wgpu::SamplerBindingType::Filtering,
+				WGPUShaderStage_Fragment
+			)
+			.addTexture(
+				"inputTexture",
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,  // not multisampled
 				WGPUShaderStage_Fragment
 			)
 			.build();

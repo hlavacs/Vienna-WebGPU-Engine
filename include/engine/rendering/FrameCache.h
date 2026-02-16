@@ -56,6 +56,7 @@ struct FrameCache
 	std::vector<std::optional<RenderItemGPU>> gpuRenderItems;									 ///< Lazy-prepared GPU resources
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> frameBindGroupCache;	 ///< Per-frame bind group cache
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> objectBindGroupCache; ///< Per-object bind group cache
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> finalTextures;			 ///< Cache of final rendered textures per camera (key: cameraId) for compositing pass
 
 	/**
 	 * @brief Cache for custom user-defined bind groups.
@@ -107,13 +108,13 @@ struct FrameCache
 		cacheKey = shaderName;
 		cacheKey += ':';
 		cacheKey += bindGroupName;
-		
+
 		if (instanceId.has_value())
 		{
 			cacheKey += ':';
 			cacheKey += std::to_string(instanceId.value());
 		}
-		
+
 		return cacheKey;
 	}
 

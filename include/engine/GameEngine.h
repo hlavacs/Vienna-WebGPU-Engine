@@ -17,7 +17,7 @@
 
 namespace engine
 {
-	
+
 struct GameEngineOptions
 {
 	float fixedDeltaTime = 1.0f / 60.0f;
