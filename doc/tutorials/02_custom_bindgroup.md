@@ -1,5 +1,7 @@
 # Tutorial 02: Custom Bind Groups for Per-Object Data
 
+> **💡 Tip:** It's recommended using the [02_custom_bindgroup.html](02_custom_bindgroup.html) version of this tutorial as copying code works best there regarding padding and formatting.
+
 In Tutorial 01, you learned the three standard bind groups (Frame, Object, Material) that the engine provides. Now you'll learn how to add your own custom bind groups to pass additional data to shaders.
 
 **What you'll learn:**
@@ -546,7 +548,7 @@ In **Tutorial 03**, you'll learn:
 - Transform coordinates from world space to light space
 - Percentage Closer Filtering (PCF) for soft shadows
 
-**Next Tutorial:** [03_shadow_mapping.md](03_shadow_mapping.md) / [03_shadow_mapping.pdf](03_shadow_mapping.pdf)
+**Next Tutorial:** [03_shadow_mapping.md](03_shadow_mapping.md) / [03_shadow_mapping.pdf](03_shadow_mapping.pdf) / [03_shadow_mapping.html](03_shadow_mapping.html)
 
 ---
 
