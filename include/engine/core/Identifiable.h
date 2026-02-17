@@ -41,7 +41,7 @@ class Identifiable
 	Identifiable &operator=(const Identifiable &) = delete;
 
 	// Allow move, mark noexcept
-	IIdentifiable(Identifiable &&other) noexcept
+	Identifiable(Identifiable &&other) noexcept
 		: m_id(other.m_id),
 		  m_name(std::move(other.m_name))
 	{
