@@ -502,7 +502,7 @@ bool WebGPUShaderFactory::reloadShader(std::shared_ptr<WebGPUShaderInfo> shaderI
 	if (!shaderInfo || shaderInfo->getPath().empty())
 	{
 		spdlog::error("WebGPUShaderFactory::reloadShader() - Invalid shader info or has no path");
-		return nullptr;
+		return false;
 	}
 
 	std::filesystem::path shaderPath = shaderInfo->getPath();
@@ -511,7 +511,7 @@ bool WebGPUShaderFactory::reloadShader(std::shared_ptr<WebGPUShaderInfo> shaderI
 	if (!shaderModule)
 	{
 		spdlog::error("WebGPUShaderFactory::reloadShader() - Failed to reload shader module from '{}'", shaderPath.string());
-		return nullptr;
+		return false;
 	}
 
 	// Create a new immutable WebGPUShaderInfo with the reloaded module

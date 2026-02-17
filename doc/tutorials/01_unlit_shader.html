@@ -464,14 +464,6 @@ Values with <code>@location</code> are automatically interpolated across the tri
 <li><strong>Fragment Stage</strong> → Your <code>fs_main()</code> runs once per pixel</li>
 </ol>
 <p>Data flows: Vertex shader outputs → Rasterizer interpolates → Fragment shader inputs. This is why <code>VertexOutput</code> has <code>@location</code> attributes - they're the bridge between stages.</p>
-<p><strong>The Rendering Pipeline Flow:</strong></p>
-<p>Your shader participates in WebGPU's three-stage pipeline:</p>
-<ol>
-<li><strong>Vertex Stage</strong> → Your <code>vs_main()</code> runs once per vertex</li>
-<li><strong>Rasterization</strong> → GPU's fixed-function hardware converts triangles to pixels</li>
-<li><strong>Fragment Stage</strong> → Your <code>fs_main()</code> runs once per pixel</li>
-</ol>
-<p>Data flows: Vertex shader outputs → Rasterizer interpolates → Fragment shader inputs. This is why <code>VertexOutput</code> has <code>@location</code> attributes - they're the bridge between stages.</p>
 <hr>
 <h2 id="understanding-bind-groups">Understanding Bind Groups</h2>
 <p>Now let's understand the external data shaders receive via bind groups.</p>
