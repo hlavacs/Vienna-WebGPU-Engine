@@ -268,42 +268,49 @@ void PostProcessingPass::render(FrameCache &frameCache)
 		spdlog::warn("PostProcessingPass: Failed to create bind group");
 		return;
 	}
+	
 	// Tutorial 4 - Step 4D: Record and submit draw commands
 	// Create command encoder (WebGPU's command recording object)
-	auto encoder = m_context->createCommandEncoder("PostProcessingPass Encoder");
+	wgpu::CommandEncoder encoder = m_context->createCommandEncoder("PostProcessingPass Encoder");
+	
 	// Begin render pass (starts recording commands into this pass)
-	auto renderPass = m_renderPassContext->begin(encoder);
+	wgpu::RenderPassDescriptor renderPassDescriptor = m_renderPassContext->getRenderPassDescriptor();
+	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDescriptor);
+	
 	// Set the pipeline (tells GPU which shader to use)
 	renderPass.setPipeline(pipeline->getPipeline());
+	
 	// Bind the group 0 (texture + sampler for shader to use)
 	renderPass.setBindGroup(0, bindGroup->getBindGroup(), 0, nullptr);
+	
 	// Draw 3 vertices (fullscreen triangle)
 	// Vertices are generated in shader's vs_main using vertex_index
 	renderPass.draw(3, 1, 0, 0);
+	
 	// End render pass
-	m_renderPassContext->end(renderPass);
+	renderPass.end();
+	renderPass.release();
+	
 	// Submit commands to GPU
-	m_context->submitCommandEncoder(encoder, "PostProcessingPass Commands");
+	wgpu::CommandBufferDescriptor commandBufferDescriptor{};
+	commandBufferDescriptor.label = "PostProcessingPass Commands";
+	wgpu::CommandBuffer commandBuffer = encoder.finish(commandBufferDescriptor);
+	encoder.release();
+	m_context->getQueue().submit(commandBuffer);
+	commandBuffer.release();
 }
 ```
 
-**Understanding the Draw Call:**
+**What Each WebGPU Component Does:**
 
-```cpp
-renderPass.draw(3, 1, 0, 0);
-//             ↓  ↓ ↓ ↓
-//             │  │ │ └─ First instance
-//             │  │ └──── First vertex index  
-//             │  └────── Instance count (1 instance)
-//             └───────── Vertex count (3 vertices for triangle)
-```
+- **Command Encoder** - Records GPU commands into a buffer for later execution
+- **Render Pass Descriptor** - Defines color/depth attachments, clear colors, and load/store operations
+- **Render Pass Encoder** - Records rendering-specific commands (pipeline, bind groups, draw calls)
+- **Pipeline** - Contains shader program, vertex layout, blend mode, and other render state
+- **Bind Group** - Groups GPU resources (textures, samplers, buffers) accessible to shader
+- **Draw Call** `renderPass.draw(3, 1, 0, 0)` - Process 3 vertices in 1 instance to generate fullscreen triangle
 
-The shader generates coordinates based on `@builtin(vertex_index)`:
-- Vertex 0 → (-1, -1) bottom-left
-- Vertex 1 → (3, -1) bottom-right (off-screen)
-- Vertex 2 → (-1, 3) top-left (off-screen)
-
-These form a large triangle covering the entire screen.
+> **📝 Note:** The engine provides abstractions to simplify this. Here we show the **full WebGPU API** for deeper understanding. Production code typically uses engine abstractions.
 
 ---
 
