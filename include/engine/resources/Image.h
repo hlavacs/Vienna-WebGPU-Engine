@@ -36,7 +36,6 @@ static uint32_t getChannelCount(ImageFormat::Type format)
 	default:
 		return 0;
 	}
-	return 0;
 }
 
 /**
@@ -105,7 +104,7 @@ class Image
 	}
 
 	Image(Image &&) = default;
-	Image &operator=(Image &&) = default;
+	Image &operator=(Image &&) = delete;
 
 	Image(const Image &) = delete;
 	Image &operator=(const Image &) = delete;

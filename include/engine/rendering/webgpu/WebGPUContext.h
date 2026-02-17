@@ -36,7 +36,7 @@ class WebGPUContext
 	WebGPUContext(const WebGPUContext &) = delete;				   // Remove copy constructor
 	WebGPUContext &operator=(const WebGPUContext &) = delete;	   // Remove copy assignment
 	WebGPUContext(WebGPUContext &&) = default;			   // Add move constructor
-	WebGPUContext &operator=(WebGPUContext &&) = default; // Add move assignment
+	WebGPUContext &operator=(WebGPUContext &&) = delete; // Add move assignment
 	/**
 	 * @brief Initialize the WebGPU context. Must be called once at startup.
 	 * @param windowHandle Platform-specific window handle (e.g., SDL_Window*)

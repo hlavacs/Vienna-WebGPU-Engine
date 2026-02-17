@@ -60,7 +60,7 @@ std::shared_ptr<WebGPUBindGroupLayoutInfo> WebGPUShaderInfo::getBindGroupLayout(
 {
 	auto it = m_nameToIndex.find(name);
 	if (it != m_nameToIndex.end())
-		return getBindGroupLayout(it->second);
+		return getBindGroupLayout(static_cast<uint32_t>(it->second));
 	return nullptr;
 }
 

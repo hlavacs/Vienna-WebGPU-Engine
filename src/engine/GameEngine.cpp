@@ -319,7 +319,7 @@ void GameEngine::gameLoop()
 		renderFrame(frameDelta);
 
 		m_inputManager.endFrame();
-		updateFrameStats(frameDelta, currentTime);
+		updateFrameStats(frameDelta);
 		limitFrameRate(currentTime);
 	}
 }
@@ -385,7 +385,7 @@ void GameEngine::updateScene(float deltaTime)
 	scene->lateUpdate(deltaTime);
 }
 
-void GameEngine::renderFrame(float deltaTime)
+void GameEngine::renderFrame(float /* deltaTime*/ )
 {
 	auto scene = m_sceneManager->getActiveScene();
 	if (!scene || !m_renderer)
@@ -463,7 +463,7 @@ std::function<void(wgpu::RenderPassEncoder)> GameEngine::createUICallback()
 	};
 }
 
-void GameEngine::updateFrameStats(float frameDelta, double frameStartTime)
+void GameEngine::updateFrameStats(float frameDelta)
 {
 	static int frameCount = 0;
 	static double fpsTimer = 0.0;

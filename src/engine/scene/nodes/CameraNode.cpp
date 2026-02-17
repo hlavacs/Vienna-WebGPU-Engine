@@ -1,8 +1,11 @@
 #include "engine/scene/nodes/CameraNode.h"
-#include "engine/resources/ResourceManager.h"
+
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/quaternion.hpp>
+
+#include "engine/resources/ResourceManager.h"
+#include "engine/rendering/DebugRenderCollector.h"
 
 namespace engine::scene::nodes
 {
@@ -130,6 +133,21 @@ void CameraNode::preRender(std::vector<engine::rendering::BindGroupDataProvider>
 	updateMatrices();
 	updateFrustumPlanes();
 }
+
+void CameraNode::onDebugDraw(engine::rendering::DebugRenderCollector& collector)
+{
+	updateMatrices();
+
+	// Draw frustum
+	collector.addFrustum(m_viewProjectionMatrix, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+
+	// Draw orientation axes
+	glm::vec3 pos = m_transform.getPosition();
+	collector.addLine(pos, pos + m_transform.right() * 0.5f, glm::vec4(1, 0, 0, 1)); // Right = Red
+	collector.addLine(pos, pos + m_transform.up() * 0.5f, glm::vec4(0, 1, 0, 1));    // Up = Green
+	collector.addLine(pos, pos + m_transform.forward() * 0.5f, glm::vec4(0, 0, 1, 1)); // Forward = Blue
+}
+
 
 void CameraNode::updateMatrices() const
 {

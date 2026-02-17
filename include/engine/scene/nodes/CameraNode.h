@@ -209,7 +209,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	/**
 	 * @brief Enable or disable MSAA for this camera.
 	 */
-	void setMSAAEnabled(bool enabled) { m_msaa = enabled; }
+	void setMSAAEnabled(bool msaaEnabled) { m_msaa = msaaEnabled; }
 
 	/**
 	 * @brief Check whether MSAA is enabled.
@@ -219,7 +219,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	/**
 	 * @brief Enable or disable HDR rendering for this camera.
 	 */
-	void setHDREnabled(bool enabled) { m_hdr = enabled; }
+	void setHDREnabled(bool hdrEnabled) { m_hdr = hdrEnabled; }
 
 	/**
 	 * @brief Check whether HDR is enabled.
@@ -313,6 +313,10 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 
 		onRenderAreaChanged(pixelWidth, pixelHeight);
 	}
+	/**
+	 * @brief Draw camera frustum and orientation axes when debug rendering is enabled.
+	 */
+	void onDebugDraw(engine::rendering::DebugRenderCollector& collector) override;
 
   private:
 	// Recalculate view/projection matrices based on transform & projection

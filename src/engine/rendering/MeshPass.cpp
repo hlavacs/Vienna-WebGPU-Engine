@@ -69,7 +69,7 @@ void MeshPass::render(FrameCache &frameCache)
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 	{
 		// Draw items from frame cache
-		drawItems(encoder, renderPass, frameCache, frameCache.gpuRenderItems, m_visibleIndices);
+		drawItems(renderPass, frameCache, frameCache.gpuRenderItems, m_visibleIndices);
 	}
 	m_renderPassContext->end(renderPass);
 
@@ -112,7 +112,6 @@ bool MeshPass::bindObjectUniforms(
 }
 
 void MeshPass::drawItems(
-	wgpu::CommandEncoder &encoder,
 	wgpu::RenderPassEncoder renderPass,
 	FrameCache &frameCache,
 	const std::vector<std::optional<RenderItemGPU>> &gpuItems,

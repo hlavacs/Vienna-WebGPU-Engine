@@ -85,6 +85,7 @@ struct alignas(16) DebugPrimitive
 
 	// Factory methods for creating primitives
 	static DebugPrimitive createLine(const glm::vec3 &from, const glm::vec3 &to, const glm::vec4 &color = glm::vec4(1.0f));
+	static std::vector<DebugPrimitive> createFrustum(const glm::mat4 &viewProjection, const glm::vec4 &color = glm::vec4(1.0f));
 	static DebugPrimitive createDisk(const glm::vec3 &center, const glm::vec3 &radii, const glm::vec4 &color = glm::vec4(1.0f));
 	static DebugPrimitive createAABB(const glm::vec3 &min, const glm::vec3 &max, const glm::vec4 &color = glm::vec4(1.0f));
 	static DebugPrimitive createArrow(const glm::vec3 &from, const glm::vec3 &to, float headSize, const glm::vec4 &color = glm::vec4(1.0f));
@@ -132,6 +133,11 @@ class DebugRenderCollector
 	 * @brief Add a line primitive.
 	 */
 	void addLine(const glm::vec3 &from, const glm::vec3 &to, const glm::vec4 &color = glm::vec4(1.0f));
+
+	/**
+	 * @brief Add a frustum primitive.
+	 */
+	void addFrustum(const glm::mat4 &viewProjection, const glm::vec4 &color = glm::vec4(1.0f));
 
 	/**
 	 * @brief Add a disk primitive.
