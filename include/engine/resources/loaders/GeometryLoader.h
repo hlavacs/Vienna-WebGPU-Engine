@@ -28,6 +28,8 @@ template <typename T>
 class GeometryLoader : public LoaderBase<T>
 {
   public:
+	using Loaded = typename LoaderBase<T>::Loaded;
+
 	~GeometryLoader() override = default;
 
 	[[nodiscard]] engine::math::CoordinateSystem::Cartesian getSourceCoordinateSystem() const { return m_srcCoordSys; }
@@ -62,11 +64,10 @@ class GeometryLoader : public LoaderBase<T>
 	 * @param basePath The base filesystem path to resolve relative files.
 	 */
 	explicit GeometryLoader(std::filesystem::path basePath) :
-		LoaderBase(std::move(basePath))
+		LoaderBase<T>(std::move(basePath))
 	{
 	}
 
-	std::filesystem::path m_basePath;
 	engine::math::CoordinateSystem::Cartesian m_srcCoordSys{math::CoordinateSystem::DEFAULT};
 
 	static glm::mat3x3 computeTBN(const engine::rendering::Vertex corners[3], const glm::vec3 &expectedN);

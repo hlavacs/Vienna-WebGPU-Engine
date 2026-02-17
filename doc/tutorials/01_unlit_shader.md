@@ -114,16 +114,6 @@ Values with `@location` are automatically interpolated across the triangle. If a
 Your shader participates in WebGPU's three-stage pipeline:
 
 1. **Vertex Stage** → Your `vs_main()` runs once per vertex
-2. **Rasterization** → GPU's fixed-function hardware converts triangles to pixels  
-3. **Fragment Stage** → Your `fs_main()` runs once per pixel
-
-Data flows: Vertex shader outputs → Rasterizer interpolates → Fragment shader inputs. This is why `VertexOutput` has `@location` attributes - they're the bridge between stages.
-
-**The Rendering Pipeline Flow:**
-
-Your shader participates in WebGPU's three-stage pipeline:
-
-1. **Vertex Stage** → Your `vs_main()` runs once per vertex
 2. **Rasterization** → GPU's fixed-function hardware converts triangles to pixels
 3. **Fragment Stage** → Your `fs_main()` runs once per pixel
 

@@ -149,6 +149,7 @@ elseif(APPLE)
         -Wno-nested-anon-types # ~ C4201
         -Wno-float-conversion # ~ C4244/C4305
         -Wno-shadow-field # ~ C4458
+        -Wno-reorder # common in initializer lists, especially with inheritance
     )
 endif()
 

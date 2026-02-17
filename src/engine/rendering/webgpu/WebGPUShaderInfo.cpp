@@ -32,11 +32,26 @@ const std::unordered_map<uint64_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> &
 
 std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> WebGPUShaderInfo::getBindGroupLayoutVector() const
 {
-	std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> layoutVector;
-	for (const auto &[_, layout] : m_bindGroupLayouts)
+	if (m_bindGroupLayouts.empty())
+		return {};
+	
+	// Find the maximum group index to size the vector correctly
+	uint32_t maxGroupIndex = 0;
+	for (const auto &[groupIndex, _] : m_bindGroupLayouts)
 	{
-		layoutVector.push_back(layout);
+		if (groupIndex > maxGroupIndex)
+			maxGroupIndex = groupIndex;
 	}
+	
+	// Create vector with nullptr for all indices
+	std::vector<std::shared_ptr<WebGPUBindGroupLayoutInfo>> layoutVector(maxGroupIndex + 1, nullptr);
+	
+	// Fill in the bind group layouts at their correct indices
+	for (const auto &[groupIndex, layout] : m_bindGroupLayouts)
+	{
+		layoutVector[groupIndex] = layout;
+	}
+	
 	return layoutVector;
 }
 
