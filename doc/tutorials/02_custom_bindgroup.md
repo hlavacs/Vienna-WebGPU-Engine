@@ -151,50 +151,23 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
 Now open `examples/tutorial/main.cpp` and find the shader registration section (around line 70).
 
-Change the shader path to use our new shader:
+**⚠️ Important:** You don't need to copy the entire registration code. Just:
+1. Change the shader **file path** to use the new shader
+2. Add the custom bind group code at the very end
+
+### Change the Shader Path Only:
+
+In the `.begin()` call, change ONE line:
 
 ```cpp
-auto shaderInfo =
-    shaderFactory
-        .begin(
-            "unlit",  // Shader name can stay the same
-            engine::rendering::ShaderType::Unlit,
-            PathProvider::getShaders("unlit_custom.wgsl"),  // Use new shader file
-            "vs_main",
-            "fs_main",
-            engine::rendering::VertexLayout::PositionNormalUV,
-            true,  // enableDepth
-            false, // enableBlend
-            true   // cullBackFaces
-        )
-        .addFrameBindGroup()
-        .addObjectBindGroup()
-        .addBindGroup(
-            engine::rendering::bindgroup::defaults::MATERIAL,
-            engine::rendering::BindGroupReuse::PerObject,
-            engine::rendering::BindGroupType::Material
-        )
-        .addUniform(
-            engine::rendering::bindgroup::entry::defaults::MATERIAL_PROPERTIES,
-            sizeof(engine::rendering::UnlitProperties),
-            WGPUShaderStage_Fragment
-        )
-        .addSampler(
-            "textureSampler",
-            wgpu::SamplerBindingType::Filtering,
-            WGPUShaderStage_Fragment
-        )
-        .addMaterialTexture(
-            "baseColorTexture",
-            engine::rendering::MaterialTextureSlots::DIFFUSE,
-            wgpu::TextureSampleType::Float,
-            wgpu::TextureViewDimension::_2D,
-            WGPUShaderStage_Fragment
-        )
+PathProvider::getShaders("unlit_custom.wgsl"),  // Change "unlit.wgsl" → "unlit_custom.wgsl"
 ```
 
-<div style="page-break-after: always;"></div>
-Now add the custom bind group at the end (before `.build()`):
+Everything else in the `.begin()` call stays the same (frame, object bind groups, material, sampler, texture remain).
+
+### Add Custom Bind Group at the End:
+
+After the `.addMaterialTexture()` call and **before** `.build()`, add:
 
 ```cpp
         .addBindGroup(
@@ -212,13 +185,23 @@ Now add the custom bind group at the end (before `.build()`):
 shaderRegistry.registerShader(shaderInfo);
 ```
 
-**Key concepts:**
-- `BindGroupReuse::PerObject` - Engine caches this per object ID so different Models can have different Tilings
-- `BindGroupType::Custom` - Marks it as custom (not standard Frame/Object/Material)
-- Size must match shader struct exactly (2 × vec2f = 16 bytes)
+**What you're telling the engine:**
+- Group name: `"TileUniforms"` (matches `@group(3)` in shader)
+- Uniform struct size: 16 bytes
+- Used in fragment shader stage
 
-**Why after Material bind group?**
-Bind groups are numbered sequentially: Frame=0, Object=1, Material=2, TileUniforms=3. Order in registration must match `@group(N)` in shader.
+**How the Binding Happens:**
+
+> **📝 Note:** The complex binding logic happens in the `build()` method. When you call `.addBindGroup()` and `.addCustomUniform()`, you're specifying exactly how bind groups should be created. The engine then uses this specification to create bind group layouts, allocate GPU buffers, and manage resource binding.
+>
+> **Advanced Readers:** Check out [WebGPUBindGroupFactory.cpp](#file:WebGPUBindGroupFactory.cpp) to see how the factories handle bind group creation and resource allocation. The `WebGPUShaderFactory::build()` method orchestrates the whole process.
+
+**Why explicit registration?**
+- **No WGSL Reflection**: WebGPU doesn't provide official shader reflection APIs, and there are no mature third-party tools for WGSL parsing
+- **Practical Necessity**: Without automatic reflection, you must explicitly tell the engine what bind groups and uniforms exist
+- **Educational**: You see exactly what bind groups exist and their purposes
+- **Control**: Fine-grained control over resource allocation and caching
+- **Debugging**: Easy to see which bind groups are used by which shaders
 
 ---
 
