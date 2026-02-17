@@ -433,29 +433,6 @@ This tutorial implements <strong>one hardcoded post-processing effect (vignette)
 <p><strong>Why Post-Process After Debug Pass?</strong></p>
 <p>If we placed it before debug pass, wireframes and gizmos would not receive the vignette effect. By placing it after debug pass, all rendered content (scene + debug overlays) gets processed together.</p>
 <hr>
-<h2 id="troubleshooting-build-failures">Troubleshooting Build Failures</h2>
-<p><strong>⚠️ Important:</strong> When using <code>scripts/build.bat</code>, the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
-<p><strong>What to look for in terminal:</strong></p>
-<ol>
-<li>Scroll to the <strong>very end</strong> of the terminal output</li>
-<li>Look for <code>[SUCCESS] Build completed successfully!</code> - if this appears, build succeeded</li>
-<li>If you see <code>[ERROR] Build failed.</code> - the build failed regardless of task status</li>
-</ol>
-<p><strong>Common issues in post-processing:</strong></p>
-<ul>
-<li><strong>Shader errors in vignette shader</strong> - Check <code>.wgsl</code> for missing semicolons</li>
-<li><strong>Bind group layout mismatch</strong> - Verify shader layout matches C++ registration</li>
-<li><strong>Missing pipeline creation</strong> - Ensure <code>getOrCreatePipeline()</code> is called before rendering</li>
-<li><strong>CMake cache issues</strong> - Delete <code>build/</code> folder and rebuild clean</li>
-</ul>
-<p><strong>Debug Strategy:</strong></p>
-<ol>
-<li>Open <code>MeshPass.cpp</code> in your editor</li>
-<li>Add a breakpoint in the <code>render()</code> method</li>
-<li>Press <code>F5</code> to start debugging with VS Code</li>
-<li>Check the <strong>Terminal Output</strong> panel - errors will show exact line numbers</li>
-</ol>
-<hr>
 <h2 id="pattern-overview">Pattern Overview:</h2>
 <p>All render passes in this engine follow the same lifecycle:</p>
 <pre class="hljs"><code><div><span class="hljs-comment">// Step 1: Create pass</span>
@@ -587,7 +564,6 @@ pass-&gt;cleanup();
 		spdlog::warn(<span class="hljs-string">"PostProcessingPass: Missing input texture or render pass context"</span>);
 		<span class="hljs-keyword">return</span>;
 	}
-
 	<span class="hljs-comment">// Tutorial 4 - Step 4B: Get or create pipeline</span>
 	<span class="hljs-comment">// The pipeline is created lazily (on first use) because:</span>
 	<span class="hljs-comment">// 1. Output format depends on render pass context (determined at runtime)</span>
@@ -710,7 +686,6 @@ pass-&gt;cleanup();
 <p><strong>Why Caching?</strong></p>
 <p>Without caching, we'd create a new bind group every frame for the same texture, wasting GPU memory and CPU time. By caching, we only create it once per unique texture.</p>
 <hr>
-<div style="page-break-after: always;"></div>
 <h2 id="step-7-postprocessingpassgetorcreatebindgroup---part-b-create--cache">Step 7: PostProcessingPass::getOrCreateBindGroup() - Part B (Create &amp; Cache)</h2>
 <p><strong>Part B: Create new bind group</strong></p>
 <pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 7E: Create bind group entries matching shader layout</span>
@@ -833,9 +808,10 @@ pass-&gt;cleanup();
 <li>Only creates the texture once; reuses it for subsequent frames</li>
 </ul>
 <hr>
+<div style="page-break-after: always;"></div>
 <h2 id="step-11-rendererrendertotexture---call-postprocessingpass">Step 11: Renderer::renderToTexture() - Call PostProcessingPass</h2>
 <p>This is where post-processing actually executes each frame.</p>
-<p><strong>Location:</strong> Find this comment in <code>renderToTexture()</code>: <code>Tutorial 4 - Step 11</code></p>
+<p><strong>Location:</strong> Find this comment in <code>renderToTexture()</code>: <code>// Tutorial 4 - Step 11:</code></p>
 <p><strong>Your Task:</strong></p>
 <p>Add this code after the Debug Pass section:</p>
 <pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 11: Apply vignette effect</span>
@@ -1051,34 +1027,13 @@ fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
 </ol>
 <hr>
 <h2 id="key-concepts-learned">Key Concepts Learned</h2>
-<p>✅ <strong>Render Pass Lifecycle</strong> - initialize() → render() → cleanup()
-✅ <strong>Shader Registry</strong> - Centralized shader management with hot-reload support
-✅ <strong>Pipeline Manager</strong> - Lazy pipeline creation with caching
-✅ <strong>Bind Group Caching</strong> - Efficient resource reuse across frames
-✅ <strong>Fullscreen Triangle</strong> - Procedural vertex generation in shader
-✅ <strong>Multi-Pass Rendering</strong> - Reading from previous pass output
+<p>✅ <strong>Render Pass Lifecycle</strong> - initialize() → render() → cleanup() <br>
+✅ <strong>Shader Registry</strong> - Centralized shader management with hot-reload support <br>
+✅ <strong>Pipeline Manager</strong> - Lazy pipeline creation with caching <br>
+✅ <strong>Bind Group Caching</strong> - Efficient resource reuse across frames <br>
+✅ <strong>Fullscreen Triangle</strong> - Procedural vertex generation in shader <br>
+✅ <strong>Multi-Pass Rendering</strong> - Reading from previous pass output <br>
 ✅ <strong>Screen-Space Effects</strong> - Operations in normalized screen coordinates</p>
-<hr>
-<h2 id="common-issues--debugging">Common Issues &amp; Debugging</h2>
-<p><strong>Black screen or no effect visible:</strong></p>
-<ul>
-<li>Check <code>postprocess_vignette.wgsl</code> exists in <code>resources/</code></li>
-<li>Verify shader registry has <code>createVignetteShader()</code> called</li>
-<li>Check render pass context output format matches</li>
-</ul>
-<p><strong>Vignette too strong/weak:</strong></p>
-<ul>
-<li>Adjust parameters in shader:<pre class="hljs"><code><div>let vignetteIntensity = 0.5;  // Darker edges (0.0=none, 1.0=black)
-let vignetteFalloff = 2.0;    // Transition speed (higher=sharper)
-</div></code></pre>
-</li>
-</ul>
-<p><strong>Compilation errors:</strong></p>
-<ul>
-<li>Verify all includes are correct</li>
-<li>Check WebGPU API usage matches your version</li>
-<li>Look at CompositePass/MeshPass for pattern reference</li>
-</ul>
 <hr>
 <h2 id="whats-next">What's Next?</h2>
 <p>You've implemented a <strong>hardcoded post-processing effect</strong> that's baked into the engine. To extend this:</p>
@@ -1107,6 +1062,29 @@ let vignetteFalloff = 2.0;    // Transition speed (higher=sharper)
 <li><a href="../GettingStarted.md">Getting Started Guide</a></li>
 <li><a href="https://eliemichel.github.io/LearnWebGPU/">LearnWebGPU Tutorial</a></li>
 </ul>
+<hr>
+<h2 id="troubleshooting-build-failures">Troubleshooting Build Failures</h2>
+<p><strong>⚠️ Important:</strong> When using <code>scripts/build.bat</code>, the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
+<p><strong>What to look for in terminal:</strong></p>
+<ol>
+<li>Scroll to the <strong>very end</strong> of the terminal output</li>
+<li>Look for <code>[SUCCESS] Build completed successfully!</code> - if this appears, build succeeded</li>
+<li>If you see <code>[ERROR] Build failed.</code> - the build failed regardless of task status</li>
+</ol>
+<p><strong>Common issues in post-processing:</strong></p>
+<ul>
+<li><strong>Shader errors in vignette shader</strong> - Check <code>.wgsl</code> for missing semicolons</li>
+<li><strong>Bind group layout mismatch</strong> - Verify shader layout matches C++ registration</li>
+<li><strong>Missing pipeline creation</strong> - Ensure <code>getOrCreatePipeline()</code> is called before rendering</li>
+<li><strong>CMake cache issues</strong> - Delete <code>build/</code> folder and rebuild clean</li>
+</ul>
+<p><strong>Debug Strategy:</strong></p>
+<ol>
+<li>Open <code>MeshPass.cpp</code> in your editor</li>
+<li>Add a breakpoint in the <code>render()</code> method</li>
+<li>Press <code>F5</code> to start debugging with VS Code</li>
+<li>Check the <strong>Terminal Output</strong> panel - errors will show exact line numbers</li>
+</ol>
 
 </body>
 </html>
