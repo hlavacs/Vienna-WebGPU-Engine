@@ -604,39 +604,50 @@ pass-&gt;cleanup();
 		spdlog::warn(<span class="hljs-string">"PostProcessingPass: Failed to create bind group"</span>);
 		<span class="hljs-keyword">return</span>;
 	}
+	
 	<span class="hljs-comment">// Tutorial 4 - Step 4D: Record and submit draw commands</span>
 	<span class="hljs-comment">// Create command encoder (WebGPU's command recording object)</span>
-	<span class="hljs-keyword">auto</span> encoder = m_context-&gt;createCommandEncoder(<span class="hljs-string">"PostProcessingPass Encoder"</span>);
+	wgpu::CommandEncoder encoder = m_context-&gt;createCommandEncoder(<span class="hljs-string">"PostProcessingPass Encoder"</span>);
+	
 	<span class="hljs-comment">// Begin render pass (starts recording commands into this pass)</span>
-	<span class="hljs-keyword">auto</span> renderPass = m_renderPassContext-&gt;begin(encoder);
+	wgpu::RenderPassDescriptor renderPassDescriptor = m_renderPassContext-&gt;getRenderPassDescriptor();
+	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDescriptor);
+	
 	<span class="hljs-comment">// Set the pipeline (tells GPU which shader to use)</span>
 	renderPass.setPipeline(pipeline-&gt;getPipeline());
+	
 	<span class="hljs-comment">// Bind the group 0 (texture + sampler for shader to use)</span>
 	renderPass.setBindGroup(<span class="hljs-number">0</span>, bindGroup-&gt;getBindGroup(), <span class="hljs-number">0</span>, <span class="hljs-literal">nullptr</span>);
+	
 	<span class="hljs-comment">// Draw 3 vertices (fullscreen triangle)</span>
 	<span class="hljs-comment">// Vertices are generated in shader's vs_main using vertex_index</span>
 	renderPass.draw(<span class="hljs-number">3</span>, <span class="hljs-number">1</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
+	
 	<span class="hljs-comment">// End render pass</span>
-	m_renderPassContext-&gt;end(renderPass);
+	renderPass.end();
+	renderPass.release();
+	
 	<span class="hljs-comment">// Submit commands to GPU</span>
-	m_context-&gt;submitCommandEncoder(encoder, <span class="hljs-string">"PostProcessingPass Commands"</span>);
+	wgpu::CommandBufferDescriptor commandBufferDescriptor{};
+	commandBufferDescriptor.label = <span class="hljs-string">"PostProcessingPass Commands"</span>;
+	wgpu::CommandBuffer commandBuffer = encoder.finish(commandBufferDescriptor);
+	encoder.release();
+	m_context-&gt;getQueue().submit(commandBuffer);
+	commandBuffer.release();
 }
 </div></code></pre>
-<p><strong>Understanding the Draw Call:</strong></p>
-<pre class="hljs"><code><div>renderPass.draw(<span class="hljs-number">3</span>, <span class="hljs-number">1</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
-<span class="hljs-comment">//             ↓  ↓ ↓ ↓</span>
-<span class="hljs-comment">//             │  │ │ └─ First instance</span>
-<span class="hljs-comment">//             │  │ └──── First vertex index  </span>
-<span class="hljs-comment">//             │  └────── Instance count (1 instance)</span>
-<span class="hljs-comment">//             └───────── Vertex count (3 vertices for triangle)</span>
-</div></code></pre>
-<p>The shader generates coordinates based on <code>@builtin(vertex_index)</code>:</p>
+<p><strong>What Each WebGPU Component Does:</strong></p>
 <ul>
-<li>Vertex 0 → (-1, -1) bottom-left</li>
-<li>Vertex 1 → (3, -1) bottom-right (off-screen)</li>
-<li>Vertex 2 → (-1, 3) top-left (off-screen)</li>
+<li><strong>Command Encoder</strong> - Records GPU commands into a buffer for later execution</li>
+<li><strong>Render Pass Descriptor</strong> - Defines color/depth attachments, clear colors, and load/store operations</li>
+<li><strong>Render Pass Encoder</strong> - Records rendering-specific commands (pipeline, bind groups, draw calls)</li>
+<li><strong>Pipeline</strong> - Contains shader program, vertex layout, blend mode, and other render state</li>
+<li><strong>Bind Group</strong> - Groups GPU resources (textures, samplers, buffers) accessible to shader</li>
+<li><strong>Draw Call</strong> <code>renderPass.draw(3, 1, 0, 0)</code> - Process 3 vertices in 1 instance to generate fullscreen triangle</li>
 </ul>
-<p>These form a large triangle covering the entire screen.</p>
+<blockquote>
+<p><strong>📝 Note:</strong> The engine provides abstractions to simplify this. Here we show the <strong>full WebGPU API</strong> for deeper understanding. Production code typically uses engine abstractions.</p>
+</blockquote>
 <hr>
 <h2 id="step-6-postprocessingpassgetorcreatebindgroup---part-a-cache--layout">Step 6: PostProcessingPass::getOrCreateBindGroup() - Part A (Cache &amp; Layout)</h2>
 <p>This method creates or reuses bind groups that bind the texture + sampler to shader bindings.</p>
