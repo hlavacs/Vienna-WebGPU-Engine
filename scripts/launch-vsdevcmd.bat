@@ -28,7 +28,7 @@ if exist "%VSWHERE%" (
 REM ============================================================================
 REM Method 2: Manual search for VS 2017-2026 (all editions + BuildTools)
 REM ============================================================================
-set "VS_VERSIONS=2026 2025 2024 2023 2022 2021 2020 2019 2018 2017"
+set "VS_VERSIONS=18 2026 2025 2024 2023 2022 2021 2020 2019 2018 2017"
 set "VS_EDITIONS=BuildTools Community Professional Enterprise"
 
 for %%V in (%VS_VERSIONS%) do (
