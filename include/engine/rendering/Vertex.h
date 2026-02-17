@@ -87,6 +87,9 @@ struct Vertex
 			return VertexAttribute::Position;
 		case VertexLayout::DebugPositionColor:
 			return VertexAttribute::Position | VertexAttribute::Color;
+		case VertexLayout::None:
+		default:
+			return VertexAttribute::None;
 		}
 		return VertexAttribute::None;
 	}
@@ -156,6 +159,8 @@ struct Vertex
 			return PositionSize; // 12 bytes
 		case VertexLayout::DebugPositionColor:
 			return DebugPositionColorSize; // 24 bytes
+		default:
+			return 0;
 		}
 		return sizeof(Vertex); // Default to full vertex
 	}

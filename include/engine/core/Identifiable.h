@@ -41,8 +41,8 @@ class Identifiable
 	Identifiable &operator=(const Identifiable &) = delete;
 
 	// Allow move, mark noexcept
-	Identifiable(Identifiable &&) noexcept = default;
-	Identifiable &operator=(Identifiable &&) noexcept = default;
+	Identifiable(Identifiable &&) = default;
+	Identifiable &operator=(Identifiable &&) = default;
 
 	uint64_t getId() const { return m_id; }
 	HandleType getHandle() const;

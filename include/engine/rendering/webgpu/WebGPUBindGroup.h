@@ -70,8 +70,8 @@ class WebGPUBindGroup
 	// Delete copy, enable move
 	WebGPUBindGroup(const WebGPUBindGroup &) = delete;
 	WebGPUBindGroup &operator=(const WebGPUBindGroup &) = delete;
-	WebGPUBindGroup(WebGPUBindGroup &&) noexcept = default;
-	WebGPUBindGroup &operator=(WebGPUBindGroup &&) noexcept = default;
+	WebGPUBindGroup(WebGPUBindGroup &&) = default;
+	WebGPUBindGroup &operator=(WebGPUBindGroup &&) = default;
 
 	/**
 	 * @brief Gets the underlying WebGPU bind group.

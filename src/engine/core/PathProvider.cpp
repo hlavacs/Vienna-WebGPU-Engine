@@ -4,6 +4,7 @@
 #elif defined(__linux__)
 #include <limits.h>
 #include <unistd.h>
+#include <dlfcn.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
@@ -75,7 +76,7 @@ std::filesystem::path PathProvider::resolve(const std::string &key)
 std::filesystem::path PathProvider::getEnginePath()
 {
 #if defined(__EMSCRIPTEN__)
-	return executableRoot;
+	return basePath;
 #elif defined(_WIN32)
 	HMODULE hModule = nullptr;
 	GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, reinterpret_cast<LPCSTR>(&getEnginePath), &hModule);
@@ -84,7 +85,7 @@ std::filesystem::path PathProvider::getEnginePath()
 	return std::filesystem::path(path).parent_path();
 #elif defined(__linux__)
 	Dl_info info;
-	dladdr(reinterpret_cast<void *>(&detectLibraryPath), &info);
+	dladdr(reinterpret_cast<void *>(&getEnginePath), &info);
 	return std::filesystem::path(info.dli_fname).parent_path();
 #elif defined(__APPLE__)
 	char path[1024];
@@ -93,7 +94,7 @@ std::filesystem::path PathProvider::getEnginePath()
 	{
 		return std::filesystem::path(path).parent_path();
 	}
-	return executableRoot;
+	return basePath;
 #else
 #error "Unsupported platform"
 #endif
