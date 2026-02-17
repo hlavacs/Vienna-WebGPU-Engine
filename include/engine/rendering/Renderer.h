@@ -38,7 +38,7 @@ class WebGPUContext; // forward declaration
 } // namespace webgpu
 
 class RenderCollector; // forward declaration
-class RenderTarget;	   // forward declaration
+struct RenderTarget;	   // forward declaration
 
 /**
  * @brief Central renderer that orchestrates the rendering pipeline.

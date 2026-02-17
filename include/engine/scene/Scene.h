@@ -4,6 +4,7 @@
 #include <set>
 #include <vector>
 
+#include "engine/rendering/BindGroupDataProvider.h"
 #include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/scene/nodes/CameraNode.h"
@@ -14,11 +15,6 @@ namespace engine
 class EngineContext;
 class GameEngine;
 } // namespace engine
-
-namespace engine::rendering
-{
-struct BindGroupDataProvider;
-} // namespace engine::rendering
 
 namespace engine::scene
 {

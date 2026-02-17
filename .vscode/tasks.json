@@ -5,181 +5,190 @@
 		{
 			"label": "Build (Debug)",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/build.bat",
-			"args": [
-				"Debug",
-				"WGPU"
-			],
 			"group": "build",
-			"problemMatcher": [],
 			"windows": {
-				"command": "${workspaceFolder}/scripts/build.bat"
+				"command": "${workspaceFolder}/scripts/build.bat",
+				"args": ["Debug", "WGPU"],
+				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "WGPU"]
+				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
 			}
 		},
 		{
 			"label": "Build (Release)",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/build.bat",
-			"args": [
-				"Release",
-				"WGPU"
-			],
 			"group": "build",
-			"problemMatcher": [],
 			"windows": {
-				"command": "${workspaceFolder}/scripts/build.bat"
+				"command": "${workspaceFolder}/scripts/build.bat",
+				"args": ["Release", "WGPU"],
+				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "WGPU"]
+				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "WGPU"],
+				"problemMatcher": "$gcc"
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "WGPU"],
+				"problemMatcher": "$gcc"
 			}
 		},
 		{
 			"label": "Build Emscripten (Debug)",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/build.bat",
-			"args": [
-				"Debug",
-				"Emscripten"
-			],
 			"group": "build",
-			"problemMatcher": [],
 			"windows": {
-				"command": "${workspaceFolder}/scripts/build.bat"
+				"command": "${workspaceFolder}/scripts/build.bat",
+				"args": ["Debug", "Emscripten"],
+				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "Emscripten"]
+				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "Emscripten"],
+				"problemMatcher": "$gcc"
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "Emscripten"],
+				"problemMatcher": "$gcc"
 			}
 		},
 		{
 			"label": "Build Emscripten (Release)",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/build.bat",
-			"args": [
-				"Release",
-				"Emscripten"
-			],
 			"group": "build",
-			"problemMatcher": [],
 			"windows": {
-				"command": "${workspaceFolder}/scripts/build.bat"
+				"command": "${workspaceFolder}/scripts/build.bat",
+				"args": ["Release", "Emscripten"],
+				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "Emscripten"]
+				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "Emscripten"],
+				"problemMatcher": "$gcc"
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "Emscripten"],
+				"problemMatcher": "$gcc"
 			}
 		},
 		// 🟢 Examples
 		{
 			"label": "Build Example: Tutorial (Debug)",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/build-example.bat",
-			"args": [
-				"tutorial",
-				"Debug",
-				"WGPU"
-			],
 			"group": "build",
-			"problemMatcher": [],
 			"windows": {
-				"command": "${workspaceFolder}/scripts/build-example.bat"
+				"command": "${workspaceFolder}/scripts/build-example.bat",
+				"args": ["tutorial", "Debug", "WGPU"],
+				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "tutorial", "Debug", "WGPU"]
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "tutorial", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "tutorial", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
 			}
 		},
 		{
 			"label": "Build Example: Main Demo (Debug)",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/build-example.bat",
-			"args": [
-				"main_demo",
-				"Debug",
-				"WGPU"
-			],
 			"group": "build",
-			"problemMatcher": [],
 			"windows": {
-				"command": "${workspaceFolder}/scripts/build-example.bat"
+				"command": "${workspaceFolder}/scripts/build-example.bat",
+				"args": ["main_demo", "Debug", "WGPU"],
+				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Debug", "WGPU"]
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
 			}
 		},
 		{
 			"label": "Build Example: Main Demo (Release)",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/build-example.bat",
-			"args": [
-				"main_demo",
-				"Release",
-				"WGPU"
-			],
 			"group": "build",
-			"problemMatcher": [],
 			"windows": {
-				"command": "${workspaceFolder}/scripts/build-example.bat"
+				"command": "${workspaceFolder}/scripts/build-example.bat",
+				"args": ["main_demo", "Release", "WGPU"],
+				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Release", "WGPU"]
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Release", "WGPU"],
+				"problemMatcher": "$gcc"
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Release", "WGPU"],
+				"problemMatcher": "$gcc"
 			}
 		},
 		{
 			"label": "Build Example: Multi View (Debug)",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/build-example.bat",
-			"args": [
-				"multi_view",
-				"Debug",
-				"WGPU"
-			],
 			"group": "build",
-			"problemMatcher": [],
 			"windows": {
-				"command": "${workspaceFolder}/scripts/build-example.bat"
+				"command": "${workspaceFolder}/scripts/build-example.bat",
+				"args": ["multi_view", "Debug", "WGPU"],
+				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "multi_view", "Debug", "WGPU"]
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "multi_view", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "multi_view", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
 			}
 		},
 		{
 			"label": "Build Example: Scene Editor (Debug)",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/build-example.bat",
-			"args": [
-				"scene_editor",
-				"Debug",
-				"WGPU"
-			],
 			"group": "build",
-			"problemMatcher": [],
 			"windows": {
-				"command": "${workspaceFolder}/scripts/build-example.bat"
+				"command": "${workspaceFolder}/scripts/build-example.bat",
+				"args": ["scene_editor", "Debug", "WGPU"],
+				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "scene_editor", "Debug", "WGPU"]
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "scene_editor", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "scene_editor", "Debug", "WGPU"],
+				"problemMatcher": "$gcc"
 			}
 		},
 		// 🟢 Other
 		{
 			"label": "Start Emscripten Dev Server",
 			"type": "shell",
-			"command": "python",
-			"args": [
-				"-m",
-				"http.server",
-				"8080"
-			],
+			"command": "python3",
+			"args": ["-m", "http.server", "8080"],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -195,12 +204,8 @@
 				],
 				"background": {
 					"activeOnStart": true,
-					"beginsPattern": {
-						"regexp": "."
-					},
-					"endsPattern": {
-						"regexp": "."
-					}
+					"beginsPattern": { "regexp": "." },
+					"endsPattern": { "regexp": "." }
 				}
 			}
 		},
@@ -209,9 +214,7 @@
 			"type": "shell",
 			"isBackground": true,
 			"command": "http-server",
-			"args": [
-				"-c-1"
-			],
+			"args": ["-c-1"],
 			"presentation": {
 				"reveal": "silent"
 			},
@@ -228,12 +231,8 @@
 					],
 					"background": {
 						"activeOnStart": true,
-						"beginsPattern": {
-							"regexp": "."
-						},
-						"endsPattern": {
-							"regexp": "."
-						}
+						"beginsPattern": { "regexp": "." },
+						"endsPattern": { "regexp": "." }
 					}
 				}
 			]
@@ -246,23 +245,29 @@
 		{
 			"label": "Clang-Tidy: Forward Declare & Clean Includes",
 			"type": "shell",
-			"command": "powershell",
-			"args": [
-				"-NoProfile",
-				"-ExecutionPolicy",
-				"Bypass",
-				"-File",
-				"${workspaceFolder}/scripts/run-clang-tidy.ps1",
-				"-BuildDir",
-				"build/Windows/Debug",
-				"-Mode",
-				"fix"
-			],
 			"group": "build",
 			"problemMatcher": [],
 			"presentation": {
 				"reveal": "always",
 				"panel": "shared"
+			},
+			"windows": {
+				"command": "powershell",
+				"args": [
+					"-NoProfile",
+					"-ExecutionPolicy", "Bypass",
+					"-File", "${workspaceFolder}/scripts/run-clang-tidy.ps1",
+					"-BuildDir", "build/Windows/Debug",
+					"-Mode", "fix"
+				]
+			},
+			"linux": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/run-clang-tidy.sh", "build/Linux/Debug", "fix"]
+			},
+			"osx": {
+				"command": "bash",
+				"args": ["${workspaceFolder}/scripts/run-clang-tidy.sh", "build/Mac/Debug", "fix"]
 			}
 		}
 	],
@@ -271,21 +276,14 @@
 			"id": "buildType",
 			"type": "pickString",
 			"description": "Select Build Type",
-			"options": [
-				"Debug",
-				"Release"
-			],
+			"options": ["Debug", "Release"],
 			"default": "Debug"
 		},
 		{
 			"id": "platform",
 			"type": "pickString",
 			"description": "Select Target Platform",
-			"options": [
-				"Windows",
-				"Linux",
-				"Darwin"
-			],
+			"options": ["Windows", "Linux", "Darwin"],
 			"default": "Windows"
 		},
 		{

@@ -87,8 +87,11 @@ struct Vertex
 			return VertexAttribute::Position;
 		case VertexLayout::DebugPositionColor:
 			return VertexAttribute::Position | VertexAttribute::Color;
+		case VertexLayout::None:
+			return VertexAttribute::None;
+		default:
+			return VertexAttribute::None;
 		}
-		return VertexAttribute::None;
 	}
 
 	static inline constexpr bool has(VertexAttribute mask, VertexAttribute bit)
@@ -156,8 +159,9 @@ struct Vertex
 			return PositionSize; // 12 bytes
 		case VertexLayout::DebugPositionColor:
 			return DebugPositionColorSize; // 24 bytes
+		default:
+			return sizeof(Vertex);
 		}
-		return sizeof(Vertex); // Default to full vertex
 	}
 
 	static std::vector<uint8_t> repackVertices(const std::vector<Vertex> &vertices, VertexLayout layout)

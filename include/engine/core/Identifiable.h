@@ -41,8 +41,22 @@ class Identifiable
 	Identifiable &operator=(const Identifiable &) = delete;
 
 	// Allow move, mark noexcept
-	Identifiable(Identifiable &&) noexcept = default;
-	Identifiable &operator=(Identifiable &&) noexcept = default;
+	Identifiable(Identifiable &&other) noexcept
+		: m_id(other.m_id),
+		  m_name(std::move(other.m_name))
+	{
+	}
+
+	// Move assignment - m_id is const so it cannot be reassigned
+	Identifiable &operator=(Identifiable &&other) noexcept
+	{
+		if (this != &other)
+		{
+			std::scoped_lock lock(m_nameMutex, other.m_nameMutex);
+			m_name = std::move(other.m_name);
+		}
+		return *this;
+	}
 
 	uint64_t getId() const { return m_id; }
 	HandleType getHandle() const;

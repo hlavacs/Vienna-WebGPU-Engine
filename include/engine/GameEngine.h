@@ -104,7 +104,7 @@ class GameEngine
 	void onWindowResize(int width, int height);
 	void updateScene(float deltaTime);
 	void renderFrame(float deltaTime);
-	void updateFrameStats(float frameDelta, double frameStartTime);
+	void updateFrameStats(float frameDelta);
 	void limitFrameRate(double frameStartTime);
 
 	std::function<void(wgpu::RenderPassEncoder)> createUICallback();

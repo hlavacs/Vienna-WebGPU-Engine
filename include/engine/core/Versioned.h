@@ -25,8 +25,17 @@ class Versioned
 	Versioned &operator=(const Versioned &) = delete;
 
 	// Allow move
-	Versioned(Versioned &&) noexcept = default;
-	Versioned &operator=(Versioned &&) noexcept = default;
+	Versioned(Versioned &&other) noexcept
+		: m_version(other.m_version.load())
+	{
+	}
+
+	Versioned &operator=(Versioned &&other) noexcept
+	{
+		if (this != &other)
+			m_version.store(other.m_version.load());
+		return *this;
+	}
 
 	/**
 	 * @brief Get the current version of this object.

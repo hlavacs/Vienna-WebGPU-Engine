@@ -94,7 +94,7 @@ class Node : public engine::core::Identifiable<Node>, public std::enable_shared_
 	bool isEnabled() const;
 
 	/** @brief Enable/disable debug rendering for this node. */
-	void setDebugEnabled(bool enabled) { m_debugEnabled = enabled; }
+	void setDebugEnabled(bool debugEnabled) { m_debugEnabled = debugEnabled; }
 
 	/** @brief Check if debug rendering is enabled for this node. */
 	bool isDebugEnabled() const { return m_debugEnabled; }
