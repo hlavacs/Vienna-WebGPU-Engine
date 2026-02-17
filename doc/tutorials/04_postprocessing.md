@@ -2,6 +2,8 @@
 
 > **💡 Tip:** It's recommended using the [04_postprocessing.html](04_postprocessing.html) version of this tutorial as copying code works best there regarding padding and formatting.
 
+> **⚠️ Build issues?** See [Troubleshooting Build Failures](#troubleshooting-build-failures) at the end of this tutorial for help reading build errors from the terminal.
+
 Welcome to the post-processing tutorial! In this guide, you'll learn how to create a render pass that applies screen-space effects to rendered images. You'll implement the **vignette post-processing effect** — a simple but effective screen-edge darkening technique — and integrate it into the engine's rendering pipeline.
 
 **What you'll learn:**
@@ -69,7 +71,32 @@ Then **Composite Pass** (step 5) combines all camera results together and render
 
 If we placed it before debug pass, wireframes and gizmos would not receive the vignette effect. By placing it after debug pass, all rendered content (scene + debug overlays) gets processed together.
 
-**Pattern Overview:**
+---
+
+## Troubleshooting Build Failures
+
+**⚠️ Important:** When using `scripts/build.bat`, the task system may report success even if the build actually failed. You **MUST check the terminal output** to see the real result.
+
+**What to look for in terminal:**
+1. Scroll to the **very end** of the terminal output
+2. Look for `[SUCCESS] Build completed successfully!` - if this appears, build succeeded
+3. If you see `[ERROR] Build failed.` - the build failed regardless of task status
+
+**Common issues in post-processing:**
+- **Shader errors in vignette shader** - Check `.wgsl` for missing semicolons
+- **Bind group layout mismatch** - Verify shader layout matches C++ registration
+- **Missing pipeline creation** - Ensure `getOrCreatePipeline()` is called before rendering
+- **CMake cache issues** - Delete `build/` folder and rebuild clean
+
+**Debug Strategy:**
+1. Open `MeshPass.cpp` in your editor
+2. Add a breakpoint in the `render()` method
+3. Press `F5` to start debugging with VS Code
+4. Check the **Terminal Output** panel - errors will show exact line numbers
+
+---
+
+## Pattern Overview:
 
 All render passes in this engine follow the same lifecycle:
 

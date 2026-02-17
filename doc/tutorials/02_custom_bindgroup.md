@@ -2,6 +2,8 @@
 
 > **💡 Tip:** It's recommended using the [02_custom_bindgroup.html](02_custom_bindgroup.html) version of this tutorial as copying code works best there regarding padding and formatting.
 
+> **⚠️ Build issues?** See [Troubleshooting](#troubleshooting) at the end of this tutorial for help reading build errors from the terminal.
+
 In Tutorial 01, you learned the three standard bind groups (Frame, Object, Material) that the engine provides. Now you'll learn how to add your own custom bind groups to pass additional data to shaders.
 
 **What you'll learn:**
@@ -488,9 +490,27 @@ When you call `BindGroupDataProvider::create()`, the engine internally:
 
 ## Troubleshooting
 
+### Build Failures - Reading Terminal Output
+
+**⚠️ Important:** When using `scripts/build.bat`, the task system may report success even if the build actually failed. You **MUST check the terminal output** to see the real result.
+
+**What to look for in terminal:**
+1. Scroll to the **very end** of the terminal output
+2. Look for `[SUCCESS] Build completed successfully!` - if this appears, build succeeded
+3. If you see `[ERROR] Build failed.` - the build failed regardless of task status
+
+**Common build issues:**
+- **Missing semicolons** - WGSL requires `;` at end of statements
+- **Struct size mismatch** - `tileUniforms` size must be 16 bytes (2 × vec2f)
+- **Bind group naming** - `"TileUniforms"` in registration must match shader `@group(3)`
+- **CMake cache** - Run `rm -r build` (or delete `build/` folder) then rebuild clean
+
+### Bind Group Issues
+
 **"Unable to find bind group 'TileUniforms'"**
 - Check shader name matches in `preRender()` ("unlit") and registration as well as material assignment
 - Ensure bind group name matches exactly (case-sensitive)
+- Verify `@group(3)` in shader doesn't conflict with other bind groups
 
 **Floor appears stretched/wrong**
 - Verify TileUniforms struct size matches shader (16 bytes = 2 × vec2f)
@@ -499,11 +519,21 @@ When you call `BindGroupDataProvider::create()`, the engine internally:
 **Data doesn't update**
 - Ensure `preRender()` is called (check node is enabled and in scene graph)
 - Verify you're modifying the member variable, not a local copy
+- Check instance ID is correct in `BindGroupDataProvider::create()`
 
 **Shader compilation error**
 - Check `@group(3)` doesn't conflict with other bind groups
 - Ensure TileUniforms struct is defined before use
 - Verify binding index `@binding(0)` matches registration
+- Verify there are no missing `;`
+
+### Debug Strategy
+
+**If errors are unclear:**
+1. Open `MeshPass.cpp` in your editor
+2. Add a breakpoint in the `render()` method
+3. Press `F5` to start debugging with VS Code
+4. Check the **Terminal Output** panel - shader errors will be printed there
 
 ---
 
