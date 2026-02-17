@@ -8,7 +8,7 @@ namespace engine::rendering
 {
 
 class DebugRenderCollector;
-class FrameCache;
+struct FrameCache;
 namespace webgpu
 {
     class WebGPUContext;

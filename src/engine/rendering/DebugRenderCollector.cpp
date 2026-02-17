@@ -1,8 +1,12 @@
 #include "engine/rendering/DebugRenderCollector.h"
+
+#include <cstring>
+
+#include <glm/gtc/type_ptr.hpp>
+
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
-#include <cstring>
 
 namespace engine::rendering
 {
@@ -16,6 +20,88 @@ DebugPrimitive DebugPrimitive::createLine(const glm::vec3 &from, const glm::vec3
 	p.data.line.from = from;
 	p.data.line.to = to;
 	return p;
+}
+
+std::vector<DebugPrimitive> DebugPrimitive::createFrustum(const glm::mat4 &viewProjection, const glm::vec4 &color)
+{
+	std::vector<DebugPrimitive> result;
+
+	// Validate matrix
+	const float *m = glm::value_ptr(viewProjection);
+	for (int i = 0; i < 16; ++i)
+	{
+		if (std::isnan(m[i]))
+		{
+			return result; // return empty vector
+		}
+	}
+
+	glm::mat4 invVP = glm::inverse(viewProjection);
+
+	// Clip space cube corners
+	glm::vec4 ndc[8] =
+		{
+			{-1, -1, -1, 1},
+			{1, -1, -1, 1},
+			{1, 1, -1, 1},
+			{-1, 1, -1, 1},
+
+			{-1, -1, 1, 1},
+			{1, -1, 1, 1},
+			{1, 1, 1, 1},
+			{-1, 1, 1, 1}
+		};
+
+	glm::vec3 corners[8];
+
+	for (int i = 0; i < 8; ++i)
+	{
+		glm::vec4 world = invVP * ndc[i];
+		world /= world.w;
+		corners[i] = glm::vec3(world);
+	}
+
+	// Edge indices
+	const int edges[24] =
+		{
+			0,
+			1,
+			1,
+			2,
+			2,
+			3,
+			3,
+			0, // near
+			4,
+			5,
+			5,
+			6,
+			6,
+			7,
+			7,
+			4, // far
+			0,
+			4,
+			1,
+			5,
+			2,
+			6,
+			3,
+			7 // connections
+		};
+
+	for (int i = 0; i < 24; i += 2)
+	{
+		DebugPrimitive line;
+		line.type = static_cast<uint32_t>(DebugPrimitive::Type::Line);
+		line.color = color;
+		line.data.line.from = corners[edges[i]];
+		line.data.line.to = corners[edges[i + 1]];
+
+		result.push_back(line);
+	}
+
+	return result;
 }
 
 DebugPrimitive DebugPrimitive::createDisk(const glm::vec3 &center, const glm::vec3 &radii, const glm::vec4 &color)
@@ -118,6 +204,12 @@ void DebugRenderCollector::addTransformAxes(const glm::mat4 &transform, float sc
 void DebugRenderCollector::addLine(const glm::vec3 &from, const glm::vec3 &to, const glm::vec4 &color)
 {
 	addPrimitive(DebugPrimitive::createLine(from, to, color));
+}
+
+void DebugRenderCollector::addFrustum(const glm::mat4 &viewProjection, const glm::vec4 &color)
+{
+	auto frustumLines = DebugPrimitive::createFrustum(viewProjection, color);
+	addPrimitives(frustumLines);
 }
 
 void DebugRenderCollector::addDisk(const glm::vec3 &center, const glm::vec3 &radii, const glm::vec4 &color)

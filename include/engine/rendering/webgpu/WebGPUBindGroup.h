@@ -71,7 +71,7 @@ class WebGPUBindGroup
 	WebGPUBindGroup(const WebGPUBindGroup &) = delete;
 	WebGPUBindGroup &operator=(const WebGPUBindGroup &) = delete;
 	WebGPUBindGroup(WebGPUBindGroup &&) = default;
-	WebGPUBindGroup &operator=(WebGPUBindGroup &&) = default;
+	WebGPUBindGroup &operator=(WebGPUBindGroup &&) = delete;
 
 	/**
 	 * @brief Gets the underlying WebGPU bind group.

@@ -67,7 +67,7 @@ class ShaderRegistry
 
 	// Allow move semantics
 	ShaderRegistry(ShaderRegistry &&) = default;
-	ShaderRegistry &operator=(ShaderRegistry &&) = default;
+	ShaderRegistry &operator=(ShaderRegistry &&) = delete;
 
 	/**
 	 * @brief Initialize default engine shaders.

@@ -510,11 +510,6 @@ void WebGPUTextureFactory::generateMipmaps(
 	// Generate mipmaps by repeatedly blitting with linear filtering
 	for (uint32_t mipLevel = 1; mipLevel < mipLevelCount; ++mipLevel)
 	{
-		uint32_t srcWidth = std::max(1u, width >> (mipLevel - 1));
-		uint32_t srcHeight = std::max(1u, height >> (mipLevel - 1));
-		uint32_t dstWidth = std::max(1u, width >> mipLevel);
-		uint32_t dstHeight = std::max(1u, height >> mipLevel);
-
 		// Create views for source and destination mip levels
 		wgpu::TextureViewDescriptor srcViewDesc{};
 		srcViewDesc.baseMipLevel = mipLevel - 1;

@@ -105,6 +105,11 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 		return m_renderLayer;
 	}
 
+	/** @brief Override to draw transform axes when debug is enabled */
+	void onDebugDraw(engine::rendering::DebugRenderCollector &collector) override {
+		SpatialNode::onDebugDraw(collector);
+	}
+
   private:
 	engine::core::Handle<engine::rendering::Model> m_modelHandle;
 	uint32_t m_renderLayer = 0;

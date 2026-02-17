@@ -165,7 +165,7 @@ struct Material : public engine::core::Identifiable<Material>,
 
 	// Move only
 	Material(Material &&) = default;
-	Material &operator=(Material &&) = default;
+	Material &operator=(Material &&) = delete;
 
 	// No copy
 	Material(const Material &) = delete;

@@ -30,7 +30,7 @@ struct Model : public engine::core::Identifiable<Model>, public engine::core::Ve
 
 	// Move only
 	Model(Model &&) = default;
-	Model &operator=(Model &&) = default;
+	Model &operator=(Model &&) = delete;
 
 	Model(const Model &) = delete;
 	Model &operator=(const Model &) = delete;

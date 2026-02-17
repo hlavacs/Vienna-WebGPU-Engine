@@ -230,7 +230,7 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 	const std::optional<Texture::Handle> &cpuTarget,
 	const math::Rect &viewport,
 	wgpu::TextureFormat format,
-	wgpu::TextureUsage usageFlags
+	wgpu::TextureUsage /* usageFlags */
 )
 {
 	// Render targets are textures we render to (instead of directly to screen).
