@@ -8,7 +8,7 @@
 namespace engine::rendering
 {
 
-class FrameCache; // Forward declaration
+struct FrameCache; // Forward declaration
 
 namespace webgpu
 {

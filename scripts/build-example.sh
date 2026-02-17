@@ -5,7 +5,13 @@ set -e
 EXAMPLE_NAME=${1:-main_demo}
 BUILDTYPE=${2:-Debug}
 WEBGPU_BACKEND=${3:-WGPU}
-PROFILE_HOST=Linux
+
+# Detect platform
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    PROFILE_HOST=Mac
+else
+    PROFILE_HOST=Linux
+fi
 
 # Validate WEBGPU_BACKEND
 if [[ ! "$WEBGPU_BACKEND" =~ ^(WGPU|DAWN|Emscripten)$ ]]; then

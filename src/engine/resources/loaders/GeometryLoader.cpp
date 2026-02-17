@@ -16,26 +16,28 @@ glm::mat3x3 GeometryLoader<T>::computeTBN(const engine::rendering::Vertex corner
 	glm::vec2 eUV1 = corners[1].uv - corners[0].uv;
 	glm::vec2 eUV2 = corners[2].uv - corners[0].uv;
 
-	glm::vec3 T = glm::normalize(ePos1 * eUV2.y - ePos2 * eUV1.y);
+	glm::vec3 tangent = glm::normalize(ePos1 * eUV2.y - ePos2 * eUV1.y);
 	glm::vec3 B = glm::normalize(ePos2 * eUV1.x - ePos1 * eUV2.x);
-	glm::vec3 N = cross(T, B);
+	glm::vec3 N = cross(tangent, B);
 
 	// Fix overall orientation
 	if (dot(N, expectedN) < 0.0)
 	{
-		T = -T;
+		tangent = -tangent;
+		B = -B;
+		N = -N;
 		B = -B;
 		N = -N;
 	}
 
-	// Ortho-glm::normalize the (T, B, expectedN) frame
+	// Ortho-normalize the (T, B, expectedN) frame
 	// a. "Remove" the part of T that is along expected N
 	N = expectedN;
-	T = glm::normalize(T - dot(T, N) * N);
+	tangent = glm::normalize(tangent - dot(tangent, N) * N);
 	// b. Recompute B from N and T
-	B = glm::cross(N, T);
+	B = glm::cross(N, tangent);
 
-	return glm::mat3x3(T, B, N);
+	return glm::mat3x3(tangent, B, N);
 }
 
 } // namespace engine::resources::loaders

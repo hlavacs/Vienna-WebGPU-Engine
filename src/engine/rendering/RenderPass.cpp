@@ -15,7 +15,7 @@ bool RenderPass::bind(
 	if (!bindGroupIndexOpt.has_value())
 		return false;
 
-	renderPass.setBindGroup(bindGroupIndexOpt.value(), bindgroup->getBindGroup(), 0, nullptr);
+	renderPass.setBindGroup(static_cast<uint32_t>(bindGroupIndexOpt.value()), bindgroup->getBindGroup(), 0, nullptr);
 	return true;
 }
 } // namespace engine::rendering

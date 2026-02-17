@@ -9,7 +9,7 @@
 namespace engine::rendering::webgpu
 {
 
-struct WebGPUContext;
+class WebGPUContext;
 
 /**
  * @class WebGPUSurfaceManager

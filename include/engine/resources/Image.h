@@ -33,8 +33,9 @@ static uint32_t getChannelCount(ImageFormat::Type format)
 	case ImageFormat::Type::LDR_R8:
 	case ImageFormat::Type::HDR_R16F:
 		return 1;
+	default:
+		return 0;
 	}
-	return 0;
 }
 
 /**
@@ -102,8 +103,8 @@ class Image
 	{
 	}
 
-	Image(Image &&) noexcept = default;
-	Image &operator=(Image &&) noexcept = default;
+	Image(Image &&) = default;
+	Image &operator=(Image &&) = delete;
 
 	Image(const Image &) = delete;
 	Image &operator=(const Image &) = delete;

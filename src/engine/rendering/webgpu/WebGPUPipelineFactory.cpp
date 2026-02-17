@@ -118,7 +118,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	for (const auto &layoutInfo : layouts)
 		layoutArray.push_back(layoutInfo->getLayout());
 
-	wgpu::PipelineLayout layout = createPipelineLayout(layoutArray.data(), layoutArray.size());
+	wgpu::PipelineLayout layout = createPipelineLayout(layoutArray.data(), static_cast<uint32_t>(layoutArray.size()));
 	desc.layout = layout;
 
 	// Create pipeline

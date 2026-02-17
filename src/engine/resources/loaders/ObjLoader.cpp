@@ -58,7 +58,6 @@ std::optional<ObjGeometryData> ObjLoader::load(
 	data.indices.reserve(estimatedIndexCount);
 
 	int currentMaterial = -1;
-	uint32_t currentOffset = 0;
 	ObjGeometryData::MaterialRange currentRange;
 
 	data.boundingBox.min = glm::vec3(std::numeric_limits<float>::max());

@@ -49,7 +49,6 @@ class WebGPUPipelineFactory
 		default:
 			return wgpu::PrimitiveTopology::TriangleList;
 		}
-		return wgpu::PrimitiveTopology::TriangleList;
 	}
 
 	wgpu::VertexBufferLayout createVertexLayoutFromEnum(engine::rendering::VertexLayout layout, std::vector<wgpu::VertexAttribute> &attributes) const;

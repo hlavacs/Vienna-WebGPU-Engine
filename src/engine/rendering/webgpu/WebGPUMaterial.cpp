@@ -53,7 +53,7 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 {
 	// Determine shader type and custom shader
 	const std::string &shaderName = cpuMaterial.getShader();
-	bool shaderChanged = shaderName != m_shaderName;
+	// ToDo: bool shaderChanged = shaderName != m_shaderName;
 	m_shaderName = shaderName;
 
 	// Get shader info
@@ -87,7 +87,7 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 
 	// Update material properties buffer
 	m_materialBindGroup->updateBuffer(
-		materialBindGroupBindingIndex.value(),
+		static_cast<uint32_t>(materialBindGroupBindingIndex.value()),
 		reinterpret_cast<const uint8_t *>(cpuMaterial.getPropertiesData()),
 		cpuMaterial.getPropertiesSize(),
 		0,

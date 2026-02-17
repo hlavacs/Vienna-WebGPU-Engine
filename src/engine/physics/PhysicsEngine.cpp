@@ -3,7 +3,7 @@
 namespace engine::physics
 {
 
-void PhysicsEngine::step(float fixedDeltaTime)
+void PhysicsEngine::step(float /* fixedDeltaTime */)
 {
 	// Physics simulation step (to be implemented)
 }

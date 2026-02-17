@@ -1,4 +1,6 @@
 #pragma once
+
+#include "engine/rendering/BindGroupDataProvider.h"
 #include "engine/scene/nodes/Node.h"
 #include <memory>
 #include <vector>
@@ -7,7 +9,6 @@
 namespace engine::rendering
 {
 class RenderCollector;
-struct BindGroupDataProvider;
 }
 
 namespace engine::scene::nodes
@@ -33,9 +34,9 @@ class RenderNode : public virtual Node
 	/**
 	 * @brief Called before rendering to allow nodes to provide custom bind group data.
 	 * Override this to populate custom uniform data for shaders.
-	 * 
+	 *
 	 * @param outProviders Vector to append custom bind group data providers to
-	 * 
+	 *
 	 * Example usage:
 	 * @code
 	 *   void MyNode::preRender(std::vector<BindGroupDataProvider> &outProviders)
@@ -43,7 +44,7 @@ class RenderNode : public virtual Node
 	 *       MyCustomUniforms uniforms;
 	 *       uniforms.customColor = glm::vec4(1.0f, 0.5f, 0.2f, 1.0f);
 	 *       uniforms.customIntensity = std::sin(engine()->time()) * 0.5f + 0.5f;
-	 *       
+	 *
 	 *       outProviders.push_back(BindGroupDataProvider::create(
 	 *           "MyCustomShader",      // Shader name
 	 *           "MyCustomUniforms",    // Bind group name
