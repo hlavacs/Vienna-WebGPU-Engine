@@ -354,7 +354,7 @@ code {
 
 </style>
 
-<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+<script src="https://unpkg.com/mermaid@9.4.0/dist/mermaid.min.js"></script>
 </head>
 <body>
   <script>
@@ -372,6 +372,9 @@ code {
 <blockquote>
 <p><strong>Status:</strong> This tutorial is currently under development.</p>
 </blockquote>
+<blockquote>
+<p><strong>⚠️ Build issues?</strong> See <a href="#troubleshooting">Troubleshooting</a> at the end of this tutorial for help reading build errors from the terminal.</p>
+</blockquote>
 <p>This tutorial will cover implementing shadow mapping to add realistic shadows to your 3D scenes.</p>
 <p><strong>Topics to be covered:</strong></p>
 <ul>
@@ -381,6 +384,30 @@ code {
 <li>PCF (Percentage Closer Filtering) for soft shadows</li>
 <li>Integrating shadows into the lighting pipeline</li>
 </ul>
+<hr>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="build-failures---reading-terminal-output">Build Failures - Reading Terminal Output</h3>
+<p><strong>⚠️ Important:</strong> When using <code>scripts/build.bat</code>, the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
+<p><strong>What to look for in terminal:</strong></p>
+<ol>
+<li>Scroll to the <strong>very end</strong> of the terminal output</li>
+<li>Look for <code>[SUCCESS] Build completed successfully!</code> - if this appears, build succeeded</li>
+<li>If you see <code>[ERROR] Build failed.</code> - the build failed regardless of task status</li>
+</ol>
+<p><strong>Common build issues:</strong></p>
+<ul>
+<li><strong>Shader errors</strong> - Check <code>.wgsl</code> files for missing semicolons and type mismatches</li>
+<li><strong>CMake cache issues</strong> - Delete <code>build/</code> folder and rebuild clean</li>
+<li><strong>Include paths</strong> - Verify header includes are correct and files exist</li>
+</ul>
+<h3 id="debug-strategy">Debug Strategy</h3>
+<p><strong>If errors are unclear:</strong></p>
+<ol>
+<li>Open <code>MeshPass.cpp</code> in your editor</li>
+<li>Add a breakpoint in the <code>render()</code> method</li>
+<li>Press <code>F5</code> to start debugging with VS Code</li>
+<li>Check the <strong>Terminal Output</strong> panel - errors will be printed there</li>
+</ol>
 <hr>
 <h2 id="whats-next">What's Next?</h2>
 <p>While this tutorial is being developed, continue to <strong>Tutorial 04</strong> to learn about post-processing:</p>

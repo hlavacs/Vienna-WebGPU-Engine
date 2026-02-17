@@ -2,6 +2,8 @@
 
 > **💡 Tip:** It's recommended using the [01_unlit_shader.html](01_unlit_shader.html) version of this tutorial as copying code works best there regarding padding and formatting.
 
+> **⚠️ Build issues?** See [Troubleshooting](#troubleshooting) at the end of this tutorial for help reading build errors from the terminal.
+
 Welcome to your first shader tutorial! In this guide, you'll learn how to write a custom WGSL shader from scratch for the Vienna WebGPU Engine. We'll create a simple unlit shader that displays textured geometry.
 
 **What you'll learn:**
@@ -460,10 +462,29 @@ let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 
 ## Troubleshooting
 
+### Build Failures - Reading Terminal Output
+
+**⚠️ Important:** When using `scripts/build.bat`, the task system may report success even if the build actually failed. You **MUST check the terminal output** to see the real result.
+
+**What to look for in terminal:**
+1. Scroll to the **very end** of the terminal output
+2. Look for `[SUCCESS] Build completed successfully!` - if this appears, build succeeded
+3. If you see `[ERROR] Build failed.` - the build failed regardless of task status
+
+**Common build issues:**
+- **Missing semicolons** - WGSL requires `;` at end of statements
+- **Type mismatches** - `vec4f` vs `vec4<f32>` - use exact types
+- **Bind group mismatch** - Shader declares `@group(0)` but C++ registers differently
+- **Entry point names** - Must be exactly `vs_main` and `fs_main`
+- **CMake issues** - Run `rm -r build` (or delete `build/` folder) then rebuild clean
+
+### Shader Issues
+
 **Shader compilation failed**
 - Check semicolons, struct syntax, and WGSL types
 - Verify bind group numbers are 0, 1, 2
 - Check entry point names match `vs_main` and `fs_main`
+- Look in terminal output for specific line/column of error
 
 **Floor appears black/white**
 - Ensure texture file exists in `resources/`
@@ -472,6 +493,14 @@ let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 **Floor doesn't render**
 - Verify material assignment is uncommented (Step 10)
 - Check shader name matches in registration and material creation
+
+### Debug Strategy
+
+**If errors are unclear:**
+1. Open `MeshPass.cpp` in your editor
+2. Add a breakpoint in the `render()` method
+3. Press `F5` to start debugging
+4. Check the **Terminal Output** panel - shader errors will be printed there
 
 ---
 

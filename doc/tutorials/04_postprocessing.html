@@ -369,6 +369,9 @@ code {
 <blockquote>
 <p><strong>💡 Tip:</strong> It's recommended using the <a href="04_postprocessing.html">04_postprocessing.html</a> version of this tutorial as copying code works best there regarding padding and formatting.</p>
 </blockquote>
+<blockquote>
+<p><strong>⚠️ Build issues?</strong> See <a href="#troubleshooting-build-failures">Troubleshooting Build Failures</a> at the end of this tutorial for help reading build errors from the terminal.</p>
+</blockquote>
 <p>Welcome to the post-processing tutorial! In this guide, you'll learn how to create a render pass that applies screen-space effects to rendered images. You'll implement the <strong>vignette post-processing effect</strong> — a simple but effective screen-edge darkening technique — and integrate it into the engine's rendering pipeline.</p>
 <p><strong>What you'll learn:</strong></p>
 <ul>
@@ -429,7 +432,31 @@ This tutorial implements <strong>one hardcoded post-processing effect (vignette)
 <p>Then <strong>Composite Pass</strong> (step 5) combines all camera results together and renders to the final surface.</p>
 <p><strong>Why Post-Process After Debug Pass?</strong></p>
 <p>If we placed it before debug pass, wireframes and gizmos would not receive the vignette effect. By placing it after debug pass, all rendered content (scene + debug overlays) gets processed together.</p>
-<p><strong>Pattern Overview:</strong></p>
+<hr>
+<h2 id="troubleshooting-build-failures">Troubleshooting Build Failures</h2>
+<p><strong>⚠️ Important:</strong> When using <code>scripts/build.bat</code>, the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
+<p><strong>What to look for in terminal:</strong></p>
+<ol>
+<li>Scroll to the <strong>very end</strong> of the terminal output</li>
+<li>Look for <code>[SUCCESS] Build completed successfully!</code> - if this appears, build succeeded</li>
+<li>If you see <code>[ERROR] Build failed.</code> - the build failed regardless of task status</li>
+</ol>
+<p><strong>Common issues in post-processing:</strong></p>
+<ul>
+<li><strong>Shader errors in vignette shader</strong> - Check <code>.wgsl</code> for missing semicolons</li>
+<li><strong>Bind group layout mismatch</strong> - Verify shader layout matches C++ registration</li>
+<li><strong>Missing pipeline creation</strong> - Ensure <code>getOrCreatePipeline()</code> is called before rendering</li>
+<li><strong>CMake cache issues</strong> - Delete <code>build/</code> folder and rebuild clean</li>
+</ul>
+<p><strong>Debug Strategy:</strong></p>
+<ol>
+<li>Open <code>MeshPass.cpp</code> in your editor</li>
+<li>Add a breakpoint in the <code>render()</code> method</li>
+<li>Press <code>F5</code> to start debugging with VS Code</li>
+<li>Check the <strong>Terminal Output</strong> panel - errors will show exact line numbers</li>
+</ol>
+<hr>
+<h2 id="pattern-overview">Pattern Overview:</h2>
 <p>All render passes in this engine follow the same lifecycle:</p>
 <pre class="hljs"><code><div><span class="hljs-comment">// Step 1: Create pass</span>
 <span class="hljs-keyword">auto</span> pass = <span class="hljs-built_in">std</span>::make_unique&lt;PostProcessingPass&gt;(context);

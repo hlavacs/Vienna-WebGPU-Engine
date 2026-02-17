@@ -369,6 +369,9 @@ code {
 <blockquote>
 <p><strong>💡 Tip:</strong> It's recommended using the <a href="02_custom_bindgroup.html">02_custom_bindgroup.html</a> version of this tutorial as copying code works best there regarding padding and formatting.</p>
 </blockquote>
+<blockquote>
+<p><strong>⚠️ Build issues?</strong> See <a href="#troubleshooting">Troubleshooting</a> at the end of this tutorial for help reading build errors from the terminal.</p>
+</blockquote>
 <p>In Tutorial 01, you learned the three standard bind groups (Frame, Object, Material) that the engine provides. Now you'll learn how to add your own custom bind groups to pass additional data to shaders.</p>
 <p><strong>What you'll learn:</strong></p>
 <ul>
@@ -776,10 +779,27 @@ let tiledUV = rotatedUV * tileUniforms.tileSize + tileUniforms.tileOffset;
 </ul>
 <hr>
 <h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="build-failures---reading-terminal-output">Build Failures - Reading Terminal Output</h3>
+<p><strong>⚠️ Important:</strong> When using <code>scripts/build.bat</code>, the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
+<p><strong>What to look for in terminal:</strong></p>
+<ol>
+<li>Scroll to the <strong>very end</strong> of the terminal output</li>
+<li>Look for <code>[SUCCESS] Build completed successfully!</code> - if this appears, build succeeded</li>
+<li>If you see <code>[ERROR] Build failed.</code> - the build failed regardless of task status</li>
+</ol>
+<p><strong>Common build issues:</strong></p>
+<ul>
+<li><strong>Missing semicolons</strong> - WGSL requires <code>;</code> at end of statements</li>
+<li><strong>Struct size mismatch</strong> - <code>tileUniforms</code> size must be 16 bytes (2 × vec2f)</li>
+<li><strong>Bind group naming</strong> - <code>&quot;TileUniforms&quot;</code> in registration must match shader <code>@group(3)</code></li>
+<li><strong>CMake cache</strong> - Run <code>rm -r build</code> (or delete <code>build/</code> folder) then rebuild clean</li>
+</ul>
+<h3 id="bind-group-issues">Bind Group Issues</h3>
 <p><strong>&quot;Unable to find bind group 'TileUniforms'&quot;</strong></p>
 <ul>
 <li>Check shader name matches in <code>preRender()</code> (&quot;unlit&quot;) and registration as well as material assignment</li>
 <li>Ensure bind group name matches exactly (case-sensitive)</li>
+<li>Verify <code>@group(3)</code> in shader doesn't conflict with other bind groups</li>
 </ul>
 <p><strong>Floor appears stretched/wrong</strong></p>
 <ul>
@@ -790,13 +810,23 @@ let tiledUV = rotatedUV * tileUniforms.tileSize + tileUniforms.tileOffset;
 <ul>
 <li>Ensure <code>preRender()</code> is called (check node is enabled and in scene graph)</li>
 <li>Verify you're modifying the member variable, not a local copy</li>
+<li>Check instance ID is correct in <code>BindGroupDataProvider::create()</code></li>
 </ul>
 <p><strong>Shader compilation error</strong></p>
 <ul>
 <li>Check <code>@group(3)</code> doesn't conflict with other bind groups</li>
 <li>Ensure TileUniforms struct is defined before use</li>
 <li>Verify binding index <code>@binding(0)</code> matches registration</li>
+<li>Verify there are no missing <code>;</code></li>
 </ul>
+<h3 id="debug-strategy">Debug Strategy</h3>
+<p><strong>If errors are unclear:</strong></p>
+<ol>
+<li>Open <code>MeshPass.cpp</code> in your editor</li>
+<li>Add a breakpoint in the <code>render()</code> method</li>
+<li>Press <code>F5</code> to start debugging with VS Code</li>
+<li>Check the <strong>Terminal Output</strong> panel - shader errors will be printed there</li>
+</ol>
 <hr>
 <h2 id="key-takeaways">Key Takeaways</h2>
 <p>✅ <strong>Custom Bind Groups</strong> - Extend shader capabilities with Group 3+ for custom data<br>
