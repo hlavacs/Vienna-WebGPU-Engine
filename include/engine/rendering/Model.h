@@ -29,8 +29,8 @@ struct Model : public engine::core::Identifiable<Model>, public engine::core::Ve
 	}
 
 	// Move only
-	Model(Model &&) noexcept = default;
-	Model &operator=(Model &&) noexcept = default;
+	Model(Model &&) = default;
+	Model &operator=(Model &&) = default;
 
 	Model(const Model &) = delete;
 	Model &operator=(const Model &) = delete;

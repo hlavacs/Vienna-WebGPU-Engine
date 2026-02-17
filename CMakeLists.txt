@@ -25,6 +25,14 @@ if(EMSCRIPTEN)
     add_library(SDL2::SDL2 ALIAS SDL2_SDL2)
 else()
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/SDL")
+    
+    if(APPLE)
+        foreach(SDL_TARGET SDL2 SDL2-static SDL2main SDL2_test)
+            if(TARGET ${SDL_TARGET})
+                target_compile_options(${SDL_TARGET} PRIVATE -w)
+            endif()
+        endforeach()
+    endif()
 endif()
 
 # External dependencies
@@ -116,6 +124,15 @@ set_target_properties(WebGPU_Engine_Lib PROPERTIES
 # MSVC-specific warnings to suppress
 if(MSVC)
     target_compile_options(WebGPU_Engine_Lib PUBLIC /wd4201 /wd4305 /wd4244 /utf-8 /WX)
+elseif(APPLE)
+    # On Mac: suppress warnings but don't treat as errors
+    target_compile_options(WebGPU_Engine_Lib PUBLIC
+        -Wno-error                    # Never treat warnings as errors
+        -Wno-deprecated-declarations  # Suppress deprecation warnings
+        -Wno-unused-variable          # Suppress unused variable warnings
+        -Wno-unused-parameter         # Suppress unused parameter warnings
+        -Wno-gnu-folding-constant     # Suppress GNU extension warnings
+    )
 endif()
 
 # imgui backend definition (if WGPU backend is used)
@@ -154,8 +171,6 @@ function(add_engine_executable TARGET_NAME)
     # Link against the engine
     target_link_libraries(${TARGET_NAME} PRIVATE WebGPU_Engine_Lib)
     
-    message("Configuring executable ${TARGET_NAME} with sources: ${ARG_SOURCES}")
-    message("${CMAKE_CURRENT_SOURCE_DIR}")
     # Set ASSETS_ROOT_DIR to the example's source directory
     target_compile_definitions(WebGPU_Engine_Lib PRIVATE
         $<$<CONFIG:Debug>:ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
