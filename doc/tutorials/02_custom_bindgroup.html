@@ -486,47 +486,18 @@ fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
 <hr>
 <h2 id="step-6-register-shader-with-custom-bind-group">Step 6: Register Shader with Custom Bind Group</h2>
 <p>Now open <code>examples/tutorial/main.cpp</code> and find the shader registration section (around line 70).</p>
-<p>Change the shader path to use our new shader:</p>
-<pre class="hljs"><code><div><span class="hljs-keyword">auto</span> shaderInfo =
-    shaderFactory
-        .begin(
-            <span class="hljs-string">"unlit"</span>,  <span class="hljs-comment">// Shader name can stay the same</span>
-            engine::rendering::ShaderType::Unlit,
-            PathProvider::getShaders(<span class="hljs-string">"unlit_custom.wgsl"</span>),  <span class="hljs-comment">// Use new shader file</span>
-            <span class="hljs-string">"vs_main"</span>,
-            <span class="hljs-string">"fs_main"</span>,
-            engine::rendering::VertexLayout::PositionNormalUV,
-            <span class="hljs-literal">true</span>,  <span class="hljs-comment">// enableDepth</span>
-            <span class="hljs-literal">false</span>, <span class="hljs-comment">// enableBlend</span>
-            <span class="hljs-literal">true</span>   <span class="hljs-comment">// cullBackFaces</span>
-        )
-        .addFrameBindGroup()
-        .addObjectBindGroup()
-        .addBindGroup(
-            engine::rendering::bindgroup::defaults::MATERIAL,
-            engine::rendering::BindGroupReuse::PerObject,
-            engine::rendering::BindGroupType::Material
-        )
-        .addUniform(
-            engine::rendering::bindgroup::entry::defaults::MATERIAL_PROPERTIES,
-            <span class="hljs-keyword">sizeof</span>(engine::rendering::UnlitProperties),
-            WGPUShaderStage_Fragment
-        )
-        .addSampler(
-            <span class="hljs-string">"textureSampler"</span>,
-            wgpu::SamplerBindingType::Filtering,
-            WGPUShaderStage_Fragment
-        )
-        .addMaterialTexture(
-            <span class="hljs-string">"baseColorTexture"</span>,
-            engine::rendering::MaterialTextureSlots::DIFFUSE,
-            wgpu::TextureSampleType::Float,
-            wgpu::TextureViewDimension::_2D,
-            WGPUShaderStage_Fragment
-        )
+<p><strong>⚠️ Important:</strong> You don't need to copy the entire registration code. Just:</p>
+<ol>
+<li>Change the shader <strong>file path</strong> to use the new shader</li>
+<li>Add the custom bind group code at the very end</li>
+</ol>
+<h3 id="change-the-shader-path-only">Change the Shader Path Only:</h3>
+<p>In the <code>.begin()</code> call, change ONE line:</p>
+<pre class="hljs"><code><div>PathProvider::getShaders(<span class="hljs-string">"unlit_custom.wgsl"</span>),  <span class="hljs-comment">// Change "unlit.wgsl" → "unlit_custom.wgsl"</span>
 </div></code></pre>
-<div style="page-break-after: always;"></div>
-Now add the custom bind group at the end (before `.build()`):
+<p>Everything else in the <code>.begin()</code> call stays the same (frame, object bind groups, material, sampler, texture remain).</p>
+<h3 id="add-custom-bind-group-at-the-end">Add Custom Bind Group at the End:</h3>
+<p>After the <code>.addMaterialTexture()</code> call and <strong>before</strong> <code>.build()</code>, add:</p>
 <pre class="hljs"><code><div>        .addBindGroup(
             <span class="hljs-string">"TileUniforms"</span>,                                    <span class="hljs-comment">// Bind group name</span>
             engine::rendering::BindGroupReuse::PerObject,      <span class="hljs-comment">// Cache per object</span>
@@ -541,14 +512,25 @@ Now add the custom bind group at the end (before `.build()`):
 
 shaderRegistry.registerShader(shaderInfo);
 </div></code></pre>
-<p><strong>Key concepts:</strong></p>
+<p><strong>What you're telling the engine:</strong></p>
 <ul>
-<li><code>BindGroupReuse::PerObject</code> - Engine caches this per object ID so different Models can have different Tilings</li>
-<li><code>BindGroupType::Custom</code> - Marks it as custom (not standard Frame/Object/Material)</li>
-<li>Size must match shader struct exactly (2 × vec2f = 16 bytes)</li>
+<li>Group name: <code>&quot;TileUniforms&quot;</code> (matches <code>@group(3)</code> in shader)</li>
+<li>Uniform struct size: 16 bytes</li>
+<li>Used in fragment shader stage</li>
 </ul>
-<p><strong>Why after Material bind group?</strong>
-Bind groups are numbered sequentially: Frame=0, Object=1, Material=2, TileUniforms=3. Order in registration must match <code>@group(N)</code> in shader.</p>
+<p><strong>How the Binding Happens:</strong></p>
+<blockquote>
+<p><strong>📝 Note:</strong> The complex binding logic happens in the <code>build()</code> method. When you call <code>.addBindGroup()</code> and <code>.addCustomUniform()</code>, you're specifying exactly how bind groups should be created. The engine then uses this specification to create bind group layouts, allocate GPU buffers, and manage resource binding.</p>
+<p><strong>Advanced Readers:</strong> Check out <a href="#file:WebGPUBindGroupFactory.cpp">WebGPUBindGroupFactory.cpp</a> to see how the factories handle bind group creation and resource allocation. The <code>WebGPUShaderFactory::build()</code> method orchestrates the whole process.</p>
+</blockquote>
+<p><strong>Why explicit registration?</strong></p>
+<ul>
+<li><strong>No WGSL Reflection</strong>: WebGPU doesn't provide official shader reflection APIs, and there are no mature third-party tools for WGSL parsing</li>
+<li><strong>Practical Necessity</strong>: Without automatic reflection, you must explicitly tell the engine what bind groups and uniforms exist</li>
+<li><strong>Educational</strong>: You see exactly what bind groups exist and their purposes</li>
+<li><strong>Control</strong>: Fine-grained control over resource allocation and caching</li>
+<li><strong>Debugging</strong>: Easy to see which bind groups are used by which shaders</li>
+</ul>
 <hr>
 <h2 id="step-7-implement-customrendernode">Step 7: Implement CustomRenderNode</h2>
 <p>Open <code>examples/tutorial/CustomRenderNode.h</code>. The struct is already defined:</p>
