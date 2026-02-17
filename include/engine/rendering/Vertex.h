@@ -88,6 +88,7 @@ struct Vertex
 		case VertexLayout::DebugPositionColor:
 			return VertexAttribute::Position | VertexAttribute::Color;
 		case VertexLayout::None:
+			return VertexAttribute::None;
 		default:
 			return VertexAttribute::None;
 		}
