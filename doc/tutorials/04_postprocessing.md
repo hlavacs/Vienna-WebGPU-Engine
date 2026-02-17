@@ -73,29 +73,6 @@ If we placed it before debug pass, wireframes and gizmos would not receive the v
 
 ---
 
-## Troubleshooting Build Failures
-
-**⚠️ Important:** When using `scripts/build.bat`, the task system may report success even if the build actually failed. You **MUST check the terminal output** to see the real result.
-
-**What to look for in terminal:**
-1. Scroll to the **very end** of the terminal output
-2. Look for `[SUCCESS] Build completed successfully!` - if this appears, build succeeded
-3. If you see `[ERROR] Build failed.` - the build failed regardless of task status
-
-**Common issues in post-processing:**
-- **Shader errors in vignette shader** - Check `.wgsl` for missing semicolons
-- **Bind group layout mismatch** - Verify shader layout matches C++ registration
-- **Missing pipeline creation** - Ensure `getOrCreatePipeline()` is called before rendering
-- **CMake cache issues** - Delete `build/` folder and rebuild clean
-
-**Debug Strategy:**
-1. Open `MeshPass.cpp` in your editor
-2. Add a breakpoint in the `render()` method
-3. Press `F5` to start debugging with VS Code
-4. Check the **Terminal Output** panel - errors will show exact line numbers
-
----
-
 ## Pattern Overview:
 
 All render passes in this engine follow the same lifecycle:
@@ -246,7 +223,6 @@ void PostProcessingPass::render(FrameCache &frameCache)
 		spdlog::warn("PostProcessingPass: Missing input texture or render pass context");
 		return;
 	}
-
 	// Tutorial 4 - Step 4B: Get or create pipeline
 	// The pipeline is created lazily (on first use) because:
 	// 1. Output format depends on render pass context (determined at runtime)
@@ -382,8 +358,6 @@ std::shared_ptr<webgpu::WebGPUBindGroup> PostProcessingPass::getOrCreateBindGrou
 Without caching, we'd create a new bind group every frame for the same texture, wasting GPU memory and CPU time. By caching, we only create it once per unique texture.
 
 ---
-
-<div style="page-break-after: always;"></div>
 
 ## Step 7: PostProcessingPass::getOrCreateBindGroup() - Part B (Create & Cache)
 
@@ -541,11 +515,13 @@ After the depth buffer setup (and before the Culling step), add this code to cre
 
 ---
 
+<div style="page-break-after: always;"></div>
+
 ## Step 11: Renderer::renderToTexture() - Call PostProcessingPass
 
 This is where post-processing actually executes each frame.
 
-**Location:** Find this comment in `renderToTexture()`: `Tutorial 4 - Step 11`
+**Location:** Find this comment in `renderToTexture()`: `// Tutorial 4 - Step 11:`
 
 **Your Task:**
 
@@ -597,7 +573,6 @@ Using intermediate textures allows:
 - Proper texture synchronization between passes
 
 ---
-
 ## Step 12: Renderer::onResize() - Handle Post-Processing Texture Resize
 
 When the window is resized, all textures need to be updated to match the new dimensions.
@@ -784,34 +759,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
 ## Key Concepts Learned
 
-✅ **Render Pass Lifecycle** - initialize() → render() → cleanup()
-✅ **Shader Registry** - Centralized shader management with hot-reload support
-✅ **Pipeline Manager** - Lazy pipeline creation with caching
-✅ **Bind Group Caching** - Efficient resource reuse across frames
-✅ **Fullscreen Triangle** - Procedural vertex generation in shader
-✅ **Multi-Pass Rendering** - Reading from previous pass output
+✅ **Render Pass Lifecycle** - initialize() → render() → cleanup() \
+✅ **Shader Registry** - Centralized shader management with hot-reload support \
+✅ **Pipeline Manager** - Lazy pipeline creation with caching \
+✅ **Bind Group Caching** - Efficient resource reuse across frames \
+✅ **Fullscreen Triangle** - Procedural vertex generation in shader \
+✅ **Multi-Pass Rendering** - Reading from previous pass output \
 ✅ **Screen-Space Effects** - Operations in normalized screen coordinates
-
----
-
-## Common Issues & Debugging
-
-**Black screen or no effect visible:**
-- Check `postprocess_vignette.wgsl` exists in `resources/`
-- Verify shader registry has `createVignetteShader()` called
-- Check render pass context output format matches
-
-**Vignette too strong/weak:**
-- Adjust parameters in shader:
-  ```wgsl
-  let vignetteIntensity = 0.5;  // Darker edges (0.0=none, 1.0=black)
-  let vignetteFalloff = 2.0;    // Transition speed (higher=sharper)
-  ```
-
-**Compilation errors:**
-- Verify all includes are correct
-- Check WebGPU API usage matches your version
-- Look at CompositePass/MeshPass for pattern reference
 
 ---
 
@@ -845,3 +799,26 @@ Future tutorials could cover these advanced topics!
 - [Engine Bind Group System](../BindGroupSystem.md)
 - [Getting Started Guide](../GettingStarted.md)
 - [LearnWebGPU Tutorial](https://eliemichel.github.io/LearnWebGPU/)
+
+---
+
+## Troubleshooting Build Failures
+
+**⚠️ Important:** When using `scripts/build.bat`, the task system may report success even if the build actually failed. You **MUST check the terminal output** to see the real result.
+
+**What to look for in terminal:**
+1. Scroll to the **very end** of the terminal output
+2. Look for `[SUCCESS] Build completed successfully!` - if this appears, build succeeded
+3. If you see `[ERROR] Build failed.` - the build failed regardless of task status
+
+**Common issues in post-processing:**
+- **Shader errors in vignette shader** - Check `.wgsl` for missing semicolons
+- **Bind group layout mismatch** - Verify shader layout matches C++ registration
+- **Missing pipeline creation** - Ensure `getOrCreatePipeline()` is called before rendering
+- **CMake cache issues** - Delete `build/` folder and rebuild clean
+
+**Debug Strategy:**
+1. Open `MeshPass.cpp` in your editor
+2. Add a breakpoint in the `render()` method
+3. Press `F5` to start debugging with VS Code
+4. Check the **Terminal Output** panel - errors will show exact line numbers
