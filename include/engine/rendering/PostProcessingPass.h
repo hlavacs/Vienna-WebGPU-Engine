@@ -91,14 +91,37 @@ class PostProcessingPass : public RenderPass
 
   private:
 	/**
+	 * @brief Get or create the render pipeline for this pass.
+	 * Checks if the pipeline already exists and is valid; if not, creates a new pipeline
+	 * using the shader info and render pass context. Caches the pipeline for future use.
+	 * @return Shared pointer to the render pipeline.
+	 */
+	std::shared_ptr<webgpu::WebGPUPipeline> getOrCreatePipeline();
+
+	/**
+	 * @brief Record and submit GPU commands for the post-processing pass.
+	 * 
+	 * Handles the complete command recording lifecycle:
+	 * - Creates command encoder
+	 * - Begins render pass
+	 * - Records drawing commands
+	 * - Submits to GPU queue
+	 * 
+	 * @param pipeline The render pipeline to use.
+	 * @param bindGroup The bind group containing texture and sampler resources.
+	 */
+	void recordAndSubmitCommands(
+		const std::shared_ptr<webgpu::WebGPUPipeline> &pipeline,
+		const std::shared_ptr<webgpu::WebGPUBindGroup> &bindGroup
+	);
+
+	/**
 	 * @brief Get or create a bind group for the given texture.
 	 * @param texture The texture to create a bind group for.
-	 * @param layerIndex Optional array layer index for array or cube map textures. Default is -1 (entire texture).
 	 * @return Cached or newly created bind group.
 	 */
 	std::shared_ptr<webgpu::WebGPUBindGroup> getOrCreateBindGroup(
-		const std::shared_ptr<webgpu::WebGPUTexture> &texture,
-		int layerIndex = -1
+		const std::shared_ptr<webgpu::WebGPUTexture> &texture
 	);
 
 	// Camera ID to determine which render target to sample from in the frame cache
@@ -110,15 +133,8 @@ class PostProcessingPass : public RenderPass
 	std::shared_ptr<webgpu::WebGPUTexture> m_inputTexture;
 	std::weak_ptr<webgpu::WebGPUPipeline> m_pipeline;
 
-	struct PairHash {
-        std::size_t operator()(const std::pair<uint64_t, int>& key) const {
-            std::size_t h1 = std::hash<uint64_t>{}(key.first);
-            std::size_t h2 = std::hash<int>{}(key.second);
-            return h1 ^ (h2 << 1);
-        }
-    };
 	// Bind group cache by texture pointer
-	std::unordered_map<std::pair<uint64_t, int>, std::shared_ptr<webgpu::WebGPUBindGroup>, PairHash> m_bindGroupCache;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_bindGroupCache;
 };
 
 } // namespace engine::rendering
