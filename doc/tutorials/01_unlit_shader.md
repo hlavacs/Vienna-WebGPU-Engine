@@ -20,7 +20,7 @@ Welcome to your first shader tutorial! In this guide, you'll learn how to write 
 
 ---
 
-## Step 1: Understanding the Project Structure
+## Step 1: Introduction to the Tutorial
 
 ### File: `examples/tutorial/main.cpp`
 
