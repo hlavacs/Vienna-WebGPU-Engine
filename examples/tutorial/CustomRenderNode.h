@@ -24,7 +24,7 @@ class CustomRenderNode : public engine::scene::nodes::ModelRenderNode
 
 	virtual void preRender(std::vector<engine::rendering::BindGroupDataProvider> &outProviders)
 	{
-		// // Tutorial 2 - Step 7: Implement CustomRenderNode
+		// Tutorial 02 - Step 7: Implement preRender() method
 
 	}
 

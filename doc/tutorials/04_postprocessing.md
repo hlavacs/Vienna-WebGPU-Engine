@@ -127,7 +127,7 @@ bool PostProcessingPass::initialize()
 {
 	spdlog::info("Initializing PostProcessingPass");
 
-	// Tutorial 4 - Step 1: Get vignette shader from registry
+	// Tutorial 04 - Step 1: Get vignette shader from registry
 	// The shader contains:
 	// - Vertex shader (vs_main): Generates fullscreen triangle
 	// - Fragment shader (fs_main): Applies vignette darkening
@@ -163,10 +163,14 @@ This method stores which texture to read post-processing input from.
 
 **Your Task:**
 
+In `PostProcessingPass.cpp`, find the comment: `// Tutorial 04 - Step 2`
+
+Add this code:
+
 ```cpp
 void PostProcessingPass::setInputTexture(const std::shared_ptr<webgpu::WebGPUTexture> &texture)
 {
-	// Tutorial 4 - Step 2: Store the texture to post-process
+	// Tutorial 04 - Step 2: Store the texture to post-process
 	// This is the output of MeshPass/DebugPass (the rendered scene)
 	// Called before render() to specify what we're processing
 	m_inputTexture = texture;
@@ -187,10 +191,14 @@ This method stores where post-processing output should be written.
 
 **Your Task:**
 
+In `PostProcessingPass.cpp`, find the comment: `// Tutorial 04 - Step 3`
+
+Add this code:
+
 ```cpp
 void PostProcessingPass::setRenderPassContext(const std::shared_ptr<webgpu::WebGPURenderPassContext> &renderPassContext)
 {
-	// Tutorial 4 - Step 3: Store where to render output
+	// Tutorial 04 - Step 3: Store where to render output
 	// The render pass context defines:
 	// - Color attachment (where to draw)
 	// - Clear flags (do we clear before rendering?)
@@ -212,18 +220,22 @@ The render pass context is created in `Renderer::renderToTexture()` with a descr
 
 This is the main method called each frame. We'll implement it in two parts.
 
+**Your Task:**
+
+In `PostProcessingPass.cpp`, find the comment: `// Tutorial 04 - Step 4`
+
 **Part A: Validate inputs and create pipeline**
 
 ```cpp
 void PostProcessingPass::render(FrameCache &frameCache)
 {
-	// Tutorial 4 - Step 4A: Validate inputs
+	// Tutorial 04 - Step 4A: Validate inputs
 	if (!m_inputTexture || !m_renderPassContext)
 	{
 		spdlog::warn("PostProcessingPass: Missing input texture or render pass context");
 		return;
 	}
-	// Tutorial 4 - Step 4B: Get or create pipeline
+	// Tutorial 04 - Step 4B: Get or create pipeline
 	// The pipeline is created lazily (on first use) because:
 	// 1. Output format depends on render pass context (determined at runtime)
 	// 2. Shader might be hot-reloaded, needing a new pipeline
@@ -263,7 +275,7 @@ void PostProcessingPass::render(FrameCache &frameCache)
 **Part B: Create bind group and draw**
 
 ```cpp
-	// Tutorial 4 - Step 4C: Get or create bind group for input texture
+	// Tutorial 04 - Step 4C: Get or create bind group for input texture
 	// Bind groups are cached by texture pointer to avoid recreation each frame
 	auto bindGroup = getOrCreateBindGroup(m_inputTexture);
 	if (!bindGroup)
@@ -272,7 +284,7 @@ void PostProcessingPass::render(FrameCache &frameCache)
 		return;
 	}
 	
-	// Tutorial 4 - Step 4D: Record and submit draw commands
+	// Tutorial 04 - Step 4D: Record and submit draw commands
 	// Create command encoder (WebGPU's command recording object)
 	wgpu::CommandEncoder encoder = m_context->createCommandEncoder("PostProcessingPass Encoder");
 	
@@ -321,6 +333,10 @@ void PostProcessingPass::render(FrameCache &frameCache)
 
 This method creates or reuses bind groups that bind the texture + sampler to shader bindings.
 
+**Your Task:**
+
+In `PostProcessingPass.cpp`, find the comment: `// Tutorial 04 - Step 6`
+
 **Part A: Check cache and get layout**
 
 ```cpp
@@ -329,21 +345,21 @@ std::shared_ptr<webgpu::WebGPUBindGroup> PostProcessingPass::getOrCreateBindGrou
 	int layerIndex
 )
 {
-	// Tutorial 4 - Step 6A: Validate input
+	// Tutorial 04 - Step 6A: Validate input
 	if (!texture)
 		return nullptr;
 
-	// Tutorial 4 - Step 6B: Create cache key
+	// Tutorial 04 - Step 6B: Create cache key
 	// We cache bind groups by texture pointer + layer index
 	// This avoids recreating the same bind group multiple times per frame
 	auto cacheKey = std::make_pair(reinterpret_cast<uint64_t>(texture.get()), layerIndex);
 
-	// Tutorial 4 - Step 6C: Check if bind group already cached
+	// Tutorial 04 - Step 6C: Check if bind group already cached
 	auto it = m_bindGroupCache.find(cacheKey);
 	if (it != m_bindGroupCache.end())
 		return it->second;  // Reuse cached bind group
 
-	// Tutorial 4 - Step 6D: Get bind group layout from shader
+	// Tutorial 04 - Step 6D: Get bind group layout from shader
 	// The shader info was loaded in initialize()
 	// The layout describes what resources Group 0 expects:
 	// - Binding 0: sampler (for texture filtering)
@@ -361,10 +377,14 @@ Without caching, we'd create a new bind group every frame for the same texture, 
 
 ## Step 7: PostProcessingPass::getOrCreateBindGroup() - Part B (Create & Cache)
 
+**Your Task:**
+
+In `PostProcessingPass.cpp`, find the comment: `// Tutorial 04 - Step 7`
+
 **Part B: Create new bind group**
 
 ```cpp
-	// Tutorial 4 - Step 7E: Create bind group entries matching shader layout
+	// Tutorial 04 - Step 7E: Create bind group entries matching shader layout
 	// The shader defines:
 	// @group(0) @binding(0) var inputSampler: sampler;
 	// @group(0) @binding(1) var inputTexture: texture_2d<f32>;
@@ -378,16 +398,16 @@ Without caching, we'd create a new bind group every frame for the same texture, 
 		// binding=1, texture resource
 	};
 
-	// Tutorial 4 - Step 7F: Create WebGPU bind group descriptor
+	// Tutorial 04 - Step 7F: Create WebGPU bind group descriptor
 	wgpu::BindGroupDescriptor desc = {};
 	desc.layout = bindGroupLayout->getLayout();
 	desc.entryCount = static_cast<uint32_t>(entries.size());
 	desc.entries = entries.data();
 
-	// Tutorial 4 - Step 7G: Create raw WebGPU bind group
+	// Tutorial 04 - Step 7G: Create raw WebGPU bind group
 	auto bindGroupRaw = m_context->getDevice().createBindGroup(desc);
 	
-	// Tutorial 4 - Step 7H: Wrap in engine's bind group object
+	// Tutorial 04 - Step 7H: Wrap in engine's bind group object
 	// WebGPUBindGroup is a wrapper that tracks resources and provides utilities
 	auto bindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
 		bindGroupRaw,
@@ -395,7 +415,7 @@ Without caching, we'd create a new bind group every frame for the same texture, 
 		std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{}  // No buffers in this bind group
 	);
 
-	// Tutorial 4 - Step 7I: Cache for future use
+	// Tutorial 04 - Step 7I: Cache for future use
 	m_bindGroupCache[cacheKey] = bindGroup;
 	return bindGroup;
 }
@@ -426,10 +446,14 @@ This method releases cached resources.
 
 **Your Task:**
 
+In `PostProcessingPass.cpp`, find the comment: `// Tutorial 04 - Step 8`
+
+Add this code:
+
 ```cpp
 void PostProcessingPass::cleanup()
 {
-	// Tutorial 4 - Step 6: Release bind group cache
+	// Tutorial 04 - Step 6: Release bind group cache
 	// Called on shutdown or window resize
 	// The pipeline and sampler are managed by pipeline manager and sampler factory
 	// We only need to clear bind group cache
@@ -456,12 +480,12 @@ Now integrate the pass into the renderer.
 
 **Your Task:**
 
-Open `src/engine/rendering/Renderer.cpp` and find the initialize() method. Look for the comment: `// Tutorial 4 - Step 9`
+Open `src/engine/rendering/Renderer.cpp` and find the initialize() method. Look for the comment: `// Tutorial 04 - Step 9`
 
 Add this code:
 
 ```cpp
-	// Tutorial 4 - Step 9: Initialize PostProcessingPass
+	// Tutorial 04 - Step 9: Initialize PostProcessingPass
 	m_postProcessingPass = std::make_unique<PostProcessingPass>(m_context);
 	if (!m_postProcessingPass->initialize())
 	{
@@ -486,14 +510,14 @@ During initialization, we create the PostProcessingPass object and call its `ini
 
 Before we can render to a post-process texture, we need to create it.
 
-**Location:** In `Renderer::renderToTexture()`, find the comment: `// Tutorial 4 - Step 10:`
-
 **Your Task:**
+
+Open `src/engine/rendering/Renderer.cpp` and find the comment: `// Tutorial 04 - Step 10`
 
 After the depth buffer setup (and before the Culling step), add this code to create the post-processing texture:
 
 ```cpp
-	// Tutorial 4 - Step 10: Prepare post-processing texture
+	// Tutorial 04 - Step 10: Prepare post-processing texture
 	// Post-processing texture is an intermediate render target for effects like bloom, tone mapping, etc.
 	// Use negative ID to differentiate post-process textures from main render targets
 	if (!m_postProcessTextures[renderTargetId])
@@ -521,14 +545,14 @@ After the depth buffer setup (and before the Culling step), add this code to cre
 
 This is where post-processing actually executes each frame.
 
-**Location:** Find this comment in `renderToTexture()`: `// Tutorial 4 - Step 11:`
-
 **Your Task:**
+
+In `Renderer.cpp`, find the comment: `// Tutorial 04 - Step 11`
 
 Add this code after the Debug Pass section:
 
 ```cpp
-	// Tutorial 4 - Step 11: Apply vignette effect
+	// Tutorial 04 - Step 11: Apply vignette effect
 	// Texture swapping: MeshPass/DebugPass output → input for post-processing
 	// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)
 	renderFromTexture = renderToTexture; // Post-processing reads from the main render target
@@ -595,7 +619,7 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 	// ... cleanup passes ...
 	
 	if (m_postProcessingPass)
-		m_postProcessingPass->cleanup();  // Tutorial 4 - Step 12: Clear bind group cache and reset
+		m_postProcessingPass->cleanup();  // Tutorial 04 - Step 12: Clear bind group cache and reset
 	
 	spdlog::info("Renderer resized to {}x{}", width, height);
 }

@@ -77,7 +77,7 @@ bool Renderer::initialize()
 		return false;
 	}
 
-	// Tutorial 4 - Step 9: Initialize PostProcessingPass
+	// Tutorial 04 - Step 9: Initialize PostProcessingPass
 	
 
 	m_compositePass = std::make_unique<CompositePass>(m_context);
@@ -341,7 +341,7 @@ void Renderer::renderToTexture(
 			wgpu::TextureFormat::Depth32Float
 		);
 	}
-	// Tutorial 4 - Step 10: Prepare post-processing texture
+	// Tutorial 04 - Step 10: Prepare post-processing texture
 	// Post-processing texture is an intermediate render target for effects like bloom, tone mapping, etc.
 	// Use negative ID to differentiate post-process textures from main render targets
 
@@ -412,7 +412,7 @@ void Renderer::renderToTexture(
 	// ========================================
 	// STEP 7: Post-Processing Pass
 	// ========================================
-	// Tutorial 4 - Step 11: Apply vignette effect
+	// Tutorial 04 - Step 11: Apply vignette effect
 	// Texture swapping: MeshPass/DebugPass output → input for post-processing
 	// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)
 	
@@ -494,7 +494,7 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 		auto depthBuffer = m_depthBuffers[id];
 		if (depthBuffer)
 			depthBuffer->resize(*m_context, viewPortWidth, viewPortHeight);
-		// Tutorial 4 - Step 12: Handle window resize
+		// Tutorial 04 - Step 12: Handle window resize
 		// When the window resizes, we need to resize all render targets and depth buffers accordingly
 	}
 
@@ -506,7 +506,7 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 
 	if (m_shadowPass)
 		m_shadowPass->cleanup();
-	// Tutorial 4 - Step 12: Handle window resize (continued)
+	// Tutorial 04 - Step 12: Handle window resize (continued)
 	// Post-processing pass also needs to clean up GPU resources so it can recreate them with new sizes.
 	// If we don't clean up, we'll have dangling GPU resources with old dimensions that cause rendering issues.
 
