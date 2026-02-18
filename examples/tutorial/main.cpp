@@ -100,7 +100,7 @@ int main(int argc, char **argv)
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				WGPUShaderStage_Fragment
-			) // Tutorial 2 - Step 6: Register Shader with Custom Bind Group
+			) // Tutorial 02 - Step 6: Add custom bind group registration here
 			.build();
 
 	shaderRegistry.registerShader(shaderInfo);
@@ -127,13 +127,14 @@ int main(int argc, char **argv)
 	auto floorMaterial = maybeFloorMaterial.value();
 	auto floorModel = maybeModelFloor.value();
 
-	// Tutorial 1 - Step 9: Uncomment this line after completing the shader
+	// Tutorial 01 - Step 9: Uncomment this line after completing the shader
+	// Tutorial 02 - Step 9: Uncomment this line after completing the shader
 	// This assigns our custom material to the floor's only submesh.
 	// plane.obj has only one mesh, so we use [0] to access it.
 	// ------------------
 	// floorModel->getSubmeshes()[0].material = floorMaterial->getHandle();
 
-	// Tutorial 2: Step 8: Create CustomRenderNode Instance
+	// Tutorial 02 - Step 8: Create CustomRenderNode instance
 	auto floorNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(floorModel);
 	floorNode->getTransform().setLocalScale(glm::vec3(10.0f, 1.0f, 10.0f));
 	rootNode->addChild(floorNode);

@@ -431,7 +431,9 @@ A tiled floor with controllable tiling and offset, perfect for scrolling texture
 <p>You'll extend this by adding a custom bind group (Group 3) for tiling parameters.</p>
 <hr>
 <h2 id="step-3-add-tileuniforms-struct-to-shader">Step 3: Add TileUniforms Struct to Shader</h2>
-<p>Open <code>examples/tutorial/assets/shaders/unlit_custom.wgsl</code> and add after <code>UnlitMaterialUniforms</code>:</p>
+<p><strong>Your Task:</strong></p>
+<p>Open <code>examples/tutorial/assets/shaders/unlit_custom.wgsl</code> and find the comment: <code>// Tutorial 02 - Step 3</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div>struct TileUniforms
 {
     tileOffset: vec2f,
@@ -448,7 +450,9 @@ Each <code>vec2f</code> is 8 bytes, so total is 16 bytes - perfect for uniform b
 <hr>
 <div style="page-break-after: always;"></div>
 <h2 id="step-4-declare-custom-bind-group">Step 4: Declare Custom Bind Group</h2>
-<p>Add the bind group declaration after Group 2 (Material):</p>
+<p><strong>Your Task:</strong></p>
+<p>In <code>unlit_custom.wgsl</code>, find the comment: <code>// Tutorial 02 - Step 4</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div>@group(3) @binding(0)
 var&lt;uniform&gt; tileUniforms: TileUniforms;
 </div></code></pre>
@@ -462,6 +466,8 @@ var&lt;uniform&gt; tileUniforms: TileUniforms;
 <p>Each group can have multiple bindings (0, 1, 2...) for different resources within that group.</p>
 <hr>
 <h2 id="step-5-modify-fragment-shader-to-use-tileuniforms">Step 5: Modify Fragment Shader to Use TileUniforms</h2>
+<p><strong>Your Task:</strong></p>
+<p>In <code>unlit_custom.wgsl</code>, find the comment: <code>// Tutorial 02 - Step 5</code></p>
 <p>Update the fragment shader to apply tiling before texture sampling:</p>
 <pre class="hljs"><code><div>@fragment
 fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
@@ -488,7 +494,8 @@ fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
 </ul>
 <hr>
 <h2 id="step-6-register-shader-with-custom-bind-group">Step 6: Register Shader with Custom Bind Group</h2>
-<p>Now open <code>examples/tutorial/main.cpp</code> and find the shader registration section (around line 70).</p>
+<p><strong>Your Task:</strong></p>
+<p>Open <code>examples/tutorial/main.cpp</code> and find the comment: <code>// Tutorial 02 - Step 6</code></p>
 <p><strong>⚠️ Important:</strong> You don't need to copy the entire registration code. Just:</p>
 <ol>
 <li>Change the shader <strong>file path</strong> to use the new shader</li>
@@ -536,7 +543,9 @@ shaderRegistry.registerShader(shaderInfo);
 </ul>
 <hr>
 <h2 id="step-7-implement-customrendernode">Step 7: Implement CustomRenderNode</h2>
-<p>Open <code>examples/tutorial/CustomRenderNode.h</code>. The struct is already defined:</p>
+<p><strong>Your Task:</strong></p>
+<p>Open <code>examples/tutorial/CustomRenderNode.h</code> and find the comment: <code>// Tutorial 02 - Step 7</code></p>
+<p>The struct is already defined:</p>
 <pre class="hljs"><code><div><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">TileUniforms</span>
 {</span>
     glm::vec2 tileOffset;
@@ -544,7 +553,7 @@ shaderRegistry.registerShader(shaderInfo);
 };
 </div></code></pre>
 <div style="page-break-after: always;"></div>
-<p>Now implement the <code>preRender()</code> method:</p>
+<p>Implement the <code>preRender()</code> method:</p>
 <pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">preRender</span><span class="hljs-params">(<span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;engine::rendering::BindGroupDataProvider&gt; &amp;outProviders)</span> <span class="hljs-keyword">override</span>
 </span>{
     <span class="hljs-keyword">auto</span> dataProvider = engine::rendering::BindGroupDataProvider::create(
@@ -571,7 +580,9 @@ shaderRegistry.registerShader(shaderInfo);
 If you have 10 floor tiles with different tiling, each gets its own cached bind group. The renderer only rebinds when switching between different objects.</p>
 <hr>
 <h2 id="step-8-create-customrendernode-instance">Step 8: Create CustomRenderNode Instance</h2>
-<p>The <code>main.cpp</code> already has the floor setup (around line 155). Update it to use CustomRenderNode:</p>
+<p><strong>Your Task:</strong></p>
+<p>Open <code>main.cpp</code> and find the comment: <code>// Tutorial 02 - Step 8</code></p>
+<p>Update the code to use CustomRenderNode:</p>
 <pre class="hljs"><code><div><span class="hljs-comment">// Change from ModelRenderNode to CustomRenderNode</span>
 <span class="hljs-keyword">auto</span> floorNode = <span class="hljs-built_in">std</span>::make_shared&lt;demo::CustomRenderNode&gt;(floorModel);
 floorNode-&gt;tileUniforms.tileOffset = glm::vec2(<span class="hljs-number">0.2f</span>, <span class="hljs-number">0.0f</span>);
@@ -588,7 +599,9 @@ rootNode-&gt;addChild(floorNode);
 </ul>
 <hr>
 <h2 id="step-9-uncomment-material-assignment">Step 9: Uncomment Material Assignment</h2>
-<p>Finally, uncomment the material assignment line (around line 150):</p>
+<p><strong>Your Task:</strong></p>
+<p>Open <code>main.cpp</code> and find the comment: <code>// Tutorial 02 - Step 9</code></p>
+<p>Uncomment the material assignment line:</p>
 <pre class="hljs"><code><div><span class="hljs-comment">// Uncomment this line:</span>
 floorModel-&gt;getSubmeshes()[<span class="hljs-number">0</span>].material = floorMaterial-&gt;getHandle();
 </div></code></pre>
@@ -778,6 +791,38 @@ let tiledUV = rotatedUV * tileUniforms.tileSize + tileUniforms.tileOffset;
 <li>Old bind groups are automatically cleaned up at frame end</li>
 </ul>
 <hr>
+<h2 id="key-takeaways">Key Takeaways</h2>
+<p>✅ <strong>Custom Bind Groups</strong> - Extend shader capabilities with Group 3+ for custom data<br>
+✅ <strong>BindGroupDataProvider</strong> - Simple API to pass CPU data to GPU shaders<br>
+✅ <strong>preRender() Lifecycle</strong> - Called before rendering, perfect for per-frame updates<br>
+✅ <strong>Reuse Policies</strong> - Control caching behavior (PerFrame, PerObject, PerMaterial)<br>
+✅ <strong>Node Customization</strong> - Extend ModelRenderNode to add custom shader data</p>
+<p><strong>WebGPU Concepts Learned:</strong></p>
+<ul>
+<li>Bind group indices beyond standard groups (3, 4, 5...)</li>
+<li>Custom uniform buffer creation and caching</li>
+<li>Alignment requirements for uniform structs (16-byte boundaries)</li>
+<li>Efficient resource reuse via caching policies</li>
+</ul>
+<hr>
+<h2 id="whats-next">What's Next?</h2>
+<p>In <strong>Tutorial 03</strong>, you'll learn:</p>
+<ul>
+<li>Shadow mapping with directional lights</li>
+<li>Sampling depth textures in shaders</li>
+<li>Transform coordinates from world space to light space</li>
+<li>Percentage Closer Filtering (PCF) for soft shadows</li>
+</ul>
+<p><strong>Next Tutorial:</strong> <a href="03_shadow_mapping.md">03_shadow_mapping.md</a> / <a href="03_shadow_mapping.pdf">03_shadow_mapping.pdf</a> / <a href="03_shadow_mapping.html">03_shadow_mapping.html</a></p>
+<hr>
+<h2 id="further-reading">Further Reading</h2>
+<ul>
+<li><a href="../BindGroupSystem.md">Bind Group System Documentation</a></li>
+<li><a href="../NodeSystem.md">Node System Guide</a></li>
+<li><a href="https://www.w3.org/TR/webgpu/#bind-groups">WebGPU Bind Group Spec</a></li>
+<li><a href="01_unlit_shader.md">Tutorial 01: Unlit Shader</a></li>
+</ul>
+<hr>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <h3 id="build-failures---reading-terminal-output">Build Failures - Reading Terminal Output</h3>
 <p><strong>⚠️ Important:</strong> When using <code>scripts/build.bat</code>, the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
@@ -827,38 +872,6 @@ let tiledUV = rotatedUV * tileUniforms.tileSize + tileUniforms.tileOffset;
 <li>Press <code>F5</code> to start debugging with VS Code</li>
 <li>Check the <strong>Terminal Output</strong> panel - shader errors will be printed there</li>
 </ol>
-<hr>
-<h2 id="key-takeaways">Key Takeaways</h2>
-<p>✅ <strong>Custom Bind Groups</strong> - Extend shader capabilities with Group 3+ for custom data<br>
-✅ <strong>BindGroupDataProvider</strong> - Simple API to pass CPU data to GPU shaders<br>
-✅ <strong>preRender() Lifecycle</strong> - Called before rendering, perfect for per-frame updates<br>
-✅ <strong>Reuse Policies</strong> - Control caching behavior (PerFrame, PerObject, PerMaterial)<br>
-✅ <strong>Node Customization</strong> - Extend ModelRenderNode to add custom shader data</p>
-<p><strong>WebGPU Concepts Learned:</strong></p>
-<ul>
-<li>Bind group indices beyond standard groups (3, 4, 5...)</li>
-<li>Custom uniform buffer creation and caching</li>
-<li>Alignment requirements for uniform structs (16-byte boundaries)</li>
-<li>Efficient resource reuse via caching policies</li>
-</ul>
-<hr>
-<h2 id="whats-next">What's Next?</h2>
-<p>In <strong>Tutorial 03</strong>, you'll learn:</p>
-<ul>
-<li>Shadow mapping with directional lights</li>
-<li>Sampling depth textures in shaders</li>
-<li>Transform coordinates from world space to light space</li>
-<li>Percentage Closer Filtering (PCF) for soft shadows</li>
-</ul>
-<p><strong>Next Tutorial:</strong> <a href="03_shadow_mapping.md">03_shadow_mapping.md</a> / <a href="03_shadow_mapping.pdf">03_shadow_mapping.pdf</a> / <a href="03_shadow_mapping.html">03_shadow_mapping.html</a></p>
-<hr>
-<h2 id="further-reading">Further Reading</h2>
-<ul>
-<li><a href="../BindGroupSystem.md">Bind Group System Documentation</a></li>
-<li><a href="../NodeSystem.md">Node System Guide</a></li>
-<li><a href="https://www.w3.org/TR/webgpu/#bind-groups">WebGPU Bind Group Spec</a></li>
-<li><a href="01_unlit_shader.md">Tutorial 01: Unlit Shader</a></li>
-</ul>
 
 </body>
 </html>

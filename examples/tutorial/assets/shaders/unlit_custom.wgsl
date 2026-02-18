@@ -29,6 +29,8 @@ struct UnlitMaterialUniforms {
     color: vec4f,
 }
 
+// Tutorial 02 - Step 3: Add TileUniforms struct
+
 
 
 @group(0) @binding(0)
@@ -44,7 +46,7 @@ var textureSampler: sampler;
 @group(2) @binding(2)
 var baseColorTexture: texture_2d<f32>;
 
-// Step 4: Declare Custom Bind Group
+// Tutorial 02 - Step 4: Declare custom bind group
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -58,7 +60,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
-    // Step 5: Modify Fragment Shader to Use TileUniforms
+    // Tutorial 02 - Step 5: Modify fragment shader to use TileUniforms
     let textureColor = textureSample(baseColorTexture, textureSampler, input.texCoord);
     let finalColor = textureColor * unlitMaterialUniforms.color;
     return finalColor;

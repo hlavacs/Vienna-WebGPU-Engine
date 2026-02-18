@@ -68,6 +68,12 @@ Since the shader file is empty, the build will succeed but the the floor won't r
 
 Before we write shaders, we need to understand what data flows through them. Let's start with what the vertex shader receives from the mesh.
 
+**Your Task:**
+
+Open `examples/tutorial/assets/shaders/unlit.wgsl` and find the comment: `// Tutorial 01 - Step 2`
+
+Add this code:
+
 ```wgsl
 struct VertexInput {
     @location(0) position: vec3f,
@@ -90,7 +96,13 @@ The engine's mesh loader provides these three attributes for every vertex. The `
 
 ## Step 3: Define Vertex Output Structure
 
-Now define what the vertex shader outputs (and what the fragment shader receives):
+Now define what the vertex shader outputs (and what the fragment shader receives).
+
+**Your Task:**
+
+In `unlit.wgsl`, find the comment: `Tutorial 01 - Step 3`
+
+Add this code:
 
 ```wgsl
 struct VertexOutput {
@@ -146,7 +158,11 @@ The engine **requires** `FrameUniforms` at bind group 0. This is not optional - 
 
 **Required at @group(0)** - This must always be bind group 0 in all engine shaders.
 
-Open `examples/tutorial/assets/shaders/unlit.wgsl` and add:
+**Your Task:**
+
+In `unlit.wgsl`, find the comment: `// Tutorial 01 - Step 4`
+
+Add this code:
 
 ```wgsl
 struct FrameUniforms {
@@ -176,6 +192,12 @@ Every vertex needs to be transformed from world space to screen space. The Frame
 
 ## Step 5: Declare Bind Group 1 - Object Uniforms
 
+**Your Task:**
+
+In `unlit.wgsl`, find the comment: `// Tutorial 01 - Step 5`
+
+Add this code:
+
 ```wgsl
 struct ObjectUniforms {
     modelMatrix: mat4x4f,
@@ -196,6 +218,12 @@ Each object has a different position, rotation, and scale in the scene. This bin
 ---
 
 ## Step 6: Declare Bind Group 2 - Material Uniforms
+
+**Your Task:**
+
+In `unlit.wgsl`, find the comment: `// Tutorial 01 - Step 6`
+
+Add this code:
 
 ```wgsl
 struct UnlitMaterialUniforms {
@@ -222,9 +250,13 @@ Different materials have different appearances. This bind group provides the mat
 
 ---
 
-<div style="page-break-after: always;"></div>
-
 ## Step 7: Write the Vertex Shader
+
+**Your Task:**
+
+In `unlit.wgsl`, find the comment: `Tutorial 01 - Step 7`
+
+Add this code:
 
 ```wgsl
 @vertex
@@ -259,6 +291,12 @@ This pipeline is created once and reused every frame. It's WebGPU's way of "free
 
 ## Step 8: Write the Fragment Shader
 
+**Your Task:**
+
+In `unlit.wgsl`, find the comment: `Tutorial 01 - Step 8`
+
+Add this code:
+
 ```wgsl
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
@@ -274,7 +312,11 @@ This samples the texture at the UV coordinates and multiplies by the tint color.
 
 ## Step 9: Assign Material to the Floor
 
-In `examples/tutorial/main.cpp` (line ~127), uncomment:
+**Your Task:**
+
+Open `examples/tutorial/main.cpp` and search for the comment: `// Tutorial 01 - Step 9`
+
+Uncomment the line below it:
 
 ```cpp
 floorModel->getSubmeshes()[0].material = floorMaterial->getHandle();
@@ -450,6 +492,38 @@ let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 
 ---
 
+## Key Takeaways
+
+✅ **Bind Groups** - Engine provides Frame (0), Object (1), Material (2)  
+✅ **Vertex Shader** - Transforms vertices through matrix pipeline  
+✅ **Fragment Shader** - Samples textures and outputs color  
+✅ **Material Assignment** - Connect materials to model submeshes  
+✅ **WGSL Syntax** - Strict typing with `@group/@binding/@location` 
+---
+
+## What's Next?
+
+In **Tutorial 02**, you'll learn:
+- Creating custom bind groups beyond the standard Frame/Object/Material
+- Registering custom bind groups in shader reflection
+- Implementing `preRender()` to provide per-object data
+- Using `BindGroupDataProvider` to send custom data to GPU
+- Extending `ModelRenderNode` to add custom shader parameters
+- Practical example: Texture tiling and offset control per object
+
+**Next Tutorial:** [02_custom_bindgroup.md](02_custom_bindgroup.md) / [02_custom_bindgroup.pdf](02_custom_bindgroup.pdf) / [02_custom_bindgroup.html](02_custom_bindgroup.html)
+
+---
+
+## Further Reading
+
+- [WebGPU WGSL Specification](https://www.w3.org/TR/WGSL/)
+- [Engine Bind Group System](../BindGroupSystem.md)
+- [Getting Started Guide](../GettingStarted.md)
+- [LearnWebGPU Tutorial](https://eliemichel.github.io/LearnWebGPU/) 
+
+---
+
 ## Troubleshooting
 
 ### Build Failures - Reading Terminal Output
@@ -491,36 +565,3 @@ let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 2. Add a breakpoint in the `render()` method
 3. Press `F5` to start debugging
 4. Check the **Terminal Output** panel - shader errors will be printed there
-
----
-
-## Key Takeaways
-
-✅ **Bind Groups** - Engine provides Frame (0), Object (1), Material (2)  
-✅ **Vertex Shader** - Transforms vertices through matrix pipeline  
-✅ **Fragment Shader** - Samples textures and outputs color  
-✅ **Material Assignment** - Connect materials to model submeshes  
-✅ **WGSL Syntax** - Strict typing with `@group/@binding/@location`  
-
----
-
-## What's Next?
-
-In **Tutorial 02**, you'll learn:
-- Creating custom bind groups beyond the standard Frame/Object/Material
-- Registering custom bind groups in shader reflection
-- Implementing `preRender()` to provide per-object data
-- Using `BindGroupDataProvider` to send custom data to GPU
-- Extending `ModelRenderNode` to add custom shader parameters
-- Practical example: Texture tiling and offset control per object
-
-**Next Tutorial:** [02_custom_bindgroup.md](02_custom_bindgroup.md) / [02_custom_bindgroup.pdf](02_custom_bindgroup.pdf) / [02_custom_bindgroup.html](02_custom_bindgroup.html)
-
----
-
-## Further Reading
-
-- [WebGPU WGSL Specification](https://www.w3.org/TR/WGSL/)
-- [Engine Bind Group System](../BindGroupSystem.md)
-- [Getting Started Guide](../GettingStarted.md)
-- [LearnWebGPU Tutorial](https://eliemichel.github.io/LearnWebGPU/)

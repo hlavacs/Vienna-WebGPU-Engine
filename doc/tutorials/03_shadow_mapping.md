@@ -14,6 +14,16 @@ This tutorial will cover implementing shadow mapping to add realistic shadows to
 - Shadow bias and peter-panning artifacts
 - PCF (Percentage Closer Filtering) for soft shadows
 - Integrating shadows into the lighting pipeline
+- 
+---
+
+## What's Next?
+
+While this tutorial is being developed, continue to **Tutorial 04** to learn about post-processing:
+
+**Next Tutorial:** [04_postprocessing.md](04_postprocessing.md) / [04_postprocessing.pdf](04_postprocessing.pdf) / [04_postprocessing.html](04_postprocessing.html)
+
+In Tutorial 04, you'll learn how to write a custom render pass by implementing post-processing effects like vignette, tone mapping, and color grading.
 
 ---
 
@@ -40,13 +50,3 @@ This tutorial will cover implementing shadow mapping to add realistic shadows to
 2. Add a breakpoint in the `render()` method
 3. Press `F5` to start debugging with VS Code
 4. Check the **Terminal Output** panel - errors will be printed there
-
----
-
-## What's Next?
-
-While this tutorial is being developed, continue to **Tutorial 04** to learn about post-processing:
-
-**Next Tutorial:** [04_postprocessing.md](04_postprocessing.md) / [04_postprocessing.pdf](04_postprocessing.pdf) / [04_postprocessing.html](04_postprocessing.html)
-
-In Tutorial 04, you'll learn how to write a custom render pass by implementing post-processing effects like vignette, tone mapping, and color grading.

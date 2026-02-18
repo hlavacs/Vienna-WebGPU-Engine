@@ -78,7 +78,11 @@ You'll extend this by adding a custom bind group (Group 3) for tiling parameters
 
 ## Step 3: Add TileUniforms Struct to Shader
 
-Open `examples/tutorial/assets/shaders/unlit_custom.wgsl` and add after `UnlitMaterialUniforms`:
+**Your Task:**
+
+Open `examples/tutorial/assets/shaders/unlit_custom.wgsl` and find the comment: `// Tutorial 02 - Step 3`
+
+Add this code:
 
 ```wgsl
 struct TileUniforms
@@ -101,7 +105,11 @@ Each `vec2f` is 8 bytes, so total is 16 bytes - perfect for uniform buffer align
 
 ## Step 4: Declare Custom Bind Group
 
-Add the bind group declaration after Group 2 (Material):
+**Your Task:**
+
+In `unlit_custom.wgsl`, find the comment: `// Tutorial 02 - Step 4`
+
+Add this code:
 
 ```wgsl
 @group(3) @binding(0)
@@ -121,6 +129,10 @@ Each group can have multiple bindings (0, 1, 2...) for different resources withi
 ---
 
 ## Step 5: Modify Fragment Shader to Use TileUniforms
+
+**Your Task:**
+
+In `unlit_custom.wgsl`, find the comment: `// Tutorial 02 - Step 5`
 
 Update the fragment shader to apply tiling before texture sampling:
 
@@ -151,7 +163,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
 ## Step 6: Register Shader with Custom Bind Group
 
-Now open `examples/tutorial/main.cpp` and find the shader registration section (around line 70).
+**Your Task:**
+
+Open `examples/tutorial/main.cpp` and find the comment: `// Tutorial 02 - Step 6`
 
 **⚠️ Important:** You don't need to copy the entire registration code. Just:
 1. Change the shader **file path** to use the new shader
@@ -209,7 +223,11 @@ shaderRegistry.registerShader(shaderInfo);
 
 ## Step 7: Implement CustomRenderNode
 
-Open `examples/tutorial/CustomRenderNode.h`. The struct is already defined:
+**Your Task:**
+
+Open `examples/tutorial/CustomRenderNode.h` and find the comment: `// Tutorial 02 - Step 7`
+
+The struct is already defined:
 
 ```cpp
 struct TileUniforms
@@ -221,7 +239,7 @@ struct TileUniforms
 
 <div style="page-break-after: always;"></div>
 
-Now implement the `preRender()` method:
+Implement the `preRender()` method:
 
 ```cpp
 virtual void preRender(std::vector<engine::rendering::BindGroupDataProvider> &outProviders) override
@@ -255,7 +273,11 @@ If you have 10 floor tiles with different tiling, each gets its own cached bind 
 
 ## Step 8: Create CustomRenderNode Instance
 
-The `main.cpp` already has the floor setup (around line 155). Update it to use CustomRenderNode:
+**Your Task:**
+
+Open `main.cpp` and find the comment: `// Tutorial 02 - Step 8`
+
+Update the code to use CustomRenderNode:
 
 ```cpp
 // Change from ModelRenderNode to CustomRenderNode
@@ -276,7 +298,11 @@ rootNode->addChild(floorNode);
 
 ## Step 9: Uncomment Material Assignment
 
-Finally, uncomment the material assignment line (around line 150):
+**Your Task:**
+
+Open `main.cpp` and find the comment: `// Tutorial 02 - Step 9`
+
+Uncomment the material assignment line:
 
 ```cpp
 // Uncomment this line:
@@ -485,6 +511,42 @@ When you call `BindGroupDataProvider::create()`, the engine internally:
 - Bind groups live in `FrameCache` and are recreated each frame
 - GPU buffers are pooled and reused when possible
 - Old bind groups are automatically cleaned up at frame end
+---
+
+## Key Takeaways
+
+✅ **Custom Bind Groups** - Extend shader capabilities with Group 3+ for custom data  
+✅ **BindGroupDataProvider** - Simple API to pass CPU data to GPU shaders  
+✅ **preRender() Lifecycle** - Called before rendering, perfect for per-frame updates  
+✅ **Reuse Policies** - Control caching behavior (PerFrame, PerObject, PerMaterial)  
+✅ **Node Customization** - Extend ModelRenderNode to add custom shader data  
+
+**WebGPU Concepts Learned:**
+- Bind group indices beyond standard groups (3, 4, 5...)
+- Custom uniform buffer creation and caching
+- Alignment requirements for uniform structs (16-byte boundaries)
+- Efficient resource reuse via caching policies
+
+---
+
+## What's Next?
+
+In **Tutorial 03**, you'll learn:
+- Shadow mapping with directional lights
+- Sampling depth textures in shaders
+- Transform coordinates from world space to light space
+- Percentage Closer Filtering (PCF) for soft shadows
+
+**Next Tutorial:** [03_shadow_mapping.md](03_shadow_mapping.md) / [03_shadow_mapping.pdf](03_shadow_mapping.pdf) / [03_shadow_mapping.html](03_shadow_mapping.html)
+
+---
+
+## Further Reading
+
+- [Bind Group System Documentation](../BindGroupSystem.md)
+- [Node System Guide](../NodeSystem.md)
+- [WebGPU Bind Group Spec](https://www.w3.org/TR/webgpu/#bind-groups)
+- [Tutorial 01: Unlit Shader](01_unlit_shader.md)
 
 ---
 
@@ -534,40 +596,3 @@ When you call `BindGroupDataProvider::create()`, the engine internally:
 2. Add a breakpoint in the `render()` method
 3. Press `F5` to start debugging with VS Code
 4. Check the **Terminal Output** panel - shader errors will be printed there
-
----
-
-## Key Takeaways
-
-✅ **Custom Bind Groups** - Extend shader capabilities with Group 3+ for custom data  
-✅ **BindGroupDataProvider** - Simple API to pass CPU data to GPU shaders  
-✅ **preRender() Lifecycle** - Called before rendering, perfect for per-frame updates  
-✅ **Reuse Policies** - Control caching behavior (PerFrame, PerObject, PerMaterial)  
-✅ **Node Customization** - Extend ModelRenderNode to add custom shader data  
-
-**WebGPU Concepts Learned:**
-- Bind group indices beyond standard groups (3, 4, 5...)
-- Custom uniform buffer creation and caching
-- Alignment requirements for uniform structs (16-byte boundaries)
-- Efficient resource reuse via caching policies
-
----
-
-## What's Next?
-
-In **Tutorial 03**, you'll learn:
-- Shadow mapping with directional lights
-- Sampling depth textures in shaders
-- Transform coordinates from world space to light space
-- Percentage Closer Filtering (PCF) for soft shadows
-
-**Next Tutorial:** [03_shadow_mapping.md](03_shadow_mapping.md) / [03_shadow_mapping.pdf](03_shadow_mapping.pdf) / [03_shadow_mapping.html](03_shadow_mapping.html)
-
----
-
-## Further Reading
-
-- [Bind Group System Documentation](../BindGroupSystem.md)
-- [Node System Guide](../NodeSystem.md)
-- [WebGPU Bind Group Spec](https://www.w3.org/TR/webgpu/#bind-groups)
-- [Tutorial 01: Unlit Shader](01_unlit_shader.md)
