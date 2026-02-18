@@ -1,210 +1,217 @@
 # Vienna-WebGPU-Engine
 
-> **Version:** v0.1-alpha | **Status:** Active Development
+> **Version:** v0.2-alpha | **Status:** Active Development
 
-Vienna-WebGPU-Engine is a **cross-platform, WebGPU-based game engine** designed for educational purposes. Built with modern graphics APIs, it provides a hands-on learning experience in game engine development using the WebGPU API.
+A **cross-platform, WebGPU-based game engine** designed for educational purposes. Built with modern graphics APIs, it provides hands-on learning in game engine development using the WebGPU standard.
 
-**Current Platform Support:** 
-- ✅ **Windows** (Native WebGPU via wgpu-native)
-- ✅ **macOS** (Native WebGPU via wgpu-native with Metal backend)
+## Platform Support
 
-**Note:** Emscripten/Web support and Linux support planned for future releases
+| Platform | Status | Compiler | Notes |
+|----------|--------|----------|-------|
+| **Windows** | ✅ Working | MSVC 2019+ | Primary development platform |
+| **macOS** | ✅ Working | Clang (Xcode CLT) | Tested on Apple Silicon |
+| **Linux** | ✅ Working | GCC/Clang | Tested on Arch Linux Hyperland |
+| **Web** | 🚧 In Progress | Emscripten | Build system exists, not functional |
+
+*Working = Actively developed and tested. Untested = May require fixes.*
 
 ## Features
 
-- ✅ Real-time WebGPU rendering (wgpu-native)
-- ✅ PBR materials with shadow mapping
-- ✅ Scene graph with hierarchical transforms
-- ✅ Resource management with hot-reloading
-- ✅ Factory pattern for GPU resources
-- ✅ Model loading: OBJ (stable), GLTF/GLB (WIP)
-- ✅ Comprehensive documentation
-- ✅ Tutorial series (4 tutorials: shaders, bind groups, shadows, post-processing)
+- ✨ Real-time WebGPU rendering with [wgpu-native](https://github.com/gfx-rs/wgpu-native)
+- 🎨 PBR materials with cascaded shadow mapping
+- 🌳 Scene graph with hierarchical transforms
+- 🔄 Resource hot-reloading
+- 📦 Factory pattern for GPU resource management
+- 📐 Model loading: OBJ (stable), GLTF/GLB (WIP)
+- 📚 Tutorial series (4 tutorials: shaders, bind groups, shadows (WIP), post-processing)
 
-
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
-Ensure you have the following installed:
+| Tool | Windows | macOS | Linux |
+|------|---------|-------|-------|
+| **CMake 3.15+** | [Download](https://cmake.org/download/) | `brew install cmake` | `sudo apt install cmake` |
+| **Ninja** | [Download](https://github.com/ninja-build/ninja/releases) | `brew install ninja` | `sudo apt install ninja-build` |
+| **C++17 Compiler** | [Visual Studio 2019+](https://visualstudio.microsoft.com/) or [Build Tools](https://aka.ms/vs/stable/vs_BuildTools.exe) | `xcode-select --install` | `sudo apt install build-essential` |
+| **Python 3** (for emscripten) | [Download](https://www.python.org/downloads/) | Pre-installed | `sudo apt install python3` |
 
-- **[CMake](https://cmake.org/download/)** (3.15+)
-- **[Ninja](https://ninja-build.org/)** (recommended build system)
-- **C++17 compatible compiler**
-  - **Windows:** MSVC 2019+ recommended. Install via:
-    - [Visual Studio](https://visualstudio.microsoft.com/) (includes Build Tools), or
-    - [Visual Studio Build Tools](https://aka.ms/vs/stable/vs_BuildTools.exe) (standalone) from [visualstudio.microsoft.com/downloads](https://visualstudio.microsoft.com/de/downloads/?q=build+tools)
-  - **macOS:** Xcode Command Line Tools (install via `xcode-select --install`) or full [Xcode](https://developer.apple.com/xcode/) from the App Store
-- **Python 3.x** (for build scripts)
+### Installation
+```bash
+# 1. Clone repository
+git clone https://github.com/hlavacs/Vienna-WebGPU-Engine.git
+cd Vienna-WebGPU-Engine
 
-The engine uses **[wgpu-native v0.19.4.1](https://github.com/gfx-rs/wgpu-native)** as the WebGPU implementation, providing native performance on Windows (DirectX 12/Vulkan) and macOS (Metal).
+# 2. Initialize submodules
+git submodule update --init --recursive
 
-### Optional Tools
-cross-platform development and debugging
-- **[Xcode](https://developer.apple.com/xcode/)** (macOS) - Full IDE for macOS development and debugging
-- **[Visual Studio Code](https://code.visualstudio.com/)** - Recommended for native debugging and crash analysis
-- **[Emscripten 4.0.6](https://emscripten.org/)** - Web support (not yet functional)
-- **[http-server](https://www.npmjs.com/package/http-server)** - For web builds (future use)
+# 3. Install Python dependencies (optional)
+pip install -r requirements.txt
+```
 
-## Setup
+## Building
 
-1. **Clone the repository:**
-   
-   ```shell
-   git clone https://github.com/hlavacs/Vienna-WebGPU-Engine.git
-   cd Vienna-WebGPU-Engine
-   ```
+### Option 1: VS Code (Recommended)
 
-2. **Initialize submodules:**
-   
-   ```shell
-   git submodule update --init --recursive
-   ```
+1. Open project in VS Code
+2. Press `Ctrl+Shift+B` (Windows/Linux) or `⌘+Shift+B` (macOS)
+3. Select a build task:
+   - **Build Example: Main Demo (Debug)**
+   - **Build Example: Tutorial (Debug)**
+4. Press `F5` to build and debug (You may have to select the correct project)
 
-3. **Install Python dependencies (optional):**
-   
-   ```shell
-   pip install -r requirements.txt
-   ```
+### Option 2: Command Line
+
+**Windows:**
+```bat
+scripts\build-example.bat main_demo Debug WGPU
+scripts\build-example.bat tutorial Debug WGPU
+```
+
+**macOS/Linux:**
+```bash
+# First time only: make build scripts executable
+chmod +x scripts/build-example.sh
+chmod +x scripts/build.sh
+
+# Then build
+./scripts/build-example.sh main_demo Debug WGPU
+./scripts/build-example.sh tutorial Debug WGPU
+```
+
+**Output:**
+- **Windows:** `examples/build/<name>/Windows/Debug/`
+- **macOS:** `examples/build/<name>/Mac/Debug/`
+- **Linux:** `examples/build/<name>/Linux/Debug/`
+
+### Option 3: IDE Setup
+
+**Visual Studio (Windows):**
+```bat
+cmake -S . -B build_vs -G "Visual Studio 17 2022" -A x64
+start build_vs\WebGPU_Engine.sln
+```
+Set example as startup project, enable C++ exceptions (`Ctrl+Alt+E`), press `F5`.
+
+**Xcode (macOS):**
+```bash
+cmake -S . -B build_xcode -G Xcode
+open build_xcode/WebGPU_Engine.xcodeproj
+```
+Select example scheme, press `⌘+R` to run.
 
 ## Documentation
 
 ### Getting Started
 - **[Getting Started Guide](doc/GettingStarted.md)** - Build your first application
-- **[Tutorial Series (4 Parts)](doc/tutorials/01_unlit_shader.md)** - Learn shaders, bind groups, shadows (WIP), and post-processing
+- **[Tutorial Series](doc/tutorials/01_unlit_shader.md)** - 4-part hands-on tutorials:
+  1. Custom Shaders
+  2. Bind Groups & Uniforms
+  3. Shadow Mapping (WIP)
+  4. Post-Processing Effects
 
-### Technical Documentation
-- **[Engine Architecture](doc/EngineArchitecture.md)** - Design patterns and architecture
-- **[Bind Group System](doc/BindGroupSystem.md)** - Rendering system details
-- **[Core Principles](doc/CorePrinciples.md)** - Design philosophy and data flow
+### Technical Reference
+- **[Engine Architecture](doc/EngineArchitecture.md)** - Design patterns and systems
+- **[Bind Group System](doc/BindGroupSystem.md)** - Rendering pipeline details
+- **[Core Principles](doc/CorePrinciples.md)** - Design philosophy and best practices
 
 ## Path Management
 
-The engine uses two separate path systems via `PathProvider`:
-
-| Type | Debug | Release | API |
-|------|-------|---------|-----|
-| **Application Assets** | `<example>/assets/` | `<exe>/assets/` | `getTextures()`, `getModels()` |
-| **Engine Resources** | `<project>/resources/` | `<dll>/resources/` | `getResource()` |
-
-**Always use `PathProvider` for paths:**
+The engine uses `PathProvider` for cross-platform path resolution:
 ```cpp
-// ✅ Correct
-auto appTexture = PathProvider::getTextures("brick.png");
-auto engineShader = PathProvider::getResource("PBR_Lit_Shader.wgsl");
+// ✅ Application assets (example/assets/)
+auto texture = PathProvider::getTextures("brick.png");
+auto model = PathProvider::getModels("character.obj");
 
-// ❌ Wrong
-auto path = "E:/Project/resources/texture.png";
+// ✅ Engine resources (engine/resources/)
+auto shader = PathProvider::getResource("PBR_Lit_Shader.wgsl");
+
+// ❌ Never use hardcoded paths
+auto bad = "E:/Project/resources/texture.png";  // DON'T!
 ```
+
+| Type | Debug | Release |
+|------|-------|---------|
+| **App Assets** | `<example>/assets/` | `<exe>/assets/` |
+| **Engine Resources** | `<lib_project>/resources/` | `<dll>/resources/` |
 
 See [CorePrinciples.md](doc/CorePrinciples.md#0-path-management) for details.
 
-## Known Limitations
-
-- **Web Support:** Emscripten/Weband macOS fully supported; Linux support planned
-- **Platform Coverage:** Windows only (Linux/macOS support planned might work with modifications)
-- **Model Format:** GLTF/GLB loading is work-in-progress; OBJ fully supported
-- **Editor:** Scene editor (WIP) not yet feature-complete
-
-## Building the Project
-
-### Quick Start with VS Code (Recommended)
-
-Press `Ctrl+Shift+B` to select a build task:
-- `Build Windows (Debug/Release)` - Build engine
-- `Build Example: Main Demo (Debug)` - Build main demo
-- `Build Example: Tutorial (Debug)` - Build tutorial
-
-Press `F5` to build and run with debugger.
-
-### Command Line
-**Windows:**
-```shell
-# Build engine
-scripts/build.bat Debug WGPU
-
-# Build example
-scripts/build-example.bat main_demo Debug WGPU
-scripts/build-example.bat tutorial Debug WGPU
-```
-
-**macOS/Linux:**
-```shell
-# BuIDE Setup for Debugging
-
-**Visual Studio (Windows):**
-```shell
-cmake -S . -B build_vs -G "Visual Studio 17 2022" -A x64 -DWEBGPU_BACKEND=WGPU
-start build_vs/WebGPU_Engine.sln
-```
-Set your example as startup project, enable C++ exceptions (`Ctrl+Alt+E`), press `F5`.
-
-**Xcode (macOS):**
-```shell
-cmake -S . -B build_xcode -G Xcode -DWEBGPU_BACKEND=WGPU
-open build_xcode/WebGPU_Engine.xcodeproj
-```
-Select your example scheme, press `⌘R` to build and run
-**Output:** 
-- Windows: `build/Windows/Debug/` (engine), `examples/build/<name>/Windows/Debug/` (examples)
-- macOS: `build/Mac/Debug/` (engine), `examples/build/<name>/Mac
-**Output:** `build/Windows/Debug/` (engine), `examples/build/<name>/Windows/Debug/` (examples)
-
-### Visual Studio for Debugging
-
-```shell
-cmake -S . -B build_vs -G "Visual Studio 17 2022" -A x64 -DWEBGPU_BACKEND=WGPU
-start build_vs/WebGPU_Engine.sln
-```
-
-Set your example as startup project, press `F5`.
-
-### Recommended VS Code Extensions
-
-- **[WGSL-Lang](https://marketplace.visualstudio.com/items?itemName=noah-labrecque.wgsl-lang)** - WGSL syntax highlighting and language support
-- **[CMake Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools)** - CMake integration
-- **[C/C++](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools)** - C++ IntelliSense and debugging
-- **[WebAssembly DWARF Debugging](https://marketplace.visualstudio.com/items?itemName=ms-vscode.wasm-dwarf-debugging)** - For future web debugging
-- **[Live Preview](https://marketplace.visualstudio.com/items?itemName=ms-vscode.live-server)** - For future web builds
-
 ## Project Structure
-
 ```
 Vienna-WebGPU-Engine/
-├── include/engine/        # Engine headers
-│   ├── core/              # Core utilities (Handle, Identifiable)
-│   ├── resources/         # Resource management
-│   ├── rendering/         # Rendering system
-│   ├── scene/             # Scene graph
+├── include/engine/        # Public API headers
+│   ├── core/              # Core systems (Handle, Identifiable, Versioned)
+│   ├── resources/         # Resource management (Image, Material, Mesh)
+│   ├── rendering/         # Rendering pipeline (Renderer, RenderPass)
+│   ├── scene/             # Scene graph (Entity, Transform, Camera)
 │   └── input/             # Input handling
 ├── src/engine/            # Engine implementation
-├── resources/             # Shaders and assets
+├── resources/             # Engine shaders and built-in assets
 ├── examples/              # Example applications
-│   ├── main_demo/         # Main demo application
-│   ├── multi_view/        # Mutli view demo application
+│   ├── main_demo/         # Full-featured demo
+│   ├── tutorial/          # Tutorial project
+│   ├── multi_view/        # Multi-viewport demo
 │   └── scene_editor/      # Scene editor (WIP)
-├── external/              # Third-party libraries
+├── external/              # Third-party dependencies
 ├── doc/                   # Documentation
-└── scripts/               # Build scripts
+└── scripts/               # Build automation
 ```
 
-## Getting Help
+## Recommended VS Code Extensions
 
-1. **[Getting Started Guide](doc/GettingStarted.md)** - Build your first app
-2. **[Tutorials](doc/tutorials/01_unlit_shader.md)** - Tutorials
-3. **[Engine Architecture](doc/EngineArchitecture.md)** - Technical reference
-4. Browse **examples/** for usage patterns
+- **[WGSL](https://marketplace.visualstudio.com/items?itemName=noah-labrecque.wgsl-lang)** - Shader syntax highlighting
+- **[CMake Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools)** - CMake integration
+- **[C/C++](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools)** - IntelliSense and debugging
+- **[C/C++ Extension Pack](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools-extension-pack)** - Complete C++ toolset
+
+## Known Limitations
+
+- **Web Support:** Build system in progress, not yet functional
+- **Model Loading:** GLTF/GLB support is work-in-progress; use OBJ for now
+- **Scene Editor:** WIP
+
+## Troubleshooting
+
+### Build Issues
+
+**"CMake not found"**
+```bash
+# Verify installation
+cmake --version
+
+# Add to PATH or reinstall (see Prerequisites)
+```
+
+**"Ninja not found"**
+```bash
+# Verify installation
+ninja --version
+
+# Install via package manager (see Prerequisites)
+```
+
+**"Visual Studio not found" (Windows)**
+- Install [Visual Studio Build Tools](https://aka.ms/vs/stable/vs_BuildTools.exe)
+- Select "Desktop development with C++"
+- Restart terminal after installation
+
+**"Xcode Command Line Tools not found" (macOS)**
+```bash
+xcode-select --install
+# Follow prompts, then restart terminal
+```
 
 ## Contributing
 
-Contributions welcome! This is an educational project—help make it better:
+Contributions welcome! This is an educational project:
 
-- **Documentation** - Improve accessibility for learners
+- **Documentation** - Help learners understand better
 - **Features** - Add rendering capabilities
-- **Examples** - Demonstrate engine features
-- **Bug fixes** - Improve stability
+- **Examples** - Demonstrate engine usage
+- **Bug Fixes** - Improve stability
 
-Read [Engine Architecture](doc/EngineArchitecture.md), follow coding conventions, ensure Windows builds succeed.
+Please read [Engine Architecture](doc/EngineArchitecture.md) and test on your platform before submitting PRs.
 
 ## License
 
@@ -212,16 +219,11 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## Acknowledgments
 
-This project builds upon excellent work from the community:
-
 - Based in part on the [Learn WebGPU for C++](https://github.com/eliemichel/LearnWebGPU) tutorial by **Elie Michel**
-- Significant modifications, refactoring, and extensions have been made for this project
-- Original code © 2022-2024 Elie Michel, MIT License
-- Uses [wgpu-native](https://github.com/gfx-rs/wgpu-native) as the WebGPU implementation
-- Leverages [SDL2](https://www.libsdl.org/), [GLM](https://github.com/g-truc/glm), [ImGui](https://github.com/ocornut/imgui), and other excellent libraries
+  - Significant modifications, refactoring, and extensions have been made for this project
+- Uses [wgpu-native v0.19.4.1](https://github.com/gfx-rs/wgpu-native) for native WebGPU implementation
+- Built with [SDL2](https://www.libsdl.org/), [GLM](https://github.com/g-truc/glm), [ImGui](https://github.com/ocornut/imgui), and more
 
 ---
 
 **Happy Learning and Building! 🚀**
-
-
