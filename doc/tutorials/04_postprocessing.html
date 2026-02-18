@@ -486,7 +486,7 @@ pass-&gt;cleanup();
 </span>{
 	spdlog::info(<span class="hljs-string">"Initializing PostProcessingPass"</span>);
 
-	<span class="hljs-comment">// Tutorial 4 - Step 1: Get vignette shader from registry</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 1: Get vignette shader from registry</span>
 	<span class="hljs-comment">// The shader contains:</span>
 	<span class="hljs-comment">// - Vertex shader (vs_main): Generates fullscreen triangle</span>
 	<span class="hljs-comment">// - Fragment shader (fs_main): Applies vignette darkening</span>
@@ -517,9 +517,11 @@ pass-&gt;cleanup();
 <h2 id="step-2-postprocessingpasssetinputtexture">Step 2: PostProcessingPass::setInputTexture()</h2>
 <p>This method stores which texture to read post-processing input from.</p>
 <p><strong>Your Task:</strong></p>
+<p>In <code>PostProcessingPass.cpp</code>, find the comment: <code>// Tutorial 04 - Step 2</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">PostProcessingPass::setInputTexture</span><span class="hljs-params">(<span class="hljs-keyword">const</span> <span class="hljs-built_in">std</span>::<span class="hljs-built_in">shared_ptr</span>&lt;webgpu::WebGPUTexture&gt; &amp;texture)</span>
 </span>{
-	<span class="hljs-comment">// Tutorial 4 - Step 2: Store the texture to post-process</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 2: Store the texture to post-process</span>
 	<span class="hljs-comment">// This is the output of MeshPass/DebugPass (the rendered scene)</span>
 	<span class="hljs-comment">// Called before render() to specify what we're processing</span>
 	m_inputTexture = texture;
@@ -535,9 +537,11 @@ pass-&gt;cleanup();
 <h2 id="step-3-postprocessingpasssetrenderpasscontext">Step 3: PostProcessingPass::setRenderPassContext()</h2>
 <p>This method stores where post-processing output should be written.</p>
 <p><strong>Your Task:</strong></p>
+<p>In <code>PostProcessingPass.cpp</code>, find the comment: <code>// Tutorial 04 - Step 3</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">PostProcessingPass::setRenderPassContext</span><span class="hljs-params">(<span class="hljs-keyword">const</span> <span class="hljs-built_in">std</span>::<span class="hljs-built_in">shared_ptr</span>&lt;webgpu::WebGPURenderPassContext&gt; &amp;renderPassContext)</span>
 </span>{
-	<span class="hljs-comment">// Tutorial 4 - Step 3: Store where to render output</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 3: Store where to render output</span>
 	<span class="hljs-comment">// The render pass context defines:</span>
 	<span class="hljs-comment">// - Color attachment (where to draw)</span>
 	<span class="hljs-comment">// - Clear flags (do we clear before rendering?)</span>
@@ -555,16 +559,18 @@ pass-&gt;cleanup();
 <hr>
 <h2 id="step-4-postprocessingpassrender---part-a-validation--setup">Step 4: PostProcessingPass::render() - Part A (Validation &amp; Setup)</h2>
 <p>This is the main method called each frame. We'll implement it in two parts.</p>
+<p><strong>Your Task:</strong></p>
+<p>In <code>PostProcessingPass.cpp</code>, find the comment: <code>// Tutorial 04 - Step 4</code></p>
 <p><strong>Part A: Validate inputs and create pipeline</strong></p>
 <pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">PostProcessingPass::render</span><span class="hljs-params">(FrameCache &amp;frameCache)</span>
 </span>{
-	<span class="hljs-comment">// Tutorial 4 - Step 4A: Validate inputs</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 4A: Validate inputs</span>
 	<span class="hljs-keyword">if</span> (!m_inputTexture || !m_renderPassContext)
 	{
 		spdlog::warn(<span class="hljs-string">"PostProcessingPass: Missing input texture or render pass context"</span>);
 		<span class="hljs-keyword">return</span>;
 	}
-	<span class="hljs-comment">// Tutorial 4 - Step 4B: Get or create pipeline</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 4B: Get or create pipeline</span>
 	<span class="hljs-comment">// The pipeline is created lazily (on first use) because:</span>
 	<span class="hljs-comment">// 1. Output format depends on render pass context (determined at runtime)</span>
 	<span class="hljs-comment">// 2. Shader might be hot-reloaded, needing a new pipeline</span>
@@ -599,7 +605,7 @@ pass-&gt;cleanup();
 <hr>
 <h2 id="step-5-postprocessingpassrender---part-b-bind-groups--drawing">Step 5: PostProcessingPass::render() - Part B (Bind Groups &amp; Drawing)</h2>
 <p><strong>Part B: Create bind group and draw</strong></p>
-<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 4C: Get or create bind group for input texture</span>
+<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 04 - Step 4C: Get or create bind group for input texture</span>
 	<span class="hljs-comment">// Bind groups are cached by texture pointer to avoid recreation each frame</span>
 	<span class="hljs-keyword">auto</span> bindGroup = getOrCreateBindGroup(m_inputTexture);
 	<span class="hljs-keyword">if</span> (!bindGroup)
@@ -608,7 +614,7 @@ pass-&gt;cleanup();
 		<span class="hljs-keyword">return</span>;
 	}
 	
-	<span class="hljs-comment">// Tutorial 4 - Step 4D: Record and submit draw commands</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 4D: Record and submit draw commands</span>
 	<span class="hljs-comment">// Create command encoder (WebGPU's command recording object)</span>
 	wgpu::CommandEncoder encoder = m_context-&gt;createCommandEncoder(<span class="hljs-string">"PostProcessingPass Encoder"</span>);
 	
@@ -654,27 +660,29 @@ pass-&gt;cleanup();
 <hr>
 <h2 id="step-6-postprocessingpassgetorcreatebindgroup---part-a-cache--layout">Step 6: PostProcessingPass::getOrCreateBindGroup() - Part A (Cache &amp; Layout)</h2>
 <p>This method creates or reuses bind groups that bind the texture + sampler to shader bindings.</p>
+<p><strong>Your Task:</strong></p>
+<p>In <code>PostProcessingPass.cpp</code>, find the comment: <code>// Tutorial 04 - Step 6</code></p>
 <p><strong>Part A: Check cache and get layout</strong></p>
 <pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-built_in">std</span>::<span class="hljs-built_in">shared_ptr</span>&lt;webgpu::WebGPUBindGroup&gt; <span class="hljs-title">PostProcessingPass::getOrCreateBindGroup</span><span class="hljs-params">(
 	<span class="hljs-keyword">const</span> <span class="hljs-built_in">std</span>::<span class="hljs-built_in">shared_ptr</span>&lt;webgpu::WebGPUTexture&gt; &amp;texture,
 	<span class="hljs-keyword">int</span> layerIndex
 )</span>
 </span>{
-	<span class="hljs-comment">// Tutorial 4 - Step 6A: Validate input</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 6A: Validate input</span>
 	<span class="hljs-keyword">if</span> (!texture)
 		<span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;
 
-	<span class="hljs-comment">// Tutorial 4 - Step 6B: Create cache key</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 6B: Create cache key</span>
 	<span class="hljs-comment">// We cache bind groups by texture pointer + layer index</span>
 	<span class="hljs-comment">// This avoids recreating the same bind group multiple times per frame</span>
 	<span class="hljs-keyword">auto</span> cacheKey = <span class="hljs-built_in">std</span>::make_pair(<span class="hljs-keyword">reinterpret_cast</span>&lt;<span class="hljs-keyword">uint64_t</span>&gt;(texture.get()), layerIndex);
 
-	<span class="hljs-comment">// Tutorial 4 - Step 6C: Check if bind group already cached</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 6C: Check if bind group already cached</span>
 	<span class="hljs-keyword">auto</span> it = m_bindGroupCache.find(cacheKey);
 	<span class="hljs-keyword">if</span> (it != m_bindGroupCache.end())
 		<span class="hljs-keyword">return</span> it-&gt;second;  <span class="hljs-comment">// Reuse cached bind group</span>
 
-	<span class="hljs-comment">// Tutorial 4 - Step 6D: Get bind group layout from shader</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 6D: Get bind group layout from shader</span>
 	<span class="hljs-comment">// The shader info was loaded in initialize()</span>
 	<span class="hljs-comment">// The layout describes what resources Group 0 expects:</span>
 	<span class="hljs-comment">// - Binding 0: sampler (for texture filtering)</span>
@@ -687,8 +695,10 @@ pass-&gt;cleanup();
 <p>Without caching, we'd create a new bind group every frame for the same texture, wasting GPU memory and CPU time. By caching, we only create it once per unique texture.</p>
 <hr>
 <h2 id="step-7-postprocessingpassgetorcreatebindgroup---part-b-create--cache">Step 7: PostProcessingPass::getOrCreateBindGroup() - Part B (Create &amp; Cache)</h2>
+<p><strong>Your Task:</strong></p>
+<p>In <code>PostProcessingPass.cpp</code>, find the comment: <code>// Tutorial 04 - Step 7</code></p>
 <p><strong>Part B: Create new bind group</strong></p>
-<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 7E: Create bind group entries matching shader layout</span>
+<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 04 - Step 7E: Create bind group entries matching shader layout</span>
 	<span class="hljs-comment">// The shader defines:</span>
 	<span class="hljs-comment">// @group(0) @binding(0) var inputSampler: sampler;</span>
 	<span class="hljs-comment">// @group(0) @binding(1) var inputTexture: texture_2d&lt;f32&gt;;</span>
@@ -702,16 +712,16 @@ pass-&gt;cleanup();
 		<span class="hljs-comment">// binding=1, texture resource</span>
 	};
 
-	<span class="hljs-comment">// Tutorial 4 - Step 7F: Create WebGPU bind group descriptor</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 7F: Create WebGPU bind group descriptor</span>
 	wgpu::BindGroupDescriptor desc = {};
 	desc.layout = bindGroupLayout-&gt;getLayout();
 	desc.entryCount = <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-keyword">uint32_t</span>&gt;(entries.size());
 	desc.entries = entries.data();
 
-	<span class="hljs-comment">// Tutorial 4 - Step 7G: Create raw WebGPU bind group</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 7G: Create raw WebGPU bind group</span>
 	<span class="hljs-keyword">auto</span> bindGroupRaw = m_context-&gt;getDevice().createBindGroup(desc);
 	
-	<span class="hljs-comment">// Tutorial 4 - Step 7H: Wrap in engine's bind group object</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 7H: Wrap in engine's bind group object</span>
 	<span class="hljs-comment">// WebGPUBindGroup is a wrapper that tracks resources and provides utilities</span>
 	<span class="hljs-keyword">auto</span> bindGroup = <span class="hljs-built_in">std</span>::make_shared&lt;webgpu::WebGPUBindGroup&gt;(
 		bindGroupRaw,
@@ -719,7 +729,7 @@ pass-&gt;cleanup();
 		<span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;<span class="hljs-built_in">std</span>::<span class="hljs-built_in">shared_ptr</span>&lt;webgpu::WebGPUBuffer&gt;&gt;{}  <span class="hljs-comment">// No buffers in this bind group</span>
 	);
 
-	<span class="hljs-comment">// Tutorial 4 - Step 7I: Cache for future use</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 7I: Cache for future use</span>
 	m_bindGroupCache[cacheKey] = bindGroup;
 	<span class="hljs-keyword">return</span> bindGroup;
 }
@@ -741,9 +751,11 @@ pass-&gt;cleanup();
 <h2 id="step-8-postprocessingpasscleanup">Step 8: PostProcessingPass::cleanup()</h2>
 <p>This method releases cached resources.</p>
 <p><strong>Your Task:</strong></p>
+<p>In <code>PostProcessingPass.cpp</code>, find the comment: <code>// Tutorial 04 - Step 8</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">PostProcessingPass::cleanup</span><span class="hljs-params">()</span>
 </span>{
-	<span class="hljs-comment">// Tutorial 4 - Step 6: Release bind group cache</span>
+	<span class="hljs-comment">// Tutorial 04 - Step 6: Release bind group cache</span>
 	<span class="hljs-comment">// Called on shutdown or window resize</span>
 	<span class="hljs-comment">// The pipeline and sampler are managed by pipeline manager and sampler factory</span>
 	<span class="hljs-comment">// We only need to clear bind group cache</span>
@@ -764,9 +776,9 @@ pass-&gt;cleanup();
 <h2 id="step-9-rendererinitialize---add-postprocessingpass-setup">Step 9: Renderer::initialize() - Add PostProcessingPass Setup</h2>
 <p>Now integrate the pass into the renderer.</p>
 <p><strong>Your Task:</strong></p>
-<p>Open <code>src/engine/rendering/Renderer.cpp</code> and find the initialize() method. Look for the comment: <code>// Tutorial 4 - Step 9</code></p>
+<p>Open <code>src/engine/rendering/Renderer.cpp</code> and find the initialize() method. Look for the comment: <code>// Tutorial 04 - Step 9</code></p>
 <p>Add this code:</p>
-<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 9: Initialize PostProcessingPass</span>
+<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 04 - Step 9: Initialize PostProcessingPass</span>
 	m_postProcessingPass = <span class="hljs-built_in">std</span>::make_unique&lt;PostProcessingPass&gt;(m_context);
 	<span class="hljs-keyword">if</span> (!m_postProcessingPass-&gt;initialize())
 	{
@@ -785,10 +797,10 @@ pass-&gt;cleanup();
 <div style="page-break-after: always;"></div>
 <h2 id="step-10-prepare-post-processing-texture">Step 10: Prepare Post-Processing Texture</h2>
 <p>Before we can render to a post-process texture, we need to create it.</p>
-<p><strong>Location:</strong> In <code>Renderer::renderToTexture()</code>, find the comment: <code>// Tutorial 4 - Step 10:</code></p>
 <p><strong>Your Task:</strong></p>
+<p>Open <code>src/engine/rendering/Renderer.cpp</code> and find the comment: <code>// Tutorial 04 - Step 10</code></p>
 <p>After the depth buffer setup (and before the Culling step), add this code to create the post-processing texture:</p>
-<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 10: Prepare post-processing texture</span>
+<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 04 - Step 10: Prepare post-processing texture</span>
 	<span class="hljs-comment">// Post-processing texture is an intermediate render target for effects like bloom, tone mapping, etc.</span>
 	<span class="hljs-comment">// Use negative ID to differentiate post-process textures from main render targets</span>
 	<span class="hljs-keyword">if</span> (!m_postProcessTextures[renderTargetId])
@@ -811,10 +823,10 @@ pass-&gt;cleanup();
 <div style="page-break-after: always;"></div>
 <h2 id="step-11-rendererrendertotexture---call-postprocessingpass">Step 11: Renderer::renderToTexture() - Call PostProcessingPass</h2>
 <p>This is where post-processing actually executes each frame.</p>
-<p><strong>Location:</strong> Find this comment in <code>renderToTexture()</code>: <code>// Tutorial 4 - Step 11:</code></p>
 <p><strong>Your Task:</strong></p>
+<p>In <code>Renderer.cpp</code>, find the comment: <code>// Tutorial 04 - Step 11</code></p>
 <p>Add this code after the Debug Pass section:</p>
-<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 4 - Step 11: Apply vignette effect</span>
+<pre class="hljs"><code><div>	<span class="hljs-comment">// Tutorial 04 - Step 11: Apply vignette effect</span>
 	<span class="hljs-comment">// Texture swapping: MeshPass/DebugPass output → input for post-processing</span>
 	<span class="hljs-comment">// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)</span>
 	renderFromTexture = renderToTexture; <span class="hljs-comment">// Post-processing reads from the main render target</span>
@@ -886,7 +898,7 @@ pass-&gt;cleanup();
 	<span class="hljs-comment">// ... cleanup passes ...</span>
 	
 	<span class="hljs-keyword">if</span> (m_postProcessingPass)
-		m_postProcessingPass-&gt;cleanup();  <span class="hljs-comment">// Tutorial 4 - Step 12: Clear bind group cache and reset</span>
+		m_postProcessingPass-&gt;cleanup();  <span class="hljs-comment">// Tutorial 04 - Step 12: Clear bind group cache and reset</span>
 	
 	spdlog::info(<span class="hljs-string">"Renderer resized to {}x{}"</span>, width, height);
 }

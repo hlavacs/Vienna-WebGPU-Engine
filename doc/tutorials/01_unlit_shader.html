@@ -424,6 +424,9 @@ bash scripts/build-example.sh tutorial Debug WGPU
 <hr>
 <h2 id="step-2-define-vertex-input-structure">Step 2: Define Vertex Input Structure</h2>
 <p>Before we write shaders, we need to understand what data flows through them. Let's start with what the vertex shader receives from the mesh.</p>
+<p><strong>Your Task:</strong></p>
+<p>Open <code>examples/tutorial/assets/shaders/unlit.wgsl</code> and find the comment: <code>// Tutorial 01 - Step 2</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div>struct VertexInput {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
@@ -441,7 +444,10 @@ The engine's mesh loader provides these three attributes for every vertex. The <
 <hr>
 <div style="page-break-after: always;"></div>
 <h2 id="step-3-define-vertex-output-structure">Step 3: Define Vertex Output Structure</h2>
-<p>Now define what the vertex shader outputs (and what the fragment shader receives):</p>
+<p>Now define what the vertex shader outputs (and what the fragment shader receives).</p>
+<p><strong>Your Task:</strong></p>
+<p>In <code>unlit.wgsl</code>, find the comment: <code>Tutorial 01 - Step 3</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div>struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) texCoord: vec2f,
@@ -482,7 +488,9 @@ Each has different update frequency:</p>
 <hr>
 <h2 id="step-4-declare-bind-group-0---frame-uniforms">Step 4: Declare Bind Group 0 - Frame Uniforms</h2>
 <p><strong>Required at @group(0)</strong> - This must always be bind group 0 in all engine shaders.</p>
-<p>Open <code>examples/tutorial/assets/shaders/unlit.wgsl</code> and add:</p>
+<p><strong>Your Task:</strong></p>
+<p>In <code>unlit.wgsl</code>, find the comment: <code>// Tutorial 01 - Step 4</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div>struct FrameUniforms {
     viewMatrix: mat4x4&lt;f32&gt;,
     projectionMatrix: mat4x4&lt;f32&gt;,
@@ -506,6 +514,9 @@ Every vertex needs to be transformed from world space to screen space. The Frame
 <hr>
 <div style="page-break-after: always;"></div>
 <h2 id="step-5-declare-bind-group-1---object-uniforms">Step 5: Declare Bind Group 1 - Object Uniforms</h2>
+<p><strong>Your Task:</strong></p>
+<p>In <code>unlit.wgsl</code>, find the comment: <code>// Tutorial 01 - Step 5</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div>struct ObjectUniforms {
     modelMatrix: mat4x4f,
     normalMatrix: mat4x4f,
@@ -523,6 +534,9 @@ var&lt;uniform&gt; objectUniforms: ObjectUniforms;
 Each object has a different position, rotation, and scale in the scene. This bind group provides the object's transform so vertices can be placed correctly in the world.</p>
 <hr>
 <h2 id="step-6-declare-bind-group-2---material-uniforms">Step 6: Declare Bind Group 2 - Material Uniforms</h2>
+<p><strong>Your Task:</strong></p>
+<p>In <code>unlit.wgsl</code>, find the comment: <code>// Tutorial 01 - Step 6</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div>struct UnlitMaterialUniforms {
     color: vec4f,
 }
@@ -545,8 +559,10 @@ var baseColorTexture: texture_2d&lt;f32&gt;;
 <p><strong>Why it's needed:</strong>
 Different materials have different appearances. This bind group provides the material-specific data (textures, colors, properties) that determine how the object looks.</p>
 <hr>
-<div style="page-break-after: always;"></div>
 <h2 id="step-7-write-the-vertex-shader">Step 7: Write the Vertex Shader</h2>
+<p><strong>Your Task:</strong></p>
+<p>In <code>unlit.wgsl</code>, find the comment: <code>Tutorial 01 - Step 7</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div>@vertex
 fn vs_main(input: VertexInput) -&gt; VertexOutput {
     var output: VertexOutput;
@@ -573,6 +589,9 @@ fn vs_main(input: VertexInput) -&gt; VertexOutput {
 <hr>
 <div style="page-break-after: always;"></div>
 <h2 id="step-8-write-the-fragment-shader">Step 8: Write the Fragment Shader</h2>
+<p><strong>Your Task:</strong></p>
+<p>In <code>unlit.wgsl</code>, find the comment: <code>Tutorial 01 - Step 8</code></p>
+<p>Add this code:</p>
 <pre class="hljs"><code><div>@fragment
 fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
     let textureColor = textureSample(baseColorTexture, textureSampler, input.texCoord);
@@ -583,7 +602,9 @@ fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
 <p>This samples the texture at the UV coordinates and multiplies by the tint color. No lighting calculations - that's why it's &quot;unlit&quot;.</p>
 <hr>
 <h2 id="step-9-assign-material-to-the-floor">Step 9: Assign Material to the Floor</h2>
-<p>In <code>examples/tutorial/main.cpp</code> (line ~127), uncomment:</p>
+<p><strong>Your Task:</strong></p>
+<p>Open <code>examples/tutorial/main.cpp</code> and search for the comment: <code>// Tutorial 01 - Step 9</code></p>
+<p>Uncomment the line below it:</p>
 <pre class="hljs"><code><div>floorModel-&gt;getSubmeshes()[<span class="hljs-number">0</span>].material = floorMaterial-&gt;getHandle();
 </div></code></pre>
 <p><strong>Why <code>[0]</code>?</strong> The plane.obj has only one submesh. Models with multiple parts (like a car) would have multiple submeshes that can each have different materials.</p>
@@ -737,6 +758,32 @@ let textureColor = textureSample(baseColorTexture, textureSampler, tiledUV);
 let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 </div></code></pre>
 <hr>
+<h2 id="key-takeaways">Key Takeaways</h2>
+<h2 id="%E2%9C%85-bind-groups---engine-provides-frame-0-object-1-material-2%E2%9C%85-vertex-shader---transforms-vertices-through-matrix-pipeline%E2%9C%85-fragment-shader---samples-textures-and-outputs-color%E2%9C%85-material-assignment---connect-materials-to-model-submeshes%E2%9C%85-wgsl-syntax---strict-typing-with-groupbindinglocation">✅ <strong>Bind Groups</strong> - Engine provides Frame (0), Object (1), Material (2)<br>
+✅ <strong>Vertex Shader</strong> - Transforms vertices through matrix pipeline<br>
+✅ <strong>Fragment Shader</strong> - Samples textures and outputs color<br>
+✅ <strong>Material Assignment</strong> - Connect materials to model submeshes<br>
+✅ <strong>WGSL Syntax</strong> - Strict typing with <code>@group/@binding/@location</code></h2>
+<h2 id="whats-next">What's Next?</h2>
+<p>In <strong>Tutorial 02</strong>, you'll learn:</p>
+<ul>
+<li>Creating custom bind groups beyond the standard Frame/Object/Material</li>
+<li>Registering custom bind groups in shader reflection</li>
+<li>Implementing <code>preRender()</code> to provide per-object data</li>
+<li>Using <code>BindGroupDataProvider</code> to send custom data to GPU</li>
+<li>Extending <code>ModelRenderNode</code> to add custom shader parameters</li>
+<li>Practical example: Texture tiling and offset control per object</li>
+</ul>
+<p><strong>Next Tutorial:</strong> <a href="02_custom_bindgroup.md">02_custom_bindgroup.md</a> / <a href="02_custom_bindgroup.pdf">02_custom_bindgroup.pdf</a> / <a href="02_custom_bindgroup.html">02_custom_bindgroup.html</a></p>
+<hr>
+<h2 id="further-reading">Further Reading</h2>
+<ul>
+<li><a href="https://www.w3.org/TR/WGSL/">WebGPU WGSL Specification</a></li>
+<li><a href="../BindGroupSystem.md">Engine Bind Group System</a></li>
+<li><a href="../GettingStarted.md">Getting Started Guide</a></li>
+<li><a href="https://eliemichel.github.io/LearnWebGPU/">LearnWebGPU Tutorial</a></li>
+</ul>
+<hr>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <h3 id="build-failures---reading-terminal-output">Build Failures - Reading Terminal Output</h3>
 <p><strong>⚠️ Important:</strong> When using <code>scripts/build.bat</code>, the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
@@ -780,33 +827,6 @@ let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 <li>Press <code>F5</code> to start debugging</li>
 <li>Check the <strong>Terminal Output</strong> panel - shader errors will be printed there</li>
 </ol>
-<hr>
-<h2 id="key-takeaways">Key Takeaways</h2>
-<p>✅ <strong>Bind Groups</strong> - Engine provides Frame (0), Object (1), Material (2)<br>
-✅ <strong>Vertex Shader</strong> - Transforms vertices through matrix pipeline<br>
-✅ <strong>Fragment Shader</strong> - Samples textures and outputs color<br>
-✅ <strong>Material Assignment</strong> - Connect materials to model submeshes<br>
-✅ <strong>WGSL Syntax</strong> - Strict typing with <code>@group/@binding/@location</code></p>
-<hr>
-<h2 id="whats-next">What's Next?</h2>
-<p>In <strong>Tutorial 02</strong>, you'll learn:</p>
-<ul>
-<li>Creating custom bind groups beyond the standard Frame/Object/Material</li>
-<li>Registering custom bind groups in shader reflection</li>
-<li>Implementing <code>preRender()</code> to provide per-object data</li>
-<li>Using <code>BindGroupDataProvider</code> to send custom data to GPU</li>
-<li>Extending <code>ModelRenderNode</code> to add custom shader parameters</li>
-<li>Practical example: Texture tiling and offset control per object</li>
-</ul>
-<p><strong>Next Tutorial:</strong> <a href="02_custom_bindgroup.md">02_custom_bindgroup.md</a> / <a href="02_custom_bindgroup.pdf">02_custom_bindgroup.pdf</a> / <a href="02_custom_bindgroup.html">02_custom_bindgroup.html</a></p>
-<hr>
-<h2 id="further-reading">Further Reading</h2>
-<ul>
-<li><a href="https://www.w3.org/TR/WGSL/">WebGPU WGSL Specification</a></li>
-<li><a href="../BindGroupSystem.md">Engine Bind Group System</a></li>
-<li><a href="../GettingStarted.md">Getting Started Guide</a></li>
-<li><a href="https://eliemichel.github.io/LearnWebGPU/">LearnWebGPU Tutorial</a></li>
-</ul>
 
 </body>
 </html>
