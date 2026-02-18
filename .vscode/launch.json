@@ -32,6 +32,17 @@
             "preLaunchTask": "Build Example: Tutorial (Debug)"
         },
         {
+            "name": "Tutorial (Debug) - Mac",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/examples/build/tutorial/Mac/Debug/Tutorial",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "MIMode": "lldb",
+            "preLaunchTask": "Build Example: Tutorial (Debug)"
+        },
+        {
             "name": "Main Demo (Debug) - Windows",
             "type": "cppvsdbg",
             "request": "launch",
@@ -59,6 +70,17 @@
                     "ignoreFailures": true
                 }
             ],
+            "preLaunchTask": "Build Example: Main Demo (Debug)"
+        },
+        {
+            "name": "Main Demo (Debug) - Mac",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/examples/build/main_demo/Mac/Debug/MainDemo",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "MIMode": "lldb",
             "preLaunchTask": "Build Example: Main Demo (Debug)"
         },
         {
@@ -92,6 +114,17 @@
             "preLaunchTask": "Build Example: Multi View (Debug)"
         },
         {
+            "name": "Multi View (Debug) - Mac",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/examples/build/multi_view/Mac/Debug/MultiView",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "MIMode": "lldb",
+            "preLaunchTask": "Build Example: Multi View (Debug)"
+        },
+        {
             "name": "Scene Editor (Debug) - Windows",
             "type": "cppvsdbg",
             "request": "launch",
@@ -119,6 +152,17 @@
                     "ignoreFailures": true
                 }
             ],
+            "preLaunchTask": "Build Example: Scene Editor (Debug)"
+        },
+        {
+            "name": "Scene Editor (Debug) - Mac",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/examples/build/scene_editor/Mac/Debug/SceneEditor",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "MIMode": "lldb",
             "preLaunchTask": "Build Example: Scene Editor (Debug)"
         },
         {
