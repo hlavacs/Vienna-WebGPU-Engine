@@ -164,7 +164,9 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 	SDL_SetMainReady();
 
 	// Create SDL window
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
+	auto sdlFlags = SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS;
+	sdlFlags |= (options.enableAudio) ? SDL_INIT_AUDIO : 0;
+	if (SDL_Init(sdlFlags) < 0)
 	{
 		spdlog::error("Could not initialize SDL2: {}", SDL_GetError());
 		return false;
@@ -190,9 +192,9 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 		spdlog::error("Could not create window!");
 		return false;
 	}
-
-	// Initialize WebGPU context
-	m_context->initialize(m_window, options.enableVSync);
+	
+	m_context->initialize(m_window, options.enableVSync, options.overrideDeviceLimits);
+	options.appliedDeviceLimits = m_context->limitsConfig();
 
 	// Create renderer
 	m_renderer = std::make_shared<engine::rendering::Renderer>(m_context);
@@ -385,7 +387,7 @@ void GameEngine::updateScene(float deltaTime)
 	scene->lateUpdate(deltaTime);
 }
 
-void GameEngine::renderFrame(float /* deltaTime*/ )
+void GameEngine::renderFrame(float /* deltaTime*/)
 {
 	auto scene = m_sceneManager->getActiveScene();
 	if (!scene || !m_renderer)

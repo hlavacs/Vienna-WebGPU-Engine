@@ -8,11 +8,24 @@
 namespace engine::rendering::webgpu
 {
 
+template <typename T>
+T WebGPUContext::clampLimit(const char *name, T requested, T supported)
+{
+	if (requested > supported)
+	{
+		spdlog::warn("[WebGPU] Limit '{}': requested {} exceeds hardware max {}, clamping to {}.", name, requested, supported, supported);
+		return supported;
+	}
+	return requested;
+}
+
 WebGPUContext::WebGPUContext() :
 	m_surface(nullptr) {}
 
-void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
+void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::optional<DeviceLimitsConfig> &limits)
 {
+	m_lastWindowHandle = windowHandle;
+
 	m_surfaceManager = std::make_unique<WebGPUSurfaceManager>(*this);
 	m_bufferFactory = std::make_unique<WebGPUBufferFactory>(*this);
 	m_meshFactory = std::make_unique<WebGPUMeshFactory>(*this);
@@ -27,15 +40,21 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
 	m_renderPassFactory = std::make_unique<WebGPURenderPassFactory>(*this);
 	m_shaderFactory = std::make_unique<WebGPUShaderFactory>(*this);
 	m_pipelineManager = std::make_unique<WebGPUPipelineManager>(*this);
-	m_lastWindowHandle = windowHandle;
 #ifdef __EMSCRIPTEN__
 	m_instance = wgpu::wgpuCreateInstance(nullptr);
 #else
 	m_instance = wgpu::createInstance(wgpu::InstanceDescriptor{});
 #endif
-	assert(m_instance);
+	if (!m_instance)
+	{
+		spdlog::critical("[WebGPU] Failed to create WebGPU instance.");
+		assert(false);
+	}
+
+	// Order matters: surface must exist before adapter so compatibleSurface is set correctly
 	initSurface(windowHandle);
-	initDevice();
+	initAdapter();
+	initDevice(limits);
 
 	// Initialize ShaderRegistry after device is ready
 	m_shaderRegistry = std::make_unique<ShaderRegistry>(*this);
@@ -52,21 +71,8 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync)
 	config.height = height;
 	config.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
 	m_surfaceManager->reconfigure(config);
-}
 
-void WebGPUContext::updatePresentMode(bool enableVSync)
-{
-	if (!m_surfaceManager)
-	{
-		throw std::runtime_error("Cannot update present mode: WebGPUSurfaceManager not initialized!");
-	}
-
-	// Get current config and update only the present mode
-	auto currentConfig = m_surfaceManager->currentConfig();
-	currentConfig.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
-
-	// Reconfigure the surface with updated present mode
-	m_surfaceManager->reconfigure(currentConfig);
+	spdlog::info("[WebGPU] Initialized. Surface {}x{}, vsync: {}.", width, height, enableVSync);
 }
 
 void WebGPUContext::initSurface(void *windowHandle)
@@ -75,9 +81,167 @@ void WebGPUContext::initSurface(void *windowHandle)
 		return;
 
 	auto *sdlWindow = static_cast<SDL_Window *>(windowHandle);
-	m_surface = wgpu::Surface(SDL_GetWGPUSurface(m_instance, sdlWindow));
 
-	assert(m_surface);
+	SDL_SysWMinfo wmInfo;
+	SDL_VERSION(&wmInfo.version);
+	if (!SDL_GetWindowWMInfo(sdlWindow, &wmInfo))
+	{
+		spdlog::critical("[WebGPU] SDL_GetWindowWMInfo failed: {}", SDL_GetError());
+		assert(false);
+	}
+
+	WGPUSurface rawSurface = nullptr;
+
+#if defined(SDL_VIDEO_DRIVER_WAYLAND)
+	if (wmInfo.subsystem == SDL_SYSWM_WAYLAND)
+	{
+		spdlog::info("[WebGPU] Creating Wayland surface.");
+		WGPUSurfaceDescriptorFromWaylandSurface waylandDesc{};
+		waylandDesc.chain.sType = WGPUSType_SurfaceDescriptorFromWaylandSurface;
+		waylandDesc.chain.next = nullptr;
+		waylandDesc.display = wmInfo.info.wl.display;
+		waylandDesc.surface = wmInfo.info.wl.surface;
+
+		WGPUSurfaceDescriptor surfaceDesc{};
+		surfaceDesc.nextInChain = &waylandDesc.chain;
+		rawSurface = wgpuInstanceCreateSurface(m_instance, &surfaceDesc);
+	}
+#endif
+
+#if defined(SDL_VIDEO_DRIVER_X11)
+	if (!rawSurface && wmInfo.subsystem == SDL_SYSWM_X11)
+	{
+		spdlog::info("[WebGPU] Creating X11 surface.");
+		WGPUSurfaceDescriptorFromXlibWindow xlibDesc{};
+		xlibDesc.chain.sType = WGPUSType_SurfaceDescriptorFromXlibWindow;
+		xlibDesc.chain.next = nullptr;
+		xlibDesc.display = wmInfo.info.x11.display;
+		xlibDesc.window = wmInfo.info.x11.window;
+
+		WGPUSurfaceDescriptor surfaceDesc{};
+		surfaceDesc.nextInChain = &xlibDesc.chain;
+		rawSurface = wgpuInstanceCreateSurface(m_instance, &surfaceDesc);
+	}
+#endif
+	if (!rawSurface)
+	{
+		rawSurface = SDL_GetWGPUSurface(m_instance, sdlWindow);
+	}
+
+	if (!rawSurface)
+	{
+		spdlog::critical("[WebGPU] Failed to create WebGPU surface.");
+		assert(false);
+	}
+
+	m_surface = wgpu::Surface(rawSurface);
+}
+
+void WebGPUContext::initAdapter()
+{
+	wgpu::RequestAdapterOptions adapterOpts{};
+	adapterOpts.compatibleSurface = m_surface;
+	m_adapter = m_instance.requestAdapter(adapterOpts);
+
+	if (!m_adapter)
+	{
+		spdlog::critical("[WebGPU] Failed to acquire a compatible adapter.");
+		assert(false);
+	}
+
+	spdlog::info("[WebGPU] Adapter acquired.");
+}
+
+void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
+{
+	// --------------- Query supported limits ---------------
+	wgpu::SupportedLimits supportedLimits{};
+#ifdef WEBGPU_BACKEND_WGPU
+	m_adapter.getLimits(&supportedLimits);
+#else
+	supportedLimits.limits.minStorageBufferOffsetAlignment = 256;
+	supportedLimits.limits.minUniformBufferOffsetAlignment = 256;
+#endif
+
+	// --------------- Clamp requested limits against hardware ---------------
+	wgpu::RequiredLimits requiredLimits = wgpu::Default;
+	const DeviceLimitsConfig resolved = limits
+											? limits->clamped(supportedLimits)
+											: DeviceLimitsConfig::fromSupported(supportedLimits);
+	m_limitsConfig = resolved;
+	resolved.applyTo(requiredLimits);
+
+	// Alignment limits are hardware-fixed — must always use the adapter's value
+	requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
+	requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
+
+	// Store what was actually resolved for later inspection via resolvedLimits()
+	m_resolvedLimits = requiredLimits.limits;
+
+	// --------------- Request device ---------------
+	wgpu::DeviceDescriptor deviceDesc{};
+	deviceDesc.label = "WebGPUContext Device";
+	deviceDesc.requiredFeatureCount = 0;
+	deviceDesc.requiredLimits = &requiredLimits;
+	deviceDesc.defaultQueue.label = "Default Queue";
+	m_device = m_adapter.requestDevice(deviceDesc);
+
+	if (!m_device)
+	{
+		spdlog::critical("[WebGPU] Failed to create device.");
+		assert(false);
+	}
+
+	// --------------- Error callback ---------------
+	static std::unique_ptr<wgpu::ErrorCallback> errorCallback;
+	errorCallback = m_device.setUncapturedErrorCallback(
+		[](wgpu::ErrorType type, char const *message)
+		{ spdlog::error("[WebGPU] Device error (type {}): {}", static_cast<int>(type), message ? message : "unknown"); }
+	);
+
+	// --------------- Queue ---------------
+	m_queue = m_device.getQueue();
+	if (!m_queue)
+	{
+		spdlog::critical("[WebGPU] Failed to get device queue.");
+		assert(false);
+	}
+
+	// --------------- Swap chain format ---------------
+#ifdef WEBGPU_BACKEND_WGPU
+	m_swapChainFormat = m_surface.getPreferredFormat(m_adapter);
+#else
+	m_swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
+#endif
+
+	if (m_swapChainFormat == wgpu::TextureFormat::Undefined)
+	{
+		spdlog::critical("[WebGPU] Could not determine swap chain format.");
+		assert(false);
+	}
+
+	m_adapter.release();
+	spdlog::info("[WebGPU] Device created successfully.");
+}
+
+wgpu::SupportedLimits WebGPUContext::getHardwareLimits() const
+{
+	wgpu::SupportedLimits limits{};
+	wgpuDeviceGetLimits(m_device, &limits);
+	return limits;
+}
+
+void WebGPUContext::updatePresentMode(bool enableVSync)
+{
+	if (!m_surfaceManager)
+	{
+		spdlog::error("[WebGPU] Cannot update present mode: Surface manager not initialized.");
+		assert(false);
+	}
+
+	auto currentConfig = m_surfaceManager->currentConfig();
+	currentConfig.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
+	m_surfaceManager->reconfigure(currentConfig);
 }
 
 void WebGPUContext::terminateSurface()
@@ -97,84 +261,6 @@ wgpu::Surface WebGPUContext::getSurface()
 		initSurface(m_lastWindowHandle);
 	}
 	return m_surface;
-}
-
-void WebGPUContext::initDevice()
-{
-	// --------------- Request adapter ---------------
-	wgpu::RequestAdapterOptions adapterOpts{};
-	adapterOpts.compatibleSurface = m_surface;
-	m_adapter = m_instance.requestAdapter(adapterOpts);
-	assert(m_adapter);
-
-	// --------------- Query supported limits ---------------
-	wgpu::SupportedLimits supportedLimits;
-#ifdef WEBGPU_BACKEND_WGPU
-	m_adapter.getLimits(&supportedLimits);
-#else
-	// Fallback for non-WGPU backends
-	supportedLimits.limits.minStorageBufferOffsetAlignment = 256;
-	supportedLimits.limits.minUniformBufferOffsetAlignment = 256;
-#endif
-
-	// --------------- Set required limits ---------------
-	wgpu::RequiredLimits requiredLimits = wgpu::Default;
-
-	// Typical defaults: try to be practical but still safe
-	requiredLimits.limits.maxVertexAttributes = std::min(16u, supportedLimits.limits.maxVertexAttributes);
-	requiredLimits.limits.maxVertexBuffers = std::min(8u, supportedLimits.limits.maxVertexBuffers);
-	requiredLimits.limits.maxBufferSize = std::min(67108864ull, supportedLimits.limits.maxBufferSize); // 64 MB
-	requiredLimits.limits.maxVertexBufferArrayStride = 256;											   // safe stride
-	requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
-	requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
-#ifdef WEBGPU_BACKEND_WGPU
-	requiredLimits.limits.maxInterStageShaderComponents = std::min(60u, supportedLimits.limits.maxInterStageShaderComponents);
-#else
-	requiredLimits.limits.maxInterStageShaderComponents = 0xffffffffu;
-#endif
-	requiredLimits.limits.maxBindGroups = std::min(8u, supportedLimits.limits.maxBindGroups);
-	requiredLimits.limits.maxUniformBuffersPerShaderStage = 8;	   // more flexible than 2
-	requiredLimits.limits.maxUniformBufferBindingSize = 64 * 1024; // 64 KB, safe default
-	requiredLimits.limits.maxTextureDimension1D = 8192;
-	requiredLimits.limits.maxTextureDimension2D = 8192;
-	requiredLimits.limits.maxTextureArrayLayers = 256;
-	requiredLimits.limits.maxSampledTexturesPerShaderStage = 16;
-	requiredLimits.limits.maxSamplersPerShaderStage = 16;
-	requiredLimits.limits.maxBindingsPerBindGroup = 16;
-	// Storage buffers
-	requiredLimits.limits.maxStorageBuffersPerShaderStage = 4;
-	requiredLimits.limits.maxStorageBufferBindingSize = 16 * 1024 * 1024; // 16 MB (WebGPU spec minimum guaranteed)
-
-	// --------------- Request device ---------------
-	wgpu::DeviceDescriptor deviceDesc{};
-	deviceDesc.label = "WebGPUContext Device";
-	deviceDesc.requiredFeatureCount = 0;
-	deviceDesc.requiredLimits = &requiredLimits;
-	deviceDesc.defaultQueue.label = "Default Queue";
-	m_device = m_adapter.requestDevice(deviceDesc);
-	assert(m_device);
-
-	// --------------- Add error callback for debug info ---------------
-	static std::unique_ptr<wgpu::ErrorCallback> m_errorCallback;
-	m_errorCallback = m_device.setUncapturedErrorCallback([](wgpu::ErrorType type, char const *message)
-														  {
-        std::cerr << "[WebGPU Error] Type " << static_cast<int>(type);
-        if (message) std::cerr << ": " << message;
-        std::cerr << std::endl; });
-
-	// --------------- Get queue ---------------
-	m_queue = m_device.getQueue();
-	assert(m_queue);
-
-	// --------------- Query preferred swapchain format ---------------
-#ifdef WEBGPU_BACKEND_WGPU
-	m_swapChainFormat = m_surface.getPreferredFormat(m_adapter);
-#else
-	m_swapChainFormat = TextureFormat::BGRA8Unorm;
-#endif
-	assert(m_swapChainFormat != wgpu::TextureFormat::Undefined);
-
-	m_adapter.release(); // Release adapter after device creation
 }
 
 WebGPUSurfaceManager &WebGPUContext::surfaceManager()
@@ -311,6 +397,5 @@ WebGPUPipelineManager &WebGPUContext::pipelineManager()
 		throw std::runtime_error("WebGPUPipelineManager not initialized!");
 	}
 	return *m_pipelineManager;
-
-} // namespace engine::rendering::webgpu
+}
 } // namespace engine::rendering::webgpu

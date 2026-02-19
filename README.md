@@ -72,7 +72,6 @@ scripts\build-example.bat tutorial Debug WGPU
 ```bash
 # First time only: make build scripts executable
 chmod +x scripts/build-example.sh
-chmod +x scripts/build.sh
 
 # Then build
 ./scripts/build-example.sh main_demo Debug WGPU
