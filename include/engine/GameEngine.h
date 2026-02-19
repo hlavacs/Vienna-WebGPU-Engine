@@ -15,32 +15,41 @@
 #include "engine/scene/SceneManager.h"
 #include "engine/ui/ImGuiManager.h"
 
+#include "engine/rendering/webgpu/DeviceLimitsConfig.h"
+
 namespace engine
 {
 
 struct GameEngineOptions
 {
-	float fixedDeltaTime = 1.0f / 60.0f;
-	float maxDeltaTime = 1.0f / 15.0f; // Clamp frame delta to prevent spiraling
-	float targetFrameRate = 60.0f;	   // Desired framerate (used for vsync or sleeping)
-	bool enableVSync = true;		   // If true, rely on GPU vsync
-	bool limitFrameRate = false;	   // If true, manually cap frame rate
+	float fixedDeltaTime = 1.0f / 60.0f; //< Fixed timestep for physics updates (in seconds)
+	float maxDeltaTime = 1.0f / 15.0f;	 //< Clamp frame delta to prevent spiraling
+	float targetFrameRate = 60.0f;		 //< Desired framerate (used for vsync or sleeping)
+	bool enableVSync = true;			 //< If true, rely on GPU vsync
+	bool limitFrameRate = false;		 //< If true, manually cap frame rate
 
-	int maxSubSteps = 5;	// Max fixed steps per frame to prevent spiral of death
-	bool runPhysics = true; // Enable/disable physics updates (for testing)
+	int maxSubSteps = 5;	//< Max fixed steps per frame to prevent spiral of death
+	bool runPhysics = true; //< Enable/disable physics updates (for testing)
 
-	bool showFrameStats = false;	// Print/log delta time, FPS, etc.
-	bool logSubsystemErrors = true; // Log issues in update/render/physics
-	bool enableHotReload = false;	// Watch files & reload (e.g. shaders/scripts)
+	bool showFrameStats = false;	//< Print/log delta time, FPS, etc.
+	bool logSubsystemErrors = true; //< Log issues in update/render/physics
+	bool enableHotReload = false;	//< Watch files & reload (e.g. shaders/scripts)
+	int windowWidth = 1280;			//< Initial window width
+	int windowHeight = 720;			//< Initial window height
+	bool fullscreen = false;		//< Start in fullscreen mode
+	bool resizableWindow = true;	//< Allow window resizing
+	bool enableAudio = true;		//< Enable audio subsystem (not implemented yet)
+	float masterVolume = 1.0f;		//< Master volume (0.0 = silent, 1.0 = full volume)
+	int msaaSampleCount = 4;		//< Number of MSAA samples (1 = no MSAA)
 
-	int windowWidth = 1280;
-	int windowHeight = 720;
-	bool fullscreen = false;
-	bool resizableWindow = true;
+	std::optional<engine::rendering::webgpu::DeviceLimitsConfig> overrideDeviceLimits; //< Optional override for WebGPU device limits (for testing or compatibility)
 
-	bool enableAudio = true;
-	float masterVolume = 1.0f;
-	int msaaSampleCount = 4; // Number of MSAA samples (1 = no MSAA)
+	std::optional<engine::rendering::webgpu::DeviceLimitsConfig> getDeviceLimits() const { return appliedDeviceLimits; }
+
+	friend class GameEngine;
+
+  private:
+	std::optional<engine::rendering::webgpu::DeviceLimitsConfig> appliedDeviceLimits; //< The actual device limits applied after initialization (for reference)
 };
 
 class GameEngine

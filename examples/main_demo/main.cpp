@@ -186,6 +186,7 @@ int main(int argc, char **argv)
 		mainCamera->getTransform().setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
 		mainCamera->getTransform().lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		mainCamera->setBackgroundColor(glm::vec4(0.1f, 0.1f, 0.1f, 1.0f));
+		mainCamera->setMSAAEnabled(true);
 	}
 
 	// Setup orbit camera controller
