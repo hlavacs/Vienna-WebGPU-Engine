@@ -2,6 +2,7 @@
 
 #include "engine/core/Enum.h"
 #include <cstdint>
+#include <cstring>
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>

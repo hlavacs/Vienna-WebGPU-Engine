@@ -1,7 +1,9 @@
 #pragma once
 
 #include "engine/core/Enum.h"
+
 #include <cstdint>
+#include <cstring>
 #include <glm/glm.hpp>
 #include <ostream>
 

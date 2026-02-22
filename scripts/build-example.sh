@@ -1,10 +1,11 @@
 #!/bin/bash
 set -e
 
-# Args: example name (optional, defaults to main_demo), build type (optional, defaults to Debug), backend (optional, defaults to WGPU)
+# Args: example name (optional, defaults to main_demo), build type (optional, defaults to Debug), backend (optional, defaults to WGPU), compiler (optional, defaults to clang)
 EXAMPLE_NAME=${1:-main_demo}
 BUILDTYPE=${2:-Debug}
 WEBGPU_BACKEND=${3:-WGPU}
+COMPILER=${4:-clang}
 
 # Detect platform
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -18,6 +19,19 @@ if [[ ! "$WEBGPU_BACKEND" =~ ^(WGPU|DAWN|Emscripten)$ ]]; then
     echo "Invalid WEBGPU_BACKEND: $WEBGPU_BACKEND"
     echo "Must be WGPU, DAWN or Emscripten"
     exit 1
+fi
+
+# Set compiler environment variables
+if [[ "$COMPILER" == "gcc" ]]; then
+    export CC=gcc
+    export CXX=g++
+elif [[ "$COMPILER" == "clang" ]]; then
+    export CC=clang
+    export CXX=clang++
+else
+    # Allow custom compiler paths
+    export CC="$COMPILER"
+    export CXX="${COMPILER}++"
 fi
 
 if [[ "$WEBGPU_BACKEND" == "Emscripten" ]]; then
@@ -49,6 +63,7 @@ echo "============================================"
 echo "Building Example: $EXAMPLE_NAME"
 echo "Build Type: $BUILDTYPE"
 echo "Backend: $WEBGPU_BACKEND"
+echo "Compiler: $CC / $CXX"
 echo "Source Directory: $EXAMPLE_SOURCE_DIR"
 echo "Build Directory: $BUILD_DIR"
 echo "============================================"
