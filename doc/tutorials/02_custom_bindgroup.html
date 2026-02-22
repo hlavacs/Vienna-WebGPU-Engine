@@ -742,10 +742,12 @@ rootNode-&gt;addChild(floor2);
 <p><strong>3. Add rotation</strong> - Extend TileUniforms:</p>
 <p>Adjust C++ Struct</p>
 <pre class="hljs"><code><div><span class="hljs-comment">// CustomRenderNode.h</span>
-<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">TileUniforms</span> {</span>
-    glm::vec2 tileOffset;  <span class="hljs-comment">// Offset of the tile</span>
-    glm::vec2 tileSize;    <span class="hljs-comment">// Scale/size of the tile</span>
-    glm::vec4 rotation;    <span class="hljs-comment">// Rotation in .x, padding in .yzw for 16-byte alignment</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">TileUniforms</span>
+{</span>
+    glm::vec2 tileOffset = glm::vec2(<span class="hljs-number">0.0f</span>);
+    glm::vec2 tileSize = glm::vec2(<span class="hljs-number">1.0f</span>);
+    glm::vec4 rotation = glm::vec4(<span class="hljs-number">0.0f</span>);
+    <span class="hljs-comment">// Rotation in .x, padding in .yzw for 16-byte alignment</span>
 };
 </div></code></pre>
 <p>Adjust WGSL Struct</p>
@@ -768,6 +770,9 @@ rootNode-&gt;addChild(floor2);
 <p>Update Fragment Shader</p>
 <pre class="hljs"><code><div>let rotatedUV = rotate2D(input.texCoord - 0.5, tileUniforms.rotation.x) + 0.5;
 let tiledUV = rotatedUV * tileUniforms.tileSize + tileUniforms.tileOffset;
+</div></code></pre>
+<p>Update <code>cpp</code> code to set a rotation of your choice</p>
+<pre class="hljs"><code><div>floorNode-&gt;tileUniforms.rotatedUV = glm::vec4(<span class="hljs-number">0.5f</span>, <span class="hljs-number">0.0f</span>, <span class="hljs-number">0.0f</span>, <span class="hljs-number">0.0f</span>);
 </div></code></pre>
 <hr>
 <h2 id="understanding-webgpu-custom-resources">Understanding WebGPU Custom Resources</h2>
