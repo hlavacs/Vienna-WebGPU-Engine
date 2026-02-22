@@ -25,13 +25,28 @@ if(EMSCRIPTEN)
     add_library(SDL2::SDL2 ALIAS SDL2_SDL2)
 else()
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/SDL")
-
+    
     if(APPLE)
         foreach(SDL_TARGET SDL2 SDL2-static SDL2main SDL2_test)
             if(TARGET ${SDL_TARGET})
                 target_compile_options(${SDL_TARGET} PRIVATE -w)
             endif()
         endforeach()
+    endif()
+
+    # Mark SDL2 headers as system headers to suppress warnings in consumer code
+    # SDL2::SDL2 may be an ALIAS target, so we resolve the real target first
+    if(TARGET SDL2::SDL2)
+        get_target_property(SDL2_REAL_TARGET SDL2::SDL2 ALIASED_TARGET)
+        if(NOT SDL2_REAL_TARGET)
+            set(SDL2_REAL_TARGET SDL2)
+        endif()
+        get_target_property(SDL2_INCLUDE_DIRS ${SDL2_REAL_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+        if(SDL2_INCLUDE_DIRS)
+            set_target_properties(${SDL2_REAL_TARGET} PROPERTIES
+                INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${SDL2_INCLUDE_DIRS}"
+            )
+        endif()
     endif()
 endif()
 
@@ -55,15 +70,15 @@ add_library(WebGPU_Engine_Lib STATIC
 )
 
 # Make include directories public for library consumers
-target_include_directories(WebGPU_Engine_Lib PUBLIC
+target_include_directories(WebGPU_Engine_Lib SYSTEM PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # glm is header-only — no build needed
-target_include_directories(WebGPU_Engine_Lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/glm")
+target_include_directories(WebGPU_Engine_Lib SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/glm")
 
 # tinygltf is header-only — no build needed
-target_include_directories(WebGPU_Engine_Lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/tinygltf")
+target_include_directories(WebGPU_Engine_Lib SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/tinygltf")
 
 # Link libraries publicly so examples can use them
 target_link_libraries(WebGPU_Engine_Lib PUBLIC
@@ -73,6 +88,14 @@ target_link_libraries(WebGPU_Engine_Lib PUBLIC
     webgpu
     spdlog
 )
+
+# Propagate SDL2 system include directories to consumers so X11/Wayland
+# headers included transitively via SDL2 do not generate warnings in engine code
+if(NOT EMSCRIPTEN AND TARGET SDL2::SDL2)
+    target_include_directories(WebGPU_Engine_Lib SYSTEM PUBLIC
+        $<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>
+    )
+endif()
 
 # Link SDL2main for Windows (required for proper WinMain entry point)
 if(WIN32 AND NOT EMSCRIPTEN)
