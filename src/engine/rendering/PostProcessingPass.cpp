@@ -14,6 +14,10 @@
 #include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 
+#ifdef None
+#undef None
+#endif
+
 namespace engine::rendering
 {
 
