@@ -1,6 +1,6 @@
 # Vienna-WebGPU-Engine
 
-> **Version:** v0.2-alpha | **Status:** Active Development
+> **Version:** v0.3-alpha | **Status:** Active Development
 
 A **cross-platform, WebGPU-based game engine** designed for educational purposes. Built with modern graphics APIs, it provides hands-on learning in game engine development using the WebGPU standard.
 

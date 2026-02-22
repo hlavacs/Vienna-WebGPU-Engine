@@ -353,6 +353,8 @@ Now you should see:
 
 ## How Your Shader Gets Executed
 
+**Note:**: Additional info will be available in the 4th Tutorial. This is just a small overview. 
+
 Before understanding what we built, let's see how your shader actually runs on the GPU:
 
 **The Command Recording Model:**
