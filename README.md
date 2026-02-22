@@ -212,6 +212,33 @@ xcode-select --install
 # Follow prompts, then restart terminal
 ```
 
+### Linux Graphics Issues
+
+**SDL Wayland/X11 Errors**
+
+If you encounter errors related to SDL video drivers or surface creation on Linux:
+
+1. **Install SDL2 with video driver support:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install libsdl2-dev libwayland-dev libx11-dev
+
+# Fedora
+sudo dnf install SDL2-devel wayland-devel libX11-devel
+
+# Arch
+sudo pacman -S sdl2 wayland libx11
+```
+
+2. **If issues persist, force X11 mode:**
+```bash
+export SDL_VIDEODRIVER=x11
+export DISPLAY=:0
+./examples/build/tutorial/Linux/Debug/Tutorial
+```
+
+This is particularly useful on Wayland systems where SDL may not have proper Wayland support compiled in.
+
 ## Contributing
 
 Contributions welcome! This is an educational project:
