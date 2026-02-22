@@ -1,6 +1,8 @@
 #pragma once
 #include "engine/core/Enum.h"
 
+#include <cstdint>
+
 namespace engine::rendering
 {
 /**
