@@ -35,14 +35,18 @@ fi
 
 # Auto-detect SDL video driver on Linux
 if [[ "$PROFILE_HOST" == "Linux" ]]; then
-    if [[ -n "$WAYLAND_DISPLAY" ]]; then
+    if grep -qi microsoft /proc/version 2>/dev/null; then
+        # WSL — prefer X11, WSLg Wayland can be unreliable
+        export SDL_VIDEODRIVER=x11
+        echo "[INFO] WSL detected, setting SDL_VIDEODRIVER=x11"
+    elif [[ -n "$WAYLAND_DISPLAY" ]]; then
         export SDL_VIDEODRIVER=wayland
         echo "[INFO] Wayland detected, setting SDL_VIDEODRIVER=wayland"
     elif [[ -n "$DISPLAY" ]]; then
         export SDL_VIDEODRIVER=x11
         echo "[INFO] X11 detected, setting SDL_VIDEODRIVER=x11"
     else
-        echo "[WARN] Neither WAYLAND_DISPLAY nor DISPLAY is set, SDL video driver not forced"
+        echo "[WARN] No display server detected"
     fi
 fi
 
