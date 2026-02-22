@@ -8,6 +8,13 @@
 #include "engine/rendering/Vertex.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
+#ifdef None
+#undef None
+#endif
+#ifdef Always
+#undef Always
+#endif
+
 namespace engine::rendering::webgpu
 {
 

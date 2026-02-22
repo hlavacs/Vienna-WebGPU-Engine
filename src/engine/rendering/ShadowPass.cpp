@@ -18,8 +18,15 @@
 #include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 
+#ifdef near
 #undef near
+#endif
+#ifdef far
 #undef far
+#endif
+#ifdef None
+#undef None
+#endif
 
 namespace engine::rendering
 {

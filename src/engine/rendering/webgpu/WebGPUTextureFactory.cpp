@@ -9,6 +9,10 @@
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
 
+#ifdef None
+#undef None
+#endif
+
 namespace engine::rendering::webgpu
 {
 

@@ -13,6 +13,10 @@
 #include "engine/rendering/webgpu/WebGPUPipelineManager.h"
 #include "engine/rendering/webgpu/WebGPURenderPassContext.h"
 
+#ifdef None
+#undef None
+#endif
+
 namespace engine::rendering
 {
 
