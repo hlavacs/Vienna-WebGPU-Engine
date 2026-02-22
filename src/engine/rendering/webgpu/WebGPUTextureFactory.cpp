@@ -141,6 +141,9 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 		case Texture::Type::Depth:
 			format = wgpu::TextureFormat::Depth32Float;
 			break;
+		case Texture::Type::Surface:
+			spdlog::error("Surface textures cannot be created via createFromHandleUncached");
+			return nullptr;
 		}
 	}
 	else
@@ -150,9 +153,11 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 	}
 
 	// Mip levels
-	uint32_t mipLevelCount = options.generateMipmaps
-								 ? 1 + static_cast<uint32_t>(std::floor(std::log2(std::max(texture.getWidth(), texture.getHeight()))))
-								 : 1;
+	float maxDimension = std::floor(std::log2(std::max(texture.getWidth(), texture.getHeight())));
+	uint32_t mipLevelCount =
+		options.generateMipmaps
+			? 1 + static_cast<uint32_t>(maxDimension)
+			: 1;
 
 	// Usage
 	wgpu::TextureUsage usage = options.usage.value_or(wgpu::TextureUsage::None);
@@ -183,6 +188,9 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 		case Texture::Type::Depth:
 			usage = WGPUTextureUsage_RenderAttachment;
 			break;
+		case Texture::Type::Surface:
+			spdlog::error("Surface textures cannot be created via createFromHandleUncached");
+			return nullptr;
 		}
 	}
 

@@ -494,11 +494,12 @@ let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 
 ## Key Takeaways
 
-✅ **Bind Groups** - Engine provides Frame (0), Object (1), Material (2)  
-✅ **Vertex Shader** - Transforms vertices through matrix pipeline  
-✅ **Fragment Shader** - Samples textures and outputs color  
-✅ **Material Assignment** - Connect materials to model submeshes  
-✅ **WGSL Syntax** - Strict typing with `@group/@binding/@location` 
+- ✅ **Bind Groups** - Engine provides Frame (0), Object (1), Material (2)  
+- ✅ **Vertex Shader** - Transforms vertices through matrix pipeline  
+- ✅ **Fragment Shader** - Samples textures and outputs color  
+- ✅ **Material Assignment** - Connect materials to model submeshes  
+- ✅ **WGSL Syntax** - Strict typing with `@group/@binding/@location` 
+
 ---
 
 ## What's Next?

@@ -105,7 +105,11 @@ glm::vec4 Mesh::computeTBN(const Vertex corners[3], const glm::vec3 &expectedN)
 	else
 	{
 		// Degenerate UV, fallback: create tangent perpendicular to normal
-		tangent = glm::normalize(abs(expectedN.x) > 0.99f ? glm::cross(expectedN, glm::vec3(0, 1, 0)) : glm::cross(expectedN, glm::vec3(1, 0, 0)));
+		tangent = glm::normalize(
+			std::abs(expectedN.x) > 0.99f
+				? glm::cross(expectedN, glm::vec3(0, 1, 0))
+				: glm::cross(expectedN, glm::vec3(1, 0, 0))
+		);
 		bitangent = glm::cross(expectedN, tangent);
 	}
 

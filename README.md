@@ -10,7 +10,7 @@ A **cross-platform, WebGPU-based game engine** designed for educational purposes
 |----------|--------|----------|-------|
 | **Windows** | ✅ Working | MSVC 2019+ | Primary development platform |
 | **macOS** | ✅ Working | Clang (Xcode CLT) | Tested on Apple Silicon |
-| **Linux** | ✅ Working | GCC/Clang | Tested on Arch Linux Hyperland |
+| **Linux** | ✅ Working | Clang | Tested on Arch Linux Hyperland |
 | **Web** | 🚧 In Progress | Emscripten | Build system exists, not functional |
 
 *Working = Actively developed and tested. Untested = May require fixes.*
@@ -48,6 +48,17 @@ git submodule update --init --recursive
 # 3. Install Python dependencies (optional)
 pip install -r requirements.txt
 ```
+
+> Note: If you are building on Linux or WSL, make sure your repository uses LF line endings.
+> It is recommended to configure Git before cloning:
+>
+>     git config --global core.autocrlf input
+>
+> If you already cloned the repository and encounter "cannot execute: required file not found",
+> you can fix the scripts with:
+>
+>     sudo apt install dos2unix
+>     dos2unix scripts/*.sh
 
 ## Building
 
