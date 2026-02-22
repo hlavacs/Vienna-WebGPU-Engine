@@ -1,5 +1,3 @@
-#pragma once
-
 #include "engine/resources/loaders/ImageLoader.h"
 #include "engine/debug/Loggable.h"
 #include "engine/resources/Image.h"

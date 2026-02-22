@@ -453,10 +453,12 @@ Adjust C++ Struct
 
 ```cpp
 // CustomRenderNode.h
-struct TileUniforms {
-    glm::vec2 tileOffset;  // Offset of the tile
-    glm::vec2 tileSize;    // Scale/size of the tile
-    glm::vec4 rotation;    // Rotation in .x, padding in .yzw for 16-byte alignment
+struct TileUniforms
+{
+    glm::vec2 tileOffset = glm::vec2(0.0f);
+    glm::vec2 tileSize = glm::vec2(1.0f);
+    glm::vec4 rotation = glm::vec4(0.0f);
+    // Rotation in .x, padding in .yzw for 16-byte alignment
 };
 ```
 
@@ -488,6 +490,12 @@ Update Fragment Shader
 ```wgsl
 let rotatedUV = rotate2D(input.texCoord - 0.5, tileUniforms.rotation.x) + 0.5;
 let tiledUV = rotatedUV * tileUniforms.tileSize + tileUniforms.tileOffset;
+```
+
+Update `cpp` code to set a rotation of your choice
+
+```cpp
+floorNode->tileUniforms.rotatedUV = glm::vec4(0.5f, 0.0f, 0.0f, 0.0f);
 ```
 
 ---

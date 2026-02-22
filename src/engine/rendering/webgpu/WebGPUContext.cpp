@@ -58,7 +58,11 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 
 	// Initialize ShaderRegistry after device is ready
 	m_shaderRegistry = std::make_unique<ShaderRegistry>(*this);
-	m_shaderRegistry->initializeDefaultShaders();
+	if(!m_shaderRegistry->initializeDefaultShaders())
+	{
+		spdlog::critical("[WebGPU] Failed to initialize default shaders.");
+		assert(false);
+	}
 
 	// ToDo: Move this to the surface manager
 	auto *sdlWindow = static_cast<SDL_Window *>(windowHandle);
