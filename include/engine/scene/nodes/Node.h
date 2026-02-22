@@ -5,6 +5,10 @@
 #include <memory>
 #include <vector>
 
+#ifdef None
+#undef None
+#endif
+
 namespace engine
 {
 class EngineContext;

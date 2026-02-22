@@ -1,27 +1,23 @@
 #!/bin/bash
 set -e
 
-# Args: example name (optional, defaults to main_demo), build type (optional, defaults to Debug), backend (optional, defaults to WGPU), compiler (optional, defaults to clang)
 EXAMPLE_NAME=${1:-main_demo}
 BUILDTYPE=${2:-Debug}
 WEBGPU_BACKEND=${3:-WGPU}
 COMPILER=${4:-clang}
 
-# Detect platform
 if [[ "$OSTYPE" == "darwin"* ]]; then
     PROFILE_HOST=Mac
 else
     PROFILE_HOST=Linux
 fi
 
-# Validate WEBGPU_BACKEND
 if [[ ! "$WEBGPU_BACKEND" =~ ^(WGPU|DAWN|Emscripten)$ ]]; then
     echo "Invalid WEBGPU_BACKEND: $WEBGPU_BACKEND"
     echo "Must be WGPU, DAWN or Emscripten"
     exit 1
 fi
 
-# Set compiler environment variables
 if [[ "$COMPILER" == "gcc" ]]; then
     export CC=gcc
     export CXX=g++
@@ -29,7 +25,6 @@ elif [[ "$COMPILER" == "clang" ]]; then
     export CC=clang
     export CXX=clang++
 else
-    # Allow custom compiler paths
     export CC="$COMPILER"
     export CXX="${COMPILER}++"
 fi
@@ -38,7 +33,19 @@ if [[ "$WEBGPU_BACKEND" == "Emscripten" ]]; then
     PROFILE_HOST=Emscripten
 fi
 
-# Normalize paths - convert to absolute paths
+# Auto-detect SDL video driver on Linux
+if [[ "$PROFILE_HOST" == "Linux" ]]; then
+    if [[ -n "$WAYLAND_DISPLAY" ]]; then
+        export SDL_VIDEODRIVER=wayland
+        echo "[INFO] Wayland detected, setting SDL_VIDEODRIVER=wayland"
+    elif [[ -n "$DISPLAY" ]]; then
+        export SDL_VIDEODRIVER=x11
+        echo "[INFO] X11 detected, setting SDL_VIDEODRIVER=x11"
+    else
+        echo "[WARN] Neither WAYLAND_DISPLAY nor DISPLAY is set, SDL video driver not forced"
+    fi
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -46,7 +53,6 @@ EXAMPLES_DIR="$PROJECT_ROOT/examples"
 EXAMPLE_SOURCE_DIR="$EXAMPLES_DIR/$EXAMPLE_NAME"
 BUILD_DIR="$EXAMPLES_DIR/build/$EXAMPLE_NAME/$PROFILE_HOST/$BUILDTYPE"
 
-# Check if example exists
 if [[ ! -f "$EXAMPLE_SOURCE_DIR/CMakeLists.txt" ]]; then
     echo "[ERROR] Example '$EXAMPLE_NAME' not found or has no CMakeLists.txt"
     echo ""
@@ -66,10 +72,12 @@ echo "Backend: $WEBGPU_BACKEND"
 echo "Compiler: $CC / $CXX"
 echo "Source Directory: $EXAMPLE_SOURCE_DIR"
 echo "Build Directory: $BUILD_DIR"
+if [[ -n "$SDL_VIDEODRIVER" ]]; then
+    echo "SDL Video Driver: $SDL_VIDEODRIVER"
+fi
 echo "============================================"
 echo ""
 
-# Configure and build example based on the backend
 if [[ "$WEBGPU_BACKEND" == "Emscripten" ]]; then
     echo "[BUILD] Emscripten build"
     emcmake cmake -S "$EXAMPLE_SOURCE_DIR" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE="$BUILDTYPE"
@@ -77,7 +85,7 @@ if [[ "$WEBGPU_BACKEND" == "Emscripten" ]]; then
         echo "[ERROR] CMake configuration failed."
         exit 1
     fi
-    
+
     cmake --build "$BUILD_DIR"
     if [[ $? -ne 0 ]]; then
         echo "[ERROR] Build failed."
@@ -97,13 +105,12 @@ else
             -DWEBGPU_BACKEND=WGPU \
             -DWEBGPU_BUILD_FROM_SOURCE=OFF
     fi
-    
+
     if [[ $? -ne 0 ]]; then
         echo "[ERROR] CMake configuration failed."
         exit 1
     fi
-    
-    # Build example
+
     echo "[BUILD] Starting build..."
     cmake --build "$BUILD_DIR"
     if [[ $? -ne 0 ]]; then
@@ -112,7 +119,6 @@ else
     fi
 fi
 
-# If we got here, build succeeded
 echo ""
 echo "[SUCCESS] Example '$EXAMPLE_NAME' built successfully!"
 echo ""

@@ -12,6 +12,10 @@
 #include "engine/rendering/ShadowUniforms.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
+#ifdef None
+#undef None
+#endif
+
 namespace engine::rendering
 {
 
