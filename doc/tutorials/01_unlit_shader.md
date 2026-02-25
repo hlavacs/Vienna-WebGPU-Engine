@@ -394,7 +394,7 @@ WebGPU doesn't execute commands immediately. Instead:
 
 3. **GPU Executes Asynchronously** - Your shaders run in parallel:
    - `vs_main()` runs for all 4 floor vertices simultaneously
-   - Rasterizer generates ~10,000 pixels for the floor
+   - Rasterizer generates ~10,000 (for example) pixels for the floor
    - `fs_main()` runs for all pixels simultaneously
 
 **Render Pass = Drawing Phase:**
