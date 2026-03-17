@@ -43,7 +43,6 @@ class WebGPUShaderInfo
 		engine::rendering::VertexLayout vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor,
 		engine::rendering::ShaderFeature::Flag features = engine::rendering::ShaderFeature::Flag::None,
 		bool enableDepth = true,
-		bool enableBlend = false,
 		bool cullBackFaces = true
 	) : m_name(std::move(name)),
 		m_path(std::move(path)),
@@ -53,8 +52,6 @@ class WebGPUShaderInfo
 		m_fragmentEntryPoint(std::move(fragmentEntry)),
 		m_vertexLayout(vertexLayout),
 		m_features(features),
-		m_enableDepth(enableDepth),
-		m_enableBlend(enableBlend),
 		m_cullBackFaces(cullBackFaces)
 	{
 	}
@@ -111,11 +108,6 @@ class WebGPUShaderInfo
 	 * @return True if fragment stage exists.
 	 */
 	[[nodiscard]] bool hasFragmentStage() const { return !m_fragmentEntryPoint.empty(); }
-	/**
-	 * @brief Wether blending is enabled.
-	 * @return True if blending is enabled.
-	 */
-	[[nodiscard]] bool isBlendEnabled() const { return m_enableBlend; }
 	/**
 	 * @brief Wether back-face culling is enabled.
 	 * @return True if back-face culling is enabled.
@@ -184,7 +176,6 @@ class WebGPUShaderInfo
 	void addBindGroupLayout(uint32_t groupIndex, std::shared_ptr<WebGPUBindGroupLayoutInfo> layout);
 
 	bool m_enableDepth;
-	bool m_enableBlend;
 	bool m_cullBackFaces;
 
 	std::string m_name;

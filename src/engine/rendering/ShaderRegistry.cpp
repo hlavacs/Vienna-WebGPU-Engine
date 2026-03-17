@@ -213,7 +213,6 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 				"fs_main",
 				VertexLayout::PositionNormalUVTangentColor,
 				true,  // depthEnabled
-				false, // blendEnabled
 				true   // cullBackFaces
 			)
 			// Group 0: Frame uniforms (camera, time)
@@ -299,7 +298,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 
 	auto shaderInfo =
 		m_context.shaderFactory()
-			.begin(shader::defaults::DEBUG, ShaderType::Debug, PathProvider::getResource("debug.wgsl"), "vs_main", "fs_main", VertexLayout::None, false, false, false)
+			.begin(shader::defaults::DEBUG, ShaderType::Debug, PathProvider::getResource("debug.wgsl"), "vs_main", "fs_main", VertexLayout::None, false, false)
 			.addFrameBindGroup()
 			.addBindGroup(
 				bindgroup::defaults::DEBUG,
@@ -328,7 +327,6 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadSh
 				"vs_main",
 				"fs_main",
 				VertexLayout::None,
-				false,
 				false,
 				false
 			)
@@ -527,7 +525,6 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVignetteShader()
 				"fs_main",
 				VertexLayout::None,  // No vertex buffers (fullscreen triangle)
 				false,  // depthEnabled
-				false,  // blendEnabled
 				false   // cullBackFaces
 			)
 			// Group 0: Input texture from previous render pass

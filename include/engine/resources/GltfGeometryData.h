@@ -22,10 +22,22 @@ namespace engine::resources
  */
 struct GltfMaterialContext
 {
-	const std::vector<tinygltf::Material> &materials;
-	const std::vector<tinygltf::Texture> &textures;
-	const std::vector<tinygltf::Image> &images;
-	const std::vector<tinygltf::Sampler> &samplers;
+	std::vector<tinygltf::Material> materials;
+	std::vector<tinygltf::Texture> textures;
+	std::vector<tinygltf::Image> images;
+	std::vector<tinygltf::Sampler> samplers;
+
+	GltfMaterialContext(
+		const std::vector<tinygltf::Material> &&materials,
+		const std::vector<tinygltf::Texture> &&textures,
+		const std::vector<tinygltf::Image> &&images,
+		const std::vector<tinygltf::Sampler> &&samplers
+	) : materials(std::move(materials)),
+		textures(std::move(textures)),
+		images(std::move(images)),
+		samplers(std::move(samplers))
+	{
+	}
 };
 
 /**

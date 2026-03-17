@@ -17,13 +17,23 @@ std::optional<TextureManager::TexturePtr> TextureManager::createImageTexture(
 	{
 		key = filePath->string();
 
-		std::scoped_lock lock(m_mutex);
 		if (!key.empty())
 		{
-			auto it = m_imageCache.find(key);
-			if (it != m_imageCache.end())
+			// Check cache - store handle and release lock before calling get()
+			TextureHandle cachedHandle;
 			{
-				auto cached = get(it->second);
+				std::scoped_lock lock(m_mutex);
+				auto it = m_imageCache.find(key);
+				if (it != m_imageCache.end())
+				{
+					cachedHandle = it->second;
+				}
+			} // Lock released here
+
+			// Call get() without holding lock
+			if (cachedHandle.valid())
+			{
+				auto cached = get(cachedHandle);
 				if (cached && *cached)
 					return *cached;
 			}

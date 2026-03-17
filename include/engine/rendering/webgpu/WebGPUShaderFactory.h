@@ -246,7 +246,6 @@ class WebGPUShaderFactory
 			std::string fragmentEntry,
 			engine::rendering::VertexLayout vertexLayout,
 			bool depthEnabled,
-			bool blendEnabled,
 			bool cullBackFaces,
 			std::filesystem::path shaderPath
 		);
@@ -263,7 +262,6 @@ class WebGPUShaderFactory
 		engine::rendering::VertexLayout m_vertexLayout;
 		wgpu::ShaderModule m_shaderModule;
 		bool m_depthEnabled;
-		bool m_blendEnabled;
 		bool m_backFaceCullingEnabled;
 		uint32_t m_shaderFeatures = 0;
 		std::filesystem::path m_shaderPath;
@@ -282,7 +280,6 @@ class WebGPUShaderFactory
 	 * @param fragmentEntry Fragment shader entry point name.
 	 * @param vertexLayout Vertex layout enum for the shader (default PositionNormalUVTangentColor).
 	 * @param depthEnabled Whether depth testing is enabled (default true).
-	 * @param blendEnabled Whether blending is enabled (default false).
 	 * @param cullBackFaces Whether back-face culling is enabled (default true).
 	 * @return A WebGPUShaderBuilder for chaining method calls.
 	 */
@@ -294,7 +291,6 @@ class WebGPUShaderFactory
 		const std::string &fragmentEntry,
 		engine::rendering::VertexLayout vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor,
 		bool depthEnabled = true,
-		bool blendEnabled = false,
 		bool cullBackFaces = true
 	);
 

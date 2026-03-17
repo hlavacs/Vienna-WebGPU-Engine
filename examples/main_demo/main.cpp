@@ -64,29 +64,46 @@ void setupLighting(std::shared_ptr<engine::scene::nodes::Node> rootNode, std::sh
 bool setupModels(std::shared_ptr<engine::scene::nodes::Node> rootNode, std::shared_ptr<engine::resources::ResourceManager> resourceManager)
 {
 	// Load models from disk
-	auto maybeModelFourareen = resourceManager->m_modelManager->createModel("fourareen.obj");
-	auto maybeModelPlane = resourceManager->m_modelManager->createModel("plane.obj");
+	/* auto maybeModelFourareen = resourceManager->m_modelManager->createModel("fourareen.obj");
+	auto maybeModelFox = resourceManager->m_modelManager->createModel("fox/Fox.gltf");
+	auto maybeModelPlane = resourceManager->m_modelManager->createModel("plane.obj"); */
+	auto maybeModelSeaKeep = resourceManager->m_modelManager->createModel(
+		PathProvider::getModels("sea_keep_lonely_watcher/scene.gltf")
+	);
 
-	if (!maybeModelFourareen.has_value())
+	/* if (!maybeModelFourareen.has_value())
 	{
 		spdlog::error("Failed to load fourareen.obj model");
+		return false;
+	}
+	if (!maybeModelFox.has_value())
+	{
+		spdlog::error("Failed to load fox.gltf model");
 		return false;
 	}
 	if (!maybeModelPlane.has_value())
 	{
 		spdlog::error("Failed to load plane.obj model");
 		return false;
+	} */
+	if (!maybeModelSeaKeep.has_value())
+	{
+		spdlog::error("Failed to load sea_keep_lonely_watcher model");
+		return false;
 	}
 
-	// Add fourareen models to scene - demonstrating model instancing
-	// Multiple nodes can share the same model data (GPU memory is shared)
-	auto modelNode1 = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelFourareen.value());
-	modelNode1->getTransform().setLocalPosition(glm::vec3(0.0f, 1.0f, 0.0f));
-	rootNode->addChild(modelNode1);
+	auto modelNodeSeaKeep = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelSeaKeep.value());
+	modelNodeSeaKeep->getTransform().setLocalPosition(glm::vec3(0.0f, -3.0f, 0.0f));
+	modelNodeSeaKeep->getTransform().setLocalScale(glm::vec3(0.025f, 0.025f, 0.025f));
+	rootNode->addChild(modelNodeSeaKeep);
 
-	auto modelNode2 = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelFourareen.value());
-	modelNode2->getTransform().setLocalPosition(glm::vec3(0.0f, 3.0f, 0.4f));
-	rootNode->addChild(modelNode2);
+	return true;
+
+	/* // Add fox model to scene
+	auto modelNode1 = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelFox.value());
+	modelNode1->getTransform().setLocalPosition(glm::vec3(0.0f, 1.0f, 0.0f));
+	modelNode1->getTransform().setLocalScale(glm::vec3(0.05f, 0.05f, 0.05f));
+	rootNode->addChild(modelNode1);
 
 	// Create floor plane with custom PBR material
 	auto floorNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelPlane.value());
@@ -116,7 +133,7 @@ bool setupModels(std::shared_ptr<engine::scene::nodes::Node> rootNode, std::shar
 	mesh->getSubmeshes()[0].material = floorMaterial.value()->getHandle();
 	rootNode->addChild(floorNode);
 
-	return true;
+	return true; */
 }
 
 void setupImGui(std::shared_ptr<engine::ui::ImGuiManager> imguiManager, demo::MainDemoImGuiUI &mainDemoUI, std::shared_ptr<demo::DayNightCycle> dayNightCycle)

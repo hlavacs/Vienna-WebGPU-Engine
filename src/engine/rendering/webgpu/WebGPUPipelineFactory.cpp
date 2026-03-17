@@ -39,6 +39,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	wgpu::TextureFormat depthFormat,
 	engine::rendering::Topology::Type topology,
 	wgpu::CullMode cullMode,
+	bool blendEnabled,
 	uint32_t sampleCount
 )
 {
@@ -68,7 +69,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 		if (hasColor)
 		{
 			colorTarget.format = colorFormat;
-			colorTarget.blend = shaderInfo->isBlendEnabled() ? &m_defaultBlendState : nullptr;
+			colorTarget.blend = blendEnabled ? &m_defaultBlendState : nullptr;
 			colorTarget.writeMask = wgpu::ColorWriteMask::All;
 			fragmentState.targets = &colorTarget;
 			fragmentState.targetCount = 1;

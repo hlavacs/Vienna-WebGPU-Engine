@@ -357,6 +357,13 @@ fn calculate_shadow(world_pos: vec3f, normal: vec3f, light: Light) -> f32 {
 // ------------------------------------------------------------
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    let full_base_color = textureSample(base_color_texture, texture_sampler, in.uv) * u_material.diffuse;
+    let base_color = full_base_color.rgb * u_material.diffuse.rgb;
+    let alpha = full_base_color.a * u_material.diffuse.a;
+    if(alpha < 0.5) { 
+        discard; 
+    }
+
     let n = normalize(in.normal);
     let t = normalize(in.tangent - n * dot(n, in.tangent));
     let b = cross(n, t);
@@ -367,8 +374,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let normal = normalize(tbn * vec3<f32>(scaled_n.x, scaled_n.y, n_map.z));
 
     let v = normalize(in.view_direction);
-
-    let base_color = textureSample(base_color_texture, texture_sampler, in.uv).rgb * u_material.diffuse.rgb;
     let roughness = clamp(textureSample(roughness_texture, texture_sampler, in.uv).r * u_material.roughness, 0.001, 1.0);
     let metallic = textureSample(metallic_texture, texture_sampler, in.uv).r * u_material.metallic;
     let ao_tex = textureSample(ao_texture, texture_sampler, in.uv).r;
@@ -440,6 +445,36 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         Lo += (k_d * base_color / PI + specular) * radiance * n_dot_l * shadow;
     }
 
-    let color = Lo + emission;
-    return vec4f(color, 1.0);
+    var final_color = Lo + emission;
+
+    // Glass refraction effect (simplified)
+    // For proper refraction, you would need an environment map or screen-space texture
+    // This implementation simulates glass by:
+    // 1. Computing Fresnel to determine reflection vs refraction ratio
+    // 2. Tinting based on transmittance color
+    // 3. Blending with surface color based on alpha
+    if (alpha < 0.999) {
+        // Compute Fresnel for glass
+        let n_dot_v = max(dot(normal, v), 0.0);
+        let f0_glass = pow((u_material.ior - 1.0) / (u_material.ior + 1.0), 2.0);
+        let fresnel = f0_glass + (1.0 - f0_glass) * pow(1.0 - n_dot_v, 5.0);
+
+        // Compute refraction direction (into the material)
+        let eta = 1.0 / u_material.ior;
+        let refracted = refract(-v, normal, eta);
+
+        // Simulate refracted color with transmittance tint
+        // In a full implementation, you'd sample an environment map or screen texture here
+        let transmittance_color = u_material.transmittance.rgb;
+        let refracted_color = mix(vec3f(0.5), transmittance_color, 0.8);
+
+        // Blend reflection and refraction based on Fresnel
+        let reflected_color = final_color;
+        let glass_color = mix(refracted_color, reflected_color, fresnel);
+
+        // Blend with surface color based on alpha
+        final_color = mix(glass_color, final_color, alpha);
+    }
+
+    return vec4f(final_color, alpha);
 }

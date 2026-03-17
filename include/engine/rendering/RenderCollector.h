@@ -33,6 +33,7 @@ struct RenderItemCPU
 	uint32_t renderLayer = 0;
 	uint64_t objectID = 0; // Unique object ID for bind group caching
 	std::weak_ptr<engine::scene::nodes::Node> renderNode; // Source node for preRender() callback
+	bool isTransparent = false; // Cached transparency flag for efficient sorting
 
 	bool operator<(const RenderItemCPU &other) const
 	{
@@ -90,8 +91,11 @@ class RenderCollector
 
 	/**
 	 * @brief Sorts render items by layer, then by material for batching.
+	 * Opaque objects are rendered front-to-back (for depth culling efficiency).
+	 * Transparent objects are rendered back-to-front (for correct alpha blending).
+	 * @param cameraPosition Camera position for distance-based sorting of transparent objects.
 	 */
-	void sort();
+	void sort(const glm::vec3 &cameraPosition = glm::vec3(0.0f));
 
 	/**
 	 * @brief Clears all collected items.

@@ -51,8 +51,24 @@ class CoordinateSystem
 	static constexpr Cartesian BLENDER = Cartesian::RH_Z_UP_NEGATIVE_Y_FORWARD;
 	static constexpr Cartesian MAX3DS = Cartesian::RH_Z_UP_NEGATIVE_Y_FORWARD;
 
-	// Transform a vector between coordinate systems (to be implemented)
+	/**
+	 * @brief Transform a vector from source coordinate system to destination coordinate system.
+	 * @param v The vector to transform.
+	 * @param src The source coordinate system of the vector.
+	 * @param dst The destination coordinate system to transform to.
+	 * @return The transformed vector in the destination coordinate system.
+	 */
 	static glm::vec3 transform(const glm::vec3 &v, Cartesian src, Cartesian dst);
+
+	/**
+	 * @brief Transform a vector with an optional w component (e.g., for tangents) from source coordinate system to destination coordinate system.
+	 * The w component is used to preserve handedness for tangents. It will be flipped if the source and destination coordinate systems have different handedness.
+	 * @param v The vector to transform (x,y,z) and its w component for handedness.
+	 * @param src The source coordinate system of the vector.
+	 * @param dst The destination coordinate system to transform to.
+	 * @return The transformed vector in the destination coordinate system, with w component adjusted for handedness if necessary.
+	 */
+	static glm::vec4 transform(const glm::vec4 &v, Cartesian src, Cartesian dst);
 
   private:
 	static BasisInfo basisInfo(Cartesian cs);

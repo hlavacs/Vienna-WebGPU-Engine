@@ -1,6 +1,10 @@
 #include "engine/rendering/RenderCollector.h"
 
 #include <algorithm>
+#include <glm/gtx/norm.hpp>
+
+#include "engine/rendering/Material.h"
+#include "engine/rendering/MaterialFeatureMask.h"
 
 namespace engine::rendering
 {
@@ -43,6 +47,14 @@ void RenderCollector::addModel(
 		item.objectID = objectID;
 		item.renderNode = node;
 
+		// Cache transparency flag for efficient sorting
+		auto matOpt = submesh.material.get();
+		if (matOpt.has_value())
+		{
+			auto features = matOpt.value()->getFeatureMask();
+			item.isTransparent = (features & MaterialFeature::Flag::Transparent) != MaterialFeature::Flag::None;
+		}
+
 		m_renderItems.push_back(item);
 	}
 }
@@ -52,16 +64,60 @@ void RenderCollector::addLight(const Light &light)
 	m_lights.push_back(light);
 }
 
-void RenderCollector::sort()
+void RenderCollector::sort(const glm::vec3 &cameraPosition)
 {
+	// Separate opaque and transparent items
+	std::vector<RenderItemCPU> opaqueItems;
+	std::vector<RenderItemCPU> transparentItems;
+
+	opaqueItems.reserve(m_renderItems.size());
+	transparentItems.reserve(m_renderItems.size() / 4); // Assume ~25% transparent
+
+	for (auto &item : m_renderItems)
+	{
+		if (item.isTransparent)
+			transparentItems.push_back(item);
+		else
+			opaqueItems.push_back(item);
+	}
+
+	// Sort opaque objects: layer > material > model (for batching)
+	// This naturally gives front-to-back order within material groups
 	std::sort(
-		m_renderItems.begin(),
-		m_renderItems.end(),
+		opaqueItems.begin(),
+		opaqueItems.end(),
 		[](const RenderItemCPU &a, const RenderItemCPU &b)
 		{
-			return a < b;
+			return a < b; // Use existing operator< for state sorting
 		}
 	);
+
+	// Sort transparent objects: layer first, then back-to-front by distance
+	std::sort(
+		transparentItems.begin(),
+		transparentItems.end(),
+		[&cameraPosition](const RenderItemCPU &a, const RenderItemCPU &b)
+		{
+			// First by render layer
+			if (a.renderLayer != b.renderLayer)
+				return a.renderLayer < b.renderLayer;
+
+			// Then by distance to camera (back-to-front for alpha blending)
+			glm::vec3 aPos = glm::vec3(a.worldTransform[3]);
+			glm::vec3 bPos = glm::vec3(b.worldTransform[3]);
+
+			float distA = glm::distance2(aPos, cameraPosition);
+			float distB = glm::distance2(bPos, cameraPosition);
+
+			return distA > distB; // Render farther objects first
+		}
+	);
+
+	// Rebuild items list: opaque first, then transparent
+	m_renderItems.clear();
+	m_renderItems.reserve(opaqueItems.size() + transparentItems.size());
+	m_renderItems.insert(m_renderItems.end(), opaqueItems.begin(), opaqueItems.end());
+	m_renderItems.insert(m_renderItems.end(), transparentItems.begin(), transparentItems.end());
 }
 
 void RenderCollector::clear()

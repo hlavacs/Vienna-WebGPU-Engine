@@ -28,15 +28,22 @@ class WebGPUPipelineFactory;
 struct PipelineKey
 {
 	std::string shaderName;						// shader identifier (immutable after creation)
-	wgpu::TextureFormat colorFormat;			// vom RenderTarget
-	wgpu::TextureFormat depthFormat;			// vom RenderTarget
-	engine::rendering::Topology::Type topology; // vom Mesh
-	wgpu::CullMode cullMode;					// von Material / Default
-	uint32_t sampleCount;						// MSAA, vom RenderTarget / global
+	wgpu::TextureFormat colorFormat;			// from RenderTarget
+	wgpu::TextureFormat depthFormat;			// from RenderTarget
+	engine::rendering::Topology::Type topology; // from Mesh
+	wgpu::CullMode cullMode;					// from Material / Default
+	bool blendEnabled;							// from Material / Default
+	uint32_t sampleCount;						// MSAA, from RenderTarget / global
 
 	bool operator==(const PipelineKey &other) const
 	{
-		return shaderName == other.shaderName && colorFormat == other.colorFormat && depthFormat == other.depthFormat && topology == other.topology && cullMode == other.cullMode && sampleCount == other.sampleCount;
+		return shaderName == other.shaderName
+			   && colorFormat == other.colorFormat
+			   && depthFormat == other.depthFormat
+			   && topology == other.topology
+			   && cullMode == other.cullMode
+			   && blendEnabled == other.blendEnabled
+			   && sampleCount == other.sampleCount;
 	}
 };
 
@@ -52,6 +59,7 @@ struct PipelineKeyHasher
 		h ^= std::hash<int>{}(static_cast<int>(key.depthFormat)) + 0x9e3779b9 + (h << 6) + (h >> 2);
 		h ^= std::hash<int>{}(static_cast<int>(key.topology)) + 0x9e3779b9 + (h << 6) + (h >> 2);
 		h ^= std::hash<int>{}(static_cast<int>(key.cullMode)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		h ^= std::hash<bool>{}(key.blendEnabled) + 0x9e3779b9 + (h << 6) + (h >> 2);
 		h ^= std::hash<uint32_t>{}(key.sampleCount) + 0x9e3779b9 + (h << 6) + (h >> 2);
 		return h;
 	}
@@ -105,6 +113,7 @@ class WebGPUPipelineManager
 	 * @param depthFormat Render target depth format (or Undefined for no depth).
 	 * @param topology Primitive topology.
 	 * @param cullMode Face culling mode.
+	 * @param blendEnabled Whether blending is enabled.
 	 * @param sampleCount MSAA sample count.
 	 * @return Valid pipeline or nullptr on failure.
 	 */
@@ -114,6 +123,7 @@ class WebGPUPipelineManager
 		wgpu::TextureFormat depthFormat,
 		engine::rendering::Topology::Type topology,
 		wgpu::CullMode cullMode,
+		bool blendEnabled,
 		uint32_t sampleCount
 	);
 

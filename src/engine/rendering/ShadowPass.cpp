@@ -364,7 +364,8 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(Topology
 		m_isDebugMode ? wgpu::TextureFormat::RGBA8Unorm : wgpu::TextureFormat::Undefined,
 		wgpu::TextureFormat::Depth32Float,
 		topology,
-		wgpu::CullMode::None,
+		wgpu::CullMode::Back,
+		false,
 		1
 	);
 
