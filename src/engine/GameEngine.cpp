@@ -406,7 +406,10 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 	engine::rendering::RenderCollector renderCollector;
 	// Collect render data directly from scene graph
 	scene->collectRenderData(renderCollector);
-	renderCollector.sort();
+	
+	// Sort with camera position for proper transparent object ordering
+	glm::vec3 cameraPosition = cameras.empty() ? glm::vec3(0.0f) : cameras[0]->getPosition();
+	renderCollector.sort(cameraPosition);
 
 	scene->collectDebugData();
 	auto debugCollector = scene->getDebugCollector();

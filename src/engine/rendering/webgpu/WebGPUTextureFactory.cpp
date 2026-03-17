@@ -599,6 +599,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUTextureFactory::getOrCreateMipmapPipeline(
 		wgpu::TextureFormat::Undefined, // no depth
 		engine::rendering::Topology::Type::Triangles,
 		wgpu::CullMode::None,
+		false,
 		1 // sample count
 	);
 

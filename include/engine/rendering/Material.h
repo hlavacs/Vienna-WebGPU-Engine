@@ -386,6 +386,14 @@ struct Material : public engine::core::Identifiable<Material>,
 	bool hasNormalTexture() const { return hasTexture(MaterialTextureSlots::NORMAL); }
 	bool hasOcclusionTexture() const { return hasTexture(MaterialTextureSlots::OCCLUSION); }
 
+	/**
+	 * @brief Check if this material is configured as transparent.
+	 */
+	bool isTransparent() const
+	{
+		return (m_featureMask & MaterialFeature::Flag::Transparent) != MaterialFeature::Flag::None;
+	}
+
   private:
 	/**
 	 * @brief Material properties stored in a struct.

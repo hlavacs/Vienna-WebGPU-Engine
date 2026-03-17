@@ -21,6 +21,7 @@ class WebGPUPipelineFactory
 		wgpu::TextureFormat depthFormat = wgpu::TextureFormat::Undefined,
 		engine::rendering::Topology::Type topology = engine::rendering::Topology::Type::Triangles,
 		wgpu::CullMode cullMode = wgpu::CullMode::Back,
+		bool blendEnabled = false,
 		uint32_t sampleCount = 1
 	);
 

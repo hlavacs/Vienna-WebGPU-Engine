@@ -1,6 +1,7 @@
 #include "engine/resources/MaterialManager.h"
 
 #include <filesystem>
+#include <fstream>
 
 #include "engine/core/Handle.h"
 #include "engine/resources/Image.h"
@@ -36,10 +37,9 @@ static engine::rendering::Texture::Handle loadTexture(
 
 	if (isHdr)
 	{
-		std::vector<float> pixels(
-			reinterpret_cast<const float *>(gltfImg.image.data()),
-			reinterpret_cast<const float *>(gltfImg.image.data() + gltfImg.image.size())
-		);
+		const float *floatData = reinterpret_cast<const float *>(gltfImg.image.data());
+		const size_t floatCount = gltfImg.image.size() / sizeof(float);
+		std::vector<float> pixels(floatData, floatData + floatCount);
 
 		image = std::make_shared<engine::resources::Image>(
 			gltfImg.width,
@@ -243,6 +243,7 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 		mat->setDiffuseTexture(
 			loadTexture(gltfMat.pbrMetallicRoughness.baseColorTexture.index, textures, images, *m_textureManager)
 		);
+		features |= MaterialFeature::Flag::UsesBaseColorMap;
 	}
 
 	// Metallic-Roughness texture
@@ -281,18 +282,19 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 		features |= MaterialFeature::Flag::UsesEmissiveMap;
 	}
 
-	// Alpha test for transparent materials
-	if (props.diffuse[3] < 1.0f)
-		features |= MaterialFeature::Flag::AlphaTest;
-
 	// Double-sided
 	if (gltfMat.doubleSided)
 		features |= MaterialFeature::Flag::DoubleSided;
 
+	if (gltfMat.alphaMode == "MASK")
+		features |= MaterialFeature::Flag::AlphaTest;
+	else if (gltfMat.alphaMode == "BLEND")
+		features |= MaterialFeature::Flag::Transparent;
+
 	mat->setFeatureMask(features);
 
 	// Default shader
-	mat->setShader(engine::rendering::shader::defaults ::PBR);
+	mat->setShader(engine::rendering::shader::defaults::PBR);
 
 	auto handleOpt = add(mat);
 	if (!handleOpt)

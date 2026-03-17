@@ -44,6 +44,7 @@ bool CompositePass::initialize()
 		wgpu::TextureFormat::Undefined, // No depth
 		Topology::Triangles,
 		wgpu::CullMode::None,
+		true,
 		1
 	);
 

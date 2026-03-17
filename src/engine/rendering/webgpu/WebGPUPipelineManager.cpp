@@ -33,8 +33,13 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineManager::getOrCreatePipeline(
 		colorFormat,
 		depthFormat,
 		mesh->getTopology(),
-		wgpu::CullMode::Back, // ToDo: Get cull mode from material
-		1					  // ToDo: Get sample count from render target
+		(MaterialFeature::hasFlag(material->getFeatureMask(), MaterialFeature::Flag::DoubleSided))
+			? wgpu::CullMode::None
+			: wgpu::CullMode::Back,
+		(MaterialFeature::hasFlag(material->getFeatureMask(), MaterialFeature::Flag::Transparent))
+			? true
+			: false,
+		1 // ToDo: Get sample count from render target
 	};
 	auto it = m_pipelines.find(key);
 	if (it != m_pipelines.end())
@@ -57,6 +62,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineManager::getOrCreatePipeline(
 	wgpu::TextureFormat depthFormat,
 	engine::rendering::Topology::Type topology,
 	wgpu::CullMode cullMode,
+	bool blendEnabled,
 	uint32_t sampleCount
 )
 {
@@ -66,6 +72,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineManager::getOrCreatePipeline(
 		depthFormat,
 		topology,
 		cullMode,
+		blendEnabled,
 		sampleCount
 	};
 
@@ -202,6 +209,7 @@ bool WebGPUPipelineManager::createPipelineInternal(
 		config.depthFormat,
 		config.topology,
 		config.cullMode,
+		config.blendEnabled,
 		config.sampleCount
 	);
 

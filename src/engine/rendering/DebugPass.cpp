@@ -84,6 +84,7 @@ void DebugPass::render(FrameCache &frameCache)
 			wgpu::TextureFormat::Undefined, // No depth for overlay
 			Topology::Lines,
 			wgpu::CullMode::None,
+			false, // No blending for debug primitives
 			1
 		);
 		pipeline = m_pipeline.lock();

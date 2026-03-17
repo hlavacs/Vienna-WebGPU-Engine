@@ -139,43 +139,32 @@ std::optional<ModelManager::ModelPtr> ModelManager::createModel(
 	if (!m_meshManager)
 		return std::nullopt;
 
-	// Build a mesh per primitive
-	std::vector<engine::rendering::MeshHandle> meshHandles;
-	for (const auto &prim : gltfData.primitives)
-	{
-		if (prim.indexCount == 0)
-			continue;
-
-		auto meshOpt = m_meshManager->createMesh(
-			std::vector<engine::rendering::Vertex>(gltfData.vertices.begin() + prim.vertexOffset, gltfData.vertices.begin() + prim.vertexOffset + prim.vertexCount),
-			std::vector<uint32_t>(gltfData.indices.begin() + prim.indexOffset, gltfData.indices.begin() + prim.indexOffset + prim.indexCount),
-			gltfData.boundingBox,
-			modelName
-		);
-		if (!meshOpt || !(*meshOpt))
-			continue;
-
-		auto &mesh = *meshOpt;
-		mesh->computeTangents();
-		meshHandles.push_back(mesh->getHandle());
-	}
-
-	if (meshHandles.empty())
+	// Build single mesh from all geometry
+	auto meshOpt = m_meshManager->createMesh(
+		gltfData.vertices,
+		gltfData.indices,
+		gltfData.boundingBox,
+		modelName
+	);
+	if (!meshOpt || !(*meshOpt))
 		return std::nullopt;
 
+	auto &mesh = *meshOpt;
+	mesh->computeTangents();
+	auto meshHandle = mesh->getHandle();
+
 	auto model = std::make_shared<engine::rendering::Model>(
-		meshHandles.front(), // or handle multiple meshes inside Model if supported
+		meshHandle,
 		gltfData.filePath,
 		modelName
 	);
 
-	// Assign submeshes & materials
+	// Create one submesh per primitive
 	if (m_materialManager && gltfData.materialContext && !gltfData.materialContext->materials.empty())
 	{
 		std::filesystem::path textureBasePath = std::filesystem::path(gltfData.filePath).parent_path();
-		for (size_t i = 0; i < gltfData.primitives.size(); ++i)
+		for (const auto &prim : gltfData.primitives)
 		{
-			const auto &prim = gltfData.primitives[i];
 			if (prim.indexCount == 0)
 				continue;
 

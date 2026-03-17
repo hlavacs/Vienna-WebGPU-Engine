@@ -190,11 +190,13 @@ void MainDemoImGuiUI::renderMaterialProperties()
 			if (!materialOpt.has_value())
 			{
 				ImGui::Text("Material not found in manager");
+				continue;
 			}
-			else
+			auto material = materialOpt.value();
+			auto text = std::string("Material Handle: ") + material->getName().value_or("Unnamed");
+			ImGui::Indent();
+			if(ImGui::CollapsingHeader(text.c_str()))
 			{
-				auto material = materialOpt.value();
-				ImGui::Text("Material Handle: %s", material->getName().value_or("Unnamed").c_str());
 				auto materialProperties = material->getProperties<engine::rendering::PBRProperties>();
 				bool materialsChanged = false;
 				materialsChanged |= ImGui::ColorEdit4("Diffuse (Kd)", materialProperties.diffuse);
@@ -255,6 +257,7 @@ void MainDemoImGuiUI::renderMaterialProperties()
 					ImGui::PopID();
 				}
 			}
+			ImGui::Unindent();
 			ImGui::PopID();
 		}
 	}

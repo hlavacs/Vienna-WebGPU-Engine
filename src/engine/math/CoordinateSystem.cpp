@@ -33,6 +33,19 @@ glm::vec3 CoordinateSystem::transform(const glm::vec3 &v, Cartesian src, Cartesi
 
 	return result;
 }
+glm::vec4 CoordinateSystem::transform(const glm::vec4 &v, Cartesian src, Cartesian dst)
+{
+    auto srcInfo = basisInfo(src);
+    auto dstInfo = basisInfo(dst);
+
+    float w = v.w;
+
+    // Flip handedness sign if coordinate systems have different handedness
+    if (srcInfo.handedness != dstInfo.handedness)
+        w = -w;
+
+    return glm::vec4(transform(glm::vec3(v), src, dst), w);
+}
 
 CoordinateSystem::BasisInfo CoordinateSystem::basisInfo(Cartesian cs)
 {

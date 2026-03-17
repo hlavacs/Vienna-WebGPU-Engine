@@ -28,7 +28,6 @@ WebGPUShaderFactory::WebGPUShaderBuilder WebGPUShaderFactory::begin(
 	const std::string &fragmentEntry,
 	engine::rendering::VertexLayout vertexLayout,
 	bool depthEnabled,
-	bool blendEnabled,
 	bool cullBackFaces
 )
 {
@@ -40,7 +39,6 @@ WebGPUShaderFactory::WebGPUShaderBuilder WebGPUShaderFactory::begin(
 		fragmentEntry,
 		vertexLayout,
 		depthEnabled,
-		blendEnabled,
 		cullBackFaces,
 		shaderPath
 	);
@@ -54,7 +52,6 @@ WebGPUShaderFactory::WebGPUShaderBuilder::WebGPUShaderBuilder(
 	std::string fragmentEntry,
 	engine::rendering::VertexLayout vertexLayout,
 	bool depthEnabled,
-	bool blendEnabled,
 	bool cullBackFaces,
 	std::filesystem::path shaderPath
 ) : m_factory(factory),
@@ -65,7 +62,6 @@ WebGPUShaderFactory::WebGPUShaderBuilder::WebGPUShaderBuilder(
 	m_vertexLayout(vertexLayout),
 	m_shaderModule(nullptr),
 	m_depthEnabled(depthEnabled),
-	m_blendEnabled(blendEnabled),
 	m_backFaceCullingEnabled(cullBackFaces),
 	m_shaderPath(std::move(shaderPath)),
 	m_lastBindGroupIndex(-1)
@@ -336,7 +332,6 @@ std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::WebGPUShaderBuilder::buil
 		m_vertexLayout,
 		engine::rendering::ShaderFeature::Flag(m_shaderFeatures),
 		m_depthEnabled,
-		m_blendEnabled,
 		m_backFaceCullingEnabled
 	);
 
@@ -525,7 +520,6 @@ bool WebGPUShaderFactory::reloadShader(std::shared_ptr<WebGPUShaderInfo> shaderI
 		shaderInfo->getVertexLayout(),
 		shaderInfo->getShaderFeatures(),
 		shaderInfo->isDepthEnabled(),
-		shaderInfo->isBlendEnabled(),
 		shaderInfo->isBackFaceCullingEnabled()
 	);
 
