@@ -37,6 +37,32 @@ static uint32_t getChannelCount(ImageFormat::Type format)
 		return 0;
 	}
 }
+/**
+ * @brief Gets the number of color channels for the given format.
+ * @param format ImageFormat to check
+ * @return Number of bytes per pixel (1-8), or 0 if unknown format.
+ */
+static uint32_t getBytesPerPixel(ImageFormat::Type format)
+{
+	switch (format)
+	{
+	case ImageFormat::Type::LDR_RGBA8:
+		return 4;
+	case ImageFormat::Type::HDR_RGBA16F:
+		return 8;
+	case ImageFormat::Type::LDR_RGB8:
+	case ImageFormat::Type::HDR_RGB16F:
+		return 6;
+	case ImageFormat::Type::LDR_RG8:
+	case ImageFormat::Type::HDR_RG16F:
+		return 4;
+	case ImageFormat::Type::LDR_R8:
+	case ImageFormat::Type::HDR_R16F:
+		return 2;
+	default:
+		return 0;
+	}
+}
 
 /**
  * @brief Gets the image format from the number of channels and HDR flag.
@@ -156,6 +182,19 @@ class Image
 		m_ldrPixels = std::move(ldrPixels);
 		m_hdrPixels.clear();
 	}
+
+	/**
+	 * @brief Resizes the image to new dimensions. This will clear existing pixel data.
+	 * @param newWidth New image width
+	 * @param newHeight New image height
+	 */
+	void resize(uint32_t newWidth, uint32_t newHeight) {
+		m_width = newWidth;
+		m_height = newHeight;
+		m_ldrPixels.clear();
+		m_hdrPixels.clear();
+	}
+
 	/**
 	 * @brief Replace the image data with new pixel data.
 	 * @param width New image width

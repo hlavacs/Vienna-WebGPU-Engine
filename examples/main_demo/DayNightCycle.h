@@ -64,7 +64,7 @@ class DayNightCycle : public engine::scene::nodes::UpdateNode
 	float m_hour = 12.0f;
 	float m_cycleDuration = 120.0f;
 	bool m_paused = false;
-	float m_sunIntensity = 1.0f;
+	float m_sunIntensity = 2.0f;
 	float m_moonIntensity = 1.0f;
 
 	float m_latitude = 48.2f; // degrees
@@ -130,7 +130,7 @@ class DayNightCycle : public engine::scene::nodes::UpdateNode
 	float ambientIntensityFromSun(float sunAltitudeRad) const
 	{
 		const float minAmbient = 0.05f;
-		const float maxAmbient = 0.25f;
+		const float maxAmbient = 1.0f;
 		float t = glm::clamp(std::sin(sunAltitudeRad), 0.0f, 1.0f);
 		return minAmbient + t * (maxAmbient - minAmbient);
 	}
@@ -182,7 +182,7 @@ class DayNightCycle : public engine::scene::nodes::UpdateNode
 		auto &dLight = light.asDirectional();
 
 		dLight.color = sunColor();
-		dLight.intensity = m_sunIntensity; // constant for shadows
+		dLight.intensity = sunIntensityFromAltitude(glm::asin(dir.y)) * m_sunIntensity; // constant for shadows
 		dLight.castShadows = true;
 
 		light.setData(dLight);

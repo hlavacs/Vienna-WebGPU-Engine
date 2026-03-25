@@ -185,7 +185,7 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 			break;
 		case Texture::Type::RenderTarget:
 			usage = static_cast<WGPUTextureUsage>(
-				WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc
+				WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst
 			);
 			break;
 		case Texture::Type::DepthStencil:
@@ -197,6 +197,8 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromHandleUncached(
 			return nullptr;
 		}
 	}
+	if (texture.isRenderTarget())
+		usage = static_cast<WGPUTextureUsage>(usage | WGPUTextureUsage_CopySrc | WGPUTextureUsage_RenderAttachment);
 
 	// Descriptor
 	wgpu::TextureDescriptor desc{};
@@ -271,7 +273,8 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createRenderTarget(
 	textureDesc.size.depthOrArrayLayers = 1;
 	textureDesc.format = format;
 	textureDesc.usage = static_cast<WGPUTextureUsage>(
-		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc
+		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
+		| WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst
 	);
 	textureDesc.mipLevelCount = 1;
 	textureDesc.sampleCount = 1;

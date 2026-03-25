@@ -10,6 +10,12 @@
 namespace engine::scene::nodes
 {
 
+void Node::initialize()
+{
+	// Default implementation: do nothing
+	// Derived classes can override to add initialization logic
+}
+
 void Node::start()
 {
 	if (!enabled || started)
@@ -42,12 +48,14 @@ void Node::onDisable()
 
 void Node::onDestroy()
 {
+	// Call onDestroy on children but don't clear them
+	// This preserves the node tree structure for scene reuse
 	for (auto &child : children)
 	{
 		if (child)
 			child->onDestroy();
 	}
-	children.clear();
+	// Don't clear children - they remain for re-initialization
 }
 
 void Node::onDebugDraw(engine::rendering::DebugRenderCollector &collector)
@@ -93,7 +101,7 @@ void Node::addChild(Ptr child)
 	if (!child)
 		return;
 	child->parent = this;
-	child->setEngineContext(m_engineContext); // Propagate context to child
+	child->setEngineContext(m_engineContext); // This will propagate to all descendants
 	children.push_back(child);
 
 	// Update Transform hierarchy if child is spatial

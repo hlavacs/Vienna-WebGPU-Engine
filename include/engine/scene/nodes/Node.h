@@ -75,6 +75,9 @@ class Node : public engine::core::Identifiable<Node>, public std::enable_shared_
 	Node(std::optional<std::string> name = std::nullopt) : Identifiable<Node>(name) {}
 	virtual ~Node() { onDestroy(); }
 
+	/** @brief Initialize the node when first created by the scene. */
+	virtual void initialize();
+
 	/** @brief Start the node (called once when enabled for the first time). */
 	virtual void start();
 	/** @brief Called when node is enabled. */

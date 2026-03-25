@@ -11,8 +11,37 @@
 #include "MainDemoImGuiUI.h"
 #include "OrbitCamera.h"
 
-void setupLighting(std::shared_ptr<engine::scene::nodes::Node> rootNode, std::shared_ptr<engine::scene::nodes::LightNode> &ambientLight, std::shared_ptr<engine::scene::nodes::LightNode> &sunLight, std::shared_ptr<engine::scene::nodes::LightNode> &moonLight)
+std::shared_ptr<engine::scene::SceneManager> sceneManager;
+std::shared_ptr<engine::resources::ResourceManager> resourceManager;
+std::shared_ptr<engine::ui::ImGuiManager> imguiManager;
+
+std::shared_ptr<demo::OrbitCameraController> setupCamera(std::shared_ptr<engine::scene::Scene> scene)
 {
+	auto mainCamera = scene->getMainCamera();
+	if (mainCamera)
+	{
+		mainCamera->setFov(45.0f);
+		mainCamera->setNearFar(0.1f, 100.0f);
+		mainCamera->setPerspective(true);
+		mainCamera->getTransform().setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
+		mainCamera->getTransform().lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+		mainCamera->setBackgroundColor(glm::vec4(0.1f, 0.1f, 0.1f, 1.0f));
+		mainCamera->setMSAAEnabled(true);
+	}
+
+	// Setup orbit camera controller
+	demo::OrbitCameraState orbitState;
+	orbitState.distance = 5.0f;
+	orbitState.azimuth = 0.0f;
+	orbitState.elevation = 0.3f;
+	auto orbitController = std::make_shared<demo::OrbitCameraController>(orbitState, mainCamera);
+	scene->getRoot()->addChild(orbitController);
+	return orbitController;
+}
+
+void setupComplexLighting(std::shared_ptr<engine::scene::Scene> scene, std::shared_ptr<engine::scene::nodes::LightNode> &ambientLight, std::shared_ptr<engine::scene::nodes::LightNode> &sunLight, std::shared_ptr<engine::scene::nodes::LightNode> &moonLight)
+{
+	auto rootNode = scene->getRoot();
 	// Ambient light
 	ambientLight = std::make_shared<engine::scene::nodes::LightNode>();
 	engine::rendering::AmbientLight ambientData;
@@ -53,59 +82,89 @@ void setupLighting(std::shared_ptr<engine::scene::nodes::Node> rootNode, std::sh
 	spotLight1->getTransform().setLocalRotation(spotRotation);
 	spotLight1->getTransform().setWorldPosition(glm::vec3(0.0f, 9.0f, 0.0f));
 	rootNode->addChild(spotLight1->asNode());
-
-	auto spotLight2 = std::make_shared<engine::scene::nodes::LightNode>();
-	spotLight2->getLight().setData(spotData);
-	spotLight2->getTransform().setLocalRotation(spotRotation);
-	spotLight2->getTransform().setWorldPosition(glm::vec3(0.0f, 9.0f, 0.0f));
-	rootNode->addChild(spotLight2->asNode());
 }
 
-bool setupModels(std::shared_ptr<engine::scene::nodes::Node> rootNode, std::shared_ptr<engine::resources::ResourceManager> resourceManager)
+void setupSimpleLighting(std::shared_ptr<engine::scene::Scene> scene)
 {
-	// Load models from disk
-	/* auto maybeModelFourareen = resourceManager->m_modelManager->createModel("fourareen.obj");
-	auto maybeModelFox = resourceManager->m_modelManager->createModel("fox/Fox.gltf");
-	auto maybeModelPlane = resourceManager->m_modelManager->createModel("plane.obj"); */
-	auto maybeModelSeaKeep = resourceManager->m_modelManager->createModel(
-		PathProvider::getModels("sea_keep_lonely_watcher/scene.gltf")
-	);
+	auto rootNode = scene->getRoot();
 
-	/* if (!maybeModelFourareen.has_value())
-	{
-		spdlog::error("Failed to load fourareen.obj model");
-		return false;
-	}
-	if (!maybeModelFox.has_value())
-	{
-		spdlog::error("Failed to load fox.gltf model");
-		return false;
-	}
+	// Ambient light
+	auto ambientLight = std::make_shared<engine::scene::nodes::LightNode>();
+	engine::rendering::AmbientLight ambientData;
+	ambientData.color = glm::vec3(0.3f, 0.3f, 0.3f);
+	ambientData.intensity = 1.0f;
+	ambientLight->getLight().setData(ambientData);
+	rootNode->addChild(ambientLight->asNode());
+
+	// Directional light
+	auto directionalLight = std::make_shared<engine::scene::nodes::LightNode>();
+	engine::rendering::DirectionalLight directionalData;
+	directionalData.color = glm::vec3(1.0f, 1.0f, 0.95f);
+	directionalData.intensity = 1.0f;
+	directionalData.castShadows = true;
+	directionalData.shadowPCFKernel = 2;
+	directionalLight->getLight().setData(directionalData);
+	glm::quat dirRotation = glm::quat(glm::radians(glm::vec3(140.0f, -30.0f, 0.0f)));
+	directionalLight->getTransform().setLocalRotation(dirRotation);
+	rootNode->addChild(directionalLight->asNode());
+
+	// Point light
+	auto pointLight = std::make_shared<engine::scene::nodes::LightNode>();
+	engine::rendering::PointLight pointData;
+	pointData.color = glm::vec3(1.0f, 0.8f, 0.6f);
+	pointData.intensity = 10.0f;
+	pointData.castShadows = true;
+	pointData.range = 20.0f;
+	pointLight->getLight().setData(pointData);
+	pointLight->getTransform().setWorldPosition(glm::vec3(3.0f, 3.0f, 0.0f));
+	rootNode->addChild(pointLight->asNode());
+
+	// Spot light
+	auto spotLight = std::make_shared<engine::scene::nodes::LightNode>();
+	engine::rendering::SpotLight spotData;
+	spotData.color = glm::vec3(0.8f, 0.9f, 1.0f);
+	spotData.intensity = 25.0f;
+	spotData.castShadows = true;
+	spotData.range = 30.0f;
+	spotData.spotAngle = glm::radians(20.0f);
+	spotData.spotSoftness = 0.3f;
+	spotData.shadowMapSize = 2048;
+	spotData.shadowPCFKernel = 3;
+	spotLight->getLight().setData(spotData);
+	glm::quat spotRotation = glm::quat(glm::radians(glm::vec3(0.0f, 90.0f, -90.0f)));
+	spotLight->getTransform().setLocalRotation(spotRotation);
+	spotLight->getTransform().setWorldPosition(glm::vec3(-3.0f, 5.0f, 0.0f));
+	rootNode->addChild(spotLight->asNode());
+}
+
+bool setupScene1(std::shared_ptr<engine::scene::Scene> scene)
+{
+	auto orbitController = setupCamera(scene);
+
+	// Use lazy loading constructor - models will load during scene initialization
+	auto modelNode1 = std::make_shared<engine::scene::nodes::ModelRenderNode>(
+		PathProvider::getResource("fourareen.obj")
+	);
+	modelNode1->getTransform().setLocalPosition(glm::vec3(0.0f, 1.0f, 0.0f));
+	scene->getRoot()->addChild(modelNode1);
+
+	auto modelNode2 = std::make_shared<engine::scene::nodes::ModelRenderNode>(
+		PathProvider::getResource("fourareen.obj")
+	);
+	modelNode2->getTransform().setLocalPosition(glm::vec3(0.0f, 3.0f, 0.4f));
+	scene->getRoot()->addChild(modelNode2);
+
+	// Create floor plane with custom PBR material (use immediate loading)
+	auto maybeModelPlane = resourceManager->m_modelManager->createModel(
+		PathProvider::getResource("plane.obj"),
+		"Floor_Plane"
+	);
 	if (!maybeModelPlane.has_value())
 	{
 		spdlog::error("Failed to load plane.obj model");
 		return false;
-	} */
-	if (!maybeModelSeaKeep.has_value())
-	{
-		spdlog::error("Failed to load sea_keep_lonely_watcher model");
-		return false;
 	}
 
-	auto modelNodeSeaKeep = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelSeaKeep.value());
-	modelNodeSeaKeep->getTransform().setLocalPosition(glm::vec3(0.0f, -3.0f, 0.0f));
-	modelNodeSeaKeep->getTransform().setLocalScale(glm::vec3(0.025f, 0.025f, 0.025f));
-	rootNode->addChild(modelNodeSeaKeep);
-
-	return true;
-
-	/* // Add fox model to scene
-	auto modelNode1 = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelFox.value());
-	modelNode1->getTransform().setLocalPosition(glm::vec3(0.0f, 1.0f, 0.0f));
-	modelNode1->getTransform().setLocalScale(glm::vec3(0.05f, 0.05f, 0.05f));
-	rootNode->addChild(modelNode1);
-
-	// Create floor plane with custom PBR material
 	auto floorNode = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelPlane.value());
 	floorNode->getTransform().setLocalPosition(glm::vec3(0.0f, 0.0f, 0.0f));
 	floorNode->getTransform().setLocalScale(glm::vec3(10.0f, 1.0f, 10.0f));
@@ -128,26 +187,69 @@ bool setupModels(std::shared_ptr<engine::scene::nodes::Node> rootNode, std::shar
 	);
 
 	// Manually assign material to the plane's submesh
-	// The plane.obj file has no material defined, so we need to assign one programmatically
 	auto mesh = floorNode->getModel().get().value();
 	mesh->getSubmeshes()[0].material = floorMaterial.value()->getHandle();
-	rootNode->addChild(floorNode);
 
-	return true; */
+	scene->getRoot()->addChild(floorNode);
+
+	return true;
 }
 
-void setupImGui(std::shared_ptr<engine::ui::ImGuiManager> imguiManager, demo::MainDemoImGuiUI &mainDemoUI, std::shared_ptr<demo::DayNightCycle> dayNightCycle)
+bool setupScene2(std::shared_ptr<engine::scene::Scene> scene)
 {
-	imguiManager->addFrame([&]()
-						   { mainDemoUI.render(); });
+	auto orbitController = setupCamera(scene);
+	auto rootNode = scene->getRoot();
 
-	imguiManager->addFrame([&]()
-						   { mainDemoUI.renderPerformanceWindow(); });
+	// Use lazy loading constructor - models will load during scene initialization
+	auto modelNodeSeaKeep = std::make_shared<engine::scene::nodes::ModelRenderNode>(
+		PathProvider::getModels("sea_keep_lonely_watcher/scene.gltf")
+	);
+	modelNodeSeaKeep->getTransform().setLocalPosition(glm::vec3(0.0f, -3.0f, 0.0f));
+	modelNodeSeaKeep->getTransform().setLocalScale(glm::vec3(0.025f, 0.025f, 0.025f));
+	rootNode->addChild(modelNodeSeaKeep);
 
-	imguiManager->addFrame([&]()
-						   { mainDemoUI.renderShadowDebugWindow(); });
+	return true;
+}
 
-	imguiManager->addFrame([&, dayNightCycle]()
+void setupImGui(std::shared_ptr<engine::ui::ImGuiManager> imguiManager, std::shared_ptr<demo::MainDemoImGuiUI> mainDemoUI, std::shared_ptr<demo::DayNightCycle> dayNightCycle)
+{
+	imguiManager->addFrame([mainDemoUI]()
+					   { mainDemoUI->render(sceneManager); });
+
+	imguiManager->addFrame([mainDemoUI]()
+					   { mainDemoUI->renderPerformanceWindow(); });
+
+	imguiManager->addFrame([mainDemoUI]()
+					   { mainDemoUI->renderShadowDebugWindow(); });
+
+	imguiManager->addFrame([]()
+	{
+		ImGui::Begin("Scene Controls");
+		
+		auto activeScene = sceneManager->getActiveScene();
+		if (activeScene)
+		{
+			ImGui::Text("Current Scene: %s", sceneManager->getActiveSceneName().c_str());
+			ImGui::Separator();
+		}
+		
+		if (ImGui::Button("Next Scene"))
+		{
+			auto currentName = sceneManager->getActiveSceneName();
+			if (currentName == "Demo")
+			{
+				sceneManager->loadSceneAsync("SeaKeep");
+			}
+			else
+			{
+				sceneManager->loadSceneAsync("Demo");
+			}
+		}
+		
+		ImGui::End();
+	});
+
+imguiManager->addFrame([dayNightCycle]()
 						   {
 		ImGui::Begin("Day-Night Cycle Controls");
 		
@@ -185,60 +287,59 @@ int main(int argc, char **argv)
 	engine::GameEngine engine;
 	engine.initialize(options);
 
-	auto sceneManager = engine.getSceneManager();
-	auto resourceManager = engine.getResourceManager();
-	auto imguiManager = engine.getImGuiManager();
+	sceneManager = engine.getSceneManager();
+	resourceManager = engine.getResourceManager();
+	imguiManager = engine.getImGuiManager();
 
-	// Create scene
-	auto mainScene = sceneManager->createScene("Main");
-	auto rootNode = mainScene->getRoot();
+	// Create scenes
+	auto demoScene = sceneManager->createScene("Demo");
+	auto seaKeepScene = sceneManager->createScene("SeaKeep");
 
-	// Setup cameras
-	auto mainCamera = mainScene->getMainCamera();
-	if (mainCamera)
+	// Setup Demo Scene (one of each light type)
+	if (!setupScene1(demoScene))
 	{
-		mainCamera->setFov(45.0f);
-		mainCamera->setNearFar(0.1f, 100.0f);
-		mainCamera->setPerspective(true);
-		mainCamera->getTransform().setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
-		mainCamera->getTransform().lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-		mainCamera->setBackgroundColor(glm::vec4(0.1f, 0.1f, 0.1f, 1.0f));
-		mainCamera->setMSAAEnabled(true);
+		spdlog::error("Failed to setup demo scene");
+		return -1;
 	}
+	setupSimpleLighting(demoScene);
 
-	// Setup orbit camera controller
-	demo::OrbitCameraState orbitState;
-	orbitState.distance = 5.0f;
-	orbitState.azimuth = 0.0f;
-	orbitState.elevation = 0.3f;
-	auto orbitController = std::make_shared<demo::OrbitCameraController>(orbitState, mainCamera);
-	rootNode->addChild(orbitController);
-
-	// Setup lighting
+	// Setup SeaKeep Scene (day-night cycle with multiple lights)
+	if (!setupScene2(seaKeepScene))
+	{
+		spdlog::error("Failed to setup sea keep scene");
+		return -1;
+	}
+	
+	// Setup complex lighting with day-night cycle
 	std::shared_ptr<engine::scene::nodes::LightNode> ambientLight, sunLight, moonLight;
-	setupLighting(rootNode, ambientLight, sunLight, moonLight);
+	setupComplexLighting(seaKeepScene, ambientLight, sunLight, moonLight);
 
 	// Setup day-night cycle
 	auto dayNightCycle = std::make_shared<demo::DayNightCycle>(sunLight, moonLight, ambientLight);
 	dayNightCycle->setCycleDuration(120.0f);
 	dayNightCycle->setHour(12.0f);
-	rootNode->addChild(dayNightCycle);
+	seaKeepScene->getRoot()->addChild(dayNightCycle);
 
-	// Setup models
-	if (!setupModels(rootNode, resourceManager))
+	// Setup ImGui - get orbit controller from active scene dynamically
+	auto getOrbitController = []()
 	{
-		spdlog::error("Failed to setup scene models");
-		return -1;
-	}
+		if (!sceneManager || !sceneManager->getActiveScene())
+			return std::shared_ptr<demo::OrbitCameraController>();
+		auto root = sceneManager->getActiveScene()->getRoot();
+		if (!root)
+			return std::shared_ptr<demo::OrbitCameraController>();
+		auto controllers = root->getChildrenOfType<demo::OrbitCameraController>();
+		return controllers.empty() ? nullptr : controllers[0];
+	};
+	
 
-	// Setup ImGui
-	demo::MainDemoImGuiUI mainDemoUI(engine, rootNode, orbitController);
+	// Load demo scene first (async) and wait for it to complete
+	auto load = sceneManager->loadScene("Demo");
+
+	auto mainDemoUI = std::make_shared<demo::MainDemoImGuiUI>(engine);
 	setupImGui(imguiManager, mainDemoUI, dayNightCycle);
-
-	// Load and run
-	sceneManager->loadScene("Main");
+	
+	// Run engine
 	engine.run();
-
-	spdlog::info("Engine shut down successfully");
 	return 0;
 }

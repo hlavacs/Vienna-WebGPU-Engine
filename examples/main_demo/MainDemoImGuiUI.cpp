@@ -7,16 +7,10 @@ namespace demo
 {
 
 MainDemoImGuiUI::MainDemoImGuiUI(
-	engine::GameEngine &engine,
-	const std::shared_ptr<engine::scene::nodes::Node> &rootNode,
-	const std::shared_ptr<demo::OrbitCameraController> &orbitCameraController
-) : m_engine(engine),
-	m_rootNode(rootNode),
-	m_orbitCameraController(orbitCameraController),
-	m_orbitState(orbitCameraController->getOrbitState())
+	engine::GameEngine &engine
+) : m_engine(engine)
 {
-	m_cameraNode = orbitCameraController->getCamera();
-
+	m_rootNode = engine.getSceneManager()->getActiveScene()->getRoot();
 	for (const auto &child : m_rootNode->getChildrenOfType<engine::scene::nodes::LightNode>())
 	{
 		m_lightNodes.push_back(child);
@@ -27,15 +21,24 @@ MainDemoImGuiUI::MainDemoImGuiUI(
 	m_debugShadow2DArray = renderer->getShadowPass().DEBUG_SHADOW_2D_ARRAY;
 }
 
-void MainDemoImGuiUI::render()
+void MainDemoImGuiUI::render(const std::shared_ptr<engine::scene::SceneManager> &sceneManager)
 {
+	auto rootNode = m_engine.getSceneManager()->getActiveScene()->getRoot();
+	if (m_rootNode != rootNode)
+	{
+		m_rootNode = rootNode;
+		m_lightNodes.clear();
+		for (const auto &child : m_rootNode->getChildrenOfType<engine::scene::nodes::LightNode>())
+		{
+			m_lightNodes.push_back(child);
+		};
+	}
 	ImGui::Begin("Lighting & Camera Controls");
 
 	renderLightingAndCameraControls();
 	ImGui::Separator();
 	renderMaterialProperties();
 	renderLightsSection();
-	renderCameraControlsSection();
 	ImGui::End();
 }
 
@@ -195,7 +198,7 @@ void MainDemoImGuiUI::renderMaterialProperties()
 			auto material = materialOpt.value();
 			auto text = std::string("Material Handle: ") + material->getName().value_or("Unnamed");
 			ImGui::Indent();
-			if(ImGui::CollapsingHeader(text.c_str()))
+			if (ImGui::CollapsingHeader(text.c_str()))
 			{
 				auto materialProperties = material->getProperties<engine::rendering::PBRProperties>();
 				bool materialsChanged = false;
@@ -436,65 +439,6 @@ void MainDemoImGuiUI::renderLightsSection()
 				}
 				m_lightDirectionsUI = newDirectionsUI;
 				break;
-			}
-		}
-	}
-}
-
-void MainDemoImGuiUI::renderCameraControlsSection()
-{
-	if (ImGui::CollapsingHeader("Camera Controls", ImGuiTreeNodeFlags_DefaultOpen) && m_cameraNode)
-	{
-		auto &cameraTransform = m_cameraNode->getTransform();
-		glm::vec3 cameraPos = cameraTransform.getLocalPosition();
-		ImGui::Text("Position: (%.2f, %.2f, %.2f)", cameraPos.x, cameraPos.y, cameraPos.z);
-		float camDistance = glm::length(cameraPos);
-		ImGui::Text("Distance from origin: %.2f", camDistance);
-		glm::vec3 forward = cameraTransform.forward();
-		glm::vec3 up = cameraTransform.up();
-		glm::vec3 right = cameraTransform.right();
-		ImGui::Separator();
-		ImGui::Text("Orientation Vectors:");
-		ImGui::Text("Forward: (%.2f, %.2f, %.2f)", forward.x, forward.y, forward.z);
-		ImGui::Text("Up: (%.2f, %.2f, %.2f)", up.x, up.y, up.z);
-		ImGui::Text("Right: (%.2f, %.2f, %.2f)", right.x, right.y, right.z);
-		ImGui::Text("Azimuth/Elevation: (%.2f / %.2f)", m_orbitState.azimuth, m_orbitState.elevation);
-		glm::quat rotation = cameraTransform.getRotation();
-		glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(rotation));
-		if (eulerAngles.x > 90.0f)
-			eulerAngles.x -= 360.0f;
-		if (eulerAngles.y > 180.0f)
-			eulerAngles.y -= 360.0f;
-		if (eulerAngles.z > 180.0f)
-			eulerAngles.z -= 360.0f;
-		ImGui::Text("Rotation (degrees): (%.1f, %.1f, %.1f)", eulerAngles.x, eulerAngles.y, eulerAngles.z);
-
-		ImGui::Separator();
-		float zoomPercentage = (camDistance - 2.0f) / 8.0f * 100.0f;
-		zoomPercentage = glm::clamp(zoomPercentage, 0.0f, 100.0f);
-		if (ImGui::SliderFloat("Camera Distance", &zoomPercentage, 0.0f, 100.0f, "%.0f%%"))
-		{
-			float newDistance = (zoomPercentage / 100.0f) * 8.0f + 2.0f;
-			m_orbitState.distance = newDistance;
-			demo::updateOrbitCamera(m_orbitState, m_cameraNode);
-		}
-		if (ImGui::Button("Look At Origin"))
-		{
-			m_cameraNode->lookAt(glm::vec3(0.0f));
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Reset Camera"))
-		{
-			m_cameraNode->getTransform().setLocalPosition(glm::vec3(0.0f, 2.0f, 5.0f));
-			m_cameraNode->lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-			glm::vec3 camPos = m_cameraNode->getTransform().getLocalPosition();
-			glm::vec3 toCam = camPos - m_orbitState.targetPoint;
-			m_orbitState.distance = glm::length(toCam);
-			if (m_orbitState.distance > 1e-5f)
-			{
-				glm::vec3 dir = toCam / m_orbitState.distance;
-				m_orbitState.elevation = std::asin(dir.y);
-				m_orbitState.azimuth = std::atan2(dir.z, dir.x);
 			}
 		}
 	}

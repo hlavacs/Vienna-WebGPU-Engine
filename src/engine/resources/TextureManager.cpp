@@ -6,7 +6,8 @@ namespace engine::resources
 
 std::optional<TextureManager::TexturePtr> TextureManager::createImageTexture(
 	engine::resources::Image::Ptr image,
-	std::optional<std::filesystem::path> filePath
+	std::optional<std::filesystem::path> filePath,
+	bool renderTarget
 )
 {
 	if (image == nullptr)
@@ -44,7 +45,8 @@ std::optional<TextureManager::TexturePtr> TextureManager::createImageTexture(
 		new engine::rendering::Texture(
 			engine::rendering::Texture::Type::Image,
 			std::move(image),
-			filePath.value_or(std::filesystem::path{})
+			filePath.value_or(std::filesystem::path{}),
+			renderTarget
 		)
 	);
 

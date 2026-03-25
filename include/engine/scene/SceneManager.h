@@ -1,8 +1,10 @@
 #pragma once
 
 #include "engine/scene/Scene.h"
+#include <future>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace engine
@@ -20,7 +22,7 @@ namespace engine::scene
  * - Creating and registering scenes
  * - Switching between scenes
  * - Managing the active scene lifecycle
- * 
+ *
  * ToDo: Lazy Loading of scenes from disk and async transitions with loading screens
  */
 class SceneManager
@@ -51,10 +53,36 @@ class SceneManager
 	bool loadScene(const std::string &sceneName);
 
 	/**
+	 * @brief Load a scene asynchronously with initialization
+	 * Calls initialize() on all nodes in the scene tree before activating
+	 * @param sceneName The name of the scene to load
+	 * @return Future that resolves to true if scene was loaded successfully, false otherwise
+	 */
+	std::future<bool> loadSceneAsync(const std::string &sceneName);
+
+	/**
+	 * @brief Check if a scene is currently loading
+	 * @return true if a scene is being loaded asynchronously
+	 */
+	bool isLoading() const { return m_isLoading; }
+
+	/**
+	 * @brief Get the name of the scene currently being loaded
+	 * @return Scene name or empty string if not loading
+	 */
+	const std::string &getLoadingSceneName() const { return m_loadingSceneName; }
+
+	/**
 	 * @brief Get the currently active scene
 	 * @return Pointer to active scene, or nullptr if none
 	 */
-	[[nodiscard]] std::shared_ptr<Scene> getActiveScene() const { return m_activeScene; }
+	[[nodiscard]] std::shared_ptr<Scene> getActiveScene() const;
+
+	/**
+	 * @brief Get the name of the currently active scene
+	 * @return Scene name or empty string if none
+	 */
+	[[nodiscard]] const std::string &getActiveSceneName() const { return m_activeSceneName; }
 
 	/**
 	 * @brief Get a scene by name (without making it active)
@@ -92,6 +120,35 @@ class SceneManager
 	std::shared_ptr<Scene> m_activeScene = nullptr;
 	std::string m_activeSceneName;
 	engine::EngineContext *m_engineContext = nullptr;
+	mutable std::mutex m_sceneMutex; // Protects m_activeScene access
+
+	// Async loading state
+	bool m_isLoading = false;
+	std::string m_loadingSceneName;
+
+	/**
+	 * @brief Initialize all nodes in a scene tree recursively
+	 * @param node The node to initialize (and its children)
+	 */
+	void initializeNodeTree(std::shared_ptr<engine::scene::nodes::Node> node);
+
+	/**
+	 * @brief Activate a scene by starting all enabled nodes
+	 * @param scene The scene to activate
+	 */
+	void activateScene(std::shared_ptr<Scene> scene);
+
+	/**
+	 * @brief Clean up scene resources without destroying node structure
+	 * @param scene The scene to clean up (keeps structure for reuse)
+	 */
+	void cleanupSceneResources(std::shared_ptr<Scene> scene);
+
+	/**
+	 * @brief Start all enabled nodes in a tree recursively
+	 * @param node The root node to start from
+	 */
+	void startNodeTree(std::shared_ptr<engine::scene::nodes::Node> node);
 };
 
 } // namespace engine::scene

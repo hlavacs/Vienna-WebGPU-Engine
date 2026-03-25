@@ -135,13 +135,33 @@ class WebGPUTexture
 	 */
 	const wgpu::TextureViewDescriptor &getTextureViewDescriptor() const { return m_viewDesc; }
 
+		
 	/**
-	 * @brief Reads back the GPU texture into an existing CPU-side texture.
-	 * @param context The WebGPU context.
-	 * @param outTexture CPU-side texture to write into. Must have matching width/height/format.
-	 * @return True on success, false on failure.
+	 * @brief Checks if a GPU-to-CPU readback has been requested but not yet initiated.
+	 * @return True if a readback request is pending, false otherwise.
 	 */
-	std::future<bool> readbackToCPUAsync(WebGPUContext &context, std::shared_ptr<Texture> outTexture);
+	bool WebGPUTexture::isReadbackPending() const
+	{
+		return m_readbackPending;
+	}
+
+	/**
+	 * @brief Initiates a GPU-to-CPU readback operation for this texture.
+	 *        The result can be obtained by calling getReadbackResult() after the future is ready.
+	 * @param context The WebGPU context for command submission.
+	 * @return True if the readback was successfully initiated, false otherwise.
+	 */
+	bool WebGPUTexture::beginReadback(WebGPUContext &context);
+
+	/**
+	 * @brief Polls the status of an ongoing GPU-to-CPU readback operation and retrieves the result if complete.
+	 *        This should be called after beginReadback() and when the returned future is ready
+	 * 	  (e.g., by waiting on the future or checking its status).
+	 * @param context The WebGPU context for any necessary synchronization.
+	 * @param outTexture The CPU-side texture to write the readback result into. Must have matching width/height/format.
+	 * @return True if readback completed successfully and data was written to outTexture, false if readback failed or is not complete.
+	  */
+	bool WebGPUTexture::pollReadback(WebGPUContext &context, std::shared_ptr<Texture> outTexture);
 
 	/**
 	 * @brief Resizes the texture to the new dimensions if needed.
@@ -284,16 +304,52 @@ class WebGPUTexture
 		}
 	}
 
+	/**
+	 * @brief Maps a WebGPU texture format to the corresponding ImageFormat::Type.
+	 */
+	static uint32_t getBytesPerPixel(wgpu::TextureFormat format)
+	{
+		switch (format)
+		{
+		case wgpu::TextureFormat::R8Unorm:
+			return 1;
+		case wgpu::TextureFormat::RG8Unorm:
+			return 2;
+		case wgpu::TextureFormat::RGBA8Unorm:
+		case wgpu::TextureFormat::RGBA8UnormSrgb:
+			return 4;
+		case wgpu::TextureFormat::R16Float:
+			return 2;
+		case wgpu::TextureFormat::RG16Float:
+			return 4;
+		case wgpu::TextureFormat::RGBA16Float:
+			return 8;
+		default:
+			assert(false && "Unsupported GPU texture format for ImageFormat mapping");
+			return 4;
+		}
+	}
+
   protected:
-	Texture::Type m_type = Texture::Type::Image;	//< The type of texture.
+	Texture::Type m_type = Texture::Type::Image;	 //< The type of texture.
 	Texture::Handle m_cpuHandle = Texture::Handle(); //< Optional CPU-side texture handle.
-	wgpu::Texture m_texture;						//< The underlying WebGPU texture resource.
-	wgpu::TextureView m_textureView;				//< The view of the WebGPU texture.
-	wgpu::TextureDescriptor m_textureDesc;			//< Descriptor used to create the texture.
-	wgpu::TextureViewDescriptor m_viewDesc;			//< Descriptor used to create the texture view.
+	wgpu::Texture m_texture;						 //< The underlying WebGPU texture resource.
+	wgpu::TextureView m_textureView;				 //< The view of the WebGPU texture.
+	wgpu::TextureDescriptor m_textureDesc;			 //< Descriptor used to create the texture.
+	wgpu::TextureViewDescriptor m_viewDesc;			 //< Descriptor used to create the texture view.
 
 	mutable std::unordered_map<uint32_t, wgpu::TextureView> m_layerViews;	//< Cached layer views for array layers or cube faces.
 	mutable std::unordered_map<uint32_t, wgpu::TextureView> m_cubeMapViews; //< Cached cube map views for cube faces.
+
+	wgpu::Buffer m_readbackStagingBuffer = nullptr; //< Staging buffer used for GPU-to-CPU readback operations.
+	uint32_t m_readbackWidth = 0;
+	uint32_t m_readbackHeight = 0;
+	uint32_t m_readbackBytesPerRow = 0;
+	uint32_t m_readbackBPP = 0;
+	bool m_readbackPending = false;
+	std::unique_ptr<wgpu::BufferMapCallback> m_readbackCallback;
+	bool m_readbackMapped = false;
+	bool m_readbackSuccess = false;
 };
 
 } // namespace engine::rendering::webgpu

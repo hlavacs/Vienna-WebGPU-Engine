@@ -5,6 +5,11 @@
 #include "engine/scene/nodes/RenderNode.h"
 #include "engine/scene/nodes/SpatialNode.h"
 
+namespace engine::resources
+{
+class ResourceManager;
+}
+
 namespace engine::scene::nodes
 {
 
@@ -46,7 +51,67 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 		addNodeType(NodeType::Model);
 	}
 
+	/**
+	 * @brief Constructs a model render node with lazy loading from file path.
+	 * The model will be loaded during initialize() when the scene becomes active.
+	 * @param modelPath Path to the model file to load.
+	 * @param layer Render layer for sorting (default: 0).
+	 */
+	explicit ModelRenderNode(
+		const std::filesystem::path &modelPath,
+		uint32_t layer = 0
+	) : m_modelPath(modelPath), m_renderLayer(layer), m_loadFromPath(true)
+	{
+		addNodeType(NodeType::Model);
+	}
+
 	~ModelRenderNode() override = default;
+
+	/**
+	 * @brief Initialize the node - marks that loading is needed.
+	 */
+	void initialize() override
+	{
+		Node::initialize();
+		// Actual loading will be handled by SceneManager
+	}
+
+	/**
+	 * @brief Check if this node needs its model loaded from path.
+	 * @return true if model should be loaded, false otherwise
+	 */
+	bool needsLoading() const
+	{
+		return m_loadFromPath && !m_modelPath.empty() && !m_modelHandle.valid();
+	}
+
+	/**
+	 * @brief Get the model path for loading.
+	 * @return The model file path
+	 */
+	const std::filesystem::path &getModelPath() const { return m_modelPath; }
+
+	/**
+	 * @brief Set the loaded model handle (called by SceneManager after loading).
+	 * @param handle The loaded model handle
+	 */
+	void setLoadedModel(const engine::core::Handle<engine::rendering::Model> &handle)
+	{
+		m_modelHandle = handle;
+	}
+
+	/**
+	 * @brief Clean up model resources.
+	 */
+	void onDestroy() override
+	{
+		// Invalidate the model handle to release reference
+		if (m_loadFromPath)
+			m_modelHandle = engine::core::Handle<engine::rendering::Model>();
+
+		// Call base class to handle children
+		Node::onDestroy();
+	}
 
 	/**
 	 * @brief Add this model to the render collector.
@@ -106,13 +171,16 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 	}
 
 	/** @brief Override to draw transform axes when debug is enabled */
-	void onDebugDraw(engine::rendering::DebugRenderCollector &collector) override {
+	void onDebugDraw(engine::rendering::DebugRenderCollector &collector) override
+	{
 		SpatialNode::onDebugDraw(collector);
 	}
 
   private:
 	engine::core::Handle<engine::rendering::Model> m_modelHandle;
 	uint32_t m_renderLayer = 0;
+	std::filesystem::path m_modelPath; // Path for lazy loading
+	bool m_loadFromPath = false;	   // Flag to indicate loading from path
 };
 
 } // namespace engine::scene::nodes

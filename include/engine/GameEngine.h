@@ -13,6 +13,7 @@
 #include "engine/rendering/Renderer.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/scene/SceneManager.h"
+#include "engine/scene/Scene.h"
 #include "engine/ui/ImGuiManager.h"
 
 #include "engine/rendering/webgpu/DeviceLimitsConfig.h"
@@ -126,6 +127,8 @@ class GameEngine
 	std::shared_ptr<engine::scene::SceneManager> m_sceneManager;
 	std::shared_ptr<engine::rendering::Renderer> m_renderer;
 	std::shared_ptr<engine::ui::ImGuiManager> m_imguiManager;
+
+	std::shared_ptr<engine::scene::Scene> m_lastRenderedScene;
 
 	// Per-camera render collectors (cached across frames for bind group reuse)
 	std::unordered_map<uint64_t, engine::rendering::RenderCollector> m_cameraCollectors;
