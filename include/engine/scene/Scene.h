@@ -48,6 +48,12 @@ class Scene
 	/** @brief Get the active camera */
 	[[nodiscard]] nodes::CameraNode::Ptr getMainCamera() const { return m_mainCamera; }
 
+	/** @brief Check if the scene has been loaded and initialized */
+	[[nodiscard]] bool isLoaded() const { return m_loaded; }
+
+	/** @brief Mark scene as loaded (called by SceneManager after initialization) */
+	void setLoaded(bool loaded) { m_loaded = loaded; }
+
 	/** @brief Get all active cameras in the scene
 	 * @note The main camera is always first in the returned vector
 	 */
@@ -126,6 +132,7 @@ class Scene
 	std::set<nodes::CameraNode::Ptr> m_cameras;
 	engine::rendering::DebugRenderCollector m_debugCollector;
 	engine::EngineContext *m_engineContext = nullptr;
+	bool m_loaded = false;
 
 	/** @brief Custom bind group providers collected during preRender() */
 	std::vector<engine::rendering::BindGroupDataProvider> m_customBindGroupProviders;

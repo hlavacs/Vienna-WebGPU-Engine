@@ -78,7 +78,6 @@ bool Renderer::initialize()
 	}
 
 	// Tutorial 04 - Step 9: Initialize PostProcessingPass
-	
 
 	m_compositePass = std::make_unique<CompositePass>(m_context);
 	if (!m_compositePass->initialize())
@@ -250,11 +249,27 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 		{
 			uint32_t targetWidth = textureOpt.value()->getWidth();
 			uint32_t targetHeight = textureOpt.value()->getHeight();
+			if (textureOpt.value()->isResizeable())
+			{
+				// Resize texture if it's marked as auto-scaled (e.g., render targets that should match viewport size)
+				targetWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.width());
+				targetHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.height());
+				targetWidth = std::max(1u, targetWidth);   // Ensure minimum size of 1x1
+				targetHeight = std::max(1u, targetHeight); // Ensure minimum size of 1x1
+				textureOpt.value()->resize(targetWidth, targetHeight);
+			}
 
 			// Recreate GPU texture if dimensions or format changed
 			if (!gpuTexture || !gpuTexture->matches(targetWidth, targetHeight, format))
 			{
-				gpuTexture = m_context->textureFactory().createFromHandle(cpuTarget.value());
+				webgpu::WebGPUTextureOptions options{};
+				options.generateMipmaps = false;
+				gpuTexture = m_context->textureFactory().createRenderTarget(
+					renderTargetId,
+					targetWidth,
+					targetHeight,
+					format
+				);
 			}
 			return gpuTexture;
 		}
@@ -340,6 +355,10 @@ void Renderer::renderToTexture(
 			renderFromTexture->getHeight(),
 			wgpu::TextureFormat::Depth32Float
 		);
+	} else if(m_depthBuffers[renderTargetId]->getWidth() != renderFromTexture->getWidth() ||
+			  m_depthBuffers[renderTargetId]->getHeight() != renderFromTexture->getHeight())
+	{
+		m_depthBuffers[renderTargetId]->resize(*m_context, renderFromTexture->getWidth(), renderFromTexture->getHeight());
 	}
 	// Tutorial 04 - Step 10: Prepare post-processing texture
 	// Post-processing texture is an intermediate render target for effects like bloom, tone mapping, etc.
@@ -415,7 +434,6 @@ void Renderer::renderToTexture(
 	// Tutorial 04 - Step 11: Apply vignette effect
 	// Texture swapping: MeshPass/DebugPass output → input for post-processing
 	// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)
-	
 
 	// ========================================
 	// STEP 7: CPU Readback (Optional)
@@ -426,13 +444,19 @@ void Renderer::renderToTexture(
 	{
 		if (auto textureOpt = renderTarget.cpuTarget->get())
 		{
-			if (textureOpt.value()->isReadbackRequested())
+			auto &tex = textureOpt.value();
+
+			// Phase 1 — initiate readback if requested and none in flight
+			if (tex->isReadbackRequested() && !renderToTexture->isReadbackPending())
 			{
-				auto readbackFuture = renderToTexture->readbackToCPUAsync(
-					*m_context,
-					textureOpt.value()
-				);
-				textureOpt.value()->setReadbackFuture(std::move(readbackFuture));
+				renderToTexture->beginReadback(*m_context);
+			}
+
+			// Phase 2 — poll every frame until GPU callback fires
+			if (renderToTexture->isReadbackPending())
+			{
+				if (renderToTexture->pollReadback(*m_context, tex))
+					tex->resolveReadback();
 			}
 		}
 	}

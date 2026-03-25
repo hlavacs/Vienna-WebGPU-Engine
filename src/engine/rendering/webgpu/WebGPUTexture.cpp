@@ -244,89 +244,150 @@ wgpu::TextureView WebGPUTexture::getCubeMapFace(uint32_t cubeIndex, uint32_t fac
 	return view;
 }
 
-std::future<bool> WebGPUTexture::readbackToCPUAsync(WebGPUContext &context, std::shared_ptr<Texture> outTexture)
+bool WebGPUTexture::beginReadback(WebGPUContext &context)
 {
-	// Capture necessary data by value for async lambda
-	auto texture = m_texture;
-	auto width = getWidth();
-	auto height = getHeight();
-	auto bytesPerPixel = engine::resources::ImageFormat::getChannelCount(
+	if (m_readbackPending)
+		return false;
+
+	m_readbackWidth = getWidth();
+	m_readbackHeight = getHeight();
+	m_readbackBPP = engine::resources::ImageFormat::getBytesPerPixel(
 		mapGPUFormatToImageFormat(getFormat())
 	);
-	auto bufferSize = width * height * bytesPerPixel;
 
-	return std::async(std::launch::async, [&, texture, width, height, bytesPerPixel, bufferSize, outTexture]() -> bool
-					  {
-        if (!outTexture)
-            return false;
+	const uint32_t unaligned = m_readbackWidth * m_readbackBPP;
+	m_readbackBytesPerRow = (unaligned + 255u) & ~255u;
+	const uint64_t bufferSize = static_cast<uint64_t>(m_readbackBytesPerRow) * m_readbackHeight;
 
-        try
-        {
-            // 1. Create staging buffer
-            wgpu::BufferDescriptor bufferDesc{};
-            bufferDesc.size = bufferSize;
-            bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
-            wgpu::Buffer stagingBuffer = context.getDevice().createBuffer(bufferDesc);
+	wgpu::BufferDescriptor bufferDesc{};
+	bufferDesc.size = bufferSize;
+	bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+	m_readbackStagingBuffer = context.getDevice().createBuffer(bufferDesc);
 
-            // 2. Copy texture to buffer
-            wgpu::CommandEncoder encoder = context.getDevice().createCommandEncoder();
+	wgpu::CommandEncoder encoder = context.getDevice().createCommandEncoder();
 
-            wgpu::ImageCopyTexture srcTexture{};
-            srcTexture.texture = texture;
-            srcTexture.mipLevel = 0;
-            srcTexture.origin = {0, 0, 0};
+	wgpu::ImageCopyTexture src{};
+	src.texture = m_texture;
+	src.mipLevel = 0;
+	src.origin = {0, 0, 0};
 
-            wgpu::ImageCopyBuffer dstBuffer{};
-            dstBuffer.buffer = stagingBuffer;
-            dstBuffer.layout.bytesPerRow = width * bytesPerPixel;
-            dstBuffer.layout.rowsPerImage = height;
+	wgpu::ImageCopyBuffer dst{};
+	dst.buffer = m_readbackStagingBuffer;
+	dst.layout.bytesPerRow = m_readbackBytesPerRow;
+	dst.layout.rowsPerImage = m_readbackHeight;
+	dst.layout.offset = 0;
+	encoder.copyTextureToBuffer(src, dst, {m_readbackWidth, m_readbackHeight, 1});
+	wgpu::CommandBuffer commands = encoder.finish();
+	context.getQueue().submit(1, &commands);
 
-            wgpu::Extent3D copySize{width, height, 1};
+	m_readbackMapped = false;
+	m_readbackSuccess = false;
+	m_readbackPending = true;
 
-            encoder.copyTextureToBuffer(srcTexture, dstBuffer, copySize);
+	m_readbackCallback = m_readbackStagingBuffer.mapAsync(
+		wgpu::MapMode::Read,
+		0,
+		bufferSize,
+		[this](WGPUBufferMapAsyncStatus status)
+		{
+			m_readbackSuccess = (status == WGPUBufferMapAsyncStatus_Success);
+			m_readbackMapped = true;
+		}
+	);
 
-            wgpu::CommandBuffer commands = encoder.finish();
-            context.getQueue().submit(1, &commands);
+	return true;
+}
+bool WebGPUTexture::pollReadback(WebGPUContext &context, std::shared_ptr<Texture> outTexture)
+{
+	if (!m_readbackPending)
+		return true;
+	if (!m_readbackMapped)
+		return false;
 
-            // 3. Map buffer asynchronously
-            std::promise<bool> resultPromise;
-            auto resultFuture = resultPromise.get_future();
+	m_readbackPending = false;
+	m_readbackCallback = nullptr;
 
-            stagingBuffer.mapAsync(wgpu::MapMode::Read, 0, bufferSize, [stagingBuffer, outTexture, width, height, bytesPerPixel, &resultPromise](WGPUBufferMapAsyncStatus status) mutable {
-                if (status != WGPUBufferMapAsyncStatus_Success)
-                {
-                    spdlog::error("Failed to map buffer for reading.");
-                    resultPromise.set_value(false);
-                    return;
-                }
+	if (!m_readbackSuccess)
+	{
+		spdlog::error("Texture readback failed.");
+		m_readbackStagingBuffer.release();
+		return true;
+	}
 
-                auto mappedRange = stagingBuffer.getMappedRange(0, width * height * bytesPerPixel);
-                std::vector<uint8_t> pixelData(width * height * bytesPerPixel);
-                std::memcpy(pixelData.data(), mappedRange, width * height * bytesPerPixel);
+	const uint64_t bufferSize = static_cast<uint64_t>(m_readbackBytesPerRow) * m_readbackHeight;
+	const uint8_t *src = static_cast<const uint8_t *>(
+		m_readbackStagingBuffer.getMappedRange(0, bufferSize)
+	);
 
-                // Create Image and replace texture data
-                engine::resources::Image::Ptr image = std::make_shared<engine::resources::Image>(
-                    width,
-                    height,
-                    outTexture->getImage()->getFormat(),
-                    std::move(pixelData)
-                );
-                outTexture->replaceImageData(image);
+	// Output is always RGBA8Unorm (LDR) for PNG compatibility
+	const uint32_t outBPP = 4; // RGBA8
+	const uint32_t outBPR = m_readbackWidth * outBPP;
+	std::vector<uint8_t> pixelData(m_readbackHeight * outBPR);
 
-                stagingBuffer.unmap();
-                stagingBuffer.release();
+	const bool isHDR = (getFormat() == wgpu::TextureFormat::RGBA16Float || getFormat() == wgpu::TextureFormat::RGBA32Float);
 
-                resultPromise.set_value(true);
-            });
+	for (uint32_t row = 0; row < m_readbackHeight; ++row)
+	{
+		const uint8_t *rowSrc = src + row * m_readbackBytesPerRow;
+		uint8_t *rowDst = pixelData.data() + row * outBPR;
 
-            // Wait for async map callback to complete
-            return resultFuture.get();
-        }
-        catch (const std::exception &e)
-        {
-            spdlog::error("Exception during async texture readback: {}", e.what());
-            return false;
-        } });
+		// Accurate linear -> sRGB conversion (IEC 61966-2-1 standard)
+		auto linearToSRGB = [](float linear) -> float
+		{
+			linear = std::max(linear, 0.0f);
+			if (linear <= 0.0031308f)
+				return linear * 12.92f;
+			return 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
+		};
+
+		if (isHDR && getFormat() == wgpu::TextureFormat::RGBA16Float)
+		{
+			const uint16_t *f16Src = reinterpret_cast<const uint16_t *>(rowSrc);
+			for (uint32_t x = 0; x < m_readbackWidth; ++x)
+			{
+				const uint32_t i = x * 4;
+				float r = glm::detail::toFloat32(f16Src[i + 0]);
+				float g = glm::detail::toFloat32(f16Src[i + 1]);
+				float b = glm::detail::toFloat32(f16Src[i + 2]);
+				float a = glm::detail::toFloat32(f16Src[i + 3]);
+
+				rowDst[i + 0] = static_cast<uint8_t>(std::clamp(linearToSRGB(r), 0.0f, 1.0f) * 255.0f + 0.5f);
+				rowDst[i + 1] = static_cast<uint8_t>(std::clamp(linearToSRGB(g), 0.0f, 1.0f) * 255.0f + 0.5f);
+				rowDst[i + 2] = static_cast<uint8_t>(std::clamp(linearToSRGB(b), 0.0f, 1.0f) * 255.0f + 0.5f);
+				rowDst[i + 3] = static_cast<uint8_t>(std::clamp(a, 0.0f, 1.0f) * 255.0f + 0.5f);
+			}
+		}
+		else if (isHDR && getFormat() == wgpu::TextureFormat::RGBA32Float)
+		{
+			const float *f32Src = reinterpret_cast<const float *>(rowSrc);
+			for (uint32_t x = 0; x < m_readbackWidth; ++x)
+			{
+				const uint32_t i = x * 4;
+				rowDst[i + 0] = static_cast<uint8_t>(std::clamp(linearToSRGB(f32Src[i + 0]), 0.0f, 1.0f) * 255.0f + 0.5f);
+				rowDst[i + 1] = static_cast<uint8_t>(std::clamp(linearToSRGB(f32Src[i + 1]), 0.0f, 1.0f) * 255.0f + 0.5f);
+				rowDst[i + 2] = static_cast<uint8_t>(std::clamp(linearToSRGB(f32Src[i + 2]), 0.0f, 1.0f) * 255.0f + 0.5f);
+				rowDst[i + 3] = static_cast<uint8_t>(std::clamp(f32Src[i + 3], 0.0f, 1.0f) * 255.0f + 0.5f);
+			}
+		}
+		else
+		{
+			// LDR formats — direct copy, stripping alignment padding
+			std::memcpy(rowDst, rowSrc, outBPR);
+		}
+	}
+
+	m_readbackStagingBuffer.unmap();
+	m_readbackStagingBuffer.release();
+
+	auto image = std::make_shared<engine::resources::Image>(
+		m_readbackWidth,
+		m_readbackHeight,
+		engine::resources::ImageFormat::Type::LDR_RGBA8, // always LDR output
+		std::move(pixelData)
+	);
+	outTexture->replaceImageData(image);
+
+	return true;
 }
 
 } // namespace engine::rendering::webgpu

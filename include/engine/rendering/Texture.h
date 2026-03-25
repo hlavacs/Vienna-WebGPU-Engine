@@ -46,7 +46,8 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	bool isResizeable() const
 	{
-		return m_type == Type::RenderTarget || m_type == Type::Surface || m_type == Type::DepthStencil;
+		return m_type == Type::RenderTarget || m_type == Type::Surface
+			   || m_type == Type::DepthStencil || m_renderTarget;
 	}
 
 	/* @brief Returns true if the texture data is readable on the CPU side.
@@ -66,8 +67,15 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	{
 		if (!isResizeable())
 			return false;
+		if (m_width == newWidth && m_height == newHeight)
+			return true; 
 		m_width = newWidth;
 		m_height = newHeight;
+		if (m_image)
+		{
+			// ToDo: No resize when pending readback? Handle somehow
+			m_image->resize(newWidth, newHeight);
+		}
 		incrementVersion();
 		return true;
 	}
@@ -95,7 +103,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	bool isReadbackPending() const
 	{
-		return m_readbackFuture.valid() && m_readbackFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+		return m_readbackRequested;
 	}
 
 	/**
@@ -104,24 +112,12 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	bool isReadbackComplete() const
 	{
-		return m_readbackFuture.valid() && m_readbackFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+		return !m_readbackRequested;
 	}
 
 	/**
-	 * @brief Gets the result of the readback operation (blocks if not ready).
-	 * @return True if readback succeeded, false if failed or no readback was initiated.
-	 */
-	bool getReadbackResult()
-	{
-		if (!m_readbackFuture.valid())
-			return false;
-		return m_readbackFuture.get();
-	}
-
-	/**
-	 * @brief Requests a GPU-to-CPU readback on the next render.
-	 * Call this when you want to capture the texture data (e.g., for screenshots).
-	 * Check isReadbackComplete() later to see if it's ready.
+	 * @brief Requests a GPU-to-CPU readback on the next render frame.
+	 * Check isDataReadable() after completion to access the result.
 	 */
 	void requestReadback()
 	{
@@ -129,8 +125,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	}
 
 	/**
-	 * @brief Checks if a readback has been requested.
-	 * @return True if readback is requested.
+	 * @brief Checks if a readback has been requested and not yet initiated.
 	 */
 	bool isReadbackRequested() const
 	{
@@ -138,22 +133,33 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	}
 
 	/**
-	 * @brief Sets the readback future (for internal use by WebGPUTexture).
-	 * @param future The future representing the async readback operation.
+	 * @brief Clears the readback request flag once the GPU copy has been initiated.
+	 * Called by the render loop after beginReadback() succeeds.
 	 */
-	void setReadbackFuture(std::future<bool> future)
+	void resolveReadback()
 	{
-		m_readbackFuture = std::move(future);
-		m_readbackRequested = false; // Clear the request flag
+		m_readbackRequested = false;
+	}
+
+	// ToDo: Feature Flags instead of this renderTarget bool?
+	// (e.g., for auto-scaling, GPU compatibility hints, etc.)
+	/**
+	 * @brief Checks if the texture is intended to be used as a render target.
+	 * @return True if it's a render target, false otherwise.
+	 */
+	bool isRenderTarget() const
+	{
+		return m_type == Type::RenderTarget || m_renderTarget;
 	}
 
   protected:
 	friend class engine::resources::TextureManager;
 
-	Texture(Type type, engine::resources::Image::Ptr image, std::filesystem::path filePath = {}) :
+	Texture(Type type, engine::resources::Image::Ptr image, std::filesystem::path filePath = {}, bool renderTarget = false) :
 		m_type(type),
 		m_image(std::move(image)),
-		m_filePath(std::move(filePath))
+		m_filePath(std::move(filePath)),
+		m_renderTarget(renderTarget)
 	{
 		if (m_image)
 		{
@@ -182,12 +188,12 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	uint32_t m_width = 0;
 	uint32_t m_height = 0;
 	uint32_t m_channels = 0;
+	bool m_renderTarget = false; // Indicates if the texture should be auto-scaled for GPU compatibility
 
 	engine::resources::Image::Ptr m_image;
 	std::filesystem::path m_filePath;
 
-	mutable std::future<bool> m_readbackFuture; // Future for async GPU-to-CPU readback
-	bool m_readbackRequested = false;			// Flag to request readback on next render
+	bool m_readbackRequested = false; // Flag to request readback on next render
 };
 
 } // namespace engine::rendering

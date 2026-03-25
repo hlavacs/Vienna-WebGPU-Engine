@@ -22,7 +22,7 @@ A **cross-platform, WebGPU-based game engine** designed for educational purposes
 - 🌳 Scene graph with hierarchical transforms
 - 🔄 Resource hot-reloading
 - 📦 Factory pattern for GPU resource management
-- 📐 Model loading: OBJ (stable), GLTF/GLB (WIP)
+- 📐 Model loading: OBJ (stable), GLTF/GLB (Animations WIP)
 - 📚 Tutorial series (4 tutorials: shaders, bind groups, shadows (WIP), post-processing)
 
 ## Quick Start
@@ -178,7 +178,7 @@ Vienna-WebGPU-Engine/
 ## Known Limitations
 
 - **Web Support:** Build system in progress, not yet functional
-- **Model Loading:** GLTF/GLB support is work-in-progress; use OBJ for now
+- **Model Loading:** GLTF and OBJ support; GLTF Animations WIP
 - **Scene Editor:** WIP
 
 ## Troubleshooting

@@ -7,8 +7,12 @@
 #include <string>
 #include <unordered_map>
 
-#include "OrbitCamera.h"
 #include "engine/GameEngine.h"
+#include "engine/rendering/Material.h"
+#include "engine/rendering/Texture.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
+#include "engine/scene/nodes/LightNode.h"
+#include "engine/scene/nodes/ModelRenderNode.h"
 
 namespace demo
 {
@@ -16,9 +20,9 @@ namespace demo
 class MainDemoImGuiUI
 {
   public:
-	MainDemoImGuiUI(engine::GameEngine &engine, const std::shared_ptr<engine::scene::nodes::Node> &rootNode, const std::shared_ptr<demo::OrbitCameraController> &orbitCameraController);
+	MainDemoImGuiUI(engine::GameEngine &engine);
 
-	void render();
+	void render(const std::shared_ptr<engine::scene::SceneManager>& sceneManager);
 
 	void renderPerformanceWindow();
 
@@ -27,11 +31,9 @@ class MainDemoImGuiUI
   private:
 	engine::GameEngine& m_engine;
 	std::shared_ptr<engine::scene::nodes::Node> m_rootNode;
-	std::shared_ptr<demo::OrbitCameraController> m_orbitCameraController;
 	std::shared_ptr<engine::scene::nodes::CameraNode> m_cameraNode;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> m_debugShadowCubeArray;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> m_debugShadow2DArray;
-	OrbitCameraState &m_orbitState;
 
 	std::vector<std::shared_ptr<engine::scene::nodes::LightNode>> m_lightNodes;
 	std::map<size_t, glm::vec3> m_lightDirectionsUI; //< Seperate storage for Euler angles for ImGui because of instability when converting from quaternions every frame.
@@ -39,7 +41,6 @@ class MainDemoImGuiUI
 	void renderLightingAndCameraControls();
 	void renderMaterialProperties();
 	void renderLightsSection();
-	void renderCameraControlsSection();
 
 	ImTextureID getOrCreateImGuiTexture(engine::rendering::TextureHandle textureHandle);
 };

@@ -3,6 +3,7 @@
 #include "engine/NodeSystem.h"
 
 #include <memory>
+#include <future>
 
 namespace demo
 {
@@ -44,17 +45,21 @@ void updateDragInertia(OrbitCameraState &state, std::shared_ptr<engine::scene::n
 class OrbitCameraController : public engine::scene::nodes::UpdateNode
 {
   public:
-	OrbitCameraController(OrbitCameraState &state, std::shared_ptr<engine::scene::nodes::CameraNode> camera);
+	OrbitCameraController(const OrbitCameraState &state, std::shared_ptr<engine::scene::nodes::CameraNode> camera);
 
 	void update(float deltaTime) override;
 
 	std::shared_ptr<engine::scene::nodes::CameraNode> getCamera() const { return m_camera; }
-	OrbitCameraState &getOrbitState() const { return m_orbitState; }
+	OrbitCameraState &getOrbitState() { return m_orbitState; }
+	const OrbitCameraState &getOrbitState() const { return m_orbitState; }
 	void setOrbitState(const OrbitCameraState &state) { m_orbitState = state; }
 
+	void screenShot();
+
   private:
-	OrbitCameraState &m_orbitState;
+	OrbitCameraState m_orbitState; // Store by value, not reference
 	std::shared_ptr<engine::scene::nodes::CameraNode> m_camera;
+	std::future<void> m_saveFuture;
 };
 
 } // namespace demo

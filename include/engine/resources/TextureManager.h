@@ -39,11 +39,14 @@ class TextureManager : public ResourceManagerBase<engine::rendering::Texture>
 	 * @brief Creates an Image texture from raw pixel data.
 	 * @param image Shared pointer to an Image object containing pixel data.
 	 * @param filePath Optional file path associated with the image.
+	 * @param renderTarget If true, the texture is intended to be used as a render target.
 	 * @return Optional shared pointer to the created texture, or std::nullopt on failure.
 	 */
 	[[nodiscard]]
 	std::optional<TexturePtr> createImageTexture(
-		engine::resources::Image::Ptr image, std::optional<path> filePath = std::nullopt
+		engine::resources::Image::Ptr image, 
+		std::optional<path> filePath = std::nullopt,
+		bool renderTarget = true
 	);
 
 	/**

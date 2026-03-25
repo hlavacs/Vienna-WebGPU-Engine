@@ -1,5 +1,7 @@
 #include "engine/GameEngine.h"
 
+#include <spdlog/spdlog.h>
+
 #include <SDL.h>
 #include <algorithm>
 #include <backends/imgui_impl_sdl2.h>
@@ -50,6 +52,9 @@ GameEngine::~GameEngine()
 {
 	stop();
 	cleanup();
+
+	spdlog::info("Engine shut down successfully");
+	spdlog::shutdown();
 }
 
 std::shared_ptr<engine::scene::SceneManager> GameEngine::getSceneManager()
@@ -71,6 +76,9 @@ SDL_Window *GameEngine::getWindow()
 {
 	return m_window;
 }
+
+// ToDo: All of these should return weak_ptr or raw ptr to avoid exposing shared ownership of
+// subsystems. Refactor later.
 
 std::shared_ptr<engine::ui::ImGuiManager> GameEngine::getImGuiManager()
 {
@@ -192,7 +200,7 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 		spdlog::error("Could not create window!");
 		return false;
 	}
-	
+
 	m_context->initialize(m_window, options.enableVSync, options.overrideDeviceLimits);
 	options.appliedDeviceLimits = m_context->limitsConfig();
 
@@ -219,7 +227,10 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 void GameEngine::cleanup()
 {
 	if (m_imguiManager)
+	{
+		m_imguiManager->shutdown();
 		m_imguiManager.reset();
+	}
 
 	if (m_renderer)
 		m_renderer.reset();
@@ -234,6 +245,8 @@ void GameEngine::cleanup()
 	}
 
 	SDL_Quit();
+	// Note: Don't call spdlog::shutdown() - it can crash if internal state is already destroyed.
+	// spdlog will clean itself up automatically during static destruction.
 }
 
 static double getCurrentTime()
@@ -380,7 +393,7 @@ void GameEngine::onWindowResize(int width, int height)
 void GameEngine::updateScene(float deltaTime)
 {
 	auto scene = m_sceneManager->getActiveScene();
-	if (!scene)
+	if (!scene || !scene->isLoaded())
 		return;
 
 	scene->update(deltaTime);
@@ -392,6 +405,11 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 	auto scene = m_sceneManager->getActiveScene();
 	if (!scene || !m_renderer)
 		return;
+	if (scene != m_lastRenderedScene)
+	{
+		onWindowResize(m_currentWidth, m_currentHeight);
+		m_lastRenderedScene = scene;
+	}
 
 	scene->preRender();
 
@@ -406,7 +424,7 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 	engine::rendering::RenderCollector renderCollector;
 	// Collect render data directly from scene graph
 	scene->collectRenderData(renderCollector);
-	
+
 	// Sort with camera position for proper transparent object ordering
 	glm::vec3 cameraPosition = cameras.empty() ? glm::vec3(0.0f) : cameras[0]->getPosition();
 	renderCollector.sort(cameraPosition);
