@@ -56,7 +56,7 @@ renderPass.setBindGroup(2, objectBindGroup, 0, nullptr);
 ### Index Requirements
 
 - **Group 0**: Reserved for `FrameUniforms` (if used by shader)
-- **All other groups**: Dynamically assigned based on shader definition order
+- **All other groups**: Defined by the shader `@group(N)` annotations
 - **Custom bind groups**: Can use any available index (typically 5+)
 
 ## Bind Group Types
@@ -203,6 +203,10 @@ binder.bind(renderPass, pipeline, cameraId, bindGroups, objectId2, materialId1);
 binder.bind(renderPass, pipeline, cameraId, bindGroups, objectId2, materialId2);
 
 // New render pass - all groups rebound automatically 
+auto newPass = encoder.beginRenderPass(&desc);
+binder.bind(newPass, shaderInfo, cameraId2, bindGroups, objectId2);  // All rebound
+```
+
 **How Tracking Works:**
 ```cpp
 // BindGroupBinder::bindGroupAtIndex()
@@ -254,9 +258,12 @@ struct AnimationData {
 `processBindGroupProviders()` only uploads data when it differs:
 ```cpp
 // In preRender() - only provide data if it changed
-if 
+if (animationStateChanged) {
+    outProviders.push_back(BindGroupDataProvider::create(...));
+}
+```
 
-### 5. Understand Name-Based Resolution
+### 4. Understand Name-Based Resolution
 
 The system uses **bind group names**, not fixed indices:
 ```cpp
@@ -271,12 +278,9 @@ binder.bind(renderPass, shaderInfo, cameraId, {
     {BindGroupType::Object, objectBindGroup}
 });
 // System resolves: "LightBuffer" -> index 1, "ObjectUniforms" -> index 2
-```(animationStateChanged) {
-    outProviders.push_back(BindGroupDataProvider::create(...));
-}
 ```
 
-### 4. Understand State Tracking
+### 5. Understand State Tracking
 
 The binder automatically optimizes bind group bindings:
 ```cpp
@@ -289,49 +293,14 @@ binder.bind(renderPass, shaderInfo, cameraId2, bindGroups, objectId2);  // Only 
 auto newPass = encoder.beginRenderPass(&desc);
 binder.bind(newPass, shaderInfo, cameraId2, bindGroups, objectId2);  // All rebound
 ```
- **exactly** (case-sensitive)
-3. Ensure `preRender()` is being called and providing data
-4. Verify shader has the bind group layout defined with correct name
-5. Check `shaderInfo->getBindGroupIndex("BindGroupName")` returns a value
-
-### Wrong Bind Group Bound
-
-**Error**: WebGPU validation error about incompatible bind groups
-
-**Solutions**:
-1. Check instance ID matches reuse policy (PerObject should have ID)
-2. Verify bind group name in code matches shader `@group(N)` annotation
-3. Ensure `reset()` called when pipeline changes
-4. Verify bind group layout matches shader struct definition
-
-### Index Resolution Failures
-
-**Problem**: Bind group not binding even though it exists
-
-**Solutions**:
-1. Check `shaderInfo->getBindGroupIndex(name)` returns correct index
-2. Verify shader parsing found the bind group during shader creation
-3. Ensure bind group name is unique in the shader
-4. Check shader compilation succeeded with correct group indic
-
 ## Troubleshooting
 
-**Bind Group Not Found**: Verify shader name and bind group name match exactly (case-sensitive).
+- **Bind group not found**: Shader name and bind group name must match exactly (case-sensitive).
+- **Data not updating**: Ensure `preRender()` supplies data each frame and the struct size matches the shader.
+- **Wrong bind group bound**: Check instance ID for PerObject/PerMaterial reuse policies.
+- **Index resolution fails**: Verify `shaderInfo->getBindGroupIndex(name)` returns a value.
 
-**Data Not Updating**: Ensure `preRender()` provides data every frame and data size matches shader struct.
-
-**Wrong Bind Group Bound**: Check instance ID provided for PerObject/PerMaterial reuse policies.
-
-## Example: Time-Based Animation
-
-Complete example of a node that animates based on global time:
-
-```cpp
-class PulsingNode : public UpdateNode
-{
-public:
-    void update(float deltaTime) override {
-   Advanced Topics
+## Advanced Topics
 
 ### Bind Group Index Assignment
 
@@ -374,56 +343,18 @@ Both work correctly! The system resolves by **name**:
 
 ### Name Resolution Flow
 
-Complete resolution flow:
-
 ```
 1. RenderPass calls: binder.bind(renderPass, shaderInfo, ...)
 2. Binder iterates: shaderInfo->getBindGroupLayoutVector()
 3. For each layout:
-   a. Get name: layoutInfo->getName()
-   b. Resolve index: shaderInfo->getBindGroupIndex(name) -> N
-   c. Fetch bind group based on type (Frame, Light, Custom, etc.)
-   d. Check tracking: m_boundBindGroups[N] != bindGroup?
-   e. If different: renderPass.setBindGroup(N, bindGroup, ...)
-   f. Update tracking: m_boundBindGroups[N] = bindGroup
+   - Resolve index via shaderInfo->getBindGroupIndex(layoutName)
+   - Fetch bind group based on type and reuse policy
+   - Bind only if changed
 ```
 
 ## Future Extensions
 
-Potential enhancements to the system:
-
-1. **Automatic Uniform Binding**: Reflect shader bindings at runtime
-2. **Bind Group Validation**: Verify data size matches shader layout
-3. **Hot Reload Support**: Update bind groups when shaders reload (partially implemented)
-4. **Statistics**: Track bind group usage and performance metrics
-5. **Buffer Pooling**: Reuse GPU buffers across frames for identical data
-6. **Index Auto-Assignment**: Automatically assign optimal indices based on usage patterns
-
-        TimeData data{
-            m_time,
-            2.0f,  // Pulsations per second
-            0.5f   // Amplitude
-        };
-
-        outProviders.push_back(BindGroupDataProvider::create(
-            "PulseShader",
-            "TimeData",
-            data,
-            BindGroupReuse::PerFrame  // Shared across all pulsing objects
-        ));
-    }
-
-private:
-    float m_time = 0.0f;
-};
-```
-
-## Future Extensions
-
-Potential enhancements to the system:
-
-1. **Automatic Uniform Binding**: Reflect shader bindings at runtime
-2. **Bind Group Validation**: Verify data size matches shader layout
-3. **Hot Reload Support**: Update bind groups when shaders reload
-4. **Statistics**: Track bind group usage and performance metrics
-5. **Buffer Pooling**: Reuse GPU buffers across frames for identical data
+- Automatic uniform reflection
+- Bind group validation for layout sizes
+- Hot reload on shader changes
+- Usage metrics and bind group statistics

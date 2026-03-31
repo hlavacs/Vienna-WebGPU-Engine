@@ -1,0 +1,3 @@
+implementation,source_path,non_empty_non_comment_loc,distinct_api_calls
+WebGPU (LearnWebGPU-Code step030-vanilla main.cpp + request*Sync helpers),temp_external/LearnWebGPU-Code/main.cpp + temp_external/LearnWebGPU-Code/webgpu-utils.cpp,310,35
+Vulkan (VulkanTutorial 15_hello_triangle.cpp),temp_external/VulkanTutorial/code/15_hello_triangle.cpp,704,52

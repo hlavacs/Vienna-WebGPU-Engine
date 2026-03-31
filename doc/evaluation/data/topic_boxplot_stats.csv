@@ -1,0 +1,11 @@
+topic,timepoint,lower_whisker,lower_quartile,median,upper_quartile,upper_whisker
+confidence,PRE,1.0,1.0,2.0,2.0,3.5
+confidence,POST,1.0,2.0,3.0,3.0,4.0
+general,PRE,1.0,2.0,3.0,3.0,4.0
+general,POST,1.5,3.0,3.0,4.0,4.0
+modern_gpu_api_concepts,PRE,1.0,1.0,1.0,3.0,4.0
+modern_gpu_api_concepts,POST,1.0,2.0,3.0,4.0,4.0
+shader_programming,PRE,1.0,1.0,2.0,3.0,4.0
+shader_programming,POST,1.5,3.0,3.0,4.0,4.0
+webgpu_specifics,PRE,1.0,1.0,1.0,1.0,1.0
+webgpu_specifics,POST,1.0,2.0,3.0,3.0,4.0

@@ -115,7 +115,6 @@ Vienna-WebGPU-Engine/
 ### Loading Resources - Best Practices
 
 **Always use `PathProvider` to avoid hardcoded paths:**
-// ToDo: Improve example
 ```cpp
 auto resourceManager = engine.getResourceManager();
 
@@ -361,82 +360,18 @@ rootNode->addChild(parent);
 
 ## Adding Lights
 
-The engine supports multiple light types with specific data structures.
-
-### Ambient Light
+The engine supports multiple light types via `LightNode` and the light data structs in `engine::rendering`.
+For complete examples (directional/point/spot, shadows, day-night cycle), see [examples/main_demo/main.cpp](../examples/main_demo/main.cpp).
 
 ```cpp
 auto ambientLight = std::make_shared<engine::scene::nodes::LightNode>();
 
-engine::rendering::AmbientLight ambientData;
+engine::rendering::AmbientLight ambientData{};
 ambientData.color = glm::vec3(0.2f, 0.2f, 0.2f);
 ambientData.intensity = 1.0f;
 
 ambientLight->getLight().setData(ambientData);
 rootNode->addChild(ambientLight->asNode());
-```
-
-### Directional Light (Sun/Moon)
-
-```cpp
-auto sunLight = std::make_shared<engine::scene::nodes::LightNode>();
-
-engine::rendering::DirectionalLight sunData;
-sunData.color = glm::vec3(1.0f, 1.0f, 0.95f);
-sunData.intensity = 1.0f;
-sunData.castShadows = true;
-sunData.shadowMapSize = 2048;
-sunData.shadowPCFKernel = 2;  // Soft shadow quality
-
-sunLight->getLight().setData(sunData);
-
-// Position and orient the light
-sunLight->getTransform().setLocalPosition(glm::vec3(0, 10, 0));
-glm::quat rotation = glm::quat(glm::radians(glm::vec3(45, 0, 0)));
-sunLight->getTransform().setLocalRotation(rotation);
-
-rootNode->addChild(sunLight->asNode());
-```
-
-### Point Light
-
-```cpp
-auto pointLight = std::make_shared<engine::scene::nodes::LightNode>();
-
-engine::rendering::PointLight pointData;
-pointData.color = glm::vec3(1.0f, 0.5f, 0.2f);  // Orange
-pointData.intensity = 5.0f;
-pointData.range = 10.0f;
-pointData.castShadows = false;
-
-pointLight->getLight().setData(pointData);
-pointLight->getTransform().setWorldPosition(glm::vec3(0, 3, 0));
-
-rootNode->addChild(pointLight->asNode());
-```
-
-### Spot Light
-
-```cpp
-auto spotLight = std::make_shared<engine::scene::nodes::LightNode>();
-
-engine::rendering::SpotLight spotData;
-spotData.color = glm::vec3(1.0f, 1.0f, 1.0f);
-spotData.intensity = 35.0f;
-spotData.castShadows = true;
-spotData.range = 100.0f;
-spotData.spotAngle = glm::radians(10.0f);
-spotData.shadowMapSize = 4096;
-spotData.shadowPCFKernel = 4;
-
-spotLight->getLight().setData(spotData);
-
-// Position and aim downward
-glm::quat rotation = glm::quat(glm::radians(glm::vec3(0, 90, -90)));
-spotLight->getTransform().setLocalRotation(rotation);
-spotLight->getTransform().setWorldPosition(glm::vec3(0, 9, 0));
-
-rootNode->addChild(spotLight->asNode());
 ```
 
 ---
@@ -461,49 +396,7 @@ mainCamera->getTransform().lookAt(glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
 ### Custom Camera Controller
 
-For interactive camera control, create a custom `UpdateNode`:
-
-```cpp
-class OrbitCameraController : public engine::scene::entity::UpdateNode
-{
-    std::shared_ptr<engine::scene::nodes::CameraNode> m_camera;
-    float m_distance = 5.0f;
-    float m_azimuth = 0.0f;
-    float m_elevation = 0.3f;
-    
-public:
-    OrbitCameraController(std::shared_ptr<engine::scene::nodes::CameraNode> camera)
-        : m_camera(camera) {}
-    
-    void update(float deltaTime) override {
-        auto& input = engine()->input();
-        
-        // Mouse drag to rotate
-        if (input->isMouseButtonPressed(SDL_BUTTON_LEFT)) {
-            auto delta = input->getMouseDelta();
-            m_azimuth -= delta.x * 0.005f;
-            m_elevation = glm::clamp(m_elevation + delta.y * 0.005f, -1.5f, 1.5f);
-        }
-        
-        // Mouse wheel to zoom
-        m_distance = glm::clamp(m_distance - input->getMouseWheelDelta() * 0.5f, 1.0f, 50.0f);
-        
-        // Update camera position
-        float x = m_distance * cos(m_elevation) * cos(m_azimuth);
-        float y = m_distance * sin(m_elevation);
-        float z = m_distance * cos(m_elevation) * sin(m_azimuth);
-        
-        m_camera->getTransform().setLocalPosition(glm::vec3(x, y, z));
-        m_camera->getTransform().lookAt(glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-    }
-};
-
-// Add to scene
-auto orbitController = std::make_shared<OrbitCameraController>(mainCamera);
-rootNode->addChild(orbitController);
-```
-
-See [examples/main_demo/OrbitCamera.h](../examples/main_demo/OrbitCamera.h) for the complete implementation.
+For a working controller, see [examples/main_demo/OrbitCamera.h](../examples/main_demo/OrbitCamera.h) and [examples/main_demo/OrbitCamera.cpp](../examples/main_demo/OrbitCamera.cpp).
 
 ---
 
@@ -514,30 +407,32 @@ See [examples/main_demo/OrbitCamera.h](../examples/main_demo/OrbitCamera.h) for 
 Create an `UpdateNode` to handle input each frame:
 
 ```cpp
-class MyInputHandler : public engine::scene::entity::UpdateNode
+class MyInputHandler : public engine::scene::nodes::UpdateNode
 {
 public:
     void update(float deltaTime) override {
-        auto& input = engine()->input();
+        auto input = engine()->input();
+        if (!input)
+            return;
         
         // Keyboard
-        if (input->isKeyPressed(SDL_SCANCODE_W)) {
+        if (input->isKey(SDL_SCANCODE_W)) {
             // Move forward
         }
-        if (input->isKeyJustPressed(SDL_SCANCODE_SPACE)) {
+        if (input->isKeyDown(SDL_SCANCODE_SPACE)) {
             // Jump (triggered once per press)
         }
         
         // Mouse
-        if (input->isMouseButtonPressed(SDL_BUTTON_LEFT)) {
+        if (input->isMouse(SDL_BUTTON_LEFT)) {
             auto mousePos = input->getMousePosition();
             auto mouseDelta = input->getMouseDelta();
             // Handle mouse input
         }
         
         // Mouse wheel
-        float wheelDelta = input->getMouseWheelDelta();
-        if (wheelDelta != 0.0f) {
+        auto wheel = input->getMouseWheel();
+        if (wheel.y != 0.0f) {
             // Zoom or scroll
         }
     }
@@ -562,82 +457,9 @@ imguiManager->addFrame([]() {
     ImGui::Text("Hello from ImGui!");
     ImGui::End();
 });
-
-// Add window with state access
-imguiManager->addFrame([&engine, &rootNode]() {
-    ImGui::Begin("Controls");
-    
-    if (ImGui::Button("Reset Scene")) {
-        // Reset logic
-    }
-    
-    float timeScale = 1.0f;
-    if (ImGui::SliderFloat("Time Scale", &timeScale, 0.0f, 2.0f)) {
-        // Apply time scale
-    }
-    
-    ImGui::End();
-Textures are loaded from `assets/textures/` or engine resources:
-
-```cpp
-auto resourceManager = engine.getResourceManager();
-
-// Load from your assets/textures/
-auto texturePath = PathProvider::resolve("textures") / "albedo.jpg";
-auto diffuseTexture = resourceManager->m_textureManager->createTextureFromFile(
-    texturePath.string()
-);
-
-// Load from engine resources (Vienna-WebGPU-Engine/resources/)
-auto normalTexture = resourceManager->m_textureManager->createTextureFromFile(
-    PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png")
-);
 ```
 
-**File Organization**:
-- Your textures: `{YourApp}/assets/textures/`
-- Engine textures: `{EngineRoot}/resources/# Load Textures
-
-```cpp
-auto resourceManager = engine.getResourceManager();
-
-auto diffuseTexture = resourceManager->m_textureManager->createTextureFromFile(
-    "textures/albedo.jpg"
-);
-auto normalTexture = resourceManager->m_textureManager->createTextureFromFile(
-    "textures/normal.png"
-);
-```
-
-### Create PBR Material
-
-```cpp
-// Define PBR properties
-auto pbrProperties = engine::rendering::PBRProperties();
-pbrProperties.baseColor = glm::vec3(1.0f, 1.0f, 1.0f);
-pbrProperties.metallic = 0.0f;
-pbrProperties.roughness = 0.5f;
-
-// Create material with textures
-auto material = resourceManager->m_materialManager->createPBRMaterial(
-    "MyMaterial",
-    pbrProperties,
-    {
-        {engine::rendering::MaterialTextureSlots::DIFFUSE, diffuseTexture.value()->getHandle()},
-        {engine::rendering::MaterialTextureSlots::NORMAL, normalTexture.value()->getHandle()}
-    }
-);
-```
-
-### Assign Material to Model
-
-```cpp
-// Get model's submeshes
-auto model = modelNode->getModel().get().value();
-
-// Assign material to first submesh
-model->getSubmeshes()[0].material = material.value()->getHandle();
-```
+For a larger UI setup, see [examples/main_demo/MainDemoImGuiUI.cpp](../examples/main_demo/MainDemoImGuiUI.cpp).
 
 ---
 
@@ -657,13 +479,9 @@ Explore the complete example:
 
 ### Key Files to Study
 
-- Resolve asset path | `PathProvider::resolve("models") / "file.obj"` |
-| Get engine resource | `PathProvider::getResource("texture.png")` |
-| Load model | `resourceManager->m_modelManager->createModel(path)` |
-| Load texture | `resourceManager->m_textureManager->createTextureFromFile(pathup
-- **[OrbitCamera.h/cpp](../examples/main_demo/OrbitCamera.h)** - Camera controller
-- **[DayNightCycle.h/cpp](../examples/main_demo/DayNightCycle.h)** - Custom update node
-- **[MainDemoImGuiUI.h/cpp](../examples/main_demo/MainDemoImGuiUI.h)** - ImGui integration
+- [examples/main_demo/OrbitCamera.h](../examples/main_demo/OrbitCamera.h) - Camera controller
+- [examples/main_demo/DayNightCycle.h](../examples/main_demo/DayNightCycle.h) - Custom update node
+- [examples/main_demo/MainDemoImGuiUI.h](../examples/main_demo/MainDemoImGuiUI.h) - ImGui integration
 
 ### Learn More
 
@@ -696,29 +514,18 @@ Explore the complete example:
 ### Update Node Template
 
 ```cpp
-class MyCustomNode : public engine::scene::entity::UpdateNode
+class MyCustomNode : public engine::scene::nodes::UpdateNode
 {
 public:
     void update(float deltaTime) override {
         // Access engine systems
-        auto& input = engine()->input();
-        auto& gpu = engine()->gpu();
-        auto& resources = engine()->resources();
+        auto input = engine()->input();
+        auto gpu = engine()->gpu();
+        auto resources = engine()->resources();
         
         // Your logic here
     }
 };
-```
-
-### Resource Loading Pattern
-
-```cpp
-auto maybeResource = resourceManager->loadSomething("path");
-if (!maybeResource.has_value()) {
-    spdlog::error("Failed to load resource");
-    return false;
-}
-// Use maybeResource.value()
 ```
 
 ---
@@ -730,4 +537,4 @@ if (!maybeResource.has_value()) {
 - Read inline documentation in header files
 - Review shader code in `resources/*.wgsl`
 
-**Happy coding! 🎮**
+If you get stuck, start from [examples/main_demo/main.cpp](../examples/main_demo/main.cpp).

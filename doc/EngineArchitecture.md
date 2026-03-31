@@ -132,10 +132,12 @@ Load via Manager → Create GPU version via Factory → Use in Renderer
 **Example:**
 ```cpp
 // 1. Load CPU resource via manager
-auto textureHandle = textureManager->loadTexture("texture.png");
+auto textureOpt = textureManager->createTextureFromFile("texture.png");
+if (!textureOpt)
+    return;
 
 // 2. Create GPU resource via factory
-auto gpuTexture = context.textureFactory().createFromHandle(textureHandle);
+auto gpuTexture = context.textureFactory().createFromHandle(textureOpt.value()->getHandle());
 
 // 3. Use in renderer
 material->setTexture("albedo", gpuTexture);
@@ -146,8 +148,9 @@ material->setTexture("albedo", gpuTexture);
 Use `Handle<T>` for type-safe resource references:
 
 ```cpp
-Texture::Handle textureHandle = textureManager->loadTexture("texture.png");
-if (auto texture = textureHandle.get()) {
+auto textureOpt = textureManager->createTextureFromFile("texture.png");
+if (textureOpt) {
+    auto texture = textureOpt.value();
     // Use texture
 }
 ```
@@ -242,8 +245,8 @@ auto scene = std::make_shared<Scene>();
 
 // Add custom nodes
 auto objectNode = std::make_shared<Node>();
-objectNode->getTransform()->setPosition({0, 1, 0});
-scene->getRootNode()->addChild(objectNode);
+objectNode->getTransform().setLocalPosition({0, 1, 0});
+scene->getRoot()->addChild(objectNode);
 ```
 
 ### Node Types
@@ -258,9 +261,9 @@ scene->getRootNode()->addChild(objectNode);
 Unity-like lazy matrix updates:
 
 ```cpp
-transform->setPosition({0, 1, 0});
-transform->setRotation({0, 45, 0});  // Euler angles in degrees
-transform->setScale({2, 2, 2});
+transform.setLocalPosition({0, 1, 0});
+transform.setLocalEulerAngles({0, 45, 0});  // Euler angles in degrees
+transform.setLocalScale({2, 2, 2});
 
 // Matrices updated lazily on first access
 glm::mat4 world = transform->getWorldMatrix();
@@ -341,13 +344,15 @@ auto buffer = context.bufferFactory().createBuffer(desc);
 
 ```cpp
 // 1. Manager (CPU)
-auto meshHandle = meshManager->load("model.obj");
+auto textureOpt = textureManager->createTextureFromFile("texture.png");
+if (!textureOpt)
+    return;
 
 // 2. Factory (GPU)
-auto gpuMesh = context.meshFactory().createFromHandle(meshHandle);
+auto gpuTexture = context.textureFactory().createFromHandle(textureOpt.value()->getHandle());
 
 // 3. Renderer (Usage)
-gpuMesh->bindBuffers(renderPass, layout);
+material->setTexture("albedo", gpuTexture);
 ```
 
 ### 3. EngineContext for System Access
@@ -357,11 +362,11 @@ Nodes access engine systems via `EngineContext`:
 ```cpp
 // In custom UpdateNode
 void update(float deltaTime) override {
-    if (engine()->input()->isKeyPressed(SDL_SCANCODE_W)) {
+    if (engine()->input()->isKey(SDL_SCANCODE_W)) {
         // Move forward
     }
     
-    auto textureHandle = engine()->resources()->m_textureManager->loadTexture("tex.png");
+    auto textureOpt = engine()->resources()->m_textureManager->createTextureFromFile("tex.png");
 }
 ```
 
@@ -419,31 +424,9 @@ pipelineManager->reloadPipeline("myShader");
 | `BindGroupBinder` | Centralized bind group binding | `rendering/` |
 | `Scene` | Scene graph root | `scene/` |
 | `ResourceManager` | Aggregate resource manager | `resources/` |
-| `GameEngipplication assets (correct path usage):**
-```cpp
-// ✅ Application texture
-auto texturePath = PathProvider::resolve("textures") / "myTexture.png";
-auto handle = engine()->resources()->m_textureManager->loadTexture(texturePath.string());
-auto gpuTexture = engine()->gpu()->textureFactory().createFromHandle(handle);
 
-// ✅ Engine resource
-auto engineTexture = PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg");
-auto handle2 = engine()->resources()->m_textureManager->loadTexture(engineTextur
-**Loading and using a texture:**
-```cpp
-auto handle = engine()->resources()->m_textureManager->loadTexture("texture.png");
-auto gpuTexture = engine()->gpu()->textureFactory().createFromHandle(handle);
-```
+### See Also
 
-**Adding a node to the scene:**
-```cpp
-auto node = std::make_shared<Node>();
-scene->getRootNode()->addChild(node);
-```
-
-**Binding bind groups:**
-```cpp
-binder.bind(renderPass, shader, cameraId, {
-    {BindGroupType::Material, materialBindGroup}
-});
-```
+- [GettingStarted.md](GettingStarted.md) for end-to-end setup
+- [examples/main_demo/main.cpp](../examples/main_demo/main.cpp) for a complete working example
+- [BindGroupSystem.md](BindGroupSystem.md) for bind group usage details
