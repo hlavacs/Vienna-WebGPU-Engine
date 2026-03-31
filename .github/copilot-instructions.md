@@ -128,7 +128,7 @@ All loaders derive from base classes and follow a consistent loading pattern:
 
 4. **TextureLoader** (`TextureLoader.h`)
    - Loads image files (PNG, JPG, etc.) using stb_image
-   - Method: `loadTexture(path, outTexture)` - Load texture into Texture object
+   - Used by `TextureManager::createTextureFromFile(...)` to create Texture objects
    - Handles sRGB and linear color spaces
 
 **Loading Pattern:**
@@ -138,10 +138,12 @@ auto textureLoader = std::make_shared<TextureLoader>(basePath);
 auto textureManager = std::make_shared<TextureManager>(textureLoader);
 
 // 2. Load resource (CPU-side)
-auto textureHandle = textureManager->loadTexture("path/to/texture.png");
+auto textureOpt = textureManager->createTextureFromFile("path/to/texture.png");
+if (!textureOpt)
+   return;
 
 // 3. Create GPU resource via factory
-auto gpuTexture = context.textureFactory().createFromHandle(textureHandle);
+auto gpuTexture = context.textureFactory().createFromHandle(textureOpt.value()->getHandle());
 ```
 
 ## Common Patterns and Conventions
@@ -266,7 +268,7 @@ All managers derive from `ResourceManagerBase<T>` which provides:
 1. **TextureManager** (`TextureManager.h`)
    - Manages CPU-side `Texture` objects
    - Loads textures via `TextureLoader`
-   - Method: `loadTexture(path)` → returns `Texture::Handle`
+   - Method: `createTextureFromFile(path)` → returns `std::optional<Texture::Ptr>`
 
 2. **MeshManager** (`MeshManager.h`)
    - Manages CPU-side `Mesh` objects
@@ -371,20 +373,20 @@ All managers derive from `ResourceManagerBase<T>` which provides:
   - Does NOT handle scene setup, lighting, models - that's in `main.cpp` or scene-specific code
   
 - **InputManager** (`include/engine/input/InputManager.h`):
-  - Processes SDL input events via `processEvent(const SDL_Event&)`
-  - Query input state: `isKeyPressed(SDL_Scancode)`
-  - Accessible from nodes via `engine()->input()`
+   - Processes SDL input events via `processEvent(const SDL_Event&)`
+   - Query input state: `isKey(SDL_Scancode)`, `isKeyDown(SDL_Scancode)`, `isKeyUp(SDL_Scancode)`
+   - Accessible from nodes via `engine()->input()`
   
 **Example - Node accessing engine systems:**
 ```cpp
 // In your custom UpdateNode::update()
-if (engine()->input()->isKeyPressed(SDL_SCANCODE_W)) {
-    // Move forward
-    getTransform()->translate(glm::vec3(0, 0, speed * deltaTime));
+if (engine()->input()->isKey(SDL_SCANCODE_W)) {
+   // Move forward
+   getTransform().translate(glm::vec3(0, 0, speed * deltaTime));
 }
 
 // Load a texture
-auto textureHandle = engine()->resources()->m_textureManager->loadTexture("path/to/texture.png");
+auto textureOpt = engine()->resources()->m_textureManager->createTextureFromFile("path/to/texture.png");
 
 // Access GPU context
 auto device = engine()->gpu()->getDevice();

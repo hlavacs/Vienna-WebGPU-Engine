@@ -1,0 +1,50 @@
+metric,group,value,n_valid,threshold,percent,n_participants,n_questions,median
+study_field_count,Computer Science,11.0,,,,,,
+study_field_count,Media Informatics,2.0,,,,,,
+study_field_count,Medical Computer Science,1.0,,,,,,
+study_field_count,Cyber Security,1.0,,,,,,
+tutorial_completion_count,Tutorial 1: Unlit Shader,15.0,,,,,,
+tutorial_completion_count,Tutorial 2: Custom Bindgroup,8.0,,,,,,
+tutorial_completion_count,Tutorial 4: Post Processing,14.0,,,,,,
+useful_rating_count,Q26,13.0,15.0,3.0,0.8666666666666667,,,
+useful_rating_count,Q27,10.0,15.0,3.0,0.6666666666666666,,,
+useful_rating_count,Q28,9.0,15.0,3.0,0.6,,,
+useful_rating_count,Q29,12.0,15.0,3.0,0.8,,,
+useful_rating_count,Q30,12.0,15.0,3.0,0.8,,,
+useful_rating_count,Q31,10.0,15.0,3.0,0.6666666666666666,,,
+useful_rating_count,Q32,10.0,15.0,3.0,0.6666666666666666,,,
+useful_rating_count,Q33,13.0,15.0,3.0,0.8666666666666667,,,
+overall_average_increase,selected_shared_questions,0.8960000000000001,,,,,,
+tutorial_average_increase,Tutorial 1: Unlit Shader,0.8960000000000001,,,,15.0,,
+tutorial_average_increase,Tutorial 2: Custom Bindgroup,0.87,,,,8.0,,
+tutorial_average_increase,Tutorial 4: Post Processing,0.9085714285714285,,,,14.0,,
+topic_average_increase,confidence,0.6444444444444445,,,,,3.0,
+topic_average_increase,general,0.41333333333333333,,,,,5.0,
+topic_average_increase,modern_gpu_api_concepts,1.0777777777777777,,,,,6.0,
+topic_average_increase,shader_programming,0.8266666666666667,,,,,5.0,
+topic_average_increase,webgpu_specifics,1.3,,,,,6.0,
+selected_question_increase,Q01,0.3333333333333333,,,,,,0.0
+selected_question_increase,Q02,1.1333333333333333,,,,,,1.0
+selected_question_increase,Q03,0.0,,,,,,0.0
+selected_question_increase,Q04,0.06666666666666667,,,,,,0.0
+selected_question_increase,Q05,0.5333333333333333,,,,,,0.0
+selected_question_increase,Q06,0.4,,,,,,0.0
+selected_question_increase,Q07,1.0,,,,,,1.0
+selected_question_increase,Q08,0.8666666666666667,,,,,,1.0
+selected_question_increase,Q09,0.8666666666666667,,,,,,1.0
+selected_question_increase,Q10,1.0,,,,,,1.0
+selected_question_increase,Q11,0.8666666666666667,,,,,,1.0
+selected_question_increase,Q12,1.2666666666666666,,,,,,1.0
+selected_question_increase,Q13,0.7333333333333333,,,,,,1.0
+selected_question_increase,Q14,1.1333333333333333,,,,,,1.0
+selected_question_increase,Q15,1.3333333333333333,,,,,,2.0
+selected_question_increase,Q16,1.1333333333333333,,,,,,1.0
+selected_question_increase,Q17,0.8,,,,,,1.0
+selected_question_increase,Q18,1.8666666666666667,,,,,,2.0
+selected_question_increase,Q19,1.2666666666666666,,,,,,1.0
+selected_question_increase,Q20,1.3333333333333333,,,,,,1.0
+selected_question_increase,Q21,1.2666666666666666,,,,,,1.0
+selected_question_increase,Q22,1.2666666666666666,,,,,,1.0
+selected_question_increase,Q23,0.9333333333333333,,,,,,1.0
+selected_question_increase,Q24,0.5333333333333333,,,,,,1.0
+selected_question_increase,Q25,0.4666666666666667,,,,,,1.0
