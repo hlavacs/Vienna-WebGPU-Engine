@@ -52,6 +52,7 @@ class WebGPUShaderInfo
 		m_fragmentEntryPoint(std::move(fragmentEntry)),
 		m_vertexLayout(vertexLayout),
 		m_features(features),
+		m_enableDepth(enableDepth),
 		m_cullBackFaces(cullBackFaces)
 	{
 	}
