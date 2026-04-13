@@ -4,6 +4,7 @@
 #include "engine/core/Identifiable.h"
 #include "engine/core/Versioned.h"
 #include "engine/resources/Image.h"
+#include <atomic>
 #include <filesystem>
 #include <future>
 #include <string>
@@ -103,7 +104,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	bool isReadbackPending() const
 	{
-		return m_readbackRequested;
+		return m_readbackRequested.load();
 	}
 
 	/**
@@ -112,7 +113,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	bool isReadbackComplete() const
 	{
-		return !m_readbackRequested;
+		return !m_readbackRequested.load();
 	}
 
 	/**
@@ -121,7 +122,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	void requestReadback()
 	{
-		m_readbackRequested = true;
+		m_readbackRequested.store(true);
 	}
 
 	/**
@@ -129,7 +130,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	bool isReadbackRequested() const
 	{
-		return m_readbackRequested;
+		return m_readbackRequested.load();
 	}
 
 	/**
@@ -138,7 +139,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	 */
 	void resolveReadback()
 	{
-		m_readbackRequested = false;
+		m_readbackRequested.store(false);
 	}
 
 	// ToDo: Feature Flags instead of this renderTarget bool?
@@ -193,7 +194,7 @@ struct Texture : public engine::core::Identifiable<Texture>, public engine::core
 	engine::resources::Image::Ptr m_image;
 	std::filesystem::path m_filePath;
 
-	bool m_readbackRequested = false; // Flag to request readback on next render
+	std::atomic<bool> m_readbackRequested{false}; // Flag to request readback on next render
 };
 
 } // namespace engine::rendering
