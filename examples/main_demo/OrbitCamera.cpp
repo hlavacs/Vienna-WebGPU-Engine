@@ -65,6 +65,16 @@ void updateDragInertia(OrbitCameraState &state, std::shared_ptr<engine::scene::n
 
 void OrbitCameraController::screenShot()
 {
+	if (m_saveFuture.valid())
+	{
+		auto status = m_saveFuture.wait_for(std::chrono::milliseconds(0));
+		if (status != std::future_status::ready)
+		{
+			spdlog::debug("Screenshot already in progress, ignoring additional request");
+			return;
+		}
+	}
+
 	if (!m_camera)
 		return;
 	auto engine = this->engine();
