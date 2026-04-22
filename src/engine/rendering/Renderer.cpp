@@ -8,6 +8,7 @@
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/BindGroupDataProvider.h"
 #include "engine/rendering/ClearFlags.h"
+#include "engine/rendering/ColorSpace.h"
 #include "engine/rendering/CompositePass.h"
 #include "engine/rendering/DebugPass.h"
 #include "engine/rendering/DebugRenderCollector.h"
@@ -27,9 +28,11 @@
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/ShadowPass.h"
+#include "engine/rendering/SkyboxPass.h"
 #include "engine/rendering/Texture.h"
 #include "engine/rendering/Vertex.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
@@ -70,6 +73,13 @@ bool Renderer::initialize()
 		return false;
 	}
 
+	m_skyboxPass = std::make_unique<SkyboxPass>(m_context);
+	if (!m_skyboxPass->initialize())
+	{
+		spdlog::error("Failed to initialize SkyboxPass");
+		return false;
+	}
+
 	m_debugPass = std::make_unique<DebugPass>(m_context);
 	if (!m_debugPass->initialize())
 	{
@@ -92,6 +102,27 @@ bool Renderer::initialize()
 		spdlog::error("Failed to get global bind group layout for frame uniforms");
 		return false;
 	}
+
+	auto pbrShader = m_context->shaderRegistry().getShader(shader::defaults::PBR);
+	if (!pbrShader)
+	{
+		spdlog::error("Failed to get PBR shader for environment bind group layout");
+		return false;
+	}
+
+	m_environmentBindGroupLayout = pbrShader->getBindGroupLayout(BindGroupType::Environment);
+	if (!m_environmentBindGroupLayout)
+	{
+		spdlog::error("PBR shader is missing environment bind group layout");
+		return false;
+	}
+
+	m_defaultEnvironmentTexture = m_context->textureFactory().createFromColor(
+		glm::vec3(0.0f),
+		1,
+		1,
+		ColorSpace::Linear
+	);
 
 	spdlog::info("Renderer initialized successfully");
 	return true;
@@ -221,6 +252,72 @@ void Renderer::updateFrameBindGroup(const RenderTarget &target, float time)
 		0,					   // buffer offset
 		m_context->getQueue()  // GPU queue for transfer
 	);
+}
+
+void Renderer::updateEnvironmentBindGroup(const RenderTarget &target)
+{
+	if (!m_environmentBindGroupLayout)
+	{
+		return;
+	}
+
+	std::shared_ptr<webgpu::WebGPUTexture> environmentTexture = m_defaultEnvironmentTexture;
+	if (target.environmentTexture.has_value() && target.environmentTexture->valid())
+	{
+		webgpu::WebGPUTextureOptions options{};
+		options.colorSpace = ColorSpace::Linear;
+		auto texture = m_context->textureFactory().createFromHandle(target.environmentTexture.value(), options);
+		if (texture)
+		{
+			environmentTexture = texture;
+		}
+	}
+
+	const bool irradianceEnabled =
+		target.skyboxEnabled &&
+		target.irradianceEnabled &&
+		environmentTexture != nullptr;
+
+	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> resourceOverrides;
+	resourceOverrides.emplace(
+		std::make_tuple(0u, 1u),
+		webgpu::BindGroupResource(m_context->samplerFactory().getClampNearestSampler())
+	);
+	resourceOverrides.emplace(
+		std::make_tuple(0u, 2u),
+		webgpu::BindGroupResource(environmentTexture)
+	);
+
+	auto environmentBindGroup = m_context->bindGroupFactory().createBindGroup(
+		m_environmentBindGroupLayout,
+		resourceOverrides,
+		nullptr,
+		"Environment BindGroup"
+	);
+
+	if (!environmentBindGroup)
+	{
+		spdlog::warn("Failed to create environment bind group for camera {}", target.cameraId);
+		m_environmentBindGroups[target.cameraId] = nullptr;
+		return;
+	}
+
+	glm::vec4 environmentParams(
+		irradianceEnabled ? 1.0f : 0.0f,
+		target.irradianceIntensity,
+		target.skyboxEnabled ? 1.0f : 0.0f,
+		0.0f
+	);
+
+	environmentBindGroup->updateBuffer(
+		0,
+		&environmentParams,
+		sizeof(glm::vec4),
+		0,
+		m_context->getQueue()
+	);
+
+	m_environmentBindGroups[target.cameraId] = environmentBindGroup;
 }
 
 std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
@@ -395,11 +492,36 @@ void Renderer::renderToTexture(
 	// ========================================
 	// STEP 5: Mesh Rendering Pass
 	// ========================================
+	updateEnvironmentBindGroup(renderTarget);
+
+	if (renderTarget.skyboxEnabled && m_environmentBindGroups[renderTargetId])
+	{
+		auto skyboxClearFlags = ClearFlags::SolidColor;
+
+		auto skyboxPassContext = m_context->renderPassFactory().create(
+			renderToTexture,
+			nullptr,
+			skyboxClearFlags,
+			renderTarget.backgroundColor
+		);
+
+		m_skyboxPass->setRenderPassContext(skyboxPassContext);
+		m_skyboxPass->setCameraId(renderTargetId);
+		m_skyboxPass->setEnvironmentBindGroup(m_environmentBindGroups[renderTargetId]);
+		m_skyboxPass->render(m_frameCache);
+	}
+
+	auto meshClearFlags = renderTarget.clearFlags;
+	if (renderTarget.skyboxEnabled)
+	{
+		meshClearFlags = (meshClearFlags & ~ClearFlags::SolidColor) | ClearFlags::Depth;
+	}
+
 	// Render all visible based on material and mesh configurations.
 	auto meshPassContext = m_context->renderPassFactory().create(
 		renderToTexture,				// Color attachment
 		m_depthBuffers[renderTargetId], // Depth attachment
-		renderTarget.clearFlags,		// Clear color/depth?
+		meshClearFlags,				// Clear color/depth?
 		renderTarget.backgroundColor	// Clear color
 	);
 
@@ -407,6 +529,7 @@ void Renderer::renderToTexture(
 	m_meshPass->setCameraId(renderTargetId);
 	m_meshPass->setVisibleIndices(visibleIndices);
 	m_meshPass->setShadowBindGroup(m_shadowPass->getShadowBindGroup());
+	m_meshPass->setEnvironmentBindGroup(m_environmentBindGroups[renderTargetId]);
 
 	spdlog::debug("Rendering {} GPU mesh items", m_frameCache.gpuRenderItems.size());
 	m_meshPass->render(m_frameCache);
@@ -530,6 +653,9 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 
 	if (m_shadowPass)
 		m_shadowPass->cleanup();
+
+	if (m_skyboxPass)
+		m_skyboxPass->cleanup();
 	// Tutorial 04 - Step 12: Handle window resize (continued)
 	// Post-processing pass also needs to clean up GPU resources so it can recreate them with new sizes.
 	// If we don't clean up, we'll have dangling GPU resources with old dimensions that cause rendering issues.

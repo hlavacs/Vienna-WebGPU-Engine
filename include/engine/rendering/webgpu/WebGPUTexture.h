@@ -250,7 +250,7 @@ class WebGPUTexture
 		case ImageFormatType::HDR_RG16F:
 			return wgpu::TextureFormat::RGBA32Float;
 		case ImageFormatType::HDR_RGBA16F:
-			return wgpu::TextureFormat::RGBA16Float;
+			return wgpu::TextureFormat::RGBA32Float;
 		default:
 			assert(false && "Unsupported ImageFormat for GPU mapping");
 			return wgpu::TextureFormat::RGBA8Unorm;
@@ -297,6 +297,7 @@ class WebGPUTexture
 		case wgpu::TextureFormat::RG16Float:
 			return ImageFormatType::HDR_RG16F;
 		case wgpu::TextureFormat::RGBA16Float:
+		case wgpu::TextureFormat::RGBA32Float:
 			return ImageFormatType::HDR_RGBA16F;
 		default:
 			assert(false && "Unsupported GPU texture format for ImageFormat mapping");
@@ -322,6 +323,8 @@ class WebGPUTexture
 			return 2;
 		case wgpu::TextureFormat::RG16Float:
 			return 4;
+		case wgpu::TextureFormat::RGBA32Float:
+			return 16;
 		case wgpu::TextureFormat::RGBA16Float:
 			return 8;
 		default:

@@ -199,7 +199,8 @@ void MeshPass::drawItems(
 				{{BindGroupType::Object, item.objectBindGroup},
 				 {BindGroupType::Material, item.gpuMaterial->getBindGroup()},
 				 {BindGroupType::Light, m_lightBindGroup},
-				 {BindGroupType::Shadow, m_shadowBindGroup}},
+				 {BindGroupType::Shadow, m_shadowBindGroup},
+				 {BindGroupType::Environment, m_environmentBindGroup}},
 				item.objectID, // objectId for PerObject custom bind groups
 				materialId	  // materialId for PerMaterial custom bind groups
 			);

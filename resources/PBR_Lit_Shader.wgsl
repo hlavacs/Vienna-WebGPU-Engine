@@ -64,6 +64,10 @@ struct MaterialUniforms {
     normal_strength: f32,
 }
 
+struct EnvironmentUniforms {
+    params: vec4f, // x: irradiance enabled, y: intensity, z: skybox enabled, w: reserved
+}
+
 
 struct ShadowUniform {
     view_proj: mat4x4f,     // Used for spot + directional + CSM (64 bytes)
@@ -113,6 +117,13 @@ var shadow_maps_2d: texture_depth_2d_array;
 var shadow_maps_cube: texture_depth_cube_array;
 @group(4) @binding(3)
 var<storage, read> u_shadows: array<ShadowUniform>;
+
+@group(5) @binding(0)
+var<uniform> u_environment: EnvironmentUniforms;
+@group(5) @binding(1)
+var environment_sampler: sampler;
+@group(5) @binding(2)
+var environment_texture: texture_2d<f32>;
 
 const PI: f32 = 3.141592653589793;
 
@@ -177,6 +188,23 @@ fn get_direction_from_transform(transform: mat4x4f) -> vec3f {
 
 fn get_position_from_transform(transform: mat4x4f) -> vec3f {
     return transform[3].xyz;
+}
+
+fn direction_to_equirect_uv(direction: vec3f) -> vec2f {
+    let dir = normalize(direction);
+    let u = atan2(dir.z, dir.x) / (2.0 * PI) + 0.5;
+    let v = acos(clamp(dir.y, -1.0, 1.0)) / PI;
+    return vec2f(u, v);
+}
+
+fn sample_environment_irradiance(normal: vec3f) -> vec3f {
+    if (u_environment.params.x < 0.5) {
+        return vec3f(0.0);
+    }
+
+    let uv = direction_to_equirect_uv(normalize(normal));
+    let sample_color = textureSample(environment_texture, environment_sampler, uv).rgb;
+    return sample_color * u_environment.params.y;
 }
 
 // ------------------------------------------------------------
@@ -445,7 +473,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         Lo += (k_d * base_color / PI + specular) * radiance * n_dot_l * shadow;
     }
 
-    var final_color = Lo + emission;
+    let irradiance = sample_environment_irradiance(normal) * base_color * (1.0 - metallic) * ao;
+    var final_color = Lo + irradiance + emission;
 
     // Glass refraction effect (simplified)
     // For proper refraction, you would need an environment map or screen-space texture

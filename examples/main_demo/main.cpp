@@ -27,6 +27,22 @@ std::shared_ptr<demo::OrbitCameraController> setupCamera(std::shared_ptr<engine:
 		mainCamera->getTransform().lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		mainCamera->setBackgroundColor(glm::vec4(0.1f, 0.1f, 0.1f, 1.0f));
 		mainCamera->setMSAAEnabled(true);
+
+		// Configure HDR environment map for skybox + diffuse irradiance.
+		auto environmentTexture = resourceManager->m_textureManager->createTextureFromFile(
+			PathProvider::getResource("skybox.hdr")
+		);
+		if (environmentTexture.has_value())
+		{
+			mainCamera->setEnvironmentTexture(environmentTexture.value()->getHandle());
+			mainCamera->setSkyboxEnabled(true);
+			mainCamera->setIrradianceEnabled(true);
+			mainCamera->setIrradianceIntensity(1.0f);
+		}
+		else
+		{
+			spdlog::warn("Failed to load skybox.hdr, environment lighting disabled for camera {}", mainCamera->getId());
+		}
 	}
 
 	// Setup orbit camera controller
