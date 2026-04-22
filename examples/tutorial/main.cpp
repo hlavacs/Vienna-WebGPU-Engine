@@ -74,7 +74,6 @@ int main(int argc, char **argv)
 				"fs_main",
 				engine::rendering::VertexLayout::PositionNormalUV,
 				true,  // enableDepth
-				false, // enableBlend
 				true   // cullBackFaces
 			)
 			.addFrameBindGroup()
@@ -146,7 +145,7 @@ int main(int argc, char **argv)
 	sunLightData.color = glm::vec3(1.0f, 1.0f, 1.0f);
 	sunLightData.intensity = 1.0f;
 	sunLight->getLight().setData(sunLightData);
-	sunLight->getTransform().setLocalRotation(glm::quat(glm::radians(glm::vec3(45.0f, 0.0f, 0.0f))));
+	sunLight->getTransform().setLocalRotation(glm::quat(glm::radians(glm::vec3(45.0f, 180.0f, 00.0f))));
 	rootNode->addChild(sunLight->asNode());
 
 	auto ambientLight = std::make_shared<engine::scene::nodes::LightNode>();
@@ -154,7 +153,6 @@ int main(int argc, char **argv)
 	ambientLightData.color = glm::vec3(1.0f, 1.0f, 1.0f);
 	ambientLightData.intensity = 0.02f; // Lower intensity for ambient light so the direct light is more visible
 	ambientLight->getLight().setData(ambientLightData);
-	ambientLight->getTransform().setLocalRotation(glm::quat(glm::radians(glm::vec3(45.0f, 0.0f, 0.0f))));
 	rootNode->addChild(ambientLight->asNode());
 #pragma endregion
 

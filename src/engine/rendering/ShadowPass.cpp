@@ -217,7 +217,14 @@ void ShadowPass::render(FrameCache &frameCache)
 	if (!m_collector || frameCache.shadowRequests.empty())
 		return;
 
-	const auto &renderTarget = frameCache.renderTargets[m_cameraId];
+	auto renderTargetIt = frameCache.renderTargets.find(m_cameraId);
+	if (renderTargetIt == frameCache.renderTargets.end())
+	{
+		spdlog::warn("ShadowPass::render skipped: no render target for active camera");
+		return;
+	}
+
+	const auto &renderTarget = renderTargetIt->second;
 	frameCache.shadowUniforms.clear();
 
 	// Compute all shadow uniforms
@@ -239,6 +246,22 @@ void ShadowPass::render(FrameCache &frameCache)
 	{
 		if (req.type == ShadowType::PointCube)
 		{
+			if (req.textureIndexStart >= constants::MAX_SHADOW_MAPS_CUBE)
+			{
+				spdlog::warn(
+					"ShadowPass::render skipped point shadow: cube index {} out of range (max {})",
+					req.textureIndexStart,
+					constants::MAX_SHADOW_MAPS_CUBE
+				);
+				continue;
+			}
+
+			if (idx >= frameCache.shadowUniforms.size())
+			{
+				spdlog::warn("ShadowPass::render aborted: shadow uniform index out of bounds");
+				break;
+			}
+
 			const auto &u = frameCache.shadowUniforms[idx++];
 			auto vis = m_collector->extractForPointLight(u.lightPos, req.light->asPoint().range);
 			frameCache.prepareGPUResources(m_context, *m_collector, vis);
@@ -248,6 +271,12 @@ void ShadowPass::render(FrameCache &frameCache)
 		{
 			for (uint32_t i = 0; i < req.cascadeCount; ++i)
 			{
+				if (idx >= frameCache.shadowUniforms.size())
+				{
+					spdlog::warn("ShadowPass::render aborted: shadow uniform index out of bounds");
+					break;
+				}
+
 				const auto &u = frameCache.shadowUniforms[idx++];
 				auto vis = m_collector->extractForLightFrustum(engine::math::Frustum::fromViewProjection(u.viewProj));
 				frameCache.prepareGPUResources(m_context, *m_collector, vis);
@@ -256,6 +285,12 @@ void ShadowPass::render(FrameCache &frameCache)
 		}
 		else
 		{
+			if (idx >= frameCache.shadowUniforms.size())
+			{
+				spdlog::warn("ShadowPass::render aborted: shadow uniform index out of bounds");
+				break;
+			}
+
 			const auto &u = frameCache.shadowUniforms[idx++];
 			auto vis = m_collector->extractForLightFrustum(engine::math::Frustum::fromViewProjection(u.viewProj));
 			frameCache.prepareGPUResources(m_context, *m_collector, vis);
