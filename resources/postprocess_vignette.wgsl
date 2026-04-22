@@ -66,8 +66,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     // Mix between darkened (1.0 - intensity) and full brightness (1.0)
     let vignetteFactor = mix(1.0 - vignetteIntensity, 1.0, vignette);
     
-    // Apply vignette by multiplying scene color
-    let finalColor = sceneColor * vignetteFactor;
-    
-    return finalColor;
+    // Apply vignette only to RGB and preserve original alpha.
+    // Darkening alpha causes unexpected transparency in saved PNG outputs.
+    let finalRgb = sceneColor.rgb * vignetteFactor;
+    return vec4f(finalRgb, 1.0);
 }

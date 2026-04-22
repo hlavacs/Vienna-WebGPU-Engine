@@ -47,9 +47,9 @@ std::shared_ptr<demo::OrbitCameraController> setupCamera(std::shared_ptr<engine:
 
 	// Setup orbit camera controller
 	demo::OrbitCameraState orbitState;
-	orbitState.distance = 5.0f;
-	orbitState.azimuth = 0.0f;
-	orbitState.elevation = 0.3f;
+	orbitState.distance = 20.0f;
+	orbitState.azimuth = -0.5f;
+	orbitState.elevation = 0.5f;
 	auto orbitController = std::make_shared<demo::OrbitCameraController>(orbitState, mainCamera);
 	scene->getRoot()->addChild(orbitController);
 	return orbitController;
@@ -85,10 +85,10 @@ void setupComplexLighting(std::shared_ptr<engine::scene::Scene> scene, std::shar
 	// Spot lights
 	engine::rendering::SpotLight spotData;
 	spotData.color = glm::vec3(1.0f, 1.0f, 1.0f);
-	spotData.intensity = 35.0f;
+	spotData.intensity = 100.0f;
 	spotData.castShadows = true;
 	spotData.range = 100.0f;
-	spotData.spotAngle = glm::radians(10.0f);
+	spotData.spotAngle = glm::radians(70.0f);
 	spotData.shadowMapSize = 4096;
 	spotData.shadowPCFKernel = 4;
 
