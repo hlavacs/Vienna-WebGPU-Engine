@@ -20,6 +20,7 @@ enum class BindGroupType
 {
 	Frame,
 	Light,
+	Environment,
 	Mipmap,
 	Object,
 	Material,

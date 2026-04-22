@@ -18,6 +18,7 @@ namespace SamplerNames
 inline constexpr const char *DEFAULT = "default";
 inline constexpr const char *MIPMAP_LINEAR = "mipmap_linear";
 inline constexpr const char *CLAMP_LINEAR = "clamp_linear";
+inline constexpr const char *CLAMP_NEAREST = "clamp_nearest";
 inline constexpr const char *REPEAT_LINEAR = "repeat_linear";
 inline constexpr const char *SHADOW_COMPARISON = "shadow_comparison";
 } // namespace SamplerNames
@@ -75,6 +76,12 @@ class WebGPUSamplerFactory : public debug::Loggable
 	wgpu::Sampler getClampLinearSampler();
 
 	/**
+	 * @brief Get or create clamp sampler (clamp to edge, nearest/non-filtering).
+	 * @return WebGPU sampler.
+	 */
+	wgpu::Sampler getClampNearestSampler();
+
+	/**
 	 * @brief Get or create repeat sampler (repeat, linear).
 	 * @return WebGPU sampler.
 	 */
@@ -98,6 +105,7 @@ class WebGPUSamplerFactory : public debug::Loggable
 	wgpu::Sampler createDefaultSampler();
 	wgpu::Sampler createMipmapSampler();
 	wgpu::Sampler createClampLinearSampler();
+	wgpu::Sampler createClampNearestSampler();
 	wgpu::Sampler createRepeatLinearSampler();
 	wgpu::Sampler createShadowComparisonSampler();
 };

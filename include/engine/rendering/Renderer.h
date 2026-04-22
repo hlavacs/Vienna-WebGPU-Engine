@@ -18,6 +18,7 @@
 // #include "engine/rendering/RenderPassManager.h" ToDo: future use
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowPass.h"
+#include "engine/rendering/SkyboxPass.h"
 #include "engine/rendering/Texture.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -156,6 +157,12 @@ class Renderer
 	void updateFrameBindGroup(const RenderTarget &target, float time);
 
 	/**
+	 * @brief Updates per-camera environment bind group (irradiance texture/uniforms).
+	 * @param target Camera render target containing environment settings.
+	 */
+	void updateEnvironmentBindGroup(const RenderTarget &target);
+
+	/**
 	 * @brief Creates or resizes render target textures.
 	 * Handles both CPU-backed textures and dynamic viewport-sized targets.
 	 * @param renderTargetId ID for caching.
@@ -178,6 +185,7 @@ class Renderer
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
 	// std::unique_ptr<RenderPassManager> m_renderPassManager; // ToDo: future use
 	std::unique_ptr<ShadowPass> m_shadowPass;
+	std::unique_ptr<SkyboxPass> m_skyboxPass;
 	std::unique_ptr<MeshPass> m_meshPass;
 	std::unique_ptr<DebugPass> m_debugPass;
 	std::unique_ptr<CompositePass> m_compositePass;
@@ -193,10 +201,13 @@ class Renderer
 		std::shared_ptr<webgpu::WebGPUTexture> b;
 	};
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_postProcessTextures; ///< Cache of intermediate textures for post-processing per camera (key: cameraId)
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_environmentBindGroups;
 
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
 
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
+	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_environmentBindGroupLayout;
+	std::shared_ptr<webgpu::WebGPUTexture> m_defaultEnvironmentTexture;
 };
 
 } // namespace engine::rendering

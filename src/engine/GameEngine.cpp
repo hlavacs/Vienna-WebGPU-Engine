@@ -23,8 +23,10 @@ namespace engine
 GameEngine::GameEngine() :
 	running(false)
 {
-#ifdef DEBUG_ROOT_DIR
+#if defined(DEBUG_ROOT_DIR) && defined(ASSETS_ROOT_DIR)
 	engine::core::PathProvider::initialize(ASSETS_ROOT_DIR, DEBUG_ROOT_DIR);
+#elif defined(DEBUG_ROOT_DIR)
+	engine::core::PathProvider::initialize("", DEBUG_ROOT_DIR);
 #else
 	engine::core::PathProvider::initialize();
 #endif
@@ -454,6 +456,10 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 		target.clearFlags = camera->getClearFlags();
 		target.backgroundColor = camera->getBackgroundColor();
 		target.cpuTarget = camera->getRenderTarget();
+		target.environmentTexture = camera->getEnvironmentTexture();
+		target.skyboxEnabled = camera->isSkyboxEnabled();
+		target.irradianceEnabled = camera->isIrradianceEnabled();
+		target.irradianceIntensity = camera->getIrradianceIntensity();
 		target.gpuTexture = nullptr; // Will be set by renderer
 
 		renderTargets.push_back(target);

@@ -226,6 +226,55 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	 */
 	bool isHDREnabled() const { return m_hdr; }
 
+	/**
+	 * @brief Enable or disable rendering the skybox for this camera.
+	 */
+	void setSkyboxEnabled(bool enabled) { m_skyboxEnabled = enabled; }
+
+	/**
+	 * @brief Check whether skybox rendering is enabled.
+	 */
+	bool isSkyboxEnabled() const { return m_skyboxEnabled; }
+
+	/**
+	 * @brief Set the environment texture used for skybox and irradiance.
+	 */
+	void setEnvironmentTexture(std::optional<engine::rendering::Texture::Handle> texture)
+	{
+		m_environmentTexture = texture;
+	}
+
+	/**
+	 * @brief Get the environment texture handle.
+	 */
+	std::optional<engine::rendering::Texture::Handle> getEnvironmentTexture() const
+	{
+		return m_environmentTexture;
+	}
+
+	/**
+	 * @brief Enable or disable diffuse irradiance from the environment texture.
+	 */
+	void setIrradianceEnabled(bool enabled) { m_irradianceEnabled = enabled; }
+
+	/**
+	 * @brief Check whether diffuse irradiance is enabled.
+	 */
+	bool isIrradianceEnabled() const { return m_irradianceEnabled; }
+
+	/**
+	 * @brief Set irradiance intensity multiplier.
+	 */
+	void setIrradianceIntensity(float intensity)
+	{
+		m_irradianceIntensity = (intensity < 0.0f) ? 0.0f : intensity;
+	}
+
+	/**
+	 * @brief Get irradiance intensity multiplier.
+	 */
+	float getIrradianceIntensity() const { return m_irradianceIntensity; }
+
 	// =========================================================
 	// Frustum
 	// =========================================================
@@ -357,6 +406,10 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	int m_depth = 0;																	  ///< Rendering depth/order
 	bool m_msaa = true;																	  ///< MSAA enabled
 	bool m_hdr = false;																	  ///< HDR enabled
+	bool m_skyboxEnabled = false;								  ///< Skybox enabled
+	bool m_irradianceEnabled = false;							  ///< Irradiance enabled
+	float m_irradianceIntensity = 1.0f;						  ///< Irradiance multiplier
+	std::optional<engine::rendering::Texture::Handle> m_environmentTexture; ///< Environment texture
 };
 
 } // namespace engine::scene::nodes

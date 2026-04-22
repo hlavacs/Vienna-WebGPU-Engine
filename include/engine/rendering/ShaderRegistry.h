@@ -21,6 +21,7 @@ namespace shader::defaults
 constexpr const char *PBR = "PBR_Lit_Shader";
 constexpr const char *DEBUG = "Debug_Shader";
 constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_Shader";
+constexpr const char *SKYBOX = "Skybox_Shader";
 constexpr const char *MIPMAP_BLIT = "Mipmap_Blit_Shader";
 constexpr const char *SHADOW_PASS_2D = "ShadowPass2D_Shader";
 constexpr const char *SHADOW_PASS_CUBE = "ShadowPassCube_Shader";
@@ -32,6 +33,7 @@ namespace bindgroup::defaults
 {
 constexpr const char *FRAME = "Frame_BindGroup";
 constexpr const char *LIGHT = "Light_BindGroup";
+constexpr const char *ENVIRONMENT = "Environment_BindGroup";
 constexpr const char *OBJECT = "Object_BindGroup";
 constexpr const char *MATERIAL = "Material_BindGroup";
 constexpr const char *SHADOW = "Shadow_BindGroup";
@@ -39,6 +41,7 @@ constexpr const char *SHADOW_PASS_2D = "ShadowPass2D_BindGroup";
 constexpr const char *SHADOW_PASS_CUBE = "ShadowPassCube_BindGroup";
 constexpr const char *MIPMAP_BLIT = "MipmapBlit_BindGroup";
 constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_BindGroup";
+constexpr const char *SKYBOX = "Skybox_BindGroup";
 constexpr const char *VISUALIZE_DEPTH = "Visualize_Depth_BindGroup";
 constexpr const char *DEBUG = "Debug_BindGroup";
 constexpr const char *VIGNETTE = "Vignette_BindGroup";
@@ -125,6 +128,7 @@ class ShaderRegistry
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createPBRShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createDebugShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createFullscreenQuadShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createSkyboxShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createMipmapBlitShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createShadowPass2DShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createShadowPassCubeShader();

@@ -56,6 +56,14 @@ bool ShaderRegistry::initializeDefaultShaders()
 	}
 	registerShader(fullscreenQuadShader);
 
+	auto skyboxShader = createSkyboxShader();
+	if (!skyboxShader || !skyboxShader->isValid())
+	{
+		spdlog::error("Failed to create Skybox shader");
+		return false;
+	}
+	registerShader(skyboxShader);
+
 	auto mipmapBlitShader = createMipmapBlitShader();
 	if (!mipmapBlitShader || !mipmapBlitShader->isValid())
 	{
@@ -203,6 +211,9 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 	// @group(4) @binding(2) var shadowMapCubeArray:
 	// @group(4) @binding(3) var<storage, read> uShadowData2D: ShadowData2DBuffer;
 	// @group(4) @binding(4) var<storage, read> uShadowDataCube: ShadowDataCubeBuffer;
+	// @group(5) @binding(0) var<uniform> uEnvironment: EnvironmentUniforms;
+	// @group(5) @binding(1) var environmentSampler: sampler;
+	// @group(5) @binding(2) var environmentTexture: texture_2d<f32>;
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
@@ -283,6 +294,25 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 			)
 			// Group 4: Shadow mapping (sampler, 2D array, cube array, storage buffers)
 			.addShadowBindGroup()
+			// Group 5: Environment irradiance (uniform + sampler + HDR equirect texture)
+			.addBindGroup(bindgroup::defaults::ENVIRONMENT, BindGroupReuse::PerFrame, BindGroupType::Environment)
+			.addUniform(
+				"environmentUniforms",
+				sizeof(glm::vec4),
+				WGPUShaderStage_Fragment
+			)
+			.addSampler(
+				"environmentSampler",
+				wgpu::SamplerBindingType::NonFiltering,
+				WGPUShaderStage_Fragment
+			)
+			.addTexture(
+				"environmentTexture",
+				wgpu::TextureSampleType::UnfilterableFloat,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment
+			)
 			.build();
 
 	return shaderInfo;
@@ -345,6 +375,48 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadSh
 			.addSampler(
 				"cameraSampler",
 				wgpu::SamplerBindingType::Filtering,
+				WGPUShaderStage_Fragment
+			)
+			.build();
+
+	return shaderInfo;
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createSkyboxShader()
+{
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin(
+				shader::defaults::SKYBOX,
+				ShaderType::Unlit,
+				PathProvider::getResource("skybox.wgsl"),
+				"vs_main",
+				"fs_main",
+				VertexLayout::None,
+				false,
+				false
+			)
+			.addFrameBindGroup()
+			.addBindGroup(
+				bindgroup::defaults::SKYBOX,
+				BindGroupReuse::PerFrame,
+				BindGroupType::Custom
+			)
+			.addUniform(
+				"environmentUniforms",
+				sizeof(glm::vec4),
+				WGPUShaderStage_Fragment
+			)
+			.addSampler(
+				"environmentSampler",
+				wgpu::SamplerBindingType::NonFiltering,
+				WGPUShaderStage_Fragment
+			)
+			.addTexture(
+				"environmentTexture",
+				wgpu::TextureSampleType::UnfilterableFloat,
+				wgpu::TextureViewDimension::_2D,
+				false,
 				WGPUShaderStage_Fragment
 			)
 			.build();

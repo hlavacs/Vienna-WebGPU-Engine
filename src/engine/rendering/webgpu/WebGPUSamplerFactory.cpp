@@ -29,6 +29,9 @@ wgpu::Sampler WebGPUSamplerFactory::getSampler(const std::string &name)
 	if (name == SamplerNames::CLAMP_LINEAR)
 		return createClampLinearSampler();
 
+	if (name == SamplerNames::CLAMP_NEAREST)
+		return createClampNearestSampler();
+
 	if (name == SamplerNames::REPEAT_LINEAR)
 		return createRepeatLinearSampler();
 
@@ -82,6 +85,11 @@ wgpu::Sampler WebGPUSamplerFactory::getMipmapSampler()
 wgpu::Sampler WebGPUSamplerFactory::getClampLinearSampler()
 {
 	return getSampler(SamplerNames::CLAMP_LINEAR);
+}
+
+wgpu::Sampler WebGPUSamplerFactory::getClampNearestSampler()
+{
+	return getSampler(SamplerNames::CLAMP_NEAREST);
 }
 
 wgpu::Sampler WebGPUSamplerFactory::getRepeatLinearSampler()
@@ -154,6 +162,24 @@ wgpu::Sampler WebGPUSamplerFactory::createClampLinearSampler()
 	samplerDesc.maxAnisotropy = 1;
 
 	return createSampler(SamplerNames::CLAMP_LINEAR, samplerDesc);
+}
+
+wgpu::Sampler WebGPUSamplerFactory::createClampNearestSampler()
+{
+	wgpu::SamplerDescriptor samplerDesc{};
+	// Clamp sampler (clamp to edge, nearest/non-filtering)
+	samplerDesc.addressModeU = AddressMode::ClampToEdge;
+	samplerDesc.addressModeV = AddressMode::ClampToEdge;
+	samplerDesc.addressModeW = AddressMode::ClampToEdge;
+	samplerDesc.magFilter = FilterMode::Nearest;
+	samplerDesc.minFilter = FilterMode::Nearest;
+	samplerDesc.mipmapFilter = MipmapFilterMode::Nearest;
+	samplerDesc.lodMinClamp = 0.0f;
+	samplerDesc.lodMaxClamp = 0.0f;
+	samplerDesc.compare = CompareFunction::Undefined;
+	samplerDesc.maxAnisotropy = 1;
+
+	return createSampler(SamplerNames::CLAMP_NEAREST, samplerDesc);
 }
 
 wgpu::Sampler WebGPUSamplerFactory::createRepeatLinearSampler()

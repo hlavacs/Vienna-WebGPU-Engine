@@ -41,6 +41,10 @@ struct RenderTarget
 	ClearFlags clearFlags;
 	glm::vec4 backgroundColor;
 	std::optional<Texture::Handle> cpuTarget;
+	std::optional<Texture::Handle> environmentTexture;
+	bool skyboxEnabled{false};
+	bool irradianceEnabled{false};
+	float irradianceIntensity{1.0f};
 	std::shared_ptr<webgpu::WebGPUTexture> gpuTexture; // actual GPU render target texture
 	int layerIndex{-1};								   // for texture arrays or cube maps
 

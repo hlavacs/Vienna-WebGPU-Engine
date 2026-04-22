@@ -92,6 +92,15 @@ class MeshPass : public RenderPass
 	}
 
 	/**
+	 * @brief Set environment resources bind group (irradiance data).
+	 * @param bindGroup Environment uniform/texture bind group.
+	 */
+	void setEnvironmentBindGroup(const std::shared_ptr<webgpu::WebGPUBindGroup> &bindGroup)
+	{
+		m_environmentBindGroup = bindGroup;
+	}
+
+	/**
 	 * @brief Render meshes using data from FrameCache.
 	 * Accesses: frameCache.gpuRenderItems, frameCache.lightUniforms
 	 * Additional data from setters: renderPassContext, frameUniforms, cameraId, visibleIndices, shadowBindGroup
@@ -151,6 +160,7 @@ class MeshPass : public RenderPass
 	// Cached bind groups
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowBindGroup;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_environmentBindGroup;
 };
 
 } // namespace engine::rendering
