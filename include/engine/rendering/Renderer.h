@@ -206,7 +206,8 @@ class Renderer
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
 
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
-	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_environmentBindGroupLayout;
+	// Note: m_environmentBindGroupLayout is not cached. It's fetched fresh from the PBR shader in updateEnvironmentBindGroup()
+	// to ensure we always use the current shader state.
 	std::shared_ptr<webgpu::WebGPUTexture> m_defaultEnvironmentTexture;
 };
 

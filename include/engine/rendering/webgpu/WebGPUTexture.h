@@ -246,11 +246,11 @@ class WebGPUTexture
 			// Apply color space: sRGB for color data, Unorm for linear/non-color data
 			return (colorSpace == ColorSpace::sRGB) ? wgpu::TextureFormat::RGBA8UnormSrgb : wgpu::TextureFormat::RGBA8Unorm;
 		case ImageFormatType::HDR_R16F:
-			return wgpu::TextureFormat::RGBA32Float;
+			return wgpu::TextureFormat::RGBA16Float;
 		case ImageFormatType::HDR_RG16F:
-			return wgpu::TextureFormat::RGBA32Float;
+			return wgpu::TextureFormat::RGBA16Float;
 		case ImageFormatType::HDR_RGBA16F:
-			return wgpu::TextureFormat::RGBA32Float;
+			return wgpu::TextureFormat::RGBA16Float;
 		default:
 			assert(false && "Unsupported ImageFormat for GPU mapping");
 			return wgpu::TextureFormat::RGBA8Unorm;

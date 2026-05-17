@@ -103,19 +103,9 @@ bool Renderer::initialize()
 		return false;
 	}
 
-	auto pbrShader = m_context->shaderRegistry().getShader(shader::defaults::PBR);
-	if (!pbrShader)
-	{
-		spdlog::error("Failed to get PBR shader for environment bind group layout");
-		return false;
-	}
-
-	m_environmentBindGroupLayout = pbrShader->getBindGroupLayout(BindGroupType::Environment);
-	if (!m_environmentBindGroupLayout)
-	{
-		spdlog::error("PBR shader is missing environment bind group layout");
-		return false;
-	}
+	// Note: m_environmentBindGroupLayout is NOT cached at init time.
+	// It will be fetched fresh from the PBR shader in updateEnvironmentBindGroup()
+	// to ensure we always use the current shader's layout.
 
 	m_defaultEnvironmentTexture = m_context->textureFactory().createFromColor(
 		glm::vec3(0.0f),
@@ -256,8 +246,18 @@ void Renderer::updateFrameBindGroup(const RenderTarget &target, float time)
 
 void Renderer::updateEnvironmentBindGroup(const RenderTarget &target)
 {
-	if (!m_environmentBindGroupLayout)
+	// Fetch fresh environment bind group layout from PBR shader to ensure it reflects current shader state
+	auto pbrShader = m_context->shaderRegistry().getShader(shader::defaults::PBR);
+	if (!pbrShader)
 	{
+		spdlog::warn("Failed to get PBR shader for environment bind group");
+		return;
+	}
+
+	auto environmentBindGroupLayout = pbrShader->getBindGroupLayout(BindGroupType::Environment);
+	if (!environmentBindGroupLayout)
+	{
+		spdlog::warn("Failed to get environment bind group layout from PBR shader");
 		return;
 	}
 
@@ -281,7 +281,7 @@ void Renderer::updateEnvironmentBindGroup(const RenderTarget &target)
 	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> resourceOverrides;
 	resourceOverrides.emplace(
 		std::make_tuple(0u, 1u),
-		webgpu::BindGroupResource(m_context->samplerFactory().getClampNearestSampler())
+		webgpu::BindGroupResource(m_context->samplerFactory().getDefaultSampler())
 	);
 	resourceOverrides.emplace(
 		std::make_tuple(0u, 2u),
@@ -289,7 +289,7 @@ void Renderer::updateEnvironmentBindGroup(const RenderTarget &target)
 	);
 
 	auto environmentBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_environmentBindGroupLayout,
+		environmentBindGroupLayout,
 		resourceOverrides,
 		nullptr,
 		"Environment BindGroup"
