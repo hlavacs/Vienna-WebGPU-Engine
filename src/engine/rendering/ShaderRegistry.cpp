@@ -303,12 +303,12 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 			)
 			.addSampler(
 				"environmentSampler",
-				wgpu::SamplerBindingType::NonFiltering,
+				wgpu::SamplerBindingType::Filtering,
 				WGPUShaderStage_Fragment
 			)
 			.addTexture(
 				"environmentTexture",
-				wgpu::TextureSampleType::UnfilterableFloat,
+				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				false,
 				WGPUShaderStage_Fragment
@@ -409,12 +409,12 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createSkyboxShader()
 			)
 			.addSampler(
 				"environmentSampler",
-				wgpu::SamplerBindingType::NonFiltering,
+				wgpu::SamplerBindingType::Filtering,
 				WGPUShaderStage_Fragment
 			)
 			.addTexture(
 				"environmentTexture",
-				wgpu::TextureSampleType::UnfilterableFloat,
+				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				false,
 				WGPUShaderStage_Fragment

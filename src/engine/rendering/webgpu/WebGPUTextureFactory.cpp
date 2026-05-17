@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <memory>
+#include <vector>
 #include <spdlog/spdlog.h>
 
 #include "engine/rendering/ShaderRegistry.h"
@@ -15,6 +16,54 @@
 
 namespace engine::rendering::webgpu
 {
+
+// Helper: Convert float32 to float16 (half precision)
+static uint16_t float32ToFloat16(float f)
+{
+	union {
+		uint32_t i;
+		float f;
+	} v;
+	v.f = f;
+	uint32_t x = v.i;
+
+	// Extract sign
+	uint32_t sign = (x >> 31) & 0x0001;
+	// Extract exponent
+	uint32_t exponent = (x >> 23) & 0x00FF;
+	// Extract mantissa
+	uint32_t mantissa = x & 0x007FFFFF;
+
+	// Check for special cases
+	if (exponent == 0xFF)
+	{
+		// Infinity or NaN
+		return (uint16_t)((sign << 15) | 0x7C00 | (mantissa != 0 ? 0x0200 : 0));
+	}
+	else if (exponent == 0)
+	{
+		// Zero or subnormal
+		return (uint16_t)(sign << 15);
+	}
+	else
+	{
+		// Normal number
+		exponent = exponent - 127 + 15;
+		if (exponent >= 31)
+		{
+			// Overflow to infinity
+			return (uint16_t)((sign << 15) | 0x7C00);
+		}
+		else if (exponent <= 0)
+		{
+			// Underflow to zero
+			return (uint16_t)(sign << 15);
+		}
+		// Round mantissa
+		mantissa = mantissa + 0x1000;
+		return (uint16_t)((sign << 15) | (exponent << 10) | ((mantissa >> 13) & 0x03FF));
+	}
+}
 
 WebGPUTextureFactory::WebGPUTextureFactory(WebGPUContext &context) :
 	BaseWebGPUFactory(context)
@@ -338,6 +387,7 @@ void WebGPUTextureFactory::uploadTextureData(const Texture &texture, wgpu::Textu
 	auto image = texture.getImage();
 	const void *pixelData = nullptr;
 	size_t dataSize = 0;
+	std::vector<uint16_t> convertedData; // For float32 → float16 conversion
 
 	// Get pixel data based on format
 	if (image->isLDR())
@@ -349,8 +399,16 @@ void WebGPUTextureFactory::uploadTextureData(const Texture &texture, wgpu::Textu
 	else
 	{
 		const auto &pixels = image->getPixelsF();
-		pixelData = pixels.data();
-		dataSize = pixels.size() * sizeof(float);
+		
+		// HDR images are stored as float32 in CPU, but GPU texture is RGBA16Float
+		// Convert float32 → float16 to match GPU texture format
+		convertedData.reserve(pixels.size());
+		for (float f : pixels)
+		{
+			convertedData.push_back(float32ToFloat16(f));
+		}
+		pixelData = convertedData.data();
+		dataSize = convertedData.size() * sizeof(uint16_t);
 	}
 
 	wgpu::ImageCopyTexture dst{};
@@ -361,7 +419,16 @@ void WebGPUTextureFactory::uploadTextureData(const Texture &texture, wgpu::Textu
 
 	wgpu::TextureDataLayout layout{};
 	layout.offset = 0;
-	layout.bytesPerRow = texture.getWidth() * texture.getChannels() * (image->getFormat() >= engine::resources::ImageFormat::Type::HDR_RGBA16F ? sizeof(float) : 1);
+	// bytesPerRow describes the source CPU data layout AFTER any conversion
+	if (image->isLDR())
+	{
+		layout.bytesPerRow = texture.getWidth() * texture.getChannels() * 1;
+	}
+	else
+	{
+		// HDR: converted to float16 (2 bytes per channel)
+		layout.bytesPerRow = texture.getWidth() * texture.getChannels() * sizeof(uint16_t);
+	}
 	layout.rowsPerImage = texture.getHeight();
 
 	wgpu::Extent3D extent{texture.getWidth(), texture.getHeight(), 1};
