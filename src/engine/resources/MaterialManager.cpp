@@ -137,7 +137,9 @@ MaterialManager::createMaterial(const tinyobj::material_t &objMat, const std::st
 	mat->setFeatureMask(features);
 
 	// --- Shader ---
-	mat->setShader(engine::rendering::shader::defaults::GBUFFER);
+	// Materials store the PBR shader: render passes (forward/transparency) bind it
+	// directly, the deferred geometry pass swaps in the G-buffer shader on the fly.
+	mat->setShader(engine::rendering::shader::defaults::PBR);
 
 	using engine::core::unwrapOrHandle;
 
@@ -294,7 +296,9 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	mat->setFeatureMask(features);
 
 	// Default shader
-	mat->setShader(engine::rendering::shader::defaults::GBUFFER);
+	// Materials store the PBR shader: render passes (forward/transparency) bind it
+	// directly, the deferred geometry pass swaps in the G-buffer shader on the fly.
+	mat->setShader(engine::rendering::shader::defaults::PBR);
 
 	auto handleOpt = add(mat);
 	if (!handleOpt)
@@ -354,7 +358,9 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createPBRMaterial(
 	mat->setFeatureMask(features);
 
 	// Default shader
-	mat->setShader(engine::rendering::shader::defaults::GBUFFER);
+	// Materials store the PBR shader: render passes (forward/transparency) bind it
+	// directly, the deferred geometry pass swaps in the G-buffer shader on the fly.
+	mat->setShader(engine::rendering::shader::defaults::PBR);
 
 	auto handleOpt = add(mat);
 	if (!handleOpt)
@@ -392,7 +398,7 @@ MaterialManager::MaterialHandle MaterialManager::getDefaultMaterial() const
 
 	mat->setProperties(props);
 	mat->setName("Default_Magenta");
-	mat->setShader(engine::rendering::shader::defaults::GBUFFER); // ToDo: Unlit shader?
+	mat->setShader(engine::rendering::shader::defaults::PBR); // ToDo: Unlit shader?
 
 	if (m_textureManager)
 	{

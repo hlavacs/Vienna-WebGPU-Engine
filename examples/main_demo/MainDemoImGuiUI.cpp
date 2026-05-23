@@ -2,7 +2,13 @@
 
 #include <imgui.h>
 #include <spdlog/spdlog.h>
+
+#include "engine/core/PathProvider.h"
+#include "engine/rendering/Model.h"
+#include "engine/resources/MaterialManager.h"
+#include "engine/resources/ModelManager.h"
 #include "engine/resources/ResourceManager.h"
+#include "engine/scene/nodes/ModelRenderNode.h"
 
 namespace demo
 {

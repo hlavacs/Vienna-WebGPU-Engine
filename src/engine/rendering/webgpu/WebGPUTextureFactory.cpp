@@ -357,14 +357,14 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createRenderTarget(
 
 std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
 	const wgpu::TextureDescriptor &textureDesc,
-	const wgpu::TextureViewDescriptor &viewDesc
+	const wgpu::TextureViewDescriptor &viewDesc,
+	engine::rendering::Texture::Type type
 )
 {
 	// Assert compatibility between descriptors
 	assert(textureDesc.format == viewDesc.format && "Texture and view formats must match");
 	assert(viewDesc.baseMipLevel + viewDesc.mipLevelCount <= textureDesc.mipLevelCount && "View mip levels must be within texture mip levels");
 	assert(viewDesc.baseArrayLayer + viewDesc.arrayLayerCount <= textureDesc.size.depthOrArrayLayers && "View array layers must be within texture array layers");
-	// Optionally check dimension compatibility
 
 	wgpu::Texture gpuTexture = m_context.getDevice().createTexture(textureDesc);
 	wgpu::TextureView view = gpuTexture.createView(viewDesc);
@@ -372,8 +372,41 @@ std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createFromDescriptors(
 		gpuTexture,
 		view,
 		textureDesc,
-		viewDesc
+		viewDesc,
+		type
 	);
+}
+
+std::shared_ptr<WebGPUTexture> WebGPUTextureFactory::createColorRenderTarget(
+	const char *label,
+	uint32_t width,
+	uint32_t height,
+	wgpu::TextureFormat format,
+	WGPUTextureUsageFlags usage
+)
+{
+	assert(width > 0 && height > 0 && "Render target dimensions must be > 0");
+
+	wgpu::TextureDescriptor texDesc{};
+	texDesc.label = label;
+	texDesc.size = {width, height, 1};
+	texDesc.mipLevelCount = 1;
+	texDesc.sampleCount = 1;
+	texDesc.dimension = wgpu::TextureDimension::_2D;
+	texDesc.format = format;
+	texDesc.usage = usage;
+
+	wgpu::TextureViewDescriptor viewDesc{};
+	viewDesc.label = label;
+	viewDesc.format = format;
+	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
+	viewDesc.baseMipLevel = 0;
+	viewDesc.mipLevelCount = 1;
+	viewDesc.baseArrayLayer = 0;
+	viewDesc.arrayLayerCount = 1;
+	viewDesc.aspect = wgpu::TextureAspect::All;
+
+	return createFromDescriptors(texDesc, viewDesc, engine::rendering::Texture::Type::RenderTarget);
 }
 
 void WebGPUTextureFactory::uploadTextureData(const Texture &texture, wgpu::Texture &gpuTexture)

@@ -1,176 +1,156 @@
 #include "engine/rendering/ClusterManager.h"
 
 #include <map>
+#include <vector>
 
 #include <spdlog/spdlog.h>
 
-#include "engine/core/PathProvider.h"
-#include "engine/rendering/FrameCache.h"
-#include "engine/rendering/FrameUniforms.h"
-#include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/BindGroupEnums.h"
+#include "engine/rendering/FrameCache.h"
+#include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
+#include "engine/rendering/webgpu/WebGPUBufferFactory.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
 namespace engine::rendering
 {
 
+namespace
+{
+
+constexpr const char *CLUSTER_BIND_GROUP_NAME = "ClusterGrid_BindGroup";
+
+} // namespace
+
 ClusterManager::ClusterManager(webgpu::WebGPUContext &context) :
-m_context(context)
+	m_context(context)
 {
 }
 
 bool ClusterManager::initialize()
 {
-spdlog::info("Initializing ClusterManager");
+	spdlog::info("Initializing ClusterManager ({}x{}x{} = {} clusters)",
+		CLUSTER_GRID_DIM_X, CLUSTER_GRID_DIM_Y, CLUSTER_GRID_DIM_Z, CLUSTER_GRID_TOTAL);
 
-if (!createClusterGridBuffer())
-{
-spdlog::error("Failed to create cluster grid buffer");
-return false;
-}
+	if (!createClusterGridBuffer())
+	{
+		spdlog::error("ClusterManager: failed to create cluster grid buffer");
+		return false;
+	}
 
-if (!createComputePipeline())
-{
-spdlog::error("Failed to create compute pipeline");
-return false;
-}
+	if (!createComputePipeline())
+	{
+		spdlog::error("ClusterManager: failed to create compute pipeline");
+		return false;
+	}
 
-spdlog::info("ClusterManager initialized successfully");
-return true;
+	spdlog::info("ClusterManager initialized successfully");
+	return true;
 }
 
 bool ClusterManager::createClusterGridBuffer()
 {
-	// New structure: 
-	// - Each cluster stores offset and count (8 bytes per cluster)
-	// - Separate flat buffer stores all light indices (4 bytes per index)
-	// - Max: 10,752 clusters * 256 lights = 2,752,512 indices max
-
-	const size_t clusterStructSize = 2 * sizeof(uint32_t);  // offset + count = 8 bytes
-	const size_t clusterGridSize = CLUSTER_GRID_TOTAL * clusterStructSize;  // ~86 KB
+	const size_t clusterStructBytes = 2 * sizeof(uint32_t); // offset + count
+	const size_t clusterGridBytes = CLUSTER_GRID_TOTAL * clusterStructBytes;
 	const size_t maxLightIndices = CLUSTER_GRID_TOTAL * MAX_LIGHTS_PER_CLUSTER;
+	const size_t lightIndicesBytes = maxLightIndices * sizeof(uint32_t);
 
-	spdlog::info("Creating cluster grid buffer: {} clusters ({} KB), max light indices: {} ({} MB)",
-		CLUSTER_GRID_TOTAL, clusterGridSize / 1024, maxLightIndices, maxLightIndices * sizeof(uint32_t) / (1024 * 1024));
+	spdlog::info(
+		"Cluster buffers: grid {} KB, light-indices {} MB",
+		clusterGridBytes / 1024,
+		lightIndicesBytes / (1024 * 1024)
+	);
 
 	auto &bufferFactory = m_context.bufferFactory();
-	auto device = m_context.getDevice();
+	auto queue = m_context.getQueue();
 
-	// Create cluster grid storage buffer (small buffer with offset and count per cluster)
-	// Initialize with zeros (offset=0, count=0 for all clusters)
-	auto gridRawBuffer = bufferFactory.createStorageBuffer(clusterGridSize);
-	if (!gridRawBuffer)
-	{
-		spdlog::error("Failed to create GPU cluster grid buffer");
-		return false;
-	}
-	// Zero-initialize the buffer
-	std::vector<uint32_t> zeroClustersData(CLUSTER_GRID_TOTAL * 2, 0);
-	device.getQueue().writeBuffer(gridRawBuffer, 0, zeroClustersData.data(), clusterGridSize);
-	
-	m_clusterGridBuffer = std::make_shared<webgpu::WebGPUBuffer>(
-		gridRawBuffer,
-		"ClusterGrid_OffsetCountBuffer",
+	// Wrapped buffers: factory owns the wgpu::Buffer lifetime via WebGPUBuffer,
+	// which destroys+releases on shared_ptr expiry. No manual cleanup needed here.
+	m_clusterGridBuffer = bufferFactory.createStorageBufferWrapped(
+		"ClusterGrid.OffsetCount",
 		0,
-		clusterGridSize,
-		static_cast<WGPUBufferUsageFlags>(wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst)
+		clusterGridBytes
 	);
-
-	// For now, create a dummy light indices buffer (will be populated by compute shader later)
-	// Start with a minimal buffer for compatibility (will be resized by compute shader)
-	const size_t minIndicesSize = 1024 * sizeof(uint32_t);
-	auto indicesRawBuffer = bufferFactory.createStorageBuffer(minIndicesSize);
-	if (!indicesRawBuffer)
+	m_clusterIndicesBuffer = bufferFactory.createStorageBufferWrapped(
+		"ClusterGrid.LightIndices",
+		1,
+		lightIndicesBytes
+	);
+	if (!m_clusterGridBuffer || !m_clusterIndicesBuffer)
 	{
-		spdlog::error("Failed to create GPU cluster light indices buffer");
+		spdlog::error("ClusterManager: failed to allocate storage buffers");
 		return false;
 	}
-	// Initialize with dummy values
-	std::vector<uint32_t> dummyIndices(1024, 0xFFFFFFFF);
-	device.getQueue().writeBuffer(indicesRawBuffer, 0, dummyIndices.data(), minIndicesSize);
-	
-	m_clusterIndicesBuffer = std::make_shared<webgpu::WebGPUBuffer>(
-		indicesRawBuffer,
-		"ClusterLightIndices_Buffer",
-		1,
-		minIndicesSize,
-		static_cast<WGPUBufferUsageFlags>(wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst)
-	);
 
-	// Create bind group with both buffers
-	std::vector<wgpu::BindGroupLayoutEntry> layoutEntries(2);
-	layoutEntries[0].binding = 0;
-	layoutEntries[0].visibility = wgpu::ShaderStage::Fragment;
-	layoutEntries[0].buffer.type = wgpu::BufferBindingType::ReadOnlyStorage;
+	// Zero-init so the composition pass's "no lights in cluster" branch reads
+	// well-defined zero counts even before any compute dispatch has run.
+	const std::vector<uint32_t> zeroGrid(CLUSTER_GRID_TOTAL * 2, 0);
+	queue.writeBuffer(m_clusterGridBuffer->getBuffer(), 0, zeroGrid.data(), clusterGridBytes);
 
-	layoutEntries[1].binding = 1;
-	layoutEntries[1].visibility = wgpu::ShaderStage::Fragment;
-	layoutEntries[1].buffer.type = wgpu::BufferBindingType::ReadOnlyStorage;
+	// Single layout source of truth: take it from the registered composition
+	// shader so the bind group and the pipeline agree on every binding's
+	// minBindingSize. Building a separate layout in this manager would have
+	// the same names but a different minBindingSize and the validator would
+	// reject the bind group at draw time.
+	auto shader = m_context.shaderRegistry().getShader(shader::defaults::COMPOSITION_DEFERRED);
+	if (!shader)
+	{
+		spdlog::error("ClusterManager: shader '{}' is not registered", shader::defaults::COMPOSITION_DEFERRED);
+		return false;
+	}
 
-	std::vector<webgpu::BindGroupBinding> bindings(2);
-	bindings[0].bindingIndex = 0;
-	bindings[0].name = "uClusterGrid";
-	bindings[0].type = BindingType::StorageBuffer;
-	bindings[0].visibility = wgpu::ShaderStage::Fragment;
-	bindings[0].size = clusterGridSize;
-
-	bindings[1].bindingIndex = 1;
-	bindings[1].name = "uClusterLightIndices";
-	bindings[1].type = BindingType::StorageBuffer;
-	bindings[1].visibility = wgpu::ShaderStage::Fragment;
-	bindings[1].size = minIndicesSize;
-
-	auto layoutInfo = m_context.bindGroupFactory().createBindGroupLayoutInfo(
-		"ClusterGrid_BindGroup",
-		BindGroupType::Custom,
-		BindGroupReuse::PerFrame,
-		layoutEntries,
-		bindings
-	);
-
+	auto layoutInfo = shader->getBindGroupLayout(CLUSTER_BIND_GROUP_NAME);
 	if (!layoutInfo)
 	{
-		spdlog::error("Failed to create cluster bind group layout");
+		spdlog::error("ClusterManager: shader does not declare '{}'", CLUSTER_BIND_GROUP_NAME);
 		return false;
 	}
 
 	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> resources;
-	resources.emplace(std::make_tuple(0u, 0u), webgpu::BindGroupResource(m_clusterGridBuffer));
-	resources.emplace(std::make_tuple(0u, 1u), webgpu::BindGroupResource(m_clusterIndicesBuffer));
-	m_clusterBindGroup = m_context.bindGroupFactory().createBindGroup(layoutInfo, resources, nullptr, "ClusterGrid_BindGroup");
+	// Group index in the key is ignored by the factory (it only looks at the
+	// binding index), so passing 0 keeps the keys consistent and small.
+	resources.emplace(std::make_tuple(uint32_t{0}, uint32_t{0}), webgpu::BindGroupResource(m_clusterGridBuffer));
+	resources.emplace(std::make_tuple(uint32_t{0}, uint32_t{1}), webgpu::BindGroupResource(m_clusterIndicesBuffer));
+
+	m_clusterBindGroup = m_context.bindGroupFactory().createBindGroup(
+		layoutInfo,
+		resources,
+		nullptr,
+		"ClusterGrid.BindGroup"
+	);
 	if (!m_clusterBindGroup)
 	{
-		spdlog::error("Failed to create cluster bind group");
+		spdlog::error("ClusterManager: failed to create bind group");
 		return false;
 	}
 
-	spdlog::info("Cluster grid buffer and bind group created successfully");
 	return true;
 }
 
 bool ClusterManager::createComputePipeline()
 {
-// For now, we're not implementing the compute shader
-// This is a placeholder; clustering will be updated later
-spdlog::info("ClusterManager compute pipeline: placeholder implementation");
-return true;
+	// Placeholder: clustering compute shader is not wired up yet. The
+	// composition shader falls back to scanning all scene lights per pixel
+	// when every cluster's count is zero, which is what the zero-initialised
+	// grid buffer produces.
+	return true;
 }
 
-bool ClusterManager::assignLights(FrameCache &frameCache, const std::shared_ptr<webgpu::WebGPUBindGroup> &sceneLightBindGroup)
+bool ClusterManager::assignLights(FrameCache & /*frameCache*/, const std::shared_ptr<webgpu::WebGPUBindGroup> & /*sceneLightBindGroup*/)
 {
-// For now, this is a placeholder
-// The actual compute shader dispatch will be implemented later
-return true;
+	// Placeholder - the compute pass isn't implemented. The composition pass
+	// will use its fallback "all lights" branch in the meantime.
+	return true;
 }
 
 bool ClusterManager::clearClusters()
 {
-// For now, this is a placeholder
-// The actual clearing logic will be implemented later
-return true;
+	// Placeholder - no clustering means nothing to clear.
+	return true;
 }
 
 } // namespace engine::rendering

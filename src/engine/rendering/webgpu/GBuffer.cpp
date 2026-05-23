@@ -1,10 +1,17 @@
 #include "engine/rendering/webgpu/GBuffer.h"
 
+#include <array>
+#include <cassert>
+#include <vector>
+
 #include <spdlog/spdlog.h>
 
-#include "engine/rendering/Texture.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUDepthTextureFactory.h"
+#include "engine/rendering/webgpu/WebGPURenderPassContext.h"
+#include "engine/rendering/webgpu/WebGPURenderPassFactory.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
+#include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 
 namespace engine::rendering::webgpu
 {
@@ -14,217 +21,86 @@ GBuffer::GBuffer(WebGPUContext &context, uint32_t width, uint32_t height) :
 	m_width(width),
 	m_height(height)
 {
+	// A zero-sized G-buffer is invalid: WebGPU will reject the texture creation.
+	assert(width > 0 && height > 0 && "GBuffer cannot be created with zero size");
 	createTextures();
 }
 
 void GBuffer::resize(uint32_t width, uint32_t height)
 {
-	if (m_width == width && m_height == height)
-	{
-		return; // No resize needed
-	}
+	if (width == m_width && height == m_height)
+		return;
+
+	assert(width > 0 && height > 0 && "GBuffer cannot be resized to zero size");
 
 	m_width = width;
 	m_height = height;
 	createTextures();
+
+	// Cached pass context references the old texture views; drop it so
+	// getRenderPassContext() rebuilds against the new attachments.
+	m_cachedPassContext.reset();
 }
 
 void GBuffer::createTextures()
 {
-	auto device = m_context.getDevice();
+	auto &texFactory = m_context.textureFactory();
 
-	// Position: R16G16B16A16Float (world space + depth for clustering)
+	struct ColorSlot
 	{
-		wgpu::TextureDescriptor txDesc{};
-		txDesc.label = "GBuffer_Position";
-		txDesc.size = {m_width, m_height, 1};
-		txDesc.mipLevelCount = 1;
-		txDesc.sampleCount = 1;
-	txDesc.dimension = wgpu::TextureDimension::_2D;
-	txDesc.format = wgpu::TextureFormat::RGBA16Float;
-	txDesc.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
-
-	wgpu::TextureViewDescriptor viewDesc{};
-	viewDesc.label = "GBuffer_Position_View";
-	viewDesc.format = txDesc.format;
-	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
-		viewDesc.mipLevelCount = 1;
-		viewDesc.arrayLayerCount = 1;
-
-		auto gpuTexture = device.createTexture(txDesc);
-		auto gpuView = gpuTexture.createView(viewDesc);
-		
-		m_positionTexture = std::make_shared<WebGPUTexture>(
-			gpuTexture,
-			gpuView,
-			txDesc,
-			viewDesc
-		);
-	}
-
-	// Normal: R16G16B16A16Float (normalized + depth for clustering)
-	{
-		wgpu::TextureDescriptor txDesc{};
-		txDesc.label = "GBuffer_Normal";
-		txDesc.size = {m_width, m_height, 1};
-		txDesc.mipLevelCount = 1;
-		txDesc.sampleCount = 1;
-		txDesc.dimension = wgpu::TextureDimension::_2D;
-		txDesc.format = wgpu::TextureFormat::RGBA16Float;
-		txDesc.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
-
-		wgpu::TextureViewDescriptor viewDesc{};
-		viewDesc.label = "GBuffer_Normal_View";
-		viewDesc.format = txDesc.format;
-		viewDesc.dimension = wgpu::TextureViewDimension::_2D;
-		viewDesc.mipLevelCount = 1;
-		viewDesc.arrayLayerCount = 1;
-
-		auto gpuTexture = device.createTexture(txDesc);
-		auto gpuView = gpuTexture.createView(viewDesc);
-		
-		m_normalTexture = std::make_shared<WebGPUTexture>(
-			gpuTexture,
-			gpuView,
-			txDesc,
-			viewDesc
-		);
-	}
-
-	// Albedo: R8G8B8A8Unorm (sRGB)
-	{
-		wgpu::TextureDescriptor txDesc{};
-		txDesc.label = "GBuffer_Albedo";
-		txDesc.size = {m_width, m_height, 1};
-		txDesc.mipLevelCount = 1;
-		txDesc.sampleCount = 1;
-		txDesc.dimension = wgpu::TextureDimension::_2D;
-		txDesc.format = wgpu::TextureFormat::RGBA8UnormSrgb;
-		txDesc.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
-
-		wgpu::TextureViewDescriptor viewDesc{};
-		viewDesc.label = "GBuffer_Albedo_View";
-		viewDesc.format = txDesc.format;
-		viewDesc.dimension = wgpu::TextureViewDimension::_2D;
-		viewDesc.mipLevelCount = 1;
-		viewDesc.arrayLayerCount = 1;
-
-		auto gpuTexture = device.createTexture(txDesc);
-		auto gpuView = gpuTexture.createView(viewDesc);
-		
-		m_albedoTexture = std::make_shared<WebGPUTexture>(
-			gpuTexture,
-			gpuView,
-			txDesc,
-			viewDesc
-		);
-	}
-
-	// Material: R8G8B8A8Unorm (R=roughness, G=metallic, B=AO, A=unused)
-	{
-		wgpu::TextureDescriptor txDesc{};
-		txDesc.label = "GBuffer_Material";
-		txDesc.size = {m_width, m_height, 1};
-		txDesc.mipLevelCount = 1;
-		txDesc.sampleCount = 1;
-		txDesc.dimension = wgpu::TextureDimension::_2D;
-		txDesc.format = wgpu::TextureFormat::RGBA8Unorm;
-		txDesc.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
-
-		wgpu::TextureViewDescriptor viewDesc{};
-		viewDesc.label = "GBuffer_Material_View";
-		viewDesc.format = txDesc.format;
-		viewDesc.dimension = wgpu::TextureViewDimension::_2D;
-		viewDesc.mipLevelCount = 1;
-		viewDesc.arrayLayerCount = 1;
-
-		auto gpuTexture = device.createTexture(txDesc);
-		auto gpuView = gpuTexture.createView(viewDesc);
-		
-		m_materialTexture = std::make_shared<WebGPUTexture>(
-			gpuTexture,
-			gpuView,
-			txDesc,
-			viewDesc
-		);
-	}
-
-	// Depth texture
-	{
-		wgpu::TextureDescriptor txDesc{};
-		txDesc.label = "GBuffer_Depth";
-		txDesc.size = {m_width, m_height, 1};
-		txDesc.mipLevelCount = 1;
-		txDesc.sampleCount = 1;
-		txDesc.dimension = wgpu::TextureDimension::_2D;
-		txDesc.format = wgpu::TextureFormat::Depth24Plus;
-		txDesc.usage = wgpu::TextureUsage::RenderAttachment;
-
-		wgpu::TextureViewDescriptor viewDesc{};
-		viewDesc.label = "GBuffer_Depth_View";
-		viewDesc.format = txDesc.format;
-		viewDesc.dimension = wgpu::TextureViewDimension::_2D;
-		viewDesc.mipLevelCount = 1;
-		viewDesc.arrayLayerCount = 1;
-
-		auto gpuTexture = device.createTexture(txDesc);
-		auto gpuView = gpuTexture.createView(viewDesc);
-		
-		m_depthTexture = std::make_shared<WebGPUTexture>(
-			gpuTexture,
-			gpuView,
-			txDesc,
-			viewDesc,
-			engine::rendering::Texture::Type::Depth
-		);
-	}
-
-	spdlog::debug("GBuffer textures created: {}x{}", m_width, m_height);
-}
-
-wgpu::RenderPassColorAttachment GBuffer::getPositionAttachment() const
-{
-	wgpu::RenderPassColorAttachment attachment{};
-	if (m_positionTexture)
-	{
-		// Note: view access via WebGPUTexture - would need to implement getView()
-		// For now, this is a placeholder - actual MeshPass implementation will handle texture views
-	}
-	return attachment;
-}
-
-wgpu::RenderPassColorAttachment GBuffer::getNormalAttachment() const
-{
-	wgpu::RenderPassColorAttachment attachment{};
-	return attachment;
-}
-
-wgpu::RenderPassColorAttachment GBuffer::getAlbedoAttachment() const
-{
-	wgpu::RenderPassColorAttachment attachment{};
-	return attachment;
-}
-
-wgpu::RenderPassColorAttachment GBuffer::getMaterialAttachment() const
-{
-	wgpu::RenderPassColorAttachment attachment{};
-	return attachment;
-}
-
-std::array<wgpu::RenderPassColorAttachment, 4> GBuffer::getAllColorAttachments() const
-{
-	return {
-		getPositionAttachment(),
-		getNormalAttachment(),
-		getAlbedoAttachment(),
-		getMaterialAttachment()
+		const char *label;
+		wgpu::TextureFormat format;
 	};
+	const std::array<ColorSlot, COLOR_ATTACHMENT_COUNT> slots{{
+		{"GBuffer.Position", FORMAT_POSITION},
+		{"GBuffer.Normal", FORMAT_NORMAL},
+		{"GBuffer.Albedo", FORMAT_ALBEDO},
+		{"GBuffer.Material", FORMAT_MATERIAL},
+	}};
+
+	for (size_t i = 0; i < COLOR_ATTACHMENT_COUNT; ++i)
+	{
+		m_colorTextures[i] = texFactory.createColorRenderTarget(
+			slots[i].label,
+			m_width,
+			m_height,
+			slots[i].format
+		);
+	}
+
+	// Depth target also gets TextureBinding so future passes (SSAO, soft
+	// particles, depth-based composition) can sample it without rebuild.
+	m_depthTexture = m_context.depthTextureFactory().createDepthTarget(
+		"GBuffer.Depth",
+		m_width,
+		m_height,
+		FORMAT_DEPTH,
+		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
+	);
+
+	spdlog::debug("GBuffer attachments (re)created at {}x{}", m_width, m_height);
 }
 
-wgpu::RenderPassDepthStencilAttachment GBuffer::getDepthAttachment() const
+std::shared_ptr<WebGPURenderPassContext> GBuffer::getRenderPassContext(const glm::vec4 &colorClear)
 {
-	wgpu::RenderPassDepthStencilAttachment attachment{};
-	return attachment;
+	// Reuse the cached context when the clear color is unchanged - the
+	// attachments themselves do not change between frames unless resize() ran.
+	if (m_cachedPassContext && m_cachedClearColor == colorClear)
+		return m_cachedPassContext;
+
+	std::vector<std::shared_ptr<WebGPUTexture>> colorTextures(
+		m_colorTextures.begin(),
+		m_colorTextures.end()
+	);
+
+	m_cachedPassContext = m_context.renderPassFactory().createMultiTarget(
+		"GBuffer.RenderPass",
+		colorTextures,
+		m_depthTexture,
+		colorClear
+	);
+	m_cachedClearColor = colorClear;
+	return m_cachedPassContext;
 }
 
 } // namespace engine::rendering::webgpu

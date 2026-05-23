@@ -12,21 +12,14 @@
 #include "engine/rendering/DebugPass.h"
 #include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
-#include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/GBufferPass.h"
-#include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/MeshPass.h"
-#include "engine/rendering/Model.h"
-#include "engine/rendering/PostProcessingPass.h"
 // #include "engine/rendering/RenderPassManager.h" ToDo: future use
-#include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/SkyboxPass.h"
 #include "engine/rendering/Texture.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
-#include "engine/rendering/webgpu/WebGPUModel.h"
-#include "engine/rendering/webgpu/WebGPUPipelineManager.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 
 namespace engine
@@ -166,10 +159,32 @@ class Renderer
 	void updateFrameBindGroup(const RenderTarget &target, float time);
 
 	/**
-	 * @brief Updates per-camera environment bind group (irradiance texture/uniforms).
-	 * @param target Camera render target containing environment settings.
+	 * @brief Updates the per-camera environment bind group used by the PBR
+	 *        shader (forward) and by the deferred composition pass (IBL).
+	 *        Cached in @c m_environmentBindGroups keyed by camera id.
 	 */
 	void updateEnvironmentBindGroup(const RenderTarget &target);
+
+	/**
+	 * @brief Updates the per-camera bind group used by the skybox pass.
+	 *        Cached in @c m_skyboxBindGroups keyed by camera id.
+	 *        SKYBOX and ENVIRONMENT layouts have the same binding shape but
+	 *        come from different shaders, so the bind groups must be built
+	 *        separately even though the underlying texture/sampler/uniform
+	 *        data is identical.
+	 */
+	void updateSkyboxBindGroup(const RenderTarget &target);
+
+	/**
+	 * @brief Shared core of the two helpers above: build a bind group whose
+	 *        layout matches the (sampler, environment texture, vec4 uniform)
+	 *        triplet that both skybox and PBR environment use.
+	 */
+	std::shared_ptr<webgpu::WebGPUBindGroup> buildEnvironmentBindGroup(
+		const std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> &layoutInfo,
+		const RenderTarget &target,
+		const char *debugLabel
+	);
 
 	/**
 	 * @brief Creates or resizes render target textures.
@@ -200,25 +215,21 @@ class Renderer
 	std::unique_ptr<DebugPass> m_debugPass;
 	std::unique_ptr<CompositionPass> m_compositionPass;
 	std::unique_ptr<CompositePass> m_compositePass;
-	std::unique_ptr<PostProcessingPass> m_postProcessingPass;
 
 	FrameCache m_frameCache{};
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_depthBuffers;
-	struct PostProcessTextures // This would be used if we have multiple intermediate textures for post-processing (e.g., ping-ponging between two textures for multi-pass effects)
-	{
-		std::shared_ptr<webgpu::WebGPUTexture> a;
-		std::shared_ptr<webgpu::WebGPUTexture> b;
-	};
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_postProcessTextures; ///< Cache of intermediate textures for post-processing per camera (key: cameraId)
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_environmentBindGroups;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_skyboxBindGroups;
 
+	// Cross-frame cache of the last frame's render targets. Distinct from
+	// m_frameCache.renderTargets (which is cleared between frames) because
+	// onResize fires between frames and needs the camera viewport info to
+	// resize depth buffers.
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
 
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
-	// Note: m_environmentBindGroupLayout is not cached. It's fetched fresh from the PBR shader in updateEnvironmentBindGroup()
-	// to ensure we always use the current shader state.
 	std::shared_ptr<webgpu::WebGPUTexture> m_defaultEnvironmentTexture;
 	uint32_t m_lastUploadedLightCount = std::numeric_limits<uint32_t>::max();
 };

@@ -10,6 +10,7 @@
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowUniforms.h"
+#include "engine/rendering/webgpu/GBuffer.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
 #ifdef None
@@ -338,24 +339,20 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
 {
-	// Create the G-buffer geometry pass shader for deferred rendering
+	// G-buffer geometry pass shader for deferred rendering.
 	//
-	// g_buffer.wgsl structure:
-	// @group(0) @binding(0) var<uniform> uFrame: FrameUniforms;
-	// @group(2) @binding(0) var<uniform> uObject: ObjectUniforms;
-	// @group(3) @binding(0) var<uniform> uMaterial: MaterialUniforms;
-	// @group(3) @binding(1) var textureSampler: sampler;
-	// @group(3) @binding(2) var baseColorTexture: texture_2d<f32>;
-	// @group(3) @binding(3) var normalTexture: texture_2d<f32>;
-	// @group(3) @binding(4) var roughnessTexture: texture_2d<f32>;
-	// @group(3) @binding(5) var metallicTexture: texture_2d<f32>;
-	// @group(3) @binding(6) var aoTexture: texture_2d<f32>;
+	// WGSL bind groups (see resources/g_buffer.wgsl):
+	//   @group(0) Frame uniforms
+	//   @group(1) Object uniforms
+	//   @group(2) Material: properties (binding 0), sampler (1),
+	//             baseColor (2), normal (3), roughness (4),
+	//             metallic (5), ao (6)
 	//
-	// Fragment outputs 4 targets:
-	// @location(0) position: vec4 - world position + depth
-	// @location(1) normal: vec4 - world normal + depth
-	// @location(2) albedo: vec4 - sRGB base color
-	// @location(3) material: vec4 - (roughness, metallic, AO, unused)
+	// Fragment outputs (must stay in sync with webgpu::GBuffer):
+	//   @location(0) world position + view-space depth   (RGBA16Float)
+	//   @location(1) world normal   + view-space depth   (RGBA16Float)
+	//   @location(2) albedo                              (RGBA8UnormSrgb)
+	//   @location(3) (roughness, metallic, AO, unused)   (RGBA8Unorm)
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
@@ -368,12 +365,11 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
 				true,  // depthEnabled
 				true   // cullBackFaces
 			)
-			// Group 0: Frame uniforms (camera, time)
 			.addFrameBindGroup()
-			// NOTE: Group 1 (lights) is NOT included for G-buffer pass
-			// Group 2: Object uniforms (model matrix, normal matrix)
 			.addObjectBindGroup()
-			// Group 3: Material data (properties + textures)
+			// Material bind group must match PBR_Lit_Shader EXACTLY (binding order
+			// and types) so the cached per-material bind group works for either
+			// pass without rebuilding it.
 			.addBindGroup(bindgroup::defaults::MATERIAL, BindGroupReuse::PerObject, BindGroupType::Material)
 			.addUniform(
 				bindgroup::entry::defaults::MATERIAL_PROPERTIES,
@@ -402,6 +398,14 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
 				glm::vec3(0.5f, 0.5f, 1.0f)
 			)
 			.addMaterialTexture(
+				"aoTexture",
+				MaterialTextureSlots::AMBIENT,
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				WGPUShaderStage_Fragment,
+				glm::vec3(1.0f, 1.0f, 1.0f)
+			)
+			.addMaterialTexture(
 				"roughnessTexture",
 				MaterialTextureSlots::ROUGHNESS,
 				wgpu::TextureSampleType::Float,
@@ -418,13 +422,19 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
 				glm::vec3(0.0f, 0.0f, 0.0f)
 			)
 			.addMaterialTexture(
-				"aoTexture",
-				MaterialTextureSlots::AMBIENT,
+				"emissionTexture",
+				MaterialTextureSlots::EMISSIVE,
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				WGPUShaderStage_Fragment,
-				glm::vec3(1.0f, 1.0f, 1.0f)
+				glm::vec3(0.0f, 0.0f, 0.0f)
 			)
+			// Declared format list - pipeline factory uses these to build the
+			// fragment color targets instead of a single renderer-supplied format.
+			.addColorTarget(engine::rendering::webgpu::GBuffer::FORMAT_POSITION)
+			.addColorTarget(engine::rendering::webgpu::GBuffer::FORMAT_NORMAL)
+			.addColorTarget(engine::rendering::webgpu::GBuffer::FORMAT_ALBEDO)
+			.addColorTarget(engine::rendering::webgpu::GBuffer::FORMAT_MATERIAL)
 			.build();
 
 	return shaderInfo;
@@ -510,6 +520,27 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCompositionDefer
 				true,
 				WGPUShaderStage_Fragment
 			)
+			// Group 5: Environment irradiance (matches PBR's ENVIRONMENT
+			// layout exactly so Renderer::updateEnvironmentBindGroup feeds
+			// both forward and deferred from a single bind-group build).
+			.addBindGroup(bindgroup::defaults::ENVIRONMENT, BindGroupReuse::PerFrame, BindGroupType::Environment)
+			.addUniform(
+				"environmentUniforms",
+				sizeof(glm::vec4),
+				WGPUShaderStage_Fragment
+			)
+			.addSampler(
+				"environmentSampler",
+				wgpu::SamplerBindingType::Filtering,
+				WGPUShaderStage_Fragment
+			)
+			.addTexture(
+				"environmentTexture",
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment
+			)
 			.build();
 
 	return shaderInfo;
@@ -581,6 +612,11 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadSh
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createSkyboxShader()
 {
+	// Skybox samples an equirectangular HDR map across a 36-vertex cube.
+	// The WGSL writes clip.xyww so every fragment ends up at depth = 1.0 (far
+	// plane). Depth test is LessEqual + read-only so the skybox only fills
+	// pixels where the G-buffer left the cleared 1.0 depth value (background)
+	// without stamping new depth itself.
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
@@ -590,9 +626,11 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createSkyboxShader()
 				"vs_main",
 				"fs_main",
 				VertexLayout::None,
-				false,
-				false
+				true,  // depthEnabled (LessEqual + read-only - see below)
+				false  // cullBackFaces - inside-out cube, faces all point inward
 			)
+			.withDepthCompare(wgpu::CompareFunction::LessEqual)
+			.withDepthWrite(false)
 			.addFrameBindGroup()
 			.addBindGroup(
 				bindgroup::defaults::SKYBOX,
@@ -616,6 +654,8 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createSkyboxShader()
 				false,
 				WGPUShaderStage_Fragment
 			)
+			// HDR intermediate target uses RGBA16Float across the renderer.
+			.addColorTarget(wgpu::TextureFormat::RGBA16Float)
 			.build();
 
 	return shaderInfo;

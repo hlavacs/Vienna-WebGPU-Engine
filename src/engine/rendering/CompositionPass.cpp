@@ -1,358 +1,224 @@
 #include "engine/rendering/CompositionPass.h"
 
-#include <array>
+#include <map>
 
 #include <spdlog/spdlog.h>
 
-#include "engine/core/PathProvider.h"
 #include "engine/rendering/FrameCache.h"
-#include "engine/rendering/ShadowPass.h"
+#include "engine/rendering/Mesh.h" // for engine::rendering::Topology
+#include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/GBuffer.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUPipeline.h"
+#include "engine/rendering/webgpu/WebGPUPipelineManager.h"
+#include "engine/rendering/webgpu/WebGPURenderPassContext.h"
+#include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 
 namespace engine::rendering
 {
 
+namespace
+{
+
+constexpr const char *GBUFFER_BIND_GROUP_NAME = "GBuffer_BindGroup";
+
+} // namespace
+
 CompositionPass::CompositionPass(std::shared_ptr<webgpu::WebGPUContext> context) :
-	m_context(context)
+	RenderPass(std::move(context))
 {
 }
 
 bool CompositionPass::initialize()
 {
-	spdlog::info("Initializing CompositionPass");
-
-	if (!m_context)
+	m_shader = m_context->shaderRegistry().getShader(shader::defaults::COMPOSITION_DEFERRED);
+	if (!m_shader || !m_shader->isValid())
 	{
-		spdlog::error("WebGPUContext is null");
+		spdlog::error("CompositionPass: '{}' shader is missing or invalid", shader::defaults::COMPOSITION_DEFERRED);
 		return false;
 	}
-
-	auto device = m_context->getDevice();
-
-	// Load deferred composition shader
-	auto shaderPath = engine::core::PathProvider::getResource("deferred_composition.wgsl");
-	spdlog::info("Loading deferred composition shader from: {}", shaderPath.string());
-
-	auto shaderModule = m_context->shaderFactory().loadShaderModule(shaderPath);
-	if (!shaderModule)
-	{
-		spdlog::error("Failed to load deferred composition shader");
-		return false;
-	}
-
-	// Create render pipeline with composition shader
-	wgpu::RenderPipelineDescriptor pipelineDesc{};
-	pipelineDesc.label = "DeferredComposition_Pipeline";
-	pipelineDesc.layout = nullptr;  // auto layout
-
-	// Vertex stage
-	wgpu::VertexState vertexState{};
-	vertexState.module = shaderModule;
-	vertexState.entryPoint = "vs_main";
-	vertexState.bufferCount = 0;
-	vertexState.buffers = nullptr;
-
-	pipelineDesc.vertex = vertexState;
-
-	// Fragment stage
-	wgpu::ColorTargetState colorTarget{};
-	colorTarget.format = wgpu::TextureFormat::RGBA16Float; // HDR intermediate target format
-	colorTarget.blend = nullptr;
-	colorTarget.writeMask = wgpu::ColorWriteMask::All;
-
-	wgpu::FragmentState fragmentState{};
-	fragmentState.module = shaderModule;
-	fragmentState.entryPoint = "fs_main";
-	fragmentState.targetCount = 1;
-	fragmentState.targets = &colorTarget;
-
-	pipelineDesc.fragment = &fragmentState;
-
-	// Primitive state
-	pipelineDesc.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
-	pipelineDesc.primitive.stripIndexFormat = wgpu::IndexFormat::Undefined;
-	pipelineDesc.primitive.frontFace = wgpu::FrontFace::CCW;
-	pipelineDesc.primitive.cullMode = wgpu::CullMode::None;
-
-	// Depth/stencil (disabled for composition)
-	pipelineDesc.depthStencil = nullptr;
-
-	// Multisample
-	pipelineDesc.multisample.count = 1;
-	pipelineDesc.multisample.mask = 0xFFFFFFFF;
-	pipelineDesc.multisample.alphaToCoverageEnabled = false;
-
-	auto pipeline = device.createRenderPipeline(pipelineDesc);
-	if (!pipeline)
-	{
-		spdlog::error("Failed to create deferred composition pipeline");
-		return false;
-	}
-
-	m_pipeline = pipeline;
-
-	// Note: Full-screen quad generation is done in the vertex shader
-	// (single full-screen triangle)
-	m_fullScreenQuadVertexCount = 3;
-
-	spdlog::info("CompositionPass initialized successfully");
+	spdlog::info("CompositionPass initialized");
 	return true;
 }
 
-bool CompositionPass::render(
-	FrameCache &frameCache,
-	const std::shared_ptr<webgpu::GBuffer> &gBuffer,
-	const std::shared_ptr<webgpu::WebGPUBindGroup> &sceneLightBindGroup,
-	const ShadowPass &shadowPass,
-	const std::shared_ptr<webgpu::WebGPUBindGroup> &clusterBindGroup
-)
+void CompositionPass::cleanup()
 {
-	spdlog::debug("CompositionPass::render() called");
+	// Pipeline is owned by the pipeline manager - just drop our handle so the
+	// next ensurePipeline() picks up any reload/format change.
+	m_pipeline.reset();
+	// GBuffer bind group references texture views that change on resize.
+	m_gBufferBindGroup.reset();
+}
 
-	// Validate all inputs
-	if (!m_context || !gBuffer || !sceneLightBindGroup || !clusterBindGroup)
+void CompositionPass::setGBuffer(webgpu::GBuffer *gBuffer)
+{
+	if (gBuffer != m_gBuffer)
 	{
-		spdlog::error("CompositionPass::render - Null input parameters");
+		// The previous bind group sampled the old G-buffer's views: invalidate.
+		m_gBufferBindGroup.reset();
+	}
+	m_gBuffer = gBuffer;
+}
+
+bool CompositionPass::ensureGBufferBindGroup()
+{
+	if (m_gBufferBindGroup)
+		return true;
+
+	if (!m_gBuffer)
+	{
+		spdlog::error("CompositionPass: G-buffer not set");
 		return false;
 	}
 
-	if (!m_pipeline)
+	auto layoutInfo = m_shader->getBindGroupLayout(GBUFFER_BIND_GROUP_NAME);
+	if (!layoutInfo)
 	{
-		spdlog::error("CompositionPass::render - Pipeline not initialized");
+		spdlog::error("CompositionPass: shader is missing '{}' layout", GBUFFER_BIND_GROUP_NAME);
 		return false;
 	}
 
-	if (frameCache.renderTargets.empty())
+	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> overrides;
+	const auto &textures = m_gBuffer->getColorTextures();
+	for (uint32_t binding = 0; binding < textures.size(); ++binding)
 	{
-		spdlog::error("CompositionPass::render - No render targets in frame cache");
+		// First tuple element is the group index, which the factory only uses
+		// to disambiguate keys: any consistent value works.
+		overrides.emplace(
+			std::make_tuple(uint32_t{0}, binding),
+			webgpu::BindGroupResource(textures[binding])
+		);
+	}
+
+	m_gBufferBindGroup = m_context->bindGroupFactory().createBindGroup(
+		layoutInfo,
+		overrides,
+		nullptr,
+		"CompositionPass.GBufferBindGroup"
+	);
+
+	if (!m_gBufferBindGroup)
+	{
+		spdlog::error("CompositionPass: failed to create G-buffer bind group");
 		return false;
 	}
-
-	// Get the first (or primary) render target from frame cache
-	const auto &renderTarget = frameCache.renderTargets.begin()->second;
-	if (!renderTarget.gpuTexture)
-	{
-		spdlog::error("CompositionPass::render - Render target has no GPU texture");
-		return false;
-	}
-
-	// Get G-buffer individual textures
-	auto positionTexture = gBuffer->getPositionTexture();
-	auto normalTexture = gBuffer->getNormalTexture();
-	auto albedoTexture = gBuffer->getAlbedoTexture();
-	auto materialTexture = gBuffer->getMaterialTexture();
-
-	if (!positionTexture || !normalTexture || !albedoTexture || !materialTexture)
-	{
-		spdlog::error("CompositionPass::render - One or more G-buffer textures are invalid");
-		return false;
-	}
-
-	auto device = m_context->getDevice();
-	auto queue = m_context->getQueue();
-
-	// Create render pass descriptor
-	wgpu::RenderPassColorAttachment colorAttachment{};
-	colorAttachment.view = renderTarget.gpuTexture->getTextureView();
-	colorAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
-	colorAttachment.loadOp = wgpu::LoadOp::Clear;
-	colorAttachment.storeOp = wgpu::StoreOp::Store;
-
-	wgpu::RenderPassDescriptor renderPassDesc{};
-	renderPassDesc.label = "CompositionPass_RenderPass";
-	renderPassDesc.colorAttachmentCount = 1;
-	renderPassDesc.colorAttachments = &colorAttachment;
-	renderPassDesc.depthStencilAttachment = nullptr;
-
-	// Create command encoder
-	wgpu::CommandEncoderDescriptor encoderDesc{};
-	encoderDesc.label = "CompositionPass_CommandEncoder";
-	auto commandEncoder = device.createCommandEncoder(encoderDesc);
-
-	// Begin render pass
-	auto renderPass = commandEncoder.beginRenderPass(renderPassDesc);
-	renderPass.setPipeline(m_pipeline);
-
-	// ===== GROUP 0: G-Buffers (4 textures) =====
-
-	// Use pipeline implicit layout (pipeline was created with layout = nullptr).
-	auto gBufferLayout = m_pipeline.getBindGroupLayout(0);
-
-	// Create bind group entries
-	std::vector<wgpu::BindGroupEntry> gBufferEntries(4);
-	gBufferEntries[0].binding = 0;
-	gBufferEntries[0].textureView = positionTexture->getTextureView();
-	gBufferEntries[1].binding = 1;
-	gBufferEntries[1].textureView = normalTexture->getTextureView();
-	gBufferEntries[2].binding = 2;
-	gBufferEntries[2].textureView = albedoTexture->getTextureView();
-	gBufferEntries[3].binding = 3;
-	gBufferEntries[3].textureView = materialTexture->getTextureView();
-
-	wgpu::BindGroupDescriptor gBufferDesc{};
-	gBufferDesc.layout = gBufferLayout;
-	gBufferDesc.entryCount = gBufferEntries.size();
-	gBufferDesc.entries = gBufferEntries.data();
-	gBufferDesc.label = "GBufferBindGroup";
-
-	auto gBufferBindGroup = device.createBindGroup(gBufferDesc);
-	if (!gBufferBindGroup)
-	{
-		spdlog::error("Failed to create G-buffer bind group");
-		renderPass.end();
-		commandEncoder.release();
-		return false;
-	}
-
-	renderPass.setBindGroup(0, gBufferBindGroup, 0, nullptr);
-
-	// ===== GROUP 1: Frame Uniforms =====
-	if (!frameCache.frameBindGroupCache.empty())
-	{
-		auto frameBindGroup = frameCache.frameBindGroupCache.begin()->second;
-		if (frameBindGroup)
-		{
-			auto frameLayout = m_pipeline.getBindGroupLayout(1);
-			auto frameBuffer = frameBindGroup->findBufferByBinding(0);
-			if (frameBuffer)
-			{
-				wgpu::BindGroupEntry frameEntry{};
-				frameEntry.binding = 0;
-				frameEntry.buffer = frameBuffer->getBuffer();
-				frameEntry.offset = 0;
-				frameEntry.size = frameBuffer->getSize();
-
-				wgpu::BindGroupDescriptor frameDesc{};
-				frameDesc.layout = frameLayout;
-				frameDesc.entryCount = 1;
-				frameDesc.entries = &frameEntry;
-				frameDesc.label = "Composition_FrameBindGroup";
-
-				auto frameImplicitBindGroup = device.createBindGroup(frameDesc);
-				renderPass.setBindGroup(1, frameImplicitBindGroup, 0, nullptr);
-			}
-		}
-	}
-
-	// ===== GROUP 2: Light Data =====
-	{
-		auto lightLayout = m_pipeline.getBindGroupLayout(2);
-		auto lightBuffer = sceneLightBindGroup->findBufferByBinding(0);
-		if (!lightBuffer)
-		{
-			spdlog::error("CompositionPass::render - Missing light buffer at binding 0");
-			renderPass.end();
-			commandEncoder.release();
-			return false;
-		}
-
-		wgpu::BindGroupEntry lightEntry{};
-		lightEntry.binding = 0;
-		lightEntry.buffer = lightBuffer->getBuffer();
-		lightEntry.offset = 0;
-		lightEntry.size = lightBuffer->getSize();
-
-		wgpu::BindGroupDescriptor lightDesc{};
-		lightDesc.layout = lightLayout;
-		lightDesc.entryCount = 1;
-		lightDesc.entries = &lightEntry;
-		lightDesc.label = "Composition_LightBindGroup";
-
-		auto lightImplicitBindGroup = device.createBindGroup(lightDesc);
-		renderPass.setBindGroup(2, lightImplicitBindGroup, 0, nullptr);
-	}
-
-	// ===== GROUP 3: Shadow Maps =====
-	{
-		auto shadowSampler = shadowPass.getShadowSampler();
-		auto shadow2DArray = shadowPass.getShadow2DArray();
-		auto shadowCubeArray = shadowPass.getShadowCubeArray();
-		auto shadowStorageBuffer = shadowPass.getShadowBindGroup() ? shadowPass.getShadowBindGroup()->findBufferByBinding(3) : nullptr;
-
-		if (!shadowSampler || !shadow2DArray || !shadowCubeArray || !shadowStorageBuffer)
-		{
-			spdlog::error("CompositionPass::render - Shadow resources are invalid");
-			renderPass.end();
-			commandEncoder.release();
-			return false;
-		}
-
-		std::array<wgpu::BindGroupEntry, 4> shadowEntries{};
-		shadowEntries[0].binding = 0;
-		shadowEntries[0].sampler = shadowSampler;
-		shadowEntries[1].binding = 1;
-		shadowEntries[1].textureView = shadow2DArray->getTextureView();
-		shadowEntries[2].binding = 2;
-		shadowEntries[2].textureView = shadowCubeArray->getTextureView();
-		shadowEntries[3].binding = 3;
-		shadowEntries[3].buffer = shadowStorageBuffer->getBuffer();
-		shadowEntries[3].offset = 0;
-		shadowEntries[3].size = shadowStorageBuffer->getSize();
-
-		wgpu::BindGroupDescriptor shadowDesc{};
-		shadowDesc.layout = m_pipeline.getBindGroupLayout(3);
-		shadowDesc.entryCount = static_cast<uint32_t>(shadowEntries.size());
-		shadowDesc.entries = shadowEntries.data();
-		shadowDesc.label = "Composition_ShadowBindGroup";
-
-		auto shadowImplicitBindGroup = device.createBindGroup(shadowDesc);
-		if (!shadowImplicitBindGroup)
-		{
-			spdlog::error("CompositionPass::render - Failed to create shadow bind group");
-			renderPass.end();
-			commandEncoder.release();
-			return false;
-		}
-
-		renderPass.setBindGroup(3, shadowImplicitBindGroup, 0, nullptr);
-	}
-
-	// ===== GROUP 4: Cluster Grid =====
-	{
-		auto clusterLayout = m_pipeline.getBindGroupLayout(4);
-		auto clusterGridBuffer = clusterBindGroup->findBufferByBinding(0);
-		auto clusterIndicesBuffer = clusterBindGroup->findBufferByBinding(1);
-		if (!clusterGridBuffer || !clusterIndicesBuffer)
-		{
-			spdlog::error("CompositionPass::render - Missing cluster buffers at bindings 0/1");
-			renderPass.end();
-			commandEncoder.release();
-			return false;
-		}
-
-		std::array<wgpu::BindGroupEntry, 2> clusterEntries{};
-		clusterEntries[0].binding = 0;
-		clusterEntries[0].buffer = clusterGridBuffer->getBuffer();
-		clusterEntries[0].offset = 0;
-		clusterEntries[0].size = clusterGridBuffer->getSize();
-		clusterEntries[1].binding = 1;
-		clusterEntries[1].buffer = clusterIndicesBuffer->getBuffer();
-		clusterEntries[1].offset = 0;
-		clusterEntries[1].size = clusterIndicesBuffer->getSize();
-
-		wgpu::BindGroupDescriptor clusterDesc{};
-		clusterDesc.layout = clusterLayout;
-		clusterDesc.entryCount = static_cast<uint32_t>(clusterEntries.size());
-		clusterDesc.entries = clusterEntries.data();
-		clusterDesc.label = "Composition_ClusterBindGroup";
-
-		auto clusterImplicitBindGroup = device.createBindGroup(clusterDesc);
-		renderPass.setBindGroup(4, clusterImplicitBindGroup, 0, nullptr);
-	}
-
-	// Draw fullscreen triangle
-	renderPass.draw(m_fullScreenQuadVertexCount, 1, 0, 0);
-
-	renderPass.end();
-
-	// Finish and submit command buffer
-	auto commandBuffer = commandEncoder.finish();
-	queue.submit(1, &commandBuffer);
-
-	spdlog::debug("CompositionPass::render completed successfully");
 	return true;
+}
+
+bool CompositionPass::ensurePipeline()
+{
+	if (m_pipeline)
+		return true;
+
+	if (!m_renderPassContext || m_renderPassContext->getColorAttachmentCount() == 0)
+	{
+		spdlog::error("CompositionPass: render pass context missing a color attachment");
+		return false;
+	}
+
+	auto targetTexture = m_renderPassContext->getColorTexture(0);
+	if (!targetTexture)
+	{
+		spdlog::error("CompositionPass: target color texture is null");
+		return false;
+	}
+
+	m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
+		m_shader,
+		targetTexture->getFormat(),
+		wgpu::TextureFormat::Undefined, // composition runs without depth test
+		engine::rendering::Topology::Type::Triangles,
+		wgpu::CullMode::None,
+		false,
+		1
+	);
+
+	if (!m_pipeline || !m_pipeline->isValid())
+	{
+		spdlog::error("CompositionPass: failed to create pipeline");
+		m_pipeline.reset();
+		return false;
+	}
+	return true;
+}
+
+void CompositionPass::render(FrameCache &frameCache)
+{
+	if (!m_shader)
+	{
+		spdlog::error("CompositionPass::render called before initialize()");
+		return;
+	}
+	if (!m_renderPassContext)
+	{
+		spdlog::error("CompositionPass::render called without a render pass context");
+		return;
+	}
+	if (!m_lightBindGroup || !m_shadowBindGroup || !m_clusterBindGroup || !m_environmentBindGroup)
+	{
+		spdlog::error("CompositionPass::render missing required bind groups (light/shadow/cluster/env)");
+		return;
+	}
+	if (!ensureGBufferBindGroup())
+		return;
+	if (!ensurePipeline())
+		return;
+
+	// Frame bind group is held by FrameCache, keyed by camera. Resolve once
+	// up-front so a missing entry fails fast instead of mid-render.
+	auto frameIt = frameCache.frameBindGroupCache.find(m_cameraId);
+	if (frameIt == frameCache.frameBindGroupCache.end() || !frameIt->second)
+	{
+		spdlog::error("CompositionPass: no frame bind group cached for camera {}", m_cameraId);
+		return;
+	}
+
+	// One fullscreen triangle - no per-object state, so binding directly by
+	// resolved name is cleaner than going through BindGroupBinder which is
+	// optimised for many sequential draw calls.
+	struct NamedGroup
+	{
+		const char *layoutName;
+		std::shared_ptr<webgpu::WebGPUBindGroup> bindGroup;
+	};
+	const NamedGroup namedGroups[] = {
+		{"GBuffer_BindGroup", m_gBufferBindGroup},
+		{bindgroup::defaults::FRAME, frameIt->second},
+		{bindgroup::defaults::LIGHT, m_lightBindGroup},
+		{bindgroup::defaults::SHADOW, m_shadowBindGroup},
+		{"ClusterGrid_BindGroup", m_clusterBindGroup},
+		{bindgroup::defaults::ENVIRONMENT, m_environmentBindGroup},
+	};
+
+	auto encoder = m_context->createCommandEncoder("CompositionPass.Encoder");
+	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
+	renderPass.setPipeline(m_pipeline->getPipeline());
+
+	for (const auto &slot : namedGroups)
+	{
+		auto idxOpt = m_shader->getBindGroupIndex(slot.layoutName);
+		if (!idxOpt.has_value())
+		{
+			spdlog::error("CompositionPass: shader has no bind group '{}'", slot.layoutName);
+			continue;
+		}
+		renderPass.setBindGroup(
+			static_cast<uint32_t>(idxOpt.value()),
+			slot.bindGroup->getBindGroup(),
+			0,
+			nullptr
+		);
+	}
+
+	// One fullscreen triangle generated procedurally in the vertex shader.
+	renderPass.draw(3, 1, 0, 0);
+
+	m_renderPassContext->end(renderPass);
+	m_context->submitCommandEncoder(encoder, "CompositionPass.Commands");
 }
 
 } // namespace engine::rendering
