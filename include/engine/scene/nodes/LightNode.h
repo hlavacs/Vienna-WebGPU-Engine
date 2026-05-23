@@ -81,7 +81,10 @@ class LightNode : public nodes::RenderNode, public nodes::SpatialNode
 
 		case engine::rendering::Light::Type::Point: // Point - draw 3 orthogonal disks (sphere representation)
 		{
-			float radius = 0.5f;
+			// Scale debug marker by light intensity for better visibility
+			float intensity = getIntensity();
+			// reduce visual radius and scale with intensity (small visual markers)
+			float radius = std::max(0.03f, intensity * 0.02f);
 
 			// XY plane disk (normal along Z)
 			collector.addDisk(position, glm::vec3(radius, radius, 0.0f), glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));

@@ -24,6 +24,7 @@ class WebGPUBindGroupLayoutInfo;
 class WebGPUContext;
 class WebGPUPipeline;
 class WebGPUTexture;
+class WebGPUBuffer;
 } // namespace webgpu
 
 /**
@@ -110,6 +111,10 @@ class ShadowPass : public RenderPass
 	 * @return Shadow bind group containing sampler and shadow map textures
 	 */
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBindGroup> getShadowBindGroup() const { return m_shadowBindGroup; }
+
+	[[nodiscard]] wgpu::Sampler getShadowSampler() const { return m_shadowSampler; }
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUTexture> getShadow2DArray() const { return m_shadow2DArray; }
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUTexture> getShadowCubeArray() const { return m_shadowCubeArray; }
 
 	/**
 	 * @brief Check if debug mode is enabled.

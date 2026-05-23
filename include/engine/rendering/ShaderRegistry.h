@@ -19,6 +19,8 @@ namespace engine::rendering
 namespace shader::defaults
 {
 constexpr const char *PBR = "PBR_Lit_Shader";
+constexpr const char *GBUFFER = "GBuffer";
+constexpr const char *COMPOSITION_DEFERRED = "Composition_Deferred";
 constexpr const char *DEBUG = "Debug_Shader";
 constexpr const char *FULLSCREEN_QUAD = "Fullscreen_Quad_Shader";
 constexpr const char *SKYBOX = "Skybox_Shader";
@@ -126,6 +128,8 @@ class ShaderRegistry
 
 	// Helper methods to create specific default shaders
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createPBRShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createGBufferShader();
+	std::shared_ptr<webgpu::WebGPUShaderInfo> createCompositionDeferredShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createDebugShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createFullscreenQuadShader();
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createSkyboxShader();

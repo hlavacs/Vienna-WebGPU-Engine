@@ -38,6 +38,24 @@ bool ShaderRegistry::initializeDefaultShaders()
 	}
 	registerShader(pbrShader);
 
+	auto gbufferShader = createGBufferShader();
+	if (!gbufferShader || !gbufferShader->isValid())
+	{
+		spdlog::error("Failed to create G-Buffer shader");
+		return false;
+	}
+	registerShader(gbufferShader);
+
+	auto compositionDeferredShader = createCompositionDeferredShader();
+	if (!compositionDeferredShader || !compositionDeferredShader->isValid())
+	{
+		spdlog::warn("Failed to create Composition Deferred shader - deferred rendering will be incomplete");
+	}
+	else
+	{
+		registerShader(compositionDeferredShader);
+	}
+
 	auto debugShader = createDebugShader();
 	if (!debugShader || !debugShader->isValid())
 	{
@@ -311,6 +329,185 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				false,
+				WGPUShaderStage_Fragment
+			)
+			.build();
+
+	return shaderInfo;
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
+{
+	// Create the G-buffer geometry pass shader for deferred rendering
+	//
+	// g_buffer.wgsl structure:
+	// @group(0) @binding(0) var<uniform> uFrame: FrameUniforms;
+	// @group(2) @binding(0) var<uniform> uObject: ObjectUniforms;
+	// @group(3) @binding(0) var<uniform> uMaterial: MaterialUniforms;
+	// @group(3) @binding(1) var textureSampler: sampler;
+	// @group(3) @binding(2) var baseColorTexture: texture_2d<f32>;
+	// @group(3) @binding(3) var normalTexture: texture_2d<f32>;
+	// @group(3) @binding(4) var roughnessTexture: texture_2d<f32>;
+	// @group(3) @binding(5) var metallicTexture: texture_2d<f32>;
+	// @group(3) @binding(6) var aoTexture: texture_2d<f32>;
+	//
+	// Fragment outputs 4 targets:
+	// @location(0) position: vec4 - world position + depth
+	// @location(1) normal: vec4 - world normal + depth
+	// @location(2) albedo: vec4 - sRGB base color
+	// @location(3) material: vec4 - (roughness, metallic, AO, unused)
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin(
+				shader::defaults::GBUFFER,
+				ShaderType::Lit,
+				PathProvider::getResource("g_buffer.wgsl"),
+				"vs_main",
+				"fs_main",
+				VertexLayout::PositionNormalUVTangentColor,
+				true,  // depthEnabled
+				true   // cullBackFaces
+			)
+			// Group 0: Frame uniforms (camera, time)
+			.addFrameBindGroup()
+			// NOTE: Group 1 (lights) is NOT included for G-buffer pass
+			// Group 2: Object uniforms (model matrix, normal matrix)
+			.addObjectBindGroup()
+			// Group 3: Material data (properties + textures)
+			.addBindGroup(bindgroup::defaults::MATERIAL, BindGroupReuse::PerObject, BindGroupType::Material)
+			.addUniform(
+				bindgroup::entry::defaults::MATERIAL_PROPERTIES,
+				sizeof(PBRProperties),
+				WGPUShaderStage_Fragment
+			)
+			.addSampler(
+				"textureSampler",
+				wgpu::SamplerBindingType::Filtering,
+				WGPUShaderStage_Fragment
+			)
+			.addMaterialTexture(
+				"baseColorTexture",
+				MaterialTextureSlots::DIFFUSE,
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				WGPUShaderStage_Fragment,
+				glm::vec3(1.0f, 1.0f, 1.0f)
+			)
+			.addMaterialTexture(
+				"normalTexture",
+				MaterialTextureSlots::NORMAL,
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				WGPUShaderStage_Fragment,
+				glm::vec3(0.5f, 0.5f, 1.0f)
+			)
+			.addMaterialTexture(
+				"roughnessTexture",
+				MaterialTextureSlots::ROUGHNESS,
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				WGPUShaderStage_Fragment,
+				glm::vec3(1.0f, 1.0f, 1.0f)
+			)
+			.addMaterialTexture(
+				"metallicTexture",
+				MaterialTextureSlots::METALLIC,
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				WGPUShaderStage_Fragment,
+				glm::vec3(0.0f, 0.0f, 0.0f)
+			)
+			.addMaterialTexture(
+				"aoTexture",
+				MaterialTextureSlots::AMBIENT,
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				WGPUShaderStage_Fragment,
+				glm::vec3(1.0f, 1.0f, 1.0f)
+			)
+			.build();
+
+	return shaderInfo;
+}
+
+std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCompositionDeferredShader()
+{
+	// Create deferred composition shader for final lighting pass
+	// Reads G-buffers and applies clustered lighting
+	//
+	// deferred_composition.wgsl structure:
+	// @group(0) @binding(0-3) G-buffer textures
+	// @group(1) @binding(0) var<uniform> uFrame: FrameUniforms;
+	// @group(2) @binding(0) var<storage, read> uLights: LightBuffer;
+	// @group(3) @binding(0) var<storage, read> uClusterGrid: array<ClusterLightList>;
+	auto shaderInfo =
+		m_context.shaderFactory()
+			.begin(
+				shader::defaults::COMPOSITION_DEFERRED,
+				ShaderType::Unlit,
+				PathProvider::getResource("deferred_composition.wgsl"),
+				"vs_main",
+				"fs_main",
+				VertexLayout::None,  // Full-screen quad generated in vertex shader
+				false,               // No depth testing for composition
+				false                // No backface culling
+			)
+			// Group 0: G-buffer textures
+			.addBindGroup(
+				"GBuffer_BindGroup",
+				BindGroupReuse::Global,
+				BindGroupType::Custom
+			)
+			.addTexture(
+				"gBufferPositionTexture",
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment
+			)
+			.addTexture(
+				"gBufferNormalTexture",
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment
+			)
+			.addTexture(
+				"gBufferAlbedoTexture",
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment
+			)
+			.addTexture(
+				"gBufferMaterialTexture",
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment
+			)
+			// Group 1: Frame uniforms (camera, time)
+			.addFrameBindGroup()
+			// Group 2: Lights (shared scene light buffer)
+			.addLightBindGroup()
+				// Group 3: Shadow mapping (sampler, 2D array, cube array, storage buffers)
+				.addShadowBindGroup()
+				// Group 4: Cluster grid
+			.addBindGroup(
+				"ClusterGrid_BindGroup",
+				BindGroupReuse::PerFrame,
+				BindGroupType::Custom
+			)
+			.addStorageBuffer(
+				"uClusterGrid",
+				10752 * sizeof(uint32_t) * 2,
+				true,
+				WGPUShaderStage_Fragment
+			)
+			.addStorageBuffer(
+				"uClusterLightIndices",
+				10752 * 256 * sizeof(uint32_t),
+				true,
 				WGPUShaderStage_Fragment
 			)
 			.build();

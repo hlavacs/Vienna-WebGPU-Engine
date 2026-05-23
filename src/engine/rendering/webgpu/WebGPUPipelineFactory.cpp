@@ -66,7 +66,22 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	wgpu::FragmentState fragmentState{};
 	if (hasFragment)
 	{
-		if (hasColor)
+		if (shaderInfo->getName() == "GBuffer")
+		{
+			static std::array<wgpu::ColorTargetState, 4> gbufferTargets{};
+			gbufferTargets[0].format = wgpu::TextureFormat::RGBA16Float;
+			gbufferTargets[1].format = wgpu::TextureFormat::RGBA16Float;
+			gbufferTargets[2].format = wgpu::TextureFormat::RGBA8UnormSrgb;
+			gbufferTargets[3].format = wgpu::TextureFormat::RGBA8Unorm;
+			for (auto &target : gbufferTargets)
+			{
+				target.blend = nullptr;
+				target.writeMask = wgpu::ColorWriteMask::All;
+			}
+			fragmentState.targets = gbufferTargets.data();
+			fragmentState.targetCount = static_cast<uint32_t>(gbufferTargets.size());
+		}
+		else if (hasColor)
 		{
 			colorTarget.format = colorFormat;
 			colorTarget.blend = blendEnabled ? &m_defaultBlendState : nullptr;
@@ -179,14 +194,13 @@ wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engin
 	}
 
 	engine::rendering::VertexAttribute attribs = engine::rendering::Vertex::requiredAttributes(layout);
-	size_t arrayStride = 0;
+	size_t arrayStride = engine::rendering::Vertex::getStride(layout);
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Position))
 	{
 		wgpu::VertexAttribute positionAttr{};
 		positionAttr.format = wgpu::VertexFormat::Float32x3;
 		positionAttr.offset = offsetof(engine::rendering::Vertex, position);
 		attributes.push_back(positionAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::position);
 	}
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Normal))
 	{
@@ -194,15 +208,6 @@ wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engin
 		normalAttr.format = wgpu::VertexFormat::Float32x3;
 		normalAttr.offset = offsetof(engine::rendering::Vertex, normal);
 		attributes.push_back(normalAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::normal);
-	}
-	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Color))
-	{
-		wgpu::VertexAttribute colorAttr{};
-		colorAttr.format = wgpu::VertexFormat::Float32x4;
-		colorAttr.offset = offsetof(engine::rendering::Vertex, color);
-		attributes.push_back(colorAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::color);
 	}
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::UV))
 	{
@@ -210,15 +215,20 @@ wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engin
 		uvAttr.format = wgpu::VertexFormat::Float32x2;
 		uvAttr.offset = offsetof(engine::rendering::Vertex, uv);
 		attributes.push_back(uvAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::uv);
 	}
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Tangent))
 	{
 		wgpu::VertexAttribute tangentAttr{};
-		tangentAttr.format = wgpu::VertexFormat::Float32x3;
+		tangentAttr.format = wgpu::VertexFormat::Float32x4;
 		tangentAttr.offset = offsetof(engine::rendering::Vertex, tangent);
 		attributes.push_back(tangentAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::tangent);
+	}
+	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Color))
+	{
+		wgpu::VertexAttribute colorAttr{};
+		colorAttr.format = wgpu::VertexFormat::Float32x3;
+		colorAttr.offset = offsetof(engine::rendering::Vertex, color);
+		attributes.push_back(colorAttr);
 	}
 	for (auto i = 0; i < attributes.size(); ++i)
 	{

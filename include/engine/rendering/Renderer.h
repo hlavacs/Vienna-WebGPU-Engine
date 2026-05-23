@@ -1,16 +1,19 @@
 #pragma once
 
 #include <functional>
+#include <limits>
 #include <memory>
 #include <unordered_map>
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/CompositePass.h"
+#include "engine/rendering/CompositionPass.h"
 #include "engine/rendering/DebugPass.h"
 #include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameUniforms.h"
+#include "engine/rendering/GBufferPass.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/MeshPass.h"
 #include "engine/rendering/Model.h"
@@ -106,6 +109,12 @@ class Renderer
 	MeshPass &getMeshPass() { return *m_meshPass; }
 
 	/**
+	 * @brief Get the GBufferPass instance (deferred rendering).
+	 * @return Reference to GBufferPass.
+	 */
+	GBufferPass *getGBufferPass() { return m_gBufferPass.get(); }
+
+	/**
 	 * @brief Get the CompositePass instance.
 	 * @return Reference to CompositePass.
 	 */
@@ -187,7 +196,9 @@ class Renderer
 	std::unique_ptr<ShadowPass> m_shadowPass;
 	std::unique_ptr<SkyboxPass> m_skyboxPass;
 	std::unique_ptr<MeshPass> m_meshPass;
+	std::unique_ptr<GBufferPass> m_gBufferPass;
 	std::unique_ptr<DebugPass> m_debugPass;
+	std::unique_ptr<CompositionPass> m_compositionPass;
 	std::unique_ptr<CompositePass> m_compositePass;
 	std::unique_ptr<PostProcessingPass> m_postProcessingPass;
 
@@ -209,6 +220,7 @@ class Renderer
 	// Note: m_environmentBindGroupLayout is not cached. It's fetched fresh from the PBR shader in updateEnvironmentBindGroup()
 	// to ensure we always use the current shader state.
 	std::shared_ptr<webgpu::WebGPUTexture> m_defaultEnvironmentTexture;
+	uint32_t m_lastUploadedLightCount = std::numeric_limits<uint32_t>::max();
 };
 
 } // namespace engine::rendering

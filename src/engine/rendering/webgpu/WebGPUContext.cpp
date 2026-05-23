@@ -4,6 +4,9 @@
 #include <iostream>
 
 #include "engine/rendering/Vertex.h"
+#include "engine/lighting/LightManager.h"
+#include "engine/rendering/SceneLightBuffer.h"
+#include "engine/rendering/ClusterManager.h"
 
 namespace engine::rendering::webgpu
 {
@@ -40,6 +43,9 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 	m_renderPassFactory = std::make_unique<WebGPURenderPassFactory>(*this);
 	m_shaderFactory = std::make_unique<WebGPUShaderFactory>(*this);
 	m_pipelineManager = std::make_unique<WebGPUPipelineManager>(*this);
+	m_lightManager = std::make_shared<engine::lighting::LightManager>();
+	m_clusterManager = std::make_shared<engine::rendering::ClusterManager>(*this);
+
 #ifdef __EMSCRIPTEN__
 	m_instance = wgpu::wgpuCreateInstance(nullptr);
 #else
@@ -61,6 +67,17 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 	if(!m_shaderRegistry->initializeDefaultShaders())
 	{
 		spdlog::critical("[WebGPU] Failed to initialize default shaders.");
+		assert(false);
+	}
+
+	// SceneLightBuffer depends on the light bind group layout that is registered
+	// during shader initialization, so create it after the shader registry is ready.
+	m_sceneLightBuffer = std::make_shared<engine::lighting::SceneLightBuffer>(*this);
+
+	// Initialize ClusterManager for clustered light assignment
+	if (!m_clusterManager->initialize())
+	{
+		spdlog::critical("[WebGPU] Failed to initialize ClusterManager.");
 		assert(false);
 	}
 
@@ -401,5 +418,35 @@ WebGPUPipelineManager &WebGPUContext::pipelineManager()
 		throw std::runtime_error("WebGPUPipelineManager not initialized!");
 	}
 	return *m_pipelineManager;
+}
+
+std::shared_ptr<engine::lighting::LightManager> WebGPUContext::lightManager() const
+{
+	if (!m_lightManager)
+	{
+		spdlog::warn("LightManager not initialized!");
+		return nullptr;
+	}
+	return m_lightManager;
+}
+
+std::shared_ptr<engine::lighting::SceneLightBuffer> WebGPUContext::sceneLightBuffer() const
+{
+	if (!m_sceneLightBuffer)
+	{
+		spdlog::warn("SceneLightBuffer not initialized!");
+		return nullptr;
+	}
+	return m_sceneLightBuffer;
+}
+
+std::shared_ptr<engine::rendering::ClusterManager> WebGPUContext::clusterManager() const
+{
+	if (!m_clusterManager)
+	{
+		spdlog::warn("ClusterManager not initialized!");
+		return nullptr;
+	}
+	return m_clusterManager;
 }
 } // namespace engine::rendering::webgpu
