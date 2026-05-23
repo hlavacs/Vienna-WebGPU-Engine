@@ -51,13 +51,23 @@ void SkyboxPass::render(FrameCache &frameCache)
 		return;
 	}
 
+	// Pick up the depth format from whatever depth attachment the renderer
+	// handed us. When run as a deferred-shading background pass this is the
+	// G-buffer's depth (Depth32Float); when run in forward setups it can be
+	// the per-camera depth buffer instead - both work because the depth
+	// compare/write state was baked into the shader info at registration.
+	auto depthTexture = m_renderPassContext->getDepthTexture();
+	const wgpu::TextureFormat depthFormat = depthTexture
+		? depthTexture->getFormat()
+		: wgpu::TextureFormat::Undefined;
+
 	auto pipeline = m_pipeline.lock();
 	if (!pipeline)
 	{
 		m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
 			m_shaderInfo,
 			colorTexture->getFormat(),
-			wgpu::TextureFormat::Undefined,
+			depthFormat,
 			Topology::Triangles,
 			wgpu::CullMode::None,
 			false,

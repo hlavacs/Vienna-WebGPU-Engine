@@ -223,6 +223,44 @@ class WebGPUShaderFactory
 		);
 
 		/**
+		 * @brief Override the depth comparison used by the pipeline.
+		 *
+		 * Default is @c Less (standard z-buffer). Use @c LessEqual for shaders
+		 * that emit fragments at the far plane (skybox, equirect background
+		 * passes - the WGSL writes @c clip.xyww so depth == 1.0 must pass).
+		 *
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &withDepthCompare(wgpu::CompareFunction compare);
+
+		/**
+		 * @brief Toggle depth writes for the pipeline. Defaults to @c true.
+		 *
+		 * Set to @c false when the shader needs to read scene depth without
+		 * stamping new values (skybox after the geometry pass, soft particles,
+		 * any read-only depth post-effect). The matching render pass attachment
+		 * should be configured @c depthReadOnly=true to avoid validation errors.
+		 *
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &withDepthWrite(bool enabled);
+
+		/**
+		 * @brief Declares one color attachment format produced by the fragment stage.
+		 *
+		 * Call this once per @c @location(N) output in the WGSL fragment shader, in
+		 * location order. The pipeline factory will then create the pipeline with
+		 * matching @c wgpu::ColorTargetState entries instead of falling back to a
+		 * single attachment with a renderer-supplied default format.
+		 *
+		 * For single-target shaders (the common case) you do not need to call this.
+		 *
+		 * @param format Texture format of the color attachment at the next location.
+		 * @return Reference to this builder for chaining.
+		 */
+		WebGPUShaderBuilder &addColorTarget(wgpu::TextureFormat format);
+
+		/**
 		 * @brief Finalizes the shader and creates GPU resources.
 		 *
 		 * This method:
@@ -267,6 +305,9 @@ class WebGPUShaderFactory
 		std::filesystem::path m_shaderPath;
 
 		std::map<uint32_t, BindGroupBuilder> m_bindGroupsBuilder;
+		std::vector<wgpu::TextureFormat> m_colorTargetFormats;
+		wgpu::CompareFunction m_depthCompare = wgpu::CompareFunction::Less;
+		bool m_depthWriteEnabled = true;
 		int32_t m_lastBindGroupIndex;
 		WebGPUShaderFactory &m_factory;
 	};

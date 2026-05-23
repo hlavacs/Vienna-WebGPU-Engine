@@ -1,54 +1,24 @@
 #include "engine/rendering/Renderer.h"
 
-#include <array>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
 #include <limits>
+
+#include <glm/glm.hpp>
 #include <spdlog/spdlog.h>
 
-#include "engine/core/PathProvider.h"
 #include "engine/lighting/LightManager.h"
 #include "engine/rendering/BindGroupDataProvider.h"
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/ClusterManager.h"
 #include "engine/rendering/ColorSpace.h"
-#include "engine/rendering/CompositePass.h"
-#include "engine/rendering/CompositionPass.h"
-#include "engine/rendering/DebugPass.h"
-#include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameUniforms.h"
-#include "engine/rendering/GBufferPass.h"
-#include "engine/rendering/webgpu/GBuffer.h"
-#include "engine/rendering/LightUniforms.h"
-#include "engine/rendering/Material.h"
-#include "engine/rendering/Mesh.h"
-#include "engine/rendering/MeshPass.h"
-#include "engine/rendering/Model.h"
-#include "engine/rendering/ObjectUniforms.h"
-#include "engine/rendering/PostProcessingPass.h"
 #include "engine/rendering/RenderCollector.h"
-#include "engine/rendering/RenderItemGPU.h"
-#include "engine/rendering/RenderPassManager.h"
-#include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/RenderingConstants.h"
+#include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/SceneLightBuffer.h"
 #include "engine/rendering/ShaderRegistry.h"
-#include "engine/rendering/ShadowPass.h"
-#include "engine/rendering/SkyboxPass.h"
-#include "engine/rendering/Texture.h"
-#include "engine/rendering/Vertex.h"
-#include "engine/rendering/webgpu/WebGPUBindGroup.h"
-#include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
-#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
-#include "engine/rendering/webgpu/WebGPUBuffer.h"
+#include "engine/rendering/webgpu/GBuffer.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
-#include "engine/rendering/webgpu/WebGPUModel.h"
-#include "engine/rendering/webgpu/WebGPUModelFactory.h"
-#include "engine/rendering/webgpu/WebGPUPipelineManager.h"
-#include "engine/rendering/webgpu/WebGPUTexture.h"
-#include "engine/scene/nodes/CameraNode.h"
-#include "engine/scene/nodes/RenderNode.h"
 
 namespace engine::rendering
 {
@@ -80,7 +50,10 @@ bool Renderer::initialize()
 		return false;
 	}
 
-	m_gBufferPass = std::make_unique<GBufferPass>(m_context);
+	// G-buffer starts at a placeholder size; it is resized to match the
+	// active render target on the first frame so we never waste textures
+	// at the default 1x1 nor strand them at a hardcoded 1920x1080.
+	m_gBufferPass = std::make_unique<GBufferPass>(m_context, 1, 1);
 	if (!m_gBufferPass->initialize())
 	{
 		spdlog::error("Failed to initialize GBufferPass");
@@ -124,10 +97,9 @@ bool Renderer::initialize()
 		return false;
 	}
 
-	// Note: m_environmentBindGroupLayout is NOT cached at init time.
-	// It will be fetched fresh from the PBR shader in updateEnvironmentBindGroup()
-	// to ensure we always use the current shader's layout.
-
+	// Environment layouts are fetched fresh from their owning shaders inside
+	// updateEnvironmentBindGroup / updateSkyboxBindGroup so hot-reloading a
+	// shader can't leave us holding a stale layout.
 	m_defaultEnvironmentTexture = m_context->textureFactory().createFromColor(
 		glm::vec3(0.0f),
 		1,
@@ -183,7 +155,10 @@ bool Renderer::renderFrame(
 	m_frameCache.lights = renderCollector.getLights();
 	m_frameCache.renderTargets = std::move(uniqueRenderTargets);
 	m_frameCache.time = time;
-	m_renderTargets = m_frameCache.renderTargets; // ToDO: remove m_renderTargets member and use m_frameCache everywhere
+	// Keep a separate copy that survives FrameCache::clear() so onResize
+	// (which fires between frames) still has per-camera viewport info to
+	// resize depth buffers against.
+	m_renderTargets = m_frameCache.renderTargets;
 
 	// Extract light data and determine which lights need shadow maps
 	auto [lightUniforms, shadowRequests] = renderCollector.extractLightsAndShadows(
@@ -298,33 +273,24 @@ void Renderer::updateFrameBindGroup(const RenderTarget &target, float time)
 	);
 }
 
-void Renderer::updateEnvironmentBindGroup(const RenderTarget &target)
+std::shared_ptr<webgpu::WebGPUBindGroup> Renderer::buildEnvironmentBindGroup(
+	const std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> &layoutInfo,
+	const RenderTarget &target,
+	const char *debugLabel
+)
 {
-	// Fetch fresh environment bind group layout from PBR shader to ensure it reflects current shader state
-	auto pbrShader = m_context->shaderRegistry().getShader(shader::defaults::PBR);
-	if (!pbrShader)
-	{
-		spdlog::warn("Failed to get PBR shader for environment bind group");
-		return;
-	}
-
-	auto environmentBindGroupLayout = pbrShader->getBindGroupLayout(BindGroupType::Environment);
-	if (!environmentBindGroupLayout)
-	{
-		spdlog::warn("Failed to get environment bind group layout from PBR shader");
-		return;
-	}
+	if (!layoutInfo)
+		return nullptr;
 
 	std::shared_ptr<webgpu::WebGPUTexture> environmentTexture = m_defaultEnvironmentTexture;
 	if (target.environmentTexture.has_value() && target.environmentTexture->valid())
 	{
+		// Environment maps are HDR equirect data - decode linearly, not sRGB.
 		webgpu::WebGPUTextureOptions options{};
 		options.colorSpace = ColorSpace::Linear;
 		auto texture = m_context->textureFactory().createFromHandle(target.environmentTexture.value(), options);
 		if (texture)
-		{
 			environmentTexture = texture;
-		}
 	}
 
 	const bool irradianceEnabled =
@@ -332,6 +298,11 @@ void Renderer::updateEnvironmentBindGroup(const RenderTarget &target)
 		target.irradianceEnabled &&
 		environmentTexture != nullptr;
 
+	// Both the SKYBOX and ENVIRONMENT layouts use the same binding order:
+	//   0 = uniform vec4 environmentParams
+	//   1 = sampler
+	//   2 = texture
+	// so the same override map works for either layout.
 	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> resourceOverrides;
 	resourceOverrides.emplace(
 		std::make_tuple(0u, 1u),
@@ -342,36 +313,49 @@ void Renderer::updateEnvironmentBindGroup(const RenderTarget &target)
 		webgpu::BindGroupResource(environmentTexture)
 	);
 
-	auto environmentBindGroup = m_context->bindGroupFactory().createBindGroup(
-		environmentBindGroupLayout,
+	auto bindGroup = m_context->bindGroupFactory().createBindGroup(
+		layoutInfo,
 		resourceOverrides,
 		nullptr,
-		"Environment BindGroup"
+		debugLabel
 	);
-
-	if (!environmentBindGroup)
+	if (!bindGroup)
 	{
-		spdlog::warn("Failed to create environment bind group for camera {}", target.cameraId);
-		m_environmentBindGroups[target.cameraId] = nullptr;
-		return;
+		spdlog::warn("Failed to create environment bind group '{}' for camera {}", debugLabel, target.cameraId);
+		return nullptr;
 	}
 
-	glm::vec4 environmentParams(
+	const glm::vec4 environmentParams(
 		irradianceEnabled ? 1.0f : 0.0f,
 		target.irradianceIntensity,
 		target.skyboxEnabled ? 1.0f : 0.0f,
 		0.0f
 	);
+	bindGroup->updateBuffer(0, &environmentParams, sizeof(glm::vec4), 0, m_context->getQueue());
 
-	environmentBindGroup->updateBuffer(
-		0,
-		&environmentParams,
-		sizeof(glm::vec4),
-		0,
-		m_context->getQueue()
+	return bindGroup;
+}
+
+void Renderer::updateEnvironmentBindGroup(const RenderTarget &target)
+{
+	auto pbrShader = m_context->shaderRegistry().getShader(shader::defaults::PBR);
+	if (!pbrShader) return;
+	m_environmentBindGroups[target.cameraId] = buildEnvironmentBindGroup(
+		pbrShader->getBindGroupLayout(BindGroupType::Environment),
+		target,
+		"Environment.BindGroup"
 	);
+}
 
-	m_environmentBindGroups[target.cameraId] = environmentBindGroup;
+void Renderer::updateSkyboxBindGroup(const RenderTarget &target)
+{
+	auto skyboxShader = m_context->shaderRegistry().getShader(shader::defaults::SKYBOX);
+	if (!skyboxShader) return;
+	m_skyboxBindGroups[target.cameraId] = buildEnvironmentBindGroup(
+		skyboxShader->getBindGroupLayout(bindgroup::defaults::SKYBOX),
+		target,
+		"Skybox.BindGroup"
+	);
 }
 
 std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
@@ -544,116 +528,87 @@ void Renderer::renderToTexture(
 	m_frameCache.prepareGPUResources(m_context, collector, visibleIndices);
 
 	// ========================================
-	// STEP 5: Deferred Geometry + Lighting
+	// STEP 5: Deferred Geometry + Composition
 	// ========================================
-	spdlog::debug("Using deferred rendering pipeline for this frame");
-
-	auto gBuffer = m_gBufferPass->getGBuffer();
-	if (!gBuffer)
-	{
-		spdlog::error("GBufferPass has no G-buffer initialized");
-		return;
-	}
-
-	wgpu::RenderPassColorAttachment positionAttachment{};
-	positionAttachment.view = gBuffer->getPositionTexture()->getTextureView();
-	positionAttachment.loadOp = wgpu::LoadOp::Clear;
-	positionAttachment.storeOp = wgpu::StoreOp::Store;
-	positionAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
-
-	wgpu::RenderPassColorAttachment normalAttachment{};
-	normalAttachment.view = gBuffer->getNormalTexture()->getTextureView();
-	normalAttachment.loadOp = wgpu::LoadOp::Clear;
-	normalAttachment.storeOp = wgpu::StoreOp::Store;
-	normalAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
-
-	wgpu::RenderPassColorAttachment albedoAttachment{};
-	albedoAttachment.view = gBuffer->getAlbedoTexture()->getTextureView();
-	albedoAttachment.loadOp = wgpu::LoadOp::Clear;
-	albedoAttachment.storeOp = wgpu::StoreOp::Store;
-	albedoAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
-
-	wgpu::RenderPassColorAttachment materialAttachment{};
-	materialAttachment.view = gBuffer->getMaterialTexture()->getTextureView();
-	materialAttachment.loadOp = wgpu::LoadOp::Clear;
-	materialAttachment.storeOp = wgpu::StoreOp::Store;
-	materialAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
-
-	wgpu::RenderPassDepthStencilAttachment depthAttachment{};
-	depthAttachment.view = gBuffer->getDepthTexture()->getTextureView();
-	depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
-	depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
-	depthAttachment.depthClearValue = 1.0f;
-	depthAttachment.depthReadOnly = false;
-	depthAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
-	depthAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
-	depthAttachment.stencilReadOnly = true;
-
-	wgpu::RenderPassDescriptor gBufferDesc{};
-	gBufferDesc.label = "GBufferPass_RenderPass";
-	gBufferDesc.colorAttachmentCount = 4;
-	std::array<wgpu::RenderPassColorAttachment, 4> gBufferAttachments{
-		positionAttachment,
-		normalAttachment,
-		albedoAttachment,
-		materialAttachment
-	};
-	gBufferDesc.colorAttachments = gBufferAttachments.data();
-	gBufferDesc.depthStencilAttachment = &depthAttachment;
-
-	auto gBufferPassContext = m_context->renderPassFactory().createCustom(
-		{
-			gBuffer->getPositionTexture(),
-			gBuffer->getNormalTexture(),
-			gBuffer->getAlbedoTexture(),
-			gBuffer->getMaterialTexture()
-		},
-		gBuffer->getDepthTexture(),
-		gBufferDesc
-	);
-
-	m_gBufferPass->setRenderPassContext(gBufferPassContext);
+	// GBufferPass owns its attachments and exposes a typed RenderPassContext;
+	// the renderer's only job is to (re)size it to match this camera and then
+	// hand off the visible items. Cutout / "fake-blend" materials are handled
+	// in the gbuffer shader via alpha-test discard.
+	auto &gBuffer = m_gBufferPass->getGBuffer();
+	m_gBufferPass->resize(renderFromTexture->getWidth(), renderFromTexture->getHeight());
 	m_gBufferPass->setCameraId(renderTargetId);
 	m_gBufferPass->setVisibleIndices(visibleIndices);
-	m_gBufferPass->setShadowBindGroup(m_shadowPass->getShadowBindGroup());
-
-	spdlog::debug("Rendering G-buffers for {} GPU mesh items", m_frameCache.gpuRenderItems.size());
 	m_gBufferPass->render(m_frameCache);
 
+	// Cluster assignment is a no-op today (placeholder in ClusterManager) but
+	// the call still has to wire the scene light buffer + shadow data so the
+	// composition pass has a valid cluster bind group to read from.
 	auto sceneLightBuffer = m_context->sceneLightBuffer();
 	auto shadowBindGroup = m_shadowPass ? m_shadowPass->getShadowBindGroup() : nullptr;
-	if (sceneLightBuffer && sceneLightBuffer->getBindGroup() && shadowBindGroup)
+	auto clusterManager = m_context->clusterManager();
+	auto clusterBindGroup = clusterManager ? clusterManager->getClusterBindGroup() : nullptr;
+	if (sceneLightBuffer && sceneLightBuffer->getBindGroup() && shadowBindGroup && clusterManager)
 	{
-		spdlog::debug("Clustering {} lights into {}x{}x{} grid",
-			m_frameCache.lights.size(),
-			engine::rendering::ClusterManager::CLUSTER_GRID_DIM_X,
-			engine::rendering::ClusterManager::CLUSTER_GRID_DIM_Y,
-			engine::rendering::ClusterManager::CLUSTER_GRID_DIM_Z);
-
-		if (!m_context->clusterManager()->assignLights(m_frameCache, sceneLightBuffer->getBindGroup()))
-		{
+		if (!clusterManager->assignLights(m_frameCache, sceneLightBuffer->getBindGroup()))
 			spdlog::warn("Failed to assign lights to clusters");
-		}
-	}
-	else
-	{
-		spdlog::warn("Scene light buffer not initialized");
 	}
 
-	if (m_compositionPass && sceneLightBuffer && m_context->clusterManager()->getClusterBindGroup())
+	// Build the per-camera environment bind group: composition pass uses it
+	// for IBL, the skybox pass uses a parallel one built against its own
+	// shader's layout.
+	updateEnvironmentBindGroup(renderTarget);
+	auto environmentBindGroup = m_environmentBindGroups[renderTargetId];
+
+	if (!sceneLightBuffer || !sceneLightBuffer->getBindGroup() || !shadowBindGroup || !clusterBindGroup || !environmentBindGroup)
 	{
-		spdlog::debug("Rendering deferred composition pass");
-		m_compositionPass->render(
-			m_frameCache,
-			m_gBufferPass->getGBuffer(),
-			sceneLightBuffer->getBindGroup(),
-			*m_shadowPass,
-			m_context->clusterManager()->getClusterBindGroup()
-		);
+		spdlog::warn("CompositionPass skipped: missing one of light/shadow/cluster/env bind groups");
 	}
 	else
 	{
-		spdlog::warn("Cannot render composition pass: missing light, shadow, or cluster bind group");
+		// HDR intermediate is the camera's render target texture - cleared once
+		// here so the composition pass overwrites every pixel with the lit result.
+		auto compositionPassContext = m_context->renderPassFactory().create(
+			renderToTexture,
+			nullptr,
+			ClearFlags::SolidColor,
+			renderTarget.backgroundColor
+		);
+
+		m_compositionPass->setRenderPassContext(compositionPassContext);
+		m_compositionPass->setGBuffer(&gBuffer);
+		m_compositionPass->setSceneLightBindGroup(sceneLightBuffer->getBindGroup());
+		m_compositionPass->setShadowBindGroup(shadowBindGroup);
+		m_compositionPass->setClusterBindGroup(clusterBindGroup);
+		m_compositionPass->setEnvironmentBindGroup(environmentBindGroup);
+		m_compositionPass->setCameraId(renderTargetId);
+		m_compositionPass->render(m_frameCache);
+	}
+
+	// ========================================
+	// STEP 5b: Skybox (background fill)
+	// ========================================
+	// Drawn AFTER composition so it only fills pixels where the geometry pass
+	// left the cleared depth value (1.0). The skybox shader writes clip.xyww
+	// (so every fragment lands at depth = 1.0), the pipeline is configured
+	// LessEqual + depth-write-off, and the pass loads (not clears) the HDR
+	// color target plus the gbuffer depth.
+	if (renderTarget.skyboxEnabled)
+	{
+		updateSkyboxBindGroup(renderTarget);
+		auto skyboxBindGroup = m_skyboxBindGroups[renderTargetId];
+		if (skyboxBindGroup)
+		{
+			auto skyboxPassContext = m_context->renderPassFactory().create(
+				renderToTexture,
+				gBuffer.getDepthTexture(),
+				ClearFlags::None, // LoadOp::Load for both color and depth
+				renderTarget.backgroundColor
+			);
+			m_skyboxPass->setRenderPassContext(skyboxPassContext);
+			m_skyboxPass->setCameraId(renderTargetId);
+			m_skyboxPass->setEnvironmentBindGroup(skyboxBindGroup);
+			m_skyboxPass->render(m_frameCache);
+		}
 	}
 
 	// ========================================
@@ -677,7 +632,7 @@ void Renderer::renderToTexture(
 	// STEP 7: Post-Processing Pass
 	// ========================================
 	// Tutorial 04 - Step 11: Apply vignette effect
-	// Texture swapping: MeshPass/DebugPass output ÔåÆ input for post-processing
+	// Texture swapping: MeshPass/DebugPass output → input for post-processing
 	// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)
 
 	// ========================================
@@ -732,9 +687,7 @@ void Renderer::compositeTexturesToSurface(
 	// This ensures UI always renders on top of the scene.
 	if (uiCallback)
 	{
-		wgpu::CommandEncoderDescriptor encoderDesc{};
-		encoderDesc.label = "UI Command Encoder";
-		wgpu::CommandEncoder uiEncoder = m_context->getDevice().createCommandEncoder(encoderDesc);
+		auto uiEncoder = m_context->createCommandEncoder("UI Command Encoder");
 
 		// Create render pass that renders over existing surface (no clear)
 		auto uiPassContext = m_context->renderPassFactory().create(
@@ -778,9 +731,15 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 
 	if (m_skyboxPass)
 		m_skyboxPass->cleanup();
-	// Tutorial 04 - Step 12: Handle window resize (continued)
-	// Post-processing pass also needs to clean up GPU resources so it can recreate them with new sizes.
-	// If we don't clean up, we'll have dangling GPU resources with old dimensions that cause rendering issues.
+
+	// The G-buffer resizes per-camera inside renderToTexture, but its cached
+	// render-pass context and the composition pass's cached pipeline + G-buffer
+	// bind group need to be invalidated so they pick up the new attachments.
+	if (m_gBufferPass)
+		m_gBufferPass->cleanup();
+
+	if (m_compositionPass)
+		m_compositionPass->cleanup();
 
 	spdlog::info("Renderer resized to {}x{}", width, height);
 }

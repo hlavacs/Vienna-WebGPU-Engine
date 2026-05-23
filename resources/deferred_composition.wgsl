@@ -21,6 +21,17 @@
 @group(4) @binding(0) var<storage, read> uClusterGrid: array<ClusterLightList>;
 @group(4) @binding(1) var<storage, read> uClusterLightIndices: array<u32>;  // Flat buffer of light indices
 
+// Environment irradiance (matches the PBR ENVIRONMENT layout exactly so the
+// same per-camera bind group built by Renderer::updateEnvironmentBindGroup
+// can feed forward and deferred paths interchangeably).
+// params.x = irradiance enabled (0/1), .y = intensity, .z = skybox enabled, .w = reserved
+struct EnvironmentUniforms {
+	params: vec4<f32>,
+}
+@group(5) @binding(0) var<uniform> uEnvironment: EnvironmentUniforms;
+@group(5) @binding(1) var environmentSampler: sampler;
+@group(5) @binding(2) var environmentTexture: texture_2d<f32>;
+
 // Structures (should match C++ definitions)
 struct FrameUniforms {
 	viewMatrix: mat4x4<f32>,
@@ -78,6 +89,16 @@ struct PBRProperties {
 }
 
 const PI: f32 = 3.141592653589793;
+const INV_PI: f32 = 0.31830988618;
+const INV_2PI: f32 = 0.15915494309;
+
+// Sample the equirect environment map at a world-space direction.
+fn sampleEnvironmentAtDirection(direction: vec3<f32>) -> vec3<f32> {
+	let dir = normalize(direction);
+	let u = atan2(dir.z, dir.x) * INV_2PI + 0.5;
+	let v = acos(clamp(dir.y, -1.0, 1.0)) * INV_PI;
+	return textureSample(environmentTexture, environmentSampler, vec2<f32>(u, v)).rgb;
+}
 
 // Vertex shader pass-through
 struct VertexOutput {
@@ -292,13 +313,20 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let fallbackLightCount = min(uLights.count, 512u);
 	let useFallbackAllLights = clusteredLightCount == 0u;
 	let lightCount = select(clusteredLightCount, fallbackLightCount, useFallbackAllLights);
-	if (lightCount == 0u) {
-		return vec4<f32>(0.0, 0.0, 0.0, 1.0);
-	}
-	
-	// Accumulate lighting
+
+	// Accumulate lighting. Start with image-based ambient: sample the
+	// environment map along the world normal as a cheap diffuse-irradiance
+	// approximation. uEnvironment.params.x toggles it, .y is intensity.
+	// Doing this BEFORE the direct light loop means scenes with zero
+	// dynamic lights still pick up environment color instead of going black.
 	var finalColor = vec3<f32>(0.0);
-	
+	if (uEnvironment.params.x > 0.5) {
+		let envIrradiance = sampleEnvironmentAtDirection(worldNormal);
+		// (1 - metallic) so metals don't get a diffuse ambient hit, which
+		// matches how real metals reflect environment instead of absorbing it.
+		finalColor += albedoLinear * envIrradiance * uEnvironment.params.y * (1.0 - metallic);
+	}
+
 	// Iterate through lights affecting this pixel
 	for (var i: u32 = 0u; i < lightCount; i++) {
 		var lightIdx: u32 = i;

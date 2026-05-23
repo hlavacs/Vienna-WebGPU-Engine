@@ -267,11 +267,16 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	shadowMapsCube.textureMultisampled = false;
 	bindGroupBuilder.bindings.push_back(shadowMapsCube);
 
+	// The shader declares uShadows as an unbounded runtime array, but the
+	// engine still has to provision a sensibly sized default buffer for
+	// callers that don't override the shadow bind group. Reserve room for
+	// the engine's full shadow budget (2D + cube) so the default is usable
+	// even without an override.
 	ShaderBinding shadowUniformBuffer;
 	shadowUniformBuffer.type = BindingType::StorageBuffer;
 	shadowUniformBuffer.name = "uShadows";
 	shadowUniformBuffer.binding = 3;
-	shadowUniformBuffer.size = sizeof(engine::rendering::ShadowUniform);
+	shadowUniformBuffer.size = (constants::MAX_SHADOW_MAPS_2D + constants::MAX_SHADOW_MAPS_CUBE) * sizeof(engine::rendering::ShadowUniform);
 	shadowUniformBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
 	shadowUniformBuffer.visibility = WGPUShaderStage_Fragment;
 	shadowUniformBuffer.readOnly = true;
@@ -300,6 +305,24 @@ void WebGPUShaderFactory::WebGPUShaderBuilder::checkLastBindGroup()
 {
 	if (m_lastBindGroupIndex < 0)
 		throw std::runtime_error("No bind group added! Add a bind group before adding bindings.");
+}
+
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addColorTarget(wgpu::TextureFormat format)
+{
+	m_colorTargetFormats.push_back(format);
+	return *this;
+}
+
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::withDepthCompare(wgpu::CompareFunction compare)
+{
+	m_depthCompare = compare;
+	return *this;
+}
+
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::withDepthWrite(bool enabled)
+{
+	m_depthWriteEnabled = enabled;
+	return *this;
 }
 
 std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::WebGPUShaderBuilder::build()
@@ -333,6 +356,11 @@ std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::WebGPUShaderBuilder::buil
 		m_depthEnabled,
 		m_backFaceCullingEnabled
 	);
+
+	if (!m_colorTargetFormats.empty())
+		builtShaderInfo->setColorTargetFormats(m_colorTargetFormats);
+	builtShaderInfo->setDepthCompare(m_depthCompare);
+	builtShaderInfo->setDepthWriteEnabled(m_depthWriteEnabled);
 
 	m_factory.createBindGroupLayouts(builtShaderInfo, m_bindGroupsBuilder);
 

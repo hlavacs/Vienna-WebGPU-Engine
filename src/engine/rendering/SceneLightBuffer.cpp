@@ -53,11 +53,12 @@ SceneLightBuffer::SceneLightBuffer(engine::rendering::webgpu::WebGPUContext &con
 
 SceneLightBuffer::~SceneLightBuffer()
 {
-	if (m_storageBuffer)
-	{
-		m_storageBuffer.release();
-	}
+	// The storage buffer handle cached in m_storageBuffer is owned by the
+	// WebGPUBuffer instance held inside m_bindGroup. That WebGPUBuffer
+	// destructor will call destroy()/release() on the underlying wgpu handle.
+	// Releasing it manually here would double-free the wgpu handle.
 	m_bindGroup.reset();
+	m_storageBuffer = nullptr;
 }
 
 void SceneLightBuffer::updateFromManager(const LightManager &lightManager)

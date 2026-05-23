@@ -61,25 +61,32 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	std::vector<wgpu::VertexAttribute> vertexAttributes;
 	auto vertexBufferLayout = createVertexLayoutFromEnum(vertexLayout, vertexAttributes);
 
-	// Fragment state
+	// Fragment state.
+	//
+	// Two sources of truth for color attachment formats:
+	//   1. shaderInfo->getColorTargetFormats() - declared via
+	//      WebGPUShaderBuilder::addColorTarget() for shaders that write to
+	//      multiple targets or need a fixed format (e.g. G-buffer geometry).
+	//      Wins when non-empty.
+	//   2. colorFormat parameter - the single-target fallback used by every
+	//      plain forward / post-process pipeline.
 	wgpu::ColorTargetState colorTarget{};
 	wgpu::FragmentState fragmentState{};
+	std::vector<wgpu::ColorTargetState> multiTargets;
 	if (hasFragment)
 	{
-		if (shaderInfo->getName() == "GBuffer")
+		const auto &declaredFormats = shaderInfo->getColorTargetFormats();
+		if (!declaredFormats.empty())
 		{
-			static std::array<wgpu::ColorTargetState, 4> gbufferTargets{};
-			gbufferTargets[0].format = wgpu::TextureFormat::RGBA16Float;
-			gbufferTargets[1].format = wgpu::TextureFormat::RGBA16Float;
-			gbufferTargets[2].format = wgpu::TextureFormat::RGBA8UnormSrgb;
-			gbufferTargets[3].format = wgpu::TextureFormat::RGBA8Unorm;
-			for (auto &target : gbufferTargets)
+			multiTargets.resize(declaredFormats.size());
+			for (size_t i = 0; i < declaredFormats.size(); ++i)
 			{
-				target.blend = nullptr;
-				target.writeMask = wgpu::ColorWriteMask::All;
+				multiTargets[i].format = declaredFormats[i];
+				multiTargets[i].blend = blendEnabled ? &m_defaultBlendState : nullptr;
+				multiTargets[i].writeMask = wgpu::ColorWriteMask::All;
 			}
-			fragmentState.targets = gbufferTargets.data();
-			fragmentState.targetCount = static_cast<uint32_t>(gbufferTargets.size());
+			fragmentState.targets = multiTargets.data();
+			fragmentState.targetCount = static_cast<uint32_t>(multiTargets.size());
 		}
 		else if (hasColor)
 		{
@@ -122,13 +129,16 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	if (hasFragment)
 		desc.fragment = &fragmentState;
 
-	// Depth-stencil (optional)
+	// Depth-stencil (optional). depthCompare / depthWriteEnabled come from the
+	// shader info so passes that need LessEqual + read-only depth (skybox after
+	// the geometry pass is the canonical example) can opt in without touching
+	// the factory's signature.
 	wgpu::DepthStencilState depthStencil{};
 	if (hasDepth)
 	{
 		depthStencil.format = depthFormat;
-		depthStencil.depthWriteEnabled = true;
-		depthStencil.depthCompare = wgpu::CompareFunction::Less;
+		depthStencil.depthWriteEnabled = shaderInfo->isDepthWriteEnabled();
+		depthStencil.depthCompare = shaderInfo->getDepthCompare();
 		depthStencil.stencilFront = {wgpu::CompareFunction::Always, wgpu::StencilOperation::Keep, wgpu::StencilOperation::Keep, wgpu::StencilOperation::Keep};
 		depthStencil.stencilBack = depthStencil.stencilFront;
 		desc.depthStencil = &depthStencil;
@@ -193,47 +203,42 @@ wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engin
 		return emptyLayout;
 	}
 
+	// Attribute offsets must match the *packed* layout produced by
+	// Vertex::repackVertices() - not offsetof() into the (padded) C++ struct.
+	// repackVertices writes attributes back-to-back in this fixed order:
+	//   Position -> Normal -> UV -> Tangent -> Color
+	// We mirror that order here and accumulate the offset as we go.
 	engine::rendering::VertexAttribute attribs = engine::rendering::Vertex::requiredAttributes(layout);
-	size_t arrayStride = engine::rendering::Vertex::getStride(layout);
+	const size_t arrayStride = engine::rendering::Vertex::getStride(layout);
+
+	size_t cursor = 0;
+	auto pushAttr = [&](wgpu::VertexFormat fmt, size_t fieldBytes)
+	{
+		wgpu::VertexAttribute a{};
+		a.format = fmt;
+		a.offset = cursor;
+		attributes.push_back(a);
+		cursor += fieldBytes;
+	};
+
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Position))
-	{
-		wgpu::VertexAttribute positionAttr{};
-		positionAttr.format = wgpu::VertexFormat::Float32x3;
-		positionAttr.offset = offsetof(engine::rendering::Vertex, position);
-		attributes.push_back(positionAttr);
-	}
+		pushAttr(wgpu::VertexFormat::Float32x3, sizeof(engine::rendering::Vertex::position));
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Normal))
-	{
-		wgpu::VertexAttribute normalAttr{};
-		normalAttr.format = wgpu::VertexFormat::Float32x3;
-		normalAttr.offset = offsetof(engine::rendering::Vertex, normal);
-		attributes.push_back(normalAttr);
-	}
+		pushAttr(wgpu::VertexFormat::Float32x3, sizeof(engine::rendering::Vertex::normal));
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::UV))
-	{
-		wgpu::VertexAttribute uvAttr{};
-		uvAttr.format = wgpu::VertexFormat::Float32x2;
-		uvAttr.offset = offsetof(engine::rendering::Vertex, uv);
-		attributes.push_back(uvAttr);
-	}
+		pushAttr(wgpu::VertexFormat::Float32x2, sizeof(engine::rendering::Vertex::uv));
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Tangent))
-	{
-		wgpu::VertexAttribute tangentAttr{};
-		tangentAttr.format = wgpu::VertexFormat::Float32x4;
-		tangentAttr.offset = offsetof(engine::rendering::Vertex, tangent);
-		attributes.push_back(tangentAttr);
-	}
+		pushAttr(wgpu::VertexFormat::Float32x4, sizeof(engine::rendering::Vertex::tangent));
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Color))
-	{
-		wgpu::VertexAttribute colorAttr{};
-		colorAttr.format = wgpu::VertexFormat::Float32x3;
-		colorAttr.offset = offsetof(engine::rendering::Vertex, color);
-		attributes.push_back(colorAttr);
-	}
+		pushAttr(wgpu::VertexFormat::Float32x3, sizeof(engine::rendering::Vertex::color));
+
+	// Sanity: the accumulated offsets must add up to the same stride that
+	// repackVertices/getStride agreed on, otherwise the GPU would read past
+	// the end of each vertex.
+	assert(cursor == arrayStride && "Packed vertex offsets disagree with Vertex::getStride()");
+
 	for (auto i = 0; i < attributes.size(); ++i)
-	{
 		attributes[i].shaderLocation = static_cast<uint32_t>(i);
-	}
 
 	wgpu::VertexBufferLayout vertexLayout{};
 	vertexLayout.stepMode = wgpu::VertexStepMode::Vertex;

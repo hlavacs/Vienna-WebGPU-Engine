@@ -85,11 +85,44 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	 * @brief Create a WebGPUTexture from explicit descriptors.
 	 * @param textureDesc Texture descriptor.
 	 * @param viewDesc Texture view descriptor.
+	 * @param type Logical texture type (Image, Depth, DepthStencil, RenderTarget, ...).
+	 *             Used by WebGPUTexture for correct cleanup and behavior switches
+	 *             (e.g. depth textures skip color attachment helpers).
 	 * @return Shared pointer to WebGPUTexture.
 	 */
 	std::shared_ptr<WebGPUTexture> createFromDescriptors(
 		const wgpu::TextureDescriptor &textureDesc,
-		const wgpu::TextureViewDescriptor &viewDesc
+		const wgpu::TextureViewDescriptor &viewDesc,
+		engine::rendering::Texture::Type type = engine::rendering::Texture::Type::Image
+	);
+
+	/**
+	 * @brief Create a 2D color render-target texture in one call.
+	 *
+	 * Convenience wrapper for the common "single mip, single layer, render
+	 * attachment + texture binding" pattern used by G-buffer slots, HDR
+	 * intermediates, and post-processing targets. Skips the cache used by
+	 * @ref createRenderTarget, so the caller owns the resulting shared_ptr
+	 * directly - useful when the texture's lifetime is tied to an owning
+	 * container (e.g. @ref GBuffer ) rather than a stable integer id.
+	 *
+	 * @param label  Debug label assigned to both the texture and its view.
+	 * @param width  Width in pixels (must be > 0).
+	 * @param height Height in pixels (must be > 0).
+	 * @param format Pixel format.
+	 * @param usage  Usage flags. Defaults to
+	 *               @c RenderAttachment | @c TextureBinding which is what
+	 *               every render-then-sample workflow needs.
+	 * @return Owned shared pointer to the new WebGPUTexture.
+	 */
+	// Parameter is the raw flag bitfield (matches wgpu::TextureDescriptor::usage's
+	// underlying type) so callers can OR enum values together without casts.
+	std::shared_ptr<WebGPUTexture> createColorRenderTarget(
+		const char *label,
+		uint32_t width,
+		uint32_t height,
+		wgpu::TextureFormat format,
+		WGPUTextureUsageFlags usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
 	);
 
 	/**

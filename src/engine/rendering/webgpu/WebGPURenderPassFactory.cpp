@@ -138,4 +138,51 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createCustom(
 	);
 }
 
+std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createMultiTarget(
+	const char *label,
+	const std::vector<std::shared_ptr<WebGPUTexture>> &colorTextures,
+	const std::shared_ptr<WebGPUTexture> &depthTexture,
+	const glm::vec4 &clearColor,
+	float depthClear
+)
+{
+	assert(!colorTextures.empty() && "createMultiTarget needs at least one color attachment");
+
+	std::vector<wgpu::RenderPassColorAttachment> colorAttachments(colorTextures.size());
+	for (size_t i = 0; i < colorTextures.size(); ++i)
+	{
+		assert(colorTextures[i] && "Null color texture passed to createMultiTarget");
+		auto &att = colorAttachments[i];
+		att.view = colorTextures[i]->getTextureView();
+		att.loadOp = wgpu::LoadOp::Clear;
+		att.storeOp = wgpu::StoreOp::Store;
+		att.clearValue = {clearColor.r, clearColor.g, clearColor.b, clearColor.a};
+	}
+
+	wgpu::RenderPassDepthStencilAttachment depthAttachment{};
+	if (depthTexture)
+	{
+		depthAttachment.view = depthTexture->getTextureView();
+		depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
+		depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
+		depthAttachment.depthClearValue = depthClear;
+		depthAttachment.depthReadOnly = false;
+		// Stencil aspect is unused for the depth-only formats we expect here.
+		depthAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
+		depthAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
+		depthAttachment.stencilReadOnly = true;
+	}
+
+	wgpu::RenderPassDescriptor desc{};
+	desc.label = label;
+	desc.colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size());
+	desc.colorAttachments = colorAttachments.data();
+	desc.depthStencilAttachment = depthTexture ? &depthAttachment : nullptr;
+
+	// createCustom() copies both the descriptor and the attachment array
+	// into the context's internal storage, so it is safe to let the locals
+	// here go out of scope on return.
+	return createCustom(colorTextures, depthTexture, desc);
+}
+
 } // namespace engine::rendering::webgpu

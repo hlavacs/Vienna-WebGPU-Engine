@@ -13,6 +13,24 @@ std::shared_ptr<WebGPUTexture> WebGPUDepthTextureFactory::createDefault(uint32_t
 	return create(width, height, format, 1, 1, 1, wgpu::TextureUsage::RenderAttachment);
 }
 
+std::shared_ptr<WebGPUTexture> WebGPUDepthTextureFactory::createDepthTarget(
+	const char *label,
+	uint32_t width,
+	uint32_t height,
+	wgpu::TextureFormat format,
+	WGPUTextureUsageFlags usage
+)
+{
+	assert(width > 0 && height > 0 && "Depth target dimensions must be > 0");
+	// create() takes the typed wrapper; bridge through the underlying enum
+	// because the wrapper has no implicit constructor from uint32_t.
+	return create(
+		width, height, format, 1, 1, 1,
+		wgpu::TextureUsage(static_cast<WGPUTextureUsage>(usage)),
+		label
+	);
+}
+
 std::shared_ptr<WebGPUTexture> WebGPUDepthTextureFactory::create(
 	uint32_t width,
 	uint32_t height,
@@ -20,12 +38,13 @@ std::shared_ptr<WebGPUTexture> WebGPUDepthTextureFactory::create(
 	uint32_t mipLevelCount,
 	uint32_t arrayLayerCount,
 	uint32_t sampleCount,
-	wgpu::TextureUsage usage
+	wgpu::TextureUsage usage,
+	const char *label
 )
 {
 	// Describe the texture
 	wgpu::TextureDescriptor desc{};
-	desc.label = "DepthTexture";
+	desc.label = label ? label : "DepthTexture";
 	desc.dimension = wgpu::TextureDimension::_2D;
 	desc.size.width = width;
 	desc.size.height = height;
