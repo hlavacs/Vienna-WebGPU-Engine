@@ -17,6 +17,6 @@ constexpr uint32_t DEFAULT_SHADOW_MAP_SIZE = 2048;
 constexpr uint32_t DEFAULT_CUBE_SHADOW_MAP_SIZE = 1024;
 
 // Light configuration
-constexpr uint32_t MAX_LIGHTS = 16;
+constexpr uint32_t MAX_LIGHTS = 512;
 
 } // namespace engine::rendering::constants

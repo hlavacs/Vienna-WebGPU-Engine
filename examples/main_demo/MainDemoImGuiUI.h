@@ -42,6 +42,20 @@ class MainDemoImGuiUI
 	void renderMaterialProperties();
 	void renderLightsSection();
 
+	// Free-flying point lights demo (SeaKeep / second scene)
+	bool m_flockEnabled = false;
+	int m_flockAmount = 100;
+	float m_flockAttraction = 1.0f;
+	glm::vec3 m_flockCenter = glm::vec3(0.0f, 5.0f, 0.0f);
+	std::vector<std::shared_ptr<engine::scene::nodes::LightNode>> m_flockLights;
+	std::vector<glm::vec3> m_flockVelocities;
+	std::vector<float> m_flockNoisePhases;
+
+	void renderFlockControls();
+	void spawnFlock(int amount);
+	void clearFlock();
+	void updateFlock(float deltaSeconds);
+
 	ImTextureID getOrCreateImGuiTexture(engine::rendering::TextureHandle textureHandle);
 };
 

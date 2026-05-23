@@ -271,8 +271,7 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	shadowUniformBuffer.type = BindingType::StorageBuffer;
 	shadowUniformBuffer.name = "uShadows";
 	shadowUniformBuffer.binding = 3;
-	size_t maxUnifiedShadows = constants::MAX_SHADOW_MAPS_2D + constants::MAX_SHADOW_MAPS_CUBE;
-	shadowUniformBuffer.size = maxUnifiedShadows * sizeof(engine::rendering::ShadowUniform);
+	shadowUniformBuffer.size = sizeof(engine::rendering::ShadowUniform);
 	shadowUniformBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
 	shadowUniformBuffer.visibility = WGPUShaderStage_Fragment;
 	shadowUniformBuffer.readOnly = true;

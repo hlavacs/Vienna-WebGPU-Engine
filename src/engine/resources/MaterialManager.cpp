@@ -137,7 +137,7 @@ MaterialManager::createMaterial(const tinyobj::material_t &objMat, const std::st
 	mat->setFeatureMask(features);
 
 	// --- Shader ---
-	mat->setShader(engine::rendering::shader::defaults ::PBR);
+	mat->setShader(engine::rendering::shader::defaults::GBUFFER);
 
 	using engine::core::unwrapOrHandle;
 
@@ -294,7 +294,7 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	mat->setFeatureMask(features);
 
 	// Default shader
-	mat->setShader(engine::rendering::shader::defaults::PBR);
+	mat->setShader(engine::rendering::shader::defaults::GBUFFER);
 
 	auto handleOpt = add(mat);
 	if (!handleOpt)
@@ -354,7 +354,7 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createPBRMaterial(
 	mat->setFeatureMask(features);
 
 	// Default shader
-	mat->setShader(engine::rendering::shader::defaults::PBR);
+	mat->setShader(engine::rendering::shader::defaults::GBUFFER);
 
 	auto handleOpt = add(mat);
 	if (!handleOpt)
@@ -392,7 +392,7 @@ MaterialManager::MaterialHandle MaterialManager::getDefaultMaterial() const
 
 	mat->setProperties(props);
 	mat->setName("Default_Magenta");
-	mat->setShader(engine::rendering::shader::defaults ::PBR); // ToDo: Unlit shader?
+	mat->setShader(engine::rendering::shader::defaults::GBUFFER); // ToDo: Unlit shader?
 
 	if (m_textureManager)
 	{

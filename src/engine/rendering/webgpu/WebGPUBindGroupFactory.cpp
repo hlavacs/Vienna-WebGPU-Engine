@@ -76,7 +76,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 		{
 			// Use the provided override resource
 			const auto &bindResource = resourceIt->second;
-			std::visit([&entry](const auto &resource)
+			std::visit([&entry, &groupBuffers](const auto &resource)
 					   {
 				using T = std::decay_t<decltype(resource)>;
 				
@@ -93,6 +93,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 					entry.buffer = resource->getBuffer();
 					entry.offset = 0;
 					entry.size = resource->getSize();
+					groupBuffers.push_back(resource);
 				} },
 					   bindResource.resource);
 		}

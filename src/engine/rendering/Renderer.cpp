@@ -1,19 +1,25 @@
 #include "engine/rendering/Renderer.h"
 
+#include <array>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <limits>
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
+#include "engine/lighting/LightManager.h"
 #include "engine/rendering/BindGroupDataProvider.h"
 #include "engine/rendering/ClearFlags.h"
+#include "engine/rendering/ClusterManager.h"
 #include "engine/rendering/ColorSpace.h"
 #include "engine/rendering/CompositePass.h"
+#include "engine/rendering/CompositionPass.h"
 #include "engine/rendering/DebugPass.h"
 #include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameUniforms.h"
+#include "engine/rendering/GBufferPass.h"
+#include "engine/rendering/webgpu/GBuffer.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/Mesh.h"
@@ -26,6 +32,7 @@
 #include "engine/rendering/RenderPassManager.h"
 #include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/RenderingConstants.h"
+#include "engine/rendering/SceneLightBuffer.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/SkyboxPass.h"
@@ -70,6 +77,20 @@ bool Renderer::initialize()
 	if (!m_meshPass->initialize())
 	{
 		spdlog::error("Failed to initialize MeshPass");
+		return false;
+	}
+
+	m_gBufferPass = std::make_unique<GBufferPass>(m_context);
+	if (!m_gBufferPass->initialize())
+	{
+		spdlog::error("Failed to initialize GBufferPass");
+		return false;
+	}
+
+	m_compositionPass = std::make_unique<CompositionPass>(m_context);
+	if (!m_compositionPass->initialize())
+	{
+		spdlog::error("Failed to initialize CompositionPass");
 		return false;
 	}
 
@@ -171,6 +192,39 @@ bool Renderer::renderFrame(
 	);
 	m_frameCache.lightUniforms = std::move(lightUniforms);
 	m_frameCache.shadowRequests = std::move(shadowRequests);
+
+	// Upload current frame lights to the shared scene light storage buffer for deferred composition.
+	if (auto lightManager = m_context->lightManager())
+	{
+		lightManager->updateLights(renderCollector);
+		if (auto sceneLightBuffer = m_context->sceneLightBuffer())
+		{
+			sceneLightBuffer->updateFromLights(m_frameCache.lightUniforms);
+			const uint32_t uploadedLightCount = sceneLightBuffer->getLightCount();
+			if (uploadedLightCount != m_lastUploadedLightCount)
+			{
+				spdlog::info(
+					"Deferred light counts changed: collector={}, uniforms={}, uploaded={}",
+					renderCollector.getLightCount(),
+					m_frameCache.lightUniforms.size(),
+					uploadedLightCount
+				);
+				m_lastUploadedLightCount = uploadedLightCount;
+			}
+			if (lightManager->getLightCount() == 0 && !m_frameCache.lights.empty())
+			{
+				spdlog::warn("Deferred lighting upload produced 0 lights from {} scene lights", m_frameCache.lights.size());
+			}
+		}
+		else
+		{
+			spdlog::warn("SceneLightBuffer unavailable - deferred composition will render without lights");
+		}
+	}
+	else
+	{
+		spdlog::warn("LightManager unavailable - deferred composition will render without lights");
+	}
 
 	// === PHASE 4: Render Each Camera View ===
 	// Multi-camera rendering: each camera gets its own shadow maps and scene render
@@ -490,49 +544,117 @@ void Renderer::renderToTexture(
 	m_frameCache.prepareGPUResources(m_context, collector, visibleIndices);
 
 	// ========================================
-	// STEP 5: Mesh Rendering Pass
+	// STEP 5: Deferred Geometry + Lighting
 	// ========================================
-	updateEnvironmentBindGroup(renderTarget);
+	spdlog::debug("Using deferred rendering pipeline for this frame");
 
-	if (renderTarget.skyboxEnabled && m_environmentBindGroups[renderTargetId])
+	auto gBuffer = m_gBufferPass->getGBuffer();
+	if (!gBuffer)
 	{
-		auto skyboxClearFlags = ClearFlags::SolidColor;
-
-		auto skyboxPassContext = m_context->renderPassFactory().create(
-			renderToTexture,
-			nullptr,
-			skyboxClearFlags,
-			renderTarget.backgroundColor
-		);
-
-		m_skyboxPass->setRenderPassContext(skyboxPassContext);
-		m_skyboxPass->setCameraId(renderTargetId);
-		m_skyboxPass->setEnvironmentBindGroup(m_environmentBindGroups[renderTargetId]);
-		m_skyboxPass->render(m_frameCache);
+		spdlog::error("GBufferPass has no G-buffer initialized");
+		return;
 	}
 
-	auto meshClearFlags = renderTarget.clearFlags;
-	if (renderTarget.skyboxEnabled)
-	{
-		meshClearFlags = (meshClearFlags & ~ClearFlags::SolidColor) | ClearFlags::Depth;
-	}
+	wgpu::RenderPassColorAttachment positionAttachment{};
+	positionAttachment.view = gBuffer->getPositionTexture()->getTextureView();
+	positionAttachment.loadOp = wgpu::LoadOp::Clear;
+	positionAttachment.storeOp = wgpu::StoreOp::Store;
+	positionAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
 
-	// Render all visible based on material and mesh configurations.
-	auto meshPassContext = m_context->renderPassFactory().create(
-		renderToTexture,				// Color attachment
-		m_depthBuffers[renderTargetId], // Depth attachment
-		meshClearFlags,				// Clear color/depth?
-		renderTarget.backgroundColor	// Clear color
+	wgpu::RenderPassColorAttachment normalAttachment{};
+	normalAttachment.view = gBuffer->getNormalTexture()->getTextureView();
+	normalAttachment.loadOp = wgpu::LoadOp::Clear;
+	normalAttachment.storeOp = wgpu::StoreOp::Store;
+	normalAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
+
+	wgpu::RenderPassColorAttachment albedoAttachment{};
+	albedoAttachment.view = gBuffer->getAlbedoTexture()->getTextureView();
+	albedoAttachment.loadOp = wgpu::LoadOp::Clear;
+	albedoAttachment.storeOp = wgpu::StoreOp::Store;
+	albedoAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
+
+	wgpu::RenderPassColorAttachment materialAttachment{};
+	materialAttachment.view = gBuffer->getMaterialTexture()->getTextureView();
+	materialAttachment.loadOp = wgpu::LoadOp::Clear;
+	materialAttachment.storeOp = wgpu::StoreOp::Store;
+	materialAttachment.clearValue = {0.0f, 0.0f, 0.0f, 1.0f};
+
+	wgpu::RenderPassDepthStencilAttachment depthAttachment{};
+	depthAttachment.view = gBuffer->getDepthTexture()->getTextureView();
+	depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
+	depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
+	depthAttachment.depthClearValue = 1.0f;
+	depthAttachment.depthReadOnly = false;
+	depthAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
+	depthAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
+	depthAttachment.stencilReadOnly = true;
+
+	wgpu::RenderPassDescriptor gBufferDesc{};
+	gBufferDesc.label = "GBufferPass_RenderPass";
+	gBufferDesc.colorAttachmentCount = 4;
+	std::array<wgpu::RenderPassColorAttachment, 4> gBufferAttachments{
+		positionAttachment,
+		normalAttachment,
+		albedoAttachment,
+		materialAttachment
+	};
+	gBufferDesc.colorAttachments = gBufferAttachments.data();
+	gBufferDesc.depthStencilAttachment = &depthAttachment;
+
+	auto gBufferPassContext = m_context->renderPassFactory().createCustom(
+		{
+			gBuffer->getPositionTexture(),
+			gBuffer->getNormalTexture(),
+			gBuffer->getAlbedoTexture(),
+			gBuffer->getMaterialTexture()
+		},
+		gBuffer->getDepthTexture(),
+		gBufferDesc
 	);
 
-	m_meshPass->setRenderPassContext(meshPassContext);
-	m_meshPass->setCameraId(renderTargetId);
-	m_meshPass->setVisibleIndices(visibleIndices);
-	m_meshPass->setShadowBindGroup(m_shadowPass->getShadowBindGroup());
-	m_meshPass->setEnvironmentBindGroup(m_environmentBindGroups[renderTargetId]);
+	m_gBufferPass->setRenderPassContext(gBufferPassContext);
+	m_gBufferPass->setCameraId(renderTargetId);
+	m_gBufferPass->setVisibleIndices(visibleIndices);
+	m_gBufferPass->setShadowBindGroup(m_shadowPass->getShadowBindGroup());
 
-	spdlog::debug("Rendering {} GPU mesh items", m_frameCache.gpuRenderItems.size());
-	m_meshPass->render(m_frameCache);
+	spdlog::debug("Rendering G-buffers for {} GPU mesh items", m_frameCache.gpuRenderItems.size());
+	m_gBufferPass->render(m_frameCache);
+
+	auto sceneLightBuffer = m_context->sceneLightBuffer();
+	auto shadowBindGroup = m_shadowPass ? m_shadowPass->getShadowBindGroup() : nullptr;
+	if (sceneLightBuffer && sceneLightBuffer->getBindGroup() && shadowBindGroup)
+	{
+		spdlog::debug("Clustering {} lights into {}x{}x{} grid",
+			m_frameCache.lights.size(),
+			engine::rendering::ClusterManager::CLUSTER_GRID_DIM_X,
+			engine::rendering::ClusterManager::CLUSTER_GRID_DIM_Y,
+			engine::rendering::ClusterManager::CLUSTER_GRID_DIM_Z);
+
+		if (!m_context->clusterManager()->assignLights(m_frameCache, sceneLightBuffer->getBindGroup()))
+		{
+			spdlog::warn("Failed to assign lights to clusters");
+		}
+	}
+	else
+	{
+		spdlog::warn("Scene light buffer not initialized");
+	}
+
+	if (m_compositionPass && sceneLightBuffer && m_context->clusterManager()->getClusterBindGroup())
+	{
+		spdlog::debug("Rendering deferred composition pass");
+		m_compositionPass->render(
+			m_frameCache,
+			m_gBufferPass->getGBuffer(),
+			sceneLightBuffer->getBindGroup(),
+			*m_shadowPass,
+			m_context->clusterManager()->getClusterBindGroup()
+		);
+	}
+	else
+	{
+		spdlog::warn("Cannot render composition pass: missing light, shadow, or cluster bind group");
+	}
 
 	// ========================================
 	// STEP 6: Debug Rendering Pass
@@ -555,7 +677,7 @@ void Renderer::renderToTexture(
 	// STEP 7: Post-Processing Pass
 	// ========================================
 	// Tutorial 04 - Step 11: Apply vignette effect
-	// Texture swapping: MeshPass/DebugPass output → input for post-processing
+	// Texture swapping: MeshPass/DebugPass output ÔåÆ input for post-processing
 	// Output: Post-processed image (stored in m_postProcessTextures for CompositePass)
 
 	// ========================================
@@ -569,13 +691,13 @@ void Renderer::renderToTexture(
 		{
 			auto &tex = textureOpt.value();
 
-			// Phase 1 — initiate readback if requested and none in flight
+			// Phase 1 ÔÇö initiate readback if requested and none in flight
 			if (tex->isReadbackRequested() && !renderToTexture->isReadbackPending())
 			{
 				renderToTexture->beginReadback(*m_context);
 			}
 
-			// Phase 2 — poll every frame until GPU callback fires
+			// Phase 2 ÔÇö poll every frame until GPU callback fires
 			if (renderToTexture->isReadbackPending())
 			{
 				if (renderToTexture->pollReadback(*m_context, tex))

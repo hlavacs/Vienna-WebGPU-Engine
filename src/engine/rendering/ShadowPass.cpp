@@ -12,6 +12,7 @@
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowRequest.h"
 #include "engine/rendering/ShadowUniforms.h"
+#include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPURenderPassContext.h"
@@ -103,12 +104,23 @@ bool ShadowPass::initialize()
 		constants::DEFAULT_CUBE_SHADOW_MAP_SIZE,
 		constants::MAX_SHADOW_MAPS_CUBE
 	);
+	auto shadowUniformBuffer = m_context->bufferFactory().createStorageBufferWrapped(
+		"uShadows",
+		3,
+		(sizeof(ShadowUniform) * (constants::MAX_SHADOW_MAPS_2D + constants::MAX_SHADOW_MAPS_CUBE))
+	);
+	if (!shadowUniformBuffer)
+	{
+		spdlog::error("Failed to create shadow uniform buffer");
+		return false;
+	}
 
 	m_shadowBindGroup = m_context->bindGroupFactory().createBindGroup(
 		shadowLayout,
 		{{{4, 0}, webgpu::BindGroupResource(m_shadowSampler)},
 		 {{4, 1}, webgpu::BindGroupResource(m_shadow2DArray)},
-		 {{4, 2}, webgpu::BindGroupResource(m_shadowCubeArray)}},
+		 {{4, 2}, webgpu::BindGroupResource(m_shadowCubeArray)},
+		 {{4, 3}, webgpu::BindGroupResource(shadowUniformBuffer)}},
 		nullptr,
 		"Shadow Maps"
 	);

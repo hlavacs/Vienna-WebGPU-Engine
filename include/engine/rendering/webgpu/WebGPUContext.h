@@ -25,6 +25,18 @@
 #include <SDL_syswm.h>
 #include <sdl2webgpu.h>
 
+// Forward declarations
+namespace engine::lighting
+{
+class LightManager;
+class SceneLightBuffer;
+} // namespace engine::lighting
+
+namespace engine::rendering
+{
+class ClusterManager;
+} // namespace engine::rendering
+
 namespace engine::rendering::webgpu
 {
 /**
@@ -108,6 +120,12 @@ class WebGPUContext
 	[[nodiscard]] ShaderRegistry &shaderRegistry();
 	/** @brief Returns the pipeline manager. */
 	[[nodiscard]] WebGPUPipelineManager &pipelineManager();
+	/** @brief Returns the light manager. */
+	[[nodiscard]] std::shared_ptr<engine::lighting::LightManager> lightManager() const;
+	/** @brief Returns the scene light buffer. */
+	[[nodiscard]] std::shared_ptr<engine::lighting::SceneLightBuffer> sceneLightBuffer() const;
+	/** @brief Returns the cluster manager for deferred rendering. */
+	[[nodiscard]] std::shared_ptr<engine::rendering::ClusterManager> clusterManager() const;
 
 	/**
 	 * @brief Create a command encoder with an optional label.
@@ -175,6 +193,13 @@ class WebGPUContext
 	std::unique_ptr<WebGPUShaderFactory> m_shaderFactory;
 	std::unique_ptr<ShaderRegistry> m_shaderRegistry;
 	std::unique_ptr<WebGPUPipelineManager> m_pipelineManager;
+
+	// Light management
+	std::shared_ptr<engine::lighting::LightManager> m_lightManager;
+	std::shared_ptr<engine::lighting::SceneLightBuffer> m_sceneLightBuffer;
+
+	// Deferred rendering
+	std::shared_ptr<engine::rendering::ClusterManager> m_clusterManager;
 };
 
 } // namespace engine::rendering::webgpu
