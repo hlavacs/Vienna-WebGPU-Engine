@@ -388,8 +388,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let full_base_color = textureSample(base_color_texture, texture_sampler, in.uv) * u_material.diffuse;
     let base_color = full_base_color.rgb * u_material.diffuse.rgb;
     let alpha = full_base_color.a * u_material.diffuse.a;
-    if(alpha < 0.5) { 
-        discard; 
+    if(alpha < 0.5) {
+        discard;
     }
 
     let n = normalize(in.normal);
