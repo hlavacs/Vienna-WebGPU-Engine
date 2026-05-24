@@ -138,30 +138,22 @@ void GBufferPass::render(FrameCache &frameCache)
 			continue;
 		}
 
+		// Material reads serve two purposes:
+		//   1. Pick per-material cull mode (DoubleSided GLTF geometry needs
+		//      CullMode::None - the SeaKeep is the textbook case).
+		//   2. We intentionally do NOT skip Transparent here. GLTF assets
+		//      routinely mark effectively-opaque geometry as alphaMode=BLEND;
+		//      the alpha-test discard in g_buffer.wgsl handles cutout. Real
+		//      alpha-blended geometry (glass, smoke) would need a dedicated
+		//      forward transparency pass, but demo content has none.
 		auto cpuMaterialOpt = item.gpuMaterial->getCPUHandle().get();
 		if (!cpuMaterialOpt.has_value())
 		{
 			++skipped;
 			continue;
 		}
-		const auto &cpuMaterial = cpuMaterialOpt.value();
-		const auto featureMask = cpuMaterial->getFeatureMask();
-
-		// NOTE: we intentionally do NOT skip Transparent-flagged materials here.
-		// GLTF assets routinely mark effectively-opaque geometry as
-		// alphaMode=BLEND (the SeaKeep "Fortress" walls are the textbook
-		// case). The alpha-test discard in g_buffer.wgsl handles cutout
-		// coverage; truly blended primitives (glass, smoke) would need a
-		// dedicated forward transparency pass, but the demo content does
-		// not have any so this is the right default.
-		(void)featureMask;
-
-		// Per-material cull mode: DoubleSided materials (very common in
-		// GLTF assets) must skip back-face culling, otherwise the visible
-		// faces end up culled and only inside-facing geometry contributes
-		// to the G-buffer.
 		const wgpu::CullMode cullMode = engine::rendering::MaterialFeature::hasFlag(
-				cpuMaterial->getFeatureMask(),
+				cpuMaterialOpt.value()->getFeatureMask(),
 				engine::rendering::MaterialFeature::Flag::DoubleSided)
 			? wgpu::CullMode::None
 			: wgpu::CullMode::Back;

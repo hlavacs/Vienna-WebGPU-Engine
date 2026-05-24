@@ -92,12 +92,18 @@ const PI: f32 = 3.141592653589793;
 const INV_PI: f32 = 0.31830988618;
 const INV_2PI: f32 = 0.15915494309;
 
-// Sample the equirect environment map at a world-space direction.
+// Sample the equirect environment map at a world-space direction as a cheap
+// diffuse-irradiance approximation. Without a pre-convolved irradiance map
+// we just clamp the raw HDR sample to a low ceiling: high enough to provide
+// useful ambient colour but low enough that geometry with its own baked
+// detail (like a textured GLTF sky-dome) doesn't get washed out by the
+// per-channel multiply in the lighting equation.
 fn sampleEnvironmentAtDirection(direction: vec3<f32>) -> vec3<f32> {
 	let dir = normalize(direction);
 	let u = atan2(dir.z, dir.x) * INV_2PI + 0.5;
 	let v = acos(clamp(dir.y, -1.0, 1.0)) * INV_PI;
-	return textureSample(environmentTexture, environmentSampler, vec2<f32>(u, v)).rgb;
+	let raw = textureSample(environmentTexture, environmentSampler, vec2<f32>(u, v)).rgb;
+	return min(raw, vec3<f32>(0.3));
 }
 
 // Vertex shader pass-through
@@ -292,7 +298,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	if (albedo.a < 0.5) {
 		discard;
 	}
-	let albedoLinear = pow(clamp(albedo.xyz, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(2.2));
+	// G-buffer albedo is RGBA8UnormSrgb: textureLoad already decodes sRGB ->
+	// linear. Do NOT apply pow(2.2) here - that double-decodes and crushes
+	// midtones (this was the cause of the "flat" cobblestone look).
+	let albedoLinear = clamp(albedo.xyz, vec3<f32>(0.0), vec3<f32>(1.0));
 	let materialData = textureLoad(gBufferMaterialTexture, pixelCoord, 0);
 	
 	let worldPos = positionData.xyz;
@@ -319,12 +328,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	// approximation. uEnvironment.params.x toggles it, .y is intensity.
 	// Doing this BEFORE the direct light loop means scenes with zero
 	// dynamic lights still pick up environment color instead of going black.
+	// Matches PBR_Lit_Shader: irradiance * baseColor * (1 - metallic) * ao
+	// so metals don't get diffuse ambient and cavities stay dark.
 	var finalColor = vec3<f32>(0.0);
 	if (uEnvironment.params.x > 0.5) {
 		let envIrradiance = sampleEnvironmentAtDirection(worldNormal);
-		// (1 - metallic) so metals don't get a diffuse ambient hit, which
-		// matches how real metals reflect environment instead of absorbing it.
-		finalColor += albedoLinear * envIrradiance * uEnvironment.params.y * (1.0 - metallic);
+		finalColor += albedoLinear * envIrradiance * uEnvironment.params.y * (1.0 - metallic) * ao;
 	}
 
 	// Iterate through lights affecting this pixel
@@ -399,12 +408,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	
 	// Apply AO softly to reduce over-darkening from noisy AO textures.
 	finalColor *= mix(1.0, ao, 0.5);
-	
-	// Tone mapping (simple Reinhard)
-	let mapped = finalColor / (finalColor + vec3<f32>(1.0));
-	
-	// Gamma correction
-	let corrected = pow(mapped, vec3<f32>(1.0 / 2.2));
-	
-	return vec4<f32>(corrected, 1.0);
+
+	// Return raw linear HDR. CompositePass (fullscreen_quad.wgsl) does the
+	// tone-mapping in one place so this pass, the skybox, and any future
+	// transparency pass all share the same curve.
+	return vec4<f32>(finalColor, 1.0);
 }

@@ -30,8 +30,13 @@ CMakeUserPresets.json
 /local
 
 # private folders
+/examples/main_demo/build_vs
+/examples/main_demo/logs
 private
 /examples/build
 /build_vs
 /examples/main_demo/build_vs
 /examples/main_demo/logs
+*.png
+*.log
+/.claude

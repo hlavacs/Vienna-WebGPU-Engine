@@ -67,7 +67,7 @@ struct VertexOutput {
 	@location(1) worldNormal: vec3<f32>,
 	@location(2) texCoord: vec2<f32>,
 	@location(3) worldTangent: vec3<f32>,
-	@location(4) worldBitangent: vec3<f32>,
+	@location(4) tangentSign: f32,
 }
 
 struct FragmentOutput {
@@ -85,10 +85,13 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 	output.worldPos = worldPos;
 	output.clipPosition = uFrame.viewProjectionMatrix * vec4<f32>(worldPos, 1.0);
 
+	// Pass through raw world-space N and T - the fragment shader re-orthogonalises
+	// and reconstructs B from them. Mirrors the PBR_Lit_Shader setup so the visual
+	// result of normal mapping is identical across forward and deferred paths.
 	output.worldNormal = normalize((uObject.modelInvTranspose * vec4<f32>(input.normal, 0.0)).xyz);
-	output.worldTangent = normalize((uObject.modelMatrix * vec4<f32>(input.tangent.xyz, 0.0)).xyz);
+	output.worldTangent = (uObject.modelMatrix * vec4<f32>(input.tangent.xyz, 0.0)).xyz;
 	// tangent.w carries the handedness sign produced by the importer.
-	output.worldBitangent = cross(output.worldNormal, output.worldTangent) * input.tangent.w;
+	output.tangentSign = input.tangent.w;
 
 	output.texCoord = input.texCoord;
 	return output;
@@ -98,8 +101,10 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> FragmentOutput {
 	let baseSample = textureSample(baseColorTexture, textureSampler, input.texCoord);
 	let coverage = baseSample.a * uMaterial.diffuse.a;
-	// Cut-out transparency: blended geometry should be drawn by a forward pass instead.
-	if (coverage < 0.5) {
+	// Low alpha-test threshold so BLEND-but-actually-opaque GLTF meshes
+	// (very common in Sketchfab/Blender exports) still write depth. Truly
+	// blended geometry would need a forward transparency pass.
+	if (coverage < 0.01) {
 		discard;
 	}
 
@@ -109,10 +114,22 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
 	let metallicSample = textureSample(metallicTexture, textureSampler, input.texCoord).r;
 	let emissionSample = textureSample(emissionTexture, textureSampler, input.texCoord).rgb;
 
-	// Tangent-space normal -> world space.
-	let normalTS = normalize(normalSample.rgb * 2.0 - 1.0) * uMaterial.normalTextureScale;
-	let TBN = mat3x3<f32>(input.worldTangent, input.worldBitangent, input.worldNormal);
-	let worldNormal = normalize(TBN * normalTS);
+	// Tangent-space normal -> world space. Match PBR_Lit_Shader exactly:
+	//   1. Re-orthogonalise T against N to recover the right basis after
+	//      interpolation (Gram-Schmidt).
+	//   2. Scale only the XY of the unpacked tangent-space normal - scaling
+	//      a normalised vector and rotating it does NOT add or remove relief,
+	//      it just changes the magnitude pre-renormalisation. Leaving Z
+	//      unscaled is what actually flattens/strengthens the bump.
+	//   3. Build TBN and rotate, then normalise once at the end.
+	let n0 = normalize(input.worldNormal);
+	let t0 = normalize(input.worldTangent - n0 * dot(n0, input.worldTangent));
+	let b0 = cross(n0, t0) * input.tangentSign;
+	let TBN = mat3x3<f32>(t0, b0, n0);
+
+	let normalUnpacked = normalSample.rgb * 2.0 - 1.0;
+	let scaledXY = clamp(normalUnpacked.xy * uMaterial.normalTextureScale, vec2<f32>(-2.0), vec2<f32>(2.0));
+	let worldNormal = normalize(TBN * vec3<f32>(scaledXY.x, scaledXY.y, normalUnpacked.z));
 
 	let roughness = roughnessSample * uMaterial.roughness;
 	let metallic = metallicSample * uMaterial.metallic;

@@ -234,6 +234,41 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 		props.emission[3] = 1.0f;
 	}
 
+	// "Unlit dome / backdrop" detection: a baseColorFactor of (0,0,0,*)
+	// means direct lighting can never produce visible color for this material.
+	// In Sketchfab/Blender exports this is the convention for sky-domes,
+	// painted backdrops, and similar "show this texture as-is" geometry
+	// (the SeaKeep "material_4" sky is the canonical example).
+	//
+	// Two things we do for any material matching this shape:
+	//   1. Force DoubleSided. Such meshes are always meant to be viewed from
+	//      the inside (you're standing inside the dome) and back-face culling
+	//      would otherwise drop every visible triangle - the dome vanishes.
+	//   2. If the artist did not also set up emission, remap the base
+	//      texture into the emissive slot so the dome shows its painted
+	//      texture instead of pure black. When emission IS already set up
+	//      (material_4 sets both an emissive texture AND emissive factor),
+	//      we leave it alone and just let PBR's emission term carry the
+	//      visible result.
+	const bool baseFactorIsZero =
+		gltfMat.pbrMetallicRoughness.baseColorFactor.size() == 4 &&
+		gltfMat.pbrMetallicRoughness.baseColorFactor[0] < 1e-4 &&
+		gltfMat.pbrMetallicRoughness.baseColorFactor[1] < 1e-4 &&
+		gltfMat.pbrMetallicRoughness.baseColorFactor[2] < 1e-4;
+	const bool hasBaseTexture = gltfMat.pbrMetallicRoughness.baseColorTexture.index >= 0;
+	const bool hasEmissiveAlready =
+		(gltfMat.emissiveFactor.size() == 3 &&
+		 (gltfMat.emissiveFactor[0] > 0 || gltfMat.emissiveFactor[1] > 0 || gltfMat.emissiveFactor[2] > 0)) ||
+		gltfMat.emissiveTexture.index >= 0;
+	const bool isUnlitDomePattern = baseFactorIsZero;
+	const bool needsEmissiveRemap = baseFactorIsZero && hasBaseTexture && !hasEmissiveAlready;
+	if (needsEmissiveRemap)
+	{
+		props.diffuse[0] = props.diffuse[1] = props.diffuse[2] = 1.0f;
+		props.emission[0] = props.emission[1] = props.emission[2] = 1.0f;
+		props.emission[3] = 1.0f;
+	}
+
 	mat->setProperties(props);
 	mat->setName(gltfMat.name);
 
@@ -242,10 +277,21 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	// Diffuse texture
 	if (gltfMat.pbrMetallicRoughness.baseColorTexture.index >= 0)
 	{
-		mat->setDiffuseTexture(
-			loadTexture(gltfMat.pbrMetallicRoughness.baseColorTexture.index, textures, images, *m_textureManager)
+		auto baseTex = loadTexture(
+			gltfMat.pbrMetallicRoughness.baseColorTexture.index,
+			textures, images, *m_textureManager
 		);
+		mat->setDiffuseTexture(baseTex);
 		features |= MaterialFeature::Flag::UsesBaseColorMap;
+
+		// Companion of the unlit-dome detection above: if there was no
+		// emissive texture in the GLTF, copy the base texture into the
+		// emissive slot so PBR's emission term carries the visible result.
+		if (needsEmissiveRemap)
+		{
+			mat->setEmissiveTexture(baseTex);
+			features |= MaterialFeature::Flag::UsesEmissiveMap;
+		}
 	}
 
 	// Metallic-Roughness texture
@@ -287,11 +333,18 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	// Double-sided
 	if (gltfMat.doubleSided)
 		features |= MaterialFeature::Flag::DoubleSided;
+	// Unlit-dome materials are always meant to be viewed from inside the
+	// sphere - force DoubleSided so back-face culling doesn't drop the only
+	// faces the camera can actually see.
+	if (isUnlitDomePattern)
+		features |= MaterialFeature::Flag::DoubleSided;
 
 	if (gltfMat.alphaMode == "MASK")
 		features |= MaterialFeature::Flag::AlphaTest;
 	else if (gltfMat.alphaMode == "BLEND")
 		features |= MaterialFeature::Flag::Transparent;
+
+	mat->setProperties(props);
 
 	mat->setFeatureMask(features);
 
