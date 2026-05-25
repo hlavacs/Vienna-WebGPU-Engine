@@ -56,6 +56,7 @@ void GBuffer::createTextures()
 		{"GBuffer.Normal", FORMAT_NORMAL},
 		{"GBuffer.Albedo", FORMAT_ALBEDO},
 		{"GBuffer.Material", FORMAT_MATERIAL},
+		{"GBuffer.Emission", FORMAT_EMISSION},
 	}};
 
 	for (size_t i = 0; i < COLOR_ATTACHMENT_COUNT; ++i)

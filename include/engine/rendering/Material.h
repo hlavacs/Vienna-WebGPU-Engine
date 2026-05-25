@@ -82,9 +82,21 @@ inline ColorSpace defaultColorSpaceForSlot(const std::string &slotName)
 	return ColorSpace::Linear;
 }
 
+/**
+ * @brief Per-material alpha mode. Mirrors GLTF alphaMode and selects the render
+ * path: Opaque / Mask go through the deferred G-buffer, Blend through
+ * ForwardTransparencyPass.
+ */
+enum class AlphaMode : uint32_t
+{
+	Opaque = 0,
+	Mask   = 1,
+	Blend  = 2,
+};
+
 struct PBRProperties
 {
-	float diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // RGBA
+	float diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float emission[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float transmittance[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float ambient[4] = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -93,6 +105,13 @@ struct PBRProperties
 	float metallic = 0.0f;
 	float ior = 1.5f;
 	float normalTextureScale = 1.0f;
+
+	// alphaCutoff is only used when alphaMode == Mask. Padding keeps the
+	// struct 16-byte aligned for WGSL std140.
+	uint32_t alphaMode   = static_cast<uint32_t>(AlphaMode::Opaque);
+	float    alphaCutoff = 0.0f;
+	uint32_t _alphaPad0  = 0;
+	uint32_t _alphaPad1  = 0;
 };
 static_assert(sizeof(PBRProperties) % 16 == 0, "PBRProperties must be 16-byte aligned");
 

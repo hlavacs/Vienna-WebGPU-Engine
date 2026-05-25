@@ -121,18 +121,26 @@ MaterialManager::createMaterial(const tinyobj::material_t &objMat, const std::st
 	if (!objMat.roughness_texname.empty())
 		features |= MaterialFeature::Flag::UsesRoughnessMap;
 
-	// --- Alpha handling ---
-	if (!objMat.alpha_texname.empty())
+	// OBJ has no native alphaMode / alphaCutoff fields, so we derive both from
+	// the alpha texture + dissolve and pick GLTF-equivalent defaults.
+	if (!objMat.alpha_texname.empty() && objMat.dissolve >= 1.0f)
 	{
-		if (objMat.dissolve < 1.0f)
-			features |= MaterialFeature::Flag::Transparent;
-		else
-			features |= MaterialFeature::Flag::AlphaTest;
+		features |= MaterialFeature::Flag::AlphaTest;
+		props.alphaCutoff = 0.5f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Mask);
 	}
-	else if (objMat.dissolve < 1.0f)
+	else if (objMat.dissolve < 1.0f || !objMat.alpha_texname.empty())
 	{
 		features |= MaterialFeature::Flag::Transparent;
+		props.alphaCutoff = 0.0f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Blend);
 	}
+	else
+	{
+		props.alphaCutoff = 0.0f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Opaque);
+	}
+	mat->setProperties(props);
 
 	mat->setFeatureMask(features);
 
@@ -234,42 +242,8 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 		props.emission[3] = 1.0f;
 	}
 
-	// "Unlit dome / backdrop" detection: a baseColorFactor of (0,0,0,*)
-	// means direct lighting can never produce visible color for this material.
-	// In Sketchfab/Blender exports this is the convention for sky-domes,
-	// painted backdrops, and similar "show this texture as-is" geometry
-	// (the SeaKeep "material_4" sky is the canonical example).
-	//
-	// Two things we do for any material matching this shape:
-	//   1. Force DoubleSided. Such meshes are always meant to be viewed from
-	//      the inside (you're standing inside the dome) and back-face culling
-	//      would otherwise drop every visible triangle - the dome vanishes.
-	//   2. If the artist did not also set up emission, remap the base
-	//      texture into the emissive slot so the dome shows its painted
-	//      texture instead of pure black. When emission IS already set up
-	//      (material_4 sets both an emissive texture AND emissive factor),
-	//      we leave it alone and just let PBR's emission term carry the
-	//      visible result.
-	const bool baseFactorIsZero =
-		gltfMat.pbrMetallicRoughness.baseColorFactor.size() == 4 &&
-		gltfMat.pbrMetallicRoughness.baseColorFactor[0] < 1e-4 &&
-		gltfMat.pbrMetallicRoughness.baseColorFactor[1] < 1e-4 &&
-		gltfMat.pbrMetallicRoughness.baseColorFactor[2] < 1e-4;
-	const bool hasBaseTexture = gltfMat.pbrMetallicRoughness.baseColorTexture.index >= 0;
-	const bool hasEmissiveAlready =
-		(gltfMat.emissiveFactor.size() == 3 &&
-		 (gltfMat.emissiveFactor[0] > 0 || gltfMat.emissiveFactor[1] > 0 || gltfMat.emissiveFactor[2] > 0)) ||
-		gltfMat.emissiveTexture.index >= 0;
-	const bool isUnlitDomePattern = baseFactorIsZero;
-	const bool needsEmissiveRemap = baseFactorIsZero && hasBaseTexture && !hasEmissiveAlready;
-	if (needsEmissiveRemap)
-	{
-		props.diffuse[0] = props.diffuse[1] = props.diffuse[2] = 1.0f;
-		props.emission[0] = props.emission[1] = props.emission[2] = 1.0f;
-		props.emission[3] = 1.0f;
-	}
-
-	mat->setProperties(props);
+	// setProperties is deferred to after the alphaMode block so it doesn't
+	// overwrite the alpha fields with the (incomplete) earlier props.
 	mat->setName(gltfMat.name);
 
 	MaterialFeature::Flag features = MaterialFeature::Flag::None;
@@ -277,21 +251,10 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	// Diffuse texture
 	if (gltfMat.pbrMetallicRoughness.baseColorTexture.index >= 0)
 	{
-		auto baseTex = loadTexture(
-			gltfMat.pbrMetallicRoughness.baseColorTexture.index,
-			textures, images, *m_textureManager
+		mat->setDiffuseTexture(
+			loadTexture(gltfMat.pbrMetallicRoughness.baseColorTexture.index, textures, images, *m_textureManager)
 		);
-		mat->setDiffuseTexture(baseTex);
 		features |= MaterialFeature::Flag::UsesBaseColorMap;
-
-		// Companion of the unlit-dome detection above: if there was no
-		// emissive texture in the GLTF, copy the base texture into the
-		// emissive slot so PBR's emission term carries the visible result.
-		if (needsEmissiveRemap)
-		{
-			mat->setEmissiveTexture(baseTex);
-			features |= MaterialFeature::Flag::UsesEmissiveMap;
-		}
 	}
 
 	// Metallic-Roughness texture
@@ -333,24 +296,34 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	// Double-sided
 	if (gltfMat.doubleSided)
 		features |= MaterialFeature::Flag::DoubleSided;
-	// Unlit-dome materials are always meant to be viewed from inside the
-	// sphere - force DoubleSided so back-face culling doesn't drop the only
-	// faces the camera can actually see.
-	if (isUnlitDomePattern)
-		features |= MaterialFeature::Flag::DoubleSided;
 
+	// Trust the artist's alphaMode tag. BLEND-but-actually-opaque exports
+	// (the Blender / Sketchfab quirk) are fixed at the GLTF source, not
+	// papered over here - any per-fragment compensation would also kill
+	// the genuinely translucent materials sharing the scene.
 	if (gltfMat.alphaMode == "MASK")
+	{
 		features |= MaterialFeature::Flag::AlphaTest;
+		props.alphaCutoff = static_cast<float>(gltfMat.alphaCutoff);
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Mask);
+	}
 	else if (gltfMat.alphaMode == "BLEND")
+	{
 		features |= MaterialFeature::Flag::Transparent;
-
-	mat->setProperties(props);
+		props.alphaCutoff = 0.0f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Blend);
+	}
+	else
+	{
+		props.alphaCutoff = 0.0f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Opaque);
+	}
 
 	mat->setFeatureMask(features);
+	mat->setProperties(props);
 
-	// Default shader
-	// Materials store the PBR shader: render passes (forward/transparency) bind it
-	// directly, the deferred geometry pass swaps in the G-buffer shader on the fly.
+	// PBR is the material's "logical" shader. Forward and transparency passes
+	// bind it directly; GBufferPass ignores this and binds the GBUFFER shader.
 	mat->setShader(engine::rendering::shader::defaults::PBR);
 
 	auto handleOpt = add(mat);

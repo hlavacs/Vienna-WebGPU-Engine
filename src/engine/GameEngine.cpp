@@ -456,6 +456,7 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 		target.clearFlags = camera->getClearFlags();
 		target.backgroundColor = camera->getBackgroundColor();
 		target.cpuTarget = camera->getRenderTarget();
+		target.hdr = camera->isHDREnabled();
 		target.environmentTexture = camera->getEnvironmentTexture();
 		target.skyboxEnabled = camera->isSkyboxEnabled();
 		target.irradianceEnabled = camera->isIrradianceEnabled();
@@ -470,6 +471,8 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 		renderTargets.end(),
 		[](const engine::rendering::RenderTarget &a, const engine::rendering::RenderTarget &b)
 		{
+			// ToDo: Implement proper alpha blending sorting based on camera distance for transparent objects.
+			// Proboply need to separate opaque and transparent render targets and sort transparents by distance from camera.
 			return a.depth < b.depth;
 		}
 	);

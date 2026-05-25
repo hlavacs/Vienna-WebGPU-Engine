@@ -24,13 +24,21 @@ class WebGPUTexture;
  * @ref WebGPUTexture lifetime rules.
  *
  * **Layout** (matches @c deferred_composition.wgsl ):
- * | Slot | Attachment | Format            | Channels                                   |
- * |------|------------|-------------------|--------------------------------------------|
- * | 0    | Position   | RGBA16Float       | xyz = world position, w = view-space depth |
- * | 1    | Normal     | RGBA16Float       | xyz = world normal,   w = view-space depth |
- * | 2    | Albedo     | RGBA8UnormSrgb    | rgb = base color,     a = coverage         |
- * | 3    | Material   | RGBA8Unorm        | r = roughness, g = metallic, b = ao        |
- * | -    | Depth      | Depth32Float      | shared with composition / forward passes   |
+ * | Slot | Attachment | Format            | Channels                                                    |
+ * |------|------------|-------------------|-------------------------------------------------------------|
+ * | 0    | Position   | RGBA16Float       | xyz = world position, w = view-space depth                  |
+ * | 1    | Normal     | RGBA16Float       | xyz = world normal,   w = view-space depth                  |
+ * | 2    | Albedo     | RGBA8UnormSrgb    | rgb = base color,     a = coverage                          |
+ * | 3    | Material   | RGBA8Unorm        | r = roughness, g = metallic, b = ao, a = materialType id    |
+ * | 4    | Emission   | RGBA16Float       | rgb = additive emission, a = unused                         |
+ * | -    | Depth      | Depth32Float      | shared with composition / forward passes                    |
+ *
+ * The @c materialType slot in @c material.a is reserved for a future
+ * "data-reinterpretation" deferred design where one fixed-size material
+ * buffer is parsed differently per shading model (PBR, skin, hair, cloth,
+ * water, ...). Today it is always written as 0 (= standard PBR) and ignored
+ * by the composition pass; the slot is here so future code can branch on it
+ * without another G-buffer schema change.
  *
  * The container is sized in pixels and can be resized cheaply: a no-op when
  * the requested size matches the current size, otherwise all attachments are
@@ -47,7 +55,8 @@ public:
 	static constexpr size_t SLOT_NORMAL = 1;
 	static constexpr size_t SLOT_ALBEDO = 2;
 	static constexpr size_t SLOT_MATERIAL = 3;
-	static constexpr size_t COLOR_ATTACHMENT_COUNT = 4;
+	static constexpr size_t SLOT_EMISSION = 4;
+	static constexpr size_t COLOR_ATTACHMENT_COUNT = 5;
 
 	// Pixel formats used by each slot (kept here so other systems can match them).
 	// wgpu::TextureFormat is a thin C++ wrapper struct around the C enum and
@@ -56,6 +65,12 @@ public:
 	static inline const wgpu::TextureFormat FORMAT_NORMAL = wgpu::TextureFormat::RGBA16Float;
 	static inline const wgpu::TextureFormat FORMAT_ALBEDO = wgpu::TextureFormat::RGBA8UnormSrgb;
 	static inline const wgpu::TextureFormat FORMAT_MATERIAL = wgpu::TextureFormat::RGBA8Unorm;
+	// RGBA16Float keeps emission HDR (sky textures, neon, etc.) without any
+	// optional WebGPU feature. R11G11B10Ufloat would be tighter (4 B/px vs 8)
+	// but requires the rg11b10ufloat-renderable feature to be enabled on the
+	// device. Alpha is unused; reserved as a per-pixel emission scalar for
+	// future effects (e.g. flicker / bloom mask).
+	static inline const wgpu::TextureFormat FORMAT_EMISSION = wgpu::TextureFormat::RGBA16Float;
 	static inline const wgpu::TextureFormat FORMAT_DEPTH = wgpu::TextureFormat::Depth32Float;
 
 	/**
@@ -104,6 +119,7 @@ public:
 	[[nodiscard]] std::shared_ptr<WebGPUTexture> getNormalTexture()   const { return m_colorTextures[SLOT_NORMAL]; }
 	[[nodiscard]] std::shared_ptr<WebGPUTexture> getAlbedoTexture()   const { return m_colorTextures[SLOT_ALBEDO]; }
 	[[nodiscard]] std::shared_ptr<WebGPUTexture> getMaterialTexture() const { return m_colorTextures[SLOT_MATERIAL]; }
+	[[nodiscard]] std::shared_ptr<WebGPUTexture> getEmissionTexture() const { return m_colorTextures[SLOT_EMISSION]; }
 
 	/**
 	 * @brief Returns a render pass context that targets this G-buffer.

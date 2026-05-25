@@ -56,28 +56,15 @@ bool GBufferPass::resize(uint32_t width, uint32_t height)
 
 void GBufferPass::cleanup()
 {
-	// Drop the cached pipeline references - the pipeline manager owns the
-	// actual GPU objects and reuses them via PipelineKey, so this is safe.
-	m_pipelineCache.clear();
+	// PipelineManager owns and invalidates the pipeline cache on hot reload.
 }
 
 std::shared_ptr<webgpu::WebGPUPipeline> GBufferPass::getPipelineFor(wgpu::CullMode cullMode)
 {
-	// Cache one pipeline per cull mode. There are at most two variants
-	// (Back-face culling for sealed opaque meshes, None for double-sided
-	// materials), so a tiny vector is the right container - no hashing
-	// overhead, no surprise allocations, and the pipeline manager still
-	// keys its own cache by full PipelineKey anyway.
-	for (auto &entry : m_pipelineCache)
-	{
-		if (entry.cullMode == cullMode)
-			return entry.pipeline;
-	}
-
 	auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
 		m_shader,
-		// Single fallback color format; the shader's declared color-target
-		// list wins inside the pipeline factory for the actual MRT setup.
+		// Fallback color format; the shader's declared color-target list wins
+		// inside the pipeline factory for the actual MRT setup.
 		webgpu::GBuffer::FORMAT_POSITION,
 		webgpu::GBuffer::FORMAT_DEPTH,
 		engine::rendering::Topology::Type::Triangles,
@@ -92,8 +79,6 @@ std::shared_ptr<webgpu::WebGPUPipeline> GBufferPass::getPipelineFor(wgpu::CullMo
 			cullMode == wgpu::CullMode::Back ? "Back" : "None");
 		return nullptr;
 	}
-
-	m_pipelineCache.push_back({cullMode, pipeline});
 	return pipeline;
 }
 
@@ -141,19 +126,27 @@ void GBufferPass::render(FrameCache &frameCache)
 		// Material reads serve two purposes:
 		//   1. Pick per-material cull mode (DoubleSided GLTF geometry needs
 		//      CullMode::None - the SeaKeep is the textbook case).
-		//   2. We intentionally do NOT skip Transparent here. GLTF assets
-		//      routinely mark effectively-opaque geometry as alphaMode=BLEND;
-		//      the alpha-test discard in g_buffer.wgsl handles cutout. Real
-		//      alpha-blended geometry (glass, smoke) would need a dedicated
-		//      forward transparency pass, but demo content has none.
+		//   2. Skip Transparent items. They are drawn by ForwardTransparencyPass
+		//      against the same depth buffer after composition + skybox, sorted
+		//      back-to-front with blending on and depth writes off. Including
+		//      them here would either burn them into albedo (no transparency)
+		//      or write opaque depth that occludes the forward pass later.
 		auto cpuMaterialOpt = item.gpuMaterial->getCPUHandle().get();
 		if (!cpuMaterialOpt.has_value())
 		{
 			++skipped;
 			continue;
 		}
+		const auto matFeatures = cpuMaterialOpt.value()->getFeatureMask();
+		if (engine::rendering::MaterialFeature::hasFlag(
+				matFeatures,
+				engine::rendering::MaterialFeature::Flag::Transparent))
+		{
+			++skipped;
+			continue;
+		}
 		const wgpu::CullMode cullMode = engine::rendering::MaterialFeature::hasFlag(
-				cpuMaterialOpt.value()->getFeatureMask(),
+				matFeatures,
 				engine::rendering::MaterialFeature::Flag::DoubleSided)
 			? wgpu::CullMode::None
 			: wgpu::CullMode::Back;

@@ -405,7 +405,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	std::optional<engine::rendering::Texture::Handle> m_renderTexture;					  ///< Target texture/surface
 	int m_depth = 0;																	  ///< Rendering depth/order
 	bool m_msaa = true;																	  ///< MSAA enabled
-	bool m_hdr = false;																	  ///< HDR enabled
+	bool m_hdr = true;																	  ///< HDR enabled
 	bool m_skyboxEnabled = false;								  ///< Skybox enabled
 	bool m_irradianceEnabled = false;							  ///< Irradiance enabled
 	float m_irradianceIntensity = 1.0f;						  ///< Irradiance multiplier

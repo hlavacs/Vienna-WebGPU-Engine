@@ -230,16 +230,16 @@ bool setupScene2(std::shared_ptr<engine::scene::Scene> scene)
 void setupImGui(std::shared_ptr<engine::ui::ImGuiManager> imguiManager, std::shared_ptr<demo::MainDemoImGuiUI> mainDemoUI, std::shared_ptr<demo::DayNightCycle> dayNightCycle)
 {
 	imguiManager->addFrame([mainDemoUI]()
-					   { mainDemoUI->render(sceneManager); });
+						   { mainDemoUI->render(sceneManager); });
 
 	imguiManager->addFrame([mainDemoUI]()
-					   { mainDemoUI->renderPerformanceWindow(); });
+						   { mainDemoUI->renderPerformanceWindow(); });
 
 	imguiManager->addFrame([mainDemoUI]()
-					   { mainDemoUI->renderShadowDebugWindow(); });
+						   { mainDemoUI->renderShadowDebugWindow(); });
 
 	imguiManager->addFrame([]()
-	{
+						   {
 		ImGui::Begin("Scene Controls");
 		
 		auto activeScene = sceneManager->getActiveScene();
@@ -262,10 +262,9 @@ void setupImGui(std::shared_ptr<engine::ui::ImGuiManager> imguiManager, std::sha
 			}
 		}
 		
-		ImGui::End();
-	});
+		ImGui::End(); });
 
-imguiManager->addFrame([dayNightCycle]()
+	imguiManager->addFrame([dayNightCycle]()
 						   {
 		ImGui::Begin("Day-Night Cycle Controls");
 		
@@ -325,7 +324,7 @@ int main(int argc, char **argv)
 		spdlog::error("Failed to setup sea keep scene");
 		return -1;
 	}
-	
+
 	// Setup complex lighting with day-night cycle
 	std::shared_ptr<engine::scene::nodes::LightNode> ambientLight, sunLight, moonLight;
 	setupComplexLighting(seaKeepScene, ambientLight, sunLight, moonLight);
@@ -347,14 +346,13 @@ int main(int argc, char **argv)
 		auto controllers = root->getChildrenOfType<demo::OrbitCameraController>();
 		return controllers.empty() ? nullptr : controllers[0];
 	};
-	
 
 	// Load demo scene first (async) and wait for it to complete
-	auto load = sceneManager->loadScene("Demo");
+	auto load = sceneManager->loadScene("SeaKeep");
 
 	auto mainDemoUI = std::make_shared<demo::MainDemoImGuiUI>(engine);
 	setupImGui(imguiManager, mainDemoUI, dayNightCycle);
-	
+
 	// Run engine
 	engine.run();
 	return 0;
