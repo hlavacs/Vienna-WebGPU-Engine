@@ -74,6 +74,15 @@ bool Renderer::initialize()
 		return false;
 	}
 
+	// Forward transparency runs after deferred composition + skybox so it can
+	// blend onto the lit HDR result while reading the G-buffer depth read-only.
+	m_transparencyPass = std::make_unique<ForwardTransparencyPass>(m_context);
+	if (!m_transparencyPass->initialize())
+	{
+		spdlog::error("Failed to initialize ForwardTransparencyPass");
+		return false;
+	}
+
 	m_debugPass = std::make_unique<DebugPass>(m_context);
 	if (!m_debugPass->initialize())
 	{
@@ -532,8 +541,9 @@ void Renderer::renderToTexture(
 	// ========================================
 	// GBufferPass owns its attachments and exposes a typed RenderPassContext;
 	// the renderer's only job is to (re)size it to match this camera and then
-	// hand off the visible items. Cutout / "fake-blend" materials are handled
-	// in the gbuffer shader via alpha-test discard.
+	// hand off the visible items. BLEND materials stay in the gbuffer (handled
+	// via alpha-test discard in the g_buffer shader); a separate forward
+	// transparency pass for truly translucent geometry is a follow-up.
 	auto &gBuffer = m_gBufferPass->getGBuffer();
 	m_gBufferPass->resize(renderFromTexture->getWidth(), renderFromTexture->getHeight());
 	m_gBufferPass->setCameraId(renderTargetId);
@@ -574,6 +584,7 @@ void Renderer::renderToTexture(
 			renderTarget.backgroundColor
 		);
 
+		m_compositePass->setHDREnabled(renderTarget.hdr);
 		m_compositionPass->setRenderPassContext(compositionPassContext);
 		m_compositionPass->setGBuffer(&gBuffer);
 		m_compositionPass->setSceneLightBindGroup(sceneLightBuffer->getBindGroup());
@@ -609,6 +620,31 @@ void Renderer::renderToTexture(
 			m_skyboxPass->setEnvironmentBindGroup(skyboxBindGroup);
 			m_skyboxPass->render(m_frameCache);
 		}
+	}
+
+	// ========================================
+	// STEP 5c: Forward Transparency
+	// ========================================
+	// Runs after lit-HDR composition + skybox so the blend destination is final
+	// opaque colour. Reads gbuffer depth read-only - transparent surfaces must
+	// not stamp depth, or later transparent draws behind them get occluded.
+	if (m_transparencyPass && sceneLightBuffer && sceneLightBuffer->getBindGroup()
+		&& shadowBindGroup && environmentBindGroup)
+	{
+		auto transparencyPassContext = m_context->renderPassFactory().create(
+			renderToTexture,
+			gBuffer.getDepthTexture(),
+			ClearFlags::None,
+			renderTarget.backgroundColor
+		);
+		m_transparencyPass->setRenderPassContext(transparencyPassContext);
+		m_transparencyPass->setCameraId(renderTargetId);
+		m_transparencyPass->setCameraPosition(renderTarget.cameraPosition);
+		m_transparencyPass->setVisibleIndices(visibleIndices);
+		m_transparencyPass->setLightBindGroup(sceneLightBuffer->getBindGroup());
+		m_transparencyPass->setShadowBindGroup(shadowBindGroup);
+		m_transparencyPass->setEnvironmentBindGroup(environmentBindGroup);
+		m_transparencyPass->render(m_frameCache);
 	}
 
 	// ========================================

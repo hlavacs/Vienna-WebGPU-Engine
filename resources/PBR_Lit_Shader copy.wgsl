@@ -212,13 +212,8 @@ fn sample_environment_irradiance(normal: vec3f) -> vec3f {
     }
 
     let uv = direction_to_equirect_uv(normalize(normal));
-    let raw = textureSample(environment_texture, environment_sampler, uv).rgb;
-    // Cap matches deferred_composition. Without a pre-convolved irradiance
-    // map an HDR equirect sample can spike well above 1 at sunlit bands;
-    // forward-transparent surfaces would then read a much brighter ambient
-    // than the deferred-lit opaque geometry below them and the blend would
-    // look like two unrelated lighting models stacked.
-    return min(raw, vec3f(0.3)) * u_environment.params.y;
+    let sample_color = textureSample(environment_texture, environment_sampler, uv).rgb;
+    return sample_color * u_environment.params.y;
 }
 
 // ------------------------------------------------------------
@@ -404,8 +399,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let base_color = base_sample.rgb * u_material.diffuse.rgb;
     var alpha = base_sample.a * u_material.diffuse.a;
 
-    // Mask = binary cutout against the GLTF threshold; blend pipelines pass
-    // alpha straight through to SrcAlpha blending; opaque pipelines ignore alpha.
+    // -----------------------------
+    // Alpha Mode Handling
+    // -----------------------------
     if (u_material.alpha_mode == ALPHA_MODE_MASK) {
         if (alpha < u_material.alpha_cutoff) {
             discard;
@@ -438,7 +434,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     for (var i: u32 = 0u; i < u_lights.count; i = i + 1u) {
         let light = u_lights.lights[i];
-        if (light.light_type == 0u) {
+        if (light.light_type == 0u || true) {
             Lo += base_color * u_material.ambient.rgb * u_material.ambient.w * light.color * light.intensity * ao;
             continue;
         }
@@ -495,10 +491,36 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     }
 
     let irradiance = sample_environment_irradiance(normal) * base_color * (1.0 - metallic) * ao;
-    let final_color = Lo + irradiance + emission;
+    var final_color = Lo + irradiance + emission;
 
-    // Raw linear HDR. The blend stage (SrcAlpha / OneMinusSrcAlpha for Transparent
-    // pipelines) uses the returned alpha; no fake glass refraction is folded in
-    // because that double-counted lighting and made water / glass look too bright.
+    // Glass refraction effect (simplified)
+    // For proper refraction, you would need an environment map or screen-space texture
+    // This implementation simulates glass by:
+    // 1. Computing Fresnel to determine reflection vs refraction ratio
+    // 2. Tinting based on transmittance color
+    // 3. Blending with surface color based on alpha
+    if (alpha < 0.999) {
+        // Compute Fresnel for glass
+        let n_dot_v = max(dot(normal, v), 0.0);
+        let f0_glass = pow((u_material.ior - 1.0) / (u_material.ior + 1.0), 2.0);
+        let fresnel = f0_glass + (1.0 - f0_glass) * pow(1.0 - n_dot_v, 5.0);
+
+        // Compute refraction direction (into the material)
+        let eta = 1.0 / u_material.ior;
+        let refracted = refract(-v, normal, eta);
+
+        // Simulate refracted color with transmittance tint
+        // In a full implementation, you'd sample an environment map or screen texture here
+        let transmittance_color = u_material.transmittance.rgb;
+        let refracted_color = mix(vec3f(0.5), transmittance_color, 0.8);
+
+        // Blend reflection and refraction based on Fresnel
+        let reflected_color = final_color;
+        let glass_color = mix(refracted_color, reflected_color, fresnel);
+
+        // Blend with surface color based on alpha
+        final_color = mix(glass_color, final_color, alpha);
+    }
+
     return vec4f(final_color, alpha);
 }

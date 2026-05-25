@@ -6,6 +6,11 @@
 @group(0) @binding(1) var gBufferNormalTexture: texture_2d<f32>;
 @group(0) @binding(2) var gBufferAlbedoTexture: texture_2d<f32>;
 @group(0) @binding(3) var gBufferMaterialTexture: texture_2d<f32>;
+// RGBA16Float in C++ (alpha unused). Emission is added post-lighting so
+// emissive surfaces (sky-domes, neon, eyes, magic) survive the deferred
+// "albedo * lighting" multiplication that would otherwise zero them out when
+// base color is dark.
+@group(0) @binding(4) var gBufferEmissionTexture: texture_2d<f32>;
 
 // Frame uniforms (camera, time)
 @group(1) @binding(0) var<uniform> uFrame: FrameUniforms;
@@ -280,6 +285,15 @@ fn calculateShadow(worldPos: vec3<f32>, normal: vec3<f32>, light: LightStruct) -
 	return 1.0;
 }
 
+fn toneMapACES(color: vec3<f32>) -> vec3<f32> {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 // Fragment shader: PBR composition
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
@@ -295,20 +309,22 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let positionData = textureLoad(gBufferPositionTexture, pixelCoord, 0);
 	let normalData = textureLoad(gBufferNormalTexture, pixelCoord, 0);
 	let albedo = textureLoad(gBufferAlbedoTexture, pixelCoord, 0);
-	if (albedo.a < 0.5) {
-		discard;
-	}
+	let emissionData = textureLoad(gBufferEmissionTexture, pixelCoord, 0);
+
 	// G-buffer albedo is RGBA8UnormSrgb: textureLoad already decodes sRGB ->
 	// linear. Do NOT apply pow(2.2) here - that double-decodes and crushes
 	// midtones (this was the cause of the "flat" cobblestone look).
 	let albedoLinear = clamp(albedo.xyz, vec3<f32>(0.0), vec3<f32>(1.0));
 	let materialData = textureLoad(gBufferMaterialTexture, pixelCoord, 0);
-	
+
 	let worldPos = positionData.xyz;
 	let worldNormal = normalize(normalData.xyz);
 	let roughness = materialData.x;
 	let metallic = materialData.y;
 	let ao = clamp(materialData.z, 0.0, 1.0);
+	// materialData.w = materialType id (0 = standard PBR). Reserved for the
+	// future data-reinterpretation deferred design - ignored today.
+	let emission = emissionData.rgb;
 	let depth01 = positionData.w; // Normalized depth from geometry pass
 	let viewDir = normalize(uFrame.cameraWorldPosition - worldPos);
 
@@ -408,6 +424,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	
 	// Apply AO softly to reduce over-darkening from noisy AO textures.
 	finalColor *= mix(1.0, ao, 0.5);
+
+	// Emission is added AFTER lighting so emissive surfaces (sky-domes, neon,
+	// magic, baked GI fallback) are not multiplied by lighting and survive
+	// when base color is dark or shadows are full. Mirrors PBR_Lit_Shader's
+	// `Lo + irradiance + emission` formulation.
+	finalColor += emission;
 
 	// Return raw linear HDR. CompositePass (fullscreen_quad.wgsl) does the
 	// tone-mapping in one place so this pass, the skybox, and any future

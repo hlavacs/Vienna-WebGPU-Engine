@@ -73,10 +73,8 @@ public:
 	void render(FrameCache &frameCache) override;
 
 	/**
-	 * @brief Drops the cached pipeline so the next frame rebuilds it.
-	 *
-	 * Called after window resize, after shader hot-reload, or whenever the
-	 * Renderer needs to invalidate per-pass GPU state.
+	 * @brief No-op; pipeline lifetime is owned entirely by @ref WebGPUPipelineManager,
+	 * which already invalidates cached entries on shader hot-reload.
 	 */
 	void cleanup() override;
 
@@ -108,27 +106,17 @@ public:
 
 private:
 	/**
-	 * @brief Returns (creates on miss) a pipeline configured for the given cull mode.
+	 * @brief Resolves the pipeline for the given cull mode via @ref WebGPUPipelineManager.
 	 *
-	 * Two pipeline variants are needed in practice: @c CullMode::Back for sealed
-	 * opaque meshes and @c CullMode::None for materials flagged
-	 * @c MaterialFeature::Flag::DoubleSided (typical of GLTF assets). All other
-	 * pipeline parameters - shader, vertex layout, target formats - are shared.
-	 *
-	 * @param cullMode Cull mode determined from the current material's feature mask.
-	 * @return Cached or freshly-built pipeline; nullptr on failure.
+	 * Two variants exist in practice (Back for sealed opaque, None for double-sided
+	 * GLTF geometry). The manager keys its own cache by @c PipelineKey so the local
+	 * GBufferPass does not need a parallel cache - having one breaks hot reload
+	 * (manager swaps the entry; the local copy keeps the old shared_ptr).
 	 */
 	std::shared_ptr<webgpu::WebGPUPipeline> getPipelineFor(wgpu::CullMode cullMode);
 
-	struct CachedPipeline
-	{
-		wgpu::CullMode cullMode;
-		std::shared_ptr<webgpu::WebGPUPipeline> pipeline;
-	};
-
 	std::unique_ptr<webgpu::GBuffer> m_gBuffer;
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shader;
-	std::vector<CachedPipeline> m_pipelineCache;
 
 	uint64_t m_cameraId = 0;
 	std::vector<size_t> m_visibleIndices;

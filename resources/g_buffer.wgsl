@@ -1,14 +1,19 @@
 // G-Buffer geometry pass for deferred shading.
 //
-// Writes per-pixel surface data into four render targets so the
-// composition pass can apply clustered lighting per pixel.
+// Writes per-pixel surface data into five render targets so the composition
+// pass can apply lighting per pixel.
 //
 // Render targets (locations must match engine::rendering::webgpu::GBuffer):
-//   @location(0) position : RGBA16Float - xyz = world position, w = view-space depth
-//   @location(1) normal   : RGBA16Float - xyz = world normal,   w = view-space depth
+//   @location(0) position : RGBA16Float    - xyz = world position, w = view-space depth
+//   @location(1) normal   : RGBA16Float    - xyz = world normal,   w = view-space depth
 //   @location(2) albedo   : RGBA8UnormSrgb - rgb = base color * diffuse, a = coverage
-//   @location(3) material : RGBA8Unorm    - r = roughness, g = metallic, b = AO
-//                                          - a = emission intensity (luminance proxy)
+//   @location(3) material : RGBA8Unorm     - r = roughness, g = metallic, b = AO,
+//                                            a = materialType id (0 = standard PBR)
+//   @location(4) emission : RGBA16Float    - rgb = additive emission (post-lighting), a unused
+//
+// The materialType id in material.a is a forward-compatibility slot for a
+// "data-reinterpretation" deferred design (skin / hair / cloth / water). The
+// composition pass ignores it today; the geometry pass always writes 0.
 //
 // Bind group layout (must match PBR_Lit_Shader.wgsl material layout exactly so
 // WebGPUMaterial's cached bind group can be reused by either pass):
@@ -31,6 +36,7 @@ struct ObjectUniforms {
 	modelInvTranspose: mat4x4<f32>,
 }
 
+// Layout MUST match C++ engine::rendering::PBRProperties.
 struct PBRProperties {
 	diffuse: vec4<f32>,
 	emission: vec4<f32>,
@@ -40,6 +46,10 @@ struct PBRProperties {
 	metallic: f32,
 	ior: f32,
 	normalTextureScale: f32,
+	alphaMode: u32,
+	alphaCutoff: f32,
+	_alphaPad0: u32,
+	_alphaPad1: u32,
 }
 
 @group(0) @binding(0) var<uniform> uFrame: FrameUniforms;
@@ -75,6 +85,8 @@ struct FragmentOutput {
 	@location(1) normal: vec4<f32>,
 	@location(2) albedo: vec4<f32>,
 	@location(3) material: vec4<f32>,
+	// RGBA16Float in C++; only rgb is used (alpha reserved).
+	@location(4) emission: vec4<f32>,
 }
 
 @vertex
@@ -100,11 +112,12 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> FragmentOutput {
 	let baseSample = textureSample(baseColorTexture, textureSampler, input.texCoord);
-	let coverage = baseSample.a * uMaterial.diffuse.a;
-	// Low alpha-test threshold so BLEND-but-actually-opaque GLTF meshes
-	// (very common in Sketchfab/Blender exports) still write depth. Truly
-	// blended geometry would need a forward transparency pass.
-	if (coverage < 0.01) {
+
+	// Alpha source ONLY from texture (or material override if you want later)
+	let alpha = baseSample.a * uMaterial.diffuse.a;
+
+	// Cutout only (opaque + masked materials live here)
+	if (alpha < uMaterial.alphaCutoff) {
 		discard;
 	}
 
@@ -141,15 +154,22 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
 	let viewDepth = -viewPos.z;
 
 	let baseColor = baseSample.rgb * uMaterial.diffuse.rgb;
-	let emission = emissionSample * uMaterial.emission.rgb;
-	// Pack emission luminance into the unused material.a channel; composition
-	// multiplies it back out as additive light per pixel.
-	let emissionLuma = dot(emission, vec3<f32>(0.2126, 0.7152, 0.0722));
+	let coverage = alpha;
+	// Full RGB emission, scaled by the emissive factor's W (matches how PBR
+	// forward applies it). Lives in its own RT so it survives the deferred
+	// pipeline's "albedo * lighting" multiplication - emission is added
+	// post-lighting in the composition pass.
+	let emission = emissionSample * uMaterial.emission.rgb * uMaterial.emission.w;
+
+	// Standard PBR material; future shading models will write their own id here
+	// and the composition pass can branch on it via override constants / switch.
+	let materialTypeId: f32 = 0.0;
 
 	var output: FragmentOutput;
 	output.position = vec4<f32>(input.worldPos, viewDepth);
 	output.normal = vec4<f32>(worldNormal, viewDepth);
 	output.albedo = vec4<f32>(baseColor, coverage);
-	output.material = vec4<f32>(roughness, metallic, ao, clamp(emissionLuma, 0.0, 1.0));
+	output.material = vec4<f32>(roughness, metallic, ao, materialTypeId);
+	output.emission = vec4<f32>(emission, 0.0);
 	return output;
 }

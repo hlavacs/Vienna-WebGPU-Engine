@@ -1,5 +1,9 @@
 #include "engine/rendering/CompositePass.h"
 
+#include <algorithm>
+#include <array>
+
+#include <glm/glm.hpp>
 #include <spdlog/spdlog.h>
 
 #include "engine/rendering/FrameCache.h"
@@ -7,6 +11,7 @@
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
+#include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
@@ -54,11 +59,85 @@ bool CompositePass::initialize()
 		return false;
 	}
 
-	// Create sampler using the sampler factory
 	m_sampler = m_context->samplerFactory().getClampLinearSampler();
+
+	// Tonemap settings are global, so one shared post-process bind group lives
+	// here instead of one per render target.
+	m_postUniformBuffer = m_context->bufferFactory().createUniformBufferWrapped(
+		"PostProcessUniforms",
+		0,
+		sizeof(glm::vec4)
+	);
+
+	auto postLayout = m_shaderInfo->getBindGroupLayout(1);
+	if (!postLayout || !m_postUniformBuffer)
+	{
+		spdlog::error("CompositePass: failed to create post-process bind group / buffer");
+		return false;
+	}
+
+	std::vector<wgpu::BindGroupEntry> postEntries;
+	postEntries.reserve(1);
+	{
+		wgpu::BindGroupEntry e{};
+		e.binding = 0;
+		e.buffer  = m_postUniformBuffer->getBuffer();
+		e.offset  = 0;
+		e.size    = sizeof(glm::vec4);
+		postEntries.push_back(e);
+	}
+
+	wgpu::BindGroup rawPostBindGroup = m_context->bindGroupFactory().createBindGroup(
+		postLayout->getLayout(),
+		postEntries
+	);
+
+	m_postBindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
+		rawPostBindGroup,
+		postLayout,
+		std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{m_postUniformBuffer}
+	);
 
 	spdlog::info("CompositePass initialized successfully");
 	return true;
+}
+
+void CompositePass::setHDREnabled(bool enabled)
+{
+	if (m_hdrEnabled == enabled)
+		return;
+	m_hdrEnabled = enabled;
+	m_postDirty = true;
+}
+
+void CompositePass::setExposure(float exposure)
+{
+	exposure = std::max(exposure, 0.0f);
+	if (m_exposure == exposure)
+		return;
+	m_exposure = exposure;
+	m_postDirty = true;
+}
+
+void CompositePass::flushPostProcessUniformsIfDirty()
+{
+	if (!m_postDirty || !m_postUniformBuffer)
+		return;
+
+	// Layout must match PostProcessUniforms in fullscreen_quad.wgsl.
+	const std::array<float, 4> params{
+		m_exposure,
+		m_hdrEnabled ? 1.0f : 0.0f,
+		0.0f,
+		0.0f
+	};
+	m_context->getQueue().writeBuffer(
+		m_postUniformBuffer->getBuffer(),
+		0,
+		params.data(),
+		sizeof(params)
+	);
+	m_postDirty = false;
 }
 
 void CompositePass::render(FrameCache &frameCache)
@@ -76,9 +155,18 @@ void CompositePass::render(FrameCache &frameCache)
 		return;
 	}
 
+	// Upload HDR settings if the user changed them since last frame. Cheap
+	// equality check - writeBuffer is skipped when nothing changed.
+	flushPostProcessUniformsIfDirty();
+
 	auto encoder = m_context->createCommandEncoder("CompositePass Encoder");
 	auto renderPass = m_renderPassContext->begin(encoder);
 	renderPass.setPipeline(m_pipeline->getPipeline());
+
+	// Group 1 (post-process settings) is identical for every per-camera draw -
+	// bind it once for the whole pass instead of per iteration.
+	if (m_postBindGroup)
+		renderPass.setBindGroup(1, m_postBindGroup->getBindGroup(), 0, nullptr);
 
 	const uint32_t surfaceW = surfaceTex->getWidth();
 	const uint32_t surfaceH = surfaceTex->getHeight();
@@ -121,6 +209,8 @@ void CompositePass::render(FrameCache &frameCache)
 void CompositePass::cleanup()
 {
 	m_bindGroupCache.clear();
+	// Keep m_postBindGroup / m_postUniformBuffer alive - they don't depend on
+	// the per-camera HDR target and survive resize.
 }
 
 std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(

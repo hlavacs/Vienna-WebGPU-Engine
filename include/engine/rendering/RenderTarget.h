@@ -42,6 +42,7 @@ struct RenderTarget
 	glm::vec4 backgroundColor;
 	std::optional<Texture::Handle> cpuTarget;
 	std::optional<Texture::Handle> environmentTexture;
+	bool hdr{true};
 	bool skyboxEnabled{false};
 	bool irradianceEnabled{false};
 	float irradianceIntensity{1.0f};

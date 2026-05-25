@@ -132,12 +132,14 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	// Depth-stencil (optional). depthCompare / depthWriteEnabled come from the
 	// shader info so passes that need LessEqual + read-only depth (skybox after
 	// the geometry pass is the canonical example) can opt in without touching
-	// the factory's signature.
+	// the factory's signature. Additionally: any pipeline with alpha blending
+	// enabled must NOT write depth - otherwise translucent surfaces occlude
+	// other translucent surfaces drawn later and the alpha math breaks.
 	wgpu::DepthStencilState depthStencil{};
 	if (hasDepth)
 	{
 		depthStencil.format = depthFormat;
-		depthStencil.depthWriteEnabled = shaderInfo->isDepthWriteEnabled();
+		depthStencil.depthWriteEnabled = blendEnabled ? false : shaderInfo->isDepthWriteEnabled();
 		depthStencil.depthCompare = shaderInfo->getDepthCompare();
 		depthStencil.stencilFront = {wgpu::CompareFunction::Always, wgpu::StencilOperation::Keep, wgpu::StencilOperation::Keep, wgpu::StencilOperation::Keep};
 		depthStencil.stencilBack = depthStencil.stencilFront;

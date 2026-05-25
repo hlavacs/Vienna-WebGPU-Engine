@@ -704,7 +704,7 @@
   ],
   "materials": [
     {
-      "alphaMode": "BLEND",
+      "alphaMode": "OPAQUE",
       "emissiveFactor": [
         1.0,
         1.0,
@@ -723,7 +723,8 @@
       }
     },
     {
-      "alphaMode": "BLEND",
+      "alphaMode": "MASK",
+      "alphaCutoff": 0.5,
       "doubleSided": true,
       "name": "Environment",
       "pbrMetallicRoughness": {

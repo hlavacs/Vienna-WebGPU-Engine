@@ -11,6 +11,7 @@
 #include "engine/rendering/CompositionPass.h"
 #include "engine/rendering/DebugPass.h"
 #include "engine/rendering/DebugRenderCollector.h"
+#include "engine/rendering/ForwardTransparencyPass.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/GBufferPass.h"
 #include "engine/rendering/MeshPass.h"
@@ -214,6 +215,7 @@ class Renderer
 	std::unique_ptr<GBufferPass> m_gBufferPass;
 	std::unique_ptr<DebugPass> m_debugPass;
 	std::unique_ptr<CompositionPass> m_compositionPass;
+	std::unique_ptr<ForwardTransparencyPass> m_transparencyPass;
 	std::unique_ptr<CompositePass> m_compositePass;
 
 	FrameCache m_frameCache{};

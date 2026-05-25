@@ -435,6 +435,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
 			.addColorTarget(engine::rendering::webgpu::GBuffer::FORMAT_NORMAL)
 			.addColorTarget(engine::rendering::webgpu::GBuffer::FORMAT_ALBEDO)
 			.addColorTarget(engine::rendering::webgpu::GBuffer::FORMAT_MATERIAL)
+			.addColorTarget(engine::rendering::webgpu::GBuffer::FORMAT_EMISSION)
 			.build();
 
 	return shaderInfo;
@@ -491,6 +492,13 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCompositionDefer
 			)
 			.addTexture(
 				"gBufferMaterialTexture",
+				wgpu::TextureSampleType::Float,
+				wgpu::TextureViewDimension::_2D,
+				false,
+				WGPUShaderStage_Fragment
+			)
+			.addTexture(
+				"gBufferEmissionTexture",
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				false,
@@ -603,6 +611,19 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadSh
 			.addSampler(
 				"cameraSampler",
 				wgpu::SamplerBindingType::Filtering,
+				WGPUShaderStage_Fragment
+			)
+			// Group 1: post-process settings (HDR on/off + exposure).
+			// Owned by CompositePass; one shared buffer for all per-camera draws
+			// since the tonemap configuration is global.
+			.addBindGroup(
+				"PostProcess_BindGroup",
+				BindGroupReuse::Global,
+				BindGroupType::Custom
+			)
+			.addUniform(
+				"postProcessUniforms",
+				sizeof(glm::vec4),
 				WGPUShaderStage_Fragment
 			)
 			.build();

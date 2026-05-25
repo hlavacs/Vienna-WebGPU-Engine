@@ -1,7 +1,5 @@
-// Fullscreen quad shader: samples per-camera HDR texture and tone-maps it
-// to the (sRGB) surface. Centralising the tonemap here means every per-camera
-// pass (deferred composition, skybox, future transparency) can keep writing
-// raw linear HDR and we apply the curve in exactly one place.
+// Centralised tonemap. Every per-camera pass writes raw linear HDR into the
+// intermediate target; this shader is the single place the curve is applied.
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
@@ -12,7 +10,6 @@ struct VertexOutput {
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     var output: VertexOutput;
 
-    // Single fullscreen triangle covering (-1,-1) .. (3,3).
     let x = f32((vertexIndex & 1u) << 2u) - 1.0;
     let y = f32((vertexIndex & 2u) << 1u) - 1.0;
 
@@ -25,14 +22,39 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(0) var cameraTexture: texture_2d<f32>;
 @group(0) @binding(1) var cameraSampler: sampler;
 
+// params: x = exposure, y = mode (0 = clamp, 1 = ACES Filmic), z/w reserved.
+struct PostProcessUniforms {
+    params: vec4f,
+}
+
+@group(1) @binding(0) var<uniform> uPost: PostProcessUniforms;
+
+// ACES Filmic approximation (Krzysztof Narkowicz). Rolls bright HDR values
+// off gracefully while keeping LDR-range inputs near 1:1; Reinhard compresses
+// 1.0 -> 0.5 and made the scene look washed-out before we switched.
+fn acesFilmic(x: vec3f) -> vec3f {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     let hdr = textureSample(cameraTexture, cameraSampler, input.texCoord);
 
-    // Reinhard tone map: compresses HDR > 1 back into [0,1] while keeping
-    // shadow and midtone detail. The surface format is sRGB so the GPU
-    // performs the linear -> sRGB encoding after this shader returns; we
-    // must NOT apply a manual pow(1/2.2) on top or midtones get crushed.
-    let mapped = hdr.rgb / (hdr.rgb + vec3f(1.0));
+    let exposed = hdr.rgb * uPost.params.x;
+
+    // Surface format is sRGB so the GPU does linear -> sRGB encode after this
+    // shader returns; do NOT apply a manual pow(1/2.2) or midtones get crushed.
+    var mapped: vec3f;
+    if (uPost.params.y < 0.5) {
+        mapped = clamp(exposed, vec3f(0.0), vec3f(1.0));
+    } else {
+        mapped = acesFilmic(exposed);
+    }
+
     return vec4f(mapped, hdr.a);
 }
