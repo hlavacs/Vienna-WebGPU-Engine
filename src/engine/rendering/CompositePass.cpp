@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
@@ -160,6 +161,8 @@ void CompositePass::render(FrameCache &frameCache)
 	flushPostProcessUniformsIfDirty();
 
 	auto encoder = m_context->createCommandEncoder("CompositePass Encoder");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Composite", encoder);
 	auto renderPass = m_renderPassContext->begin(encoder);
 	renderPass.setPipeline(m_pipeline->getPipeline());
 
@@ -203,6 +206,8 @@ void CompositePass::render(FrameCache &frameCache)
 		renderPass.draw(3, 1, 0, 0);
 	}
 	m_renderPassContext->end(renderPass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Composite", encoder);
 	m_context->submitCommandEncoder(encoder, "CompositePass Commands");
 }
 

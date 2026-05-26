@@ -108,6 +108,12 @@ private:
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 	webgpu::GBuffer *m_gBuffer = nullptr;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_gBufferBindGroup;
+	// First-color-texture identity captured when m_gBufferBindGroup was built.
+	// GBuffer::resize replaces every color texture, so a mismatch here means the
+	// cached bind group is sampling destroyed views and must be rebuilt - even
+	// when the GBuffer pointer is unchanged (the common case for in-frame resizes
+	// like multi-camera with different viewports, where Renderer::onResize never fires).
+	const webgpu::WebGPUTexture *m_gBufferBindGroupFingerprint = nullptr;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowBindGroup;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_clusterBindGroup;

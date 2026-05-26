@@ -64,5 +64,17 @@ class RenderNode : public virtual Node
 	 * @param collector The render collector to add items to.
 	 */
 	virtual void onRenderCollect(engine::rendering::RenderCollector &collector) {}
+
+	/**
+	 * @brief Whether items emitted by this node should be drawn into shadow maps.
+	 * Default true. Set false on visual markers / overlays that shouldn't occlude
+	 * shadow-receiver geometry - ShadowPass otherwise pays a per-shadow-map draw
+	 * for every visible item even if it adds no useful shadowing.
+	 */
+	void setCastsShadows(bool casts) { m_castsShadows = casts; }
+	[[nodiscard]] bool castsShadows() const { return m_castsShadows; }
+
+  private:
+	bool m_castsShadows = true;
 };
 } // namespace engine::scene::nodes

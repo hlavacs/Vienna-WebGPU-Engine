@@ -6,6 +6,7 @@
 #include "engine/math/Frustum.h"
 #include "engine/rendering/BindGroupBinder.h"
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/Light.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderItemGPU.h"
@@ -338,6 +339,8 @@ void ShadowPass::renderShadow2D(
 				   : m_context->renderPassFactory().createDepthOnly(m_shadow2DArray, arrayLayer);
 
 	auto encoder = m_context->createCommandEncoder("Shadow 2D");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Shadow", encoder);
 	wgpu::RenderPassEncoder pass = encoder.beginRenderPass(ctx->getRenderPassDescriptor());
 	pass.setViewport(0, 0, size, size, 0, 1);
 	pass.setScissorRect(0, 0, size, size);
@@ -345,6 +348,8 @@ void ShadowPass::renderShadow2D(
 	renderItems(pass, frameCache, indicesToRender, false);
 
 	ctx->end(pass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Shadow", encoder);
 	m_context->submitCommandEncoder(encoder, "Shadow 2D");
 }
 
@@ -358,6 +363,8 @@ void ShadowPass::renderShadowCube(
 	uint32_t size = m_shadowCubeArray->getWidth();
 	glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, shadowUniform.far);
 	auto encoder = m_context->createCommandEncoder("Shadow Cube");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Shadow", encoder);
 
 	for (const auto &face : CUBE_FACES)
 	{
@@ -383,6 +390,8 @@ void ShadowPass::renderShadowCube(
 		ctx->end(pass);
 	}
 
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Shadow", encoder);
 	m_context->submitCommandEncoder(encoder, "Shadow Cube");
 }
 

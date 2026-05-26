@@ -42,14 +42,22 @@ class MainDemoImGuiUI
 	void renderMaterialProperties();
 	void renderLightsSection();
 
-	// Free-flying point lights demo (SeaKeep / second scene)
+	// Sponza-style scattered point lights. Defaults match the classic deferred-
+	// rendering / clustered-shading demo: lots of small, bright, saturated
+	// lights spread across the scene volume, bobbing gently rather than
+	// flocking.
 	bool m_flockEnabled = false;
 	int m_flockAmount = 100;
-	float m_flockAttraction = 1.0f;
+	float m_flockIntensity = 50.0f;
+	float m_flockRange = 6.0f;
+	float m_flockMarkerScale = 0.15f;
+	float m_flockBobAmplitude = 0.5f;
+	float m_flockBobSpeed = 0.7f;
 	glm::vec3 m_flockCenter = glm::vec3(0.0f, 5.0f, 0.0f);
+	glm::vec3 m_flockExtent = glm::vec3(30.0f, 10.0f, 30.0f);
 	std::vector<std::shared_ptr<engine::scene::nodes::LightNode>> m_flockLights;
-	std::vector<glm::vec3> m_flockVelocities;
-	std::vector<float> m_flockNoisePhases;
+	std::vector<glm::vec3> m_flockOrigins;     // per-light static base position
+	std::vector<float> m_flockNoisePhases;     // per-light bob phase
 
 	void renderFlockControls();
 	void spawnFlock(int amount);

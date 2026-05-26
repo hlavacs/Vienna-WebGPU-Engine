@@ -89,6 +89,26 @@ struct DeviceLimitsConfig
 	///< Maximum size of a single storage buffer binding in bytes.
 
 	// -------------------------------------------------------------------------
+	// Compute
+	// -------------------------------------------------------------------------
+	// Without these, the device is created with zero compute capability and
+	// every compute pipeline fails validation with "workgroup size [...] must
+	// be less or equal to the per-dimension limit [0, 0, 0]".
+
+	uint32_t maxComputeWorkgroupStorageSize = 16384;
+	///< Maximum bytes of shared workgroup memory.
+
+	uint32_t maxComputeInvocationsPerWorkgroup = 256;
+	///< Maximum total threads per workgroup (x * y * z).
+
+	uint32_t maxComputeWorkgroupSizeX = 256;
+	uint32_t maxComputeWorkgroupSizeY = 256;
+	uint32_t maxComputeWorkgroupSizeZ = 64;
+
+	uint32_t maxComputeWorkgroupsPerDimension = 65535;
+	///< Maximum dispatchWorkgroups argument per dimension.
+
+	// -------------------------------------------------------------------------
 	// Presets
 	// -------------------------------------------------------------------------
 
@@ -155,6 +175,12 @@ inline DeviceLimitsConfig DeviceLimitsConfig::minimal()
 	c.maxSamplersPerShaderStage = 8;
 	c.maxStorageBuffersPerShaderStage = 2;
 	c.maxStorageBufferBindingSize = 8ULL * 1024 * 1024;
+	c.maxComputeWorkgroupStorageSize = 16384;
+	c.maxComputeInvocationsPerWorkgroup = 256;
+	c.maxComputeWorkgroupSizeX = 256;
+	c.maxComputeWorkgroupSizeY = 256;
+	c.maxComputeWorkgroupSizeZ = 64;
+	c.maxComputeWorkgroupsPerDimension = 65535;
 	return c;
 }
 
@@ -182,6 +208,12 @@ inline DeviceLimitsConfig DeviceLimitsConfig::high()
 	c.maxSamplersPerShaderStage = 16;
 	c.maxStorageBuffersPerShaderStage = 8;
 	c.maxStorageBufferBindingSize = 128ULL * 1024 * 1024;
+	c.maxComputeWorkgroupStorageSize = 32768;
+	c.maxComputeInvocationsPerWorkgroup = 1024;
+	c.maxComputeWorkgroupSizeX = 1024;
+	c.maxComputeWorkgroupSizeY = 1024;
+	c.maxComputeWorkgroupSizeZ = 64;
+	c.maxComputeWorkgroupsPerDimension = 65535;
 	return c;
 }
 
@@ -205,6 +237,12 @@ inline DeviceLimitsConfig DeviceLimitsConfig::fromSupported(const wgpu::Supporte
 	c.maxSamplersPerShaderStage = sl.maxSamplersPerShaderStage;
 	c.maxStorageBuffersPerShaderStage = sl.maxStorageBuffersPerShaderStage;
 	c.maxStorageBufferBindingSize = sl.maxStorageBufferBindingSize;
+	c.maxComputeWorkgroupStorageSize = sl.maxComputeWorkgroupStorageSize;
+	c.maxComputeInvocationsPerWorkgroup = sl.maxComputeInvocationsPerWorkgroup;
+	c.maxComputeWorkgroupSizeX = sl.maxComputeWorkgroupSizeX;
+	c.maxComputeWorkgroupSizeY = sl.maxComputeWorkgroupSizeY;
+	c.maxComputeWorkgroupSizeZ = sl.maxComputeWorkgroupSizeZ;
+	c.maxComputeWorkgroupsPerDimension = sl.maxComputeWorkgroupsPerDimension;
 	return c;
 }
 
@@ -241,6 +279,12 @@ inline DeviceLimitsConfig DeviceLimitsConfig::clamped(const wgpu::SupportedLimit
 	CLAMP_FIELD(maxSamplersPerShaderStage)
 	CLAMP_FIELD(maxStorageBuffersPerShaderStage)
 	CLAMP_FIELD(maxStorageBufferBindingSize)
+	CLAMP_FIELD(maxComputeWorkgroupStorageSize)
+	CLAMP_FIELD(maxComputeInvocationsPerWorkgroup)
+	CLAMP_FIELD(maxComputeWorkgroupSizeX)
+	CLAMP_FIELD(maxComputeWorkgroupSizeY)
+	CLAMP_FIELD(maxComputeWorkgroupSizeZ)
+	CLAMP_FIELD(maxComputeWorkgroupsPerDimension)
 #undef CLAMP_FIELD
 
 	return c;
@@ -265,6 +309,12 @@ inline void DeviceLimitsConfig::applyTo(wgpu::RequiredLimits &out) const
 	rl.maxSamplersPerShaderStage = maxSamplersPerShaderStage;
 	rl.maxStorageBuffersPerShaderStage = maxStorageBuffersPerShaderStage;
 	rl.maxStorageBufferBindingSize = maxStorageBufferBindingSize;
+	rl.maxComputeWorkgroupStorageSize = maxComputeWorkgroupStorageSize;
+	rl.maxComputeInvocationsPerWorkgroup = maxComputeInvocationsPerWorkgroup;
+	rl.maxComputeWorkgroupSizeX = maxComputeWorkgroupSizeX;
+	rl.maxComputeWorkgroupSizeY = maxComputeWorkgroupSizeY;
+	rl.maxComputeWorkgroupSizeZ = maxComputeWorkgroupSizeZ;
+	rl.maxComputeWorkgroupsPerDimension = maxComputeWorkgroupsPerDimension;
 	// NOTE: minUniformBufferOffsetAlignment and minStorageBufferOffsetAlignment
 	// are hardware-fixed and must be set from SupportedLimits directly in initDevice().
 }

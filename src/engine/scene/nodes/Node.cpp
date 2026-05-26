@@ -96,7 +96,7 @@ void Node::disable()
 
 bool Node::isEnabled() const { return enabled; }
 
-void Node::addChild(Ptr child)
+void Node::addChild(Ptr child, bool keepWorldTransform)
 {
 	if (!child)
 		return;
@@ -104,13 +104,17 @@ void Node::addChild(Ptr child)
 	child->setEngineContext(m_engineContext); // This will propagate to all descendants
 	children.push_back(child);
 
-	// Update Transform hierarchy if child is spatial
+	// Update Transform hierarchy if child is spatial. keepWorldTransform=true is
+	// the Unity-style default and is correct when moving an already-positioned
+	// node into a new parent. Pass false when adopting a fresh child you want
+	// to inherit the parent's world transform (e.g. markers / attached models
+	// whose local transform should stay at identity).
 	if (child->isSpatial())
 	{
 		auto spatialChild = std::dynamic_pointer_cast<SpatialNode>(child);
 		if (spatialChild)
 		{
-			spatialChild->updateTransformParent(true); // Keep world transform
+			spatialChild->updateTransformParent(keepWorldTransform);
 		}
 	}
 

@@ -106,8 +106,19 @@ class Node : public engine::core::Identifiable<Node>, public std::enable_shared_
 	/** @brief Check if debug rendering is enabled for this node. */
 	bool isDebugEnabled() const { return m_debugEnabled; }
 
-	/** @brief Add a child node. */
-	void addChild(Ptr child);
+	/**
+	 * @brief Add a child node.
+	 *
+	 * @param child  The node to adopt.
+	 * @param keepWorldTransform If true (Unity default), the child's local
+	 *        transform is recomputed so its world-space transform is preserved
+	 *        across the reparent - correct when moving an existing positioned
+	 *        node into a new parent. If false, the child keeps its local
+	 *        transform untouched and inherits the parent's world transform -
+	 *        correct when adopting a freshly-created child you want anchored
+	 *        to its parent (markers, decorations, attached models).
+	 */
+	void addChild(Ptr child, bool keepWorldTransform = true);
 	/** @brief Remove a child node. */
 	void removeChild(Ptr child);
 	/** @brief Get parent node. */

@@ -53,7 +53,7 @@ class LightManager
 	 * @brief Get maximum light count (for validation).
 	 * @return Max allowed lights (e.g., 512)
 	 */
-	static constexpr uint32_t getMaxLightCount() { return 512; }
+	static constexpr uint32_t getMaxLightCount() { return 5120; }
 
 	/**
 	 * @brief Get size in bytes for GPU buffer allocation.

@@ -199,10 +199,20 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	// Store what was actually resolved for later inspection via resolvedLimits()
 	m_resolvedLimits = requiredLimits.limits;
 
+	// --------------- Optional features ---------------
+	// timestamp-query enables wgpu::QuerySet of type Timestamp + encoder.writeTimestamp(),
+	// which the FrameProfiler uses for real per-pass GPU times. Falls back to
+	// CPU-only timing on adapters that don't advertise the feature.
+	std::vector<WGPUFeatureName> requiredFeatures;
+	m_supportsTimestampQuery = m_adapter.hasFeature(wgpu::FeatureName::TimestampQuery);
+	if (m_supportsTimestampQuery)
+		requiredFeatures.push_back(WGPUFeatureName_TimestampQuery);
+
 	// --------------- Request device ---------------
 	wgpu::DeviceDescriptor deviceDesc{};
 	deviceDesc.label = "WebGPUContext Device";
-	deviceDesc.requiredFeatureCount = 0;
+	deviceDesc.requiredFeatureCount = static_cast<uint32_t>(requiredFeatures.size());
+	deviceDesc.requiredFeatures = requiredFeatures.empty() ? nullptr : requiredFeatures.data();
 	deviceDesc.requiredLimits = &requiredLimits;
 	deviceDesc.defaultQueue.label = "Default Queue";
 	m_device = m_adapter.requestDevice(deviceDesc);

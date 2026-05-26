@@ -5,6 +5,7 @@
 #include "engine/rendering/BindGroupBinder.h"
 #include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
@@ -104,6 +105,8 @@ void DebugPass::render(FrameCache &frameCache)
 
 	// Create command encoder
 	auto encoder = m_context->createCommandEncoder("DebugPass Encoder");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Debug", encoder);
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 	{
 		renderPass.setPipeline(pipeline->getPipeline());
@@ -121,6 +124,8 @@ void DebugPass::render(FrameCache &frameCache)
 		renderPass.draw(maxVertexCount, primitiveCount, 0, 0);
 	}
 	m_renderPassContext->end(renderPass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Debug", encoder);
 	m_context->submitCommandEncoder(encoder, "DebugPass Commands");
 }
 

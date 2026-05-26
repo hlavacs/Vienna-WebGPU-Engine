@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/Mesh.h" // for engine::rendering::Topology
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/GBuffer.h"
@@ -47,33 +48,39 @@ bool CompositionPass::initialize()
 
 void CompositionPass::cleanup()
 {
-	// Pipeline is owned by the pipeline manager - just drop our handle so the
-	// next ensurePipeline() picks up any reload/format change.
 	m_pipeline.reset();
-	// GBuffer bind group references texture views that change on resize.
 	m_gBufferBindGroup.reset();
+	m_gBufferBindGroupFingerprint = nullptr;
 }
 
 void CompositionPass::setGBuffer(webgpu::GBuffer *gBuffer)
 {
 	if (gBuffer != m_gBuffer)
 	{
-		// The previous bind group sampled the old G-buffer's views: invalidate.
 		m_gBufferBindGroup.reset();
+		m_gBufferBindGroupFingerprint = nullptr;
 	}
 	m_gBuffer = gBuffer;
 }
 
 bool CompositionPass::ensureGBufferBindGroup()
 {
-	if (m_gBufferBindGroup)
-		return true;
-
 	if (!m_gBuffer)
 	{
 		spdlog::error("CompositionPass: G-buffer not set");
 		return false;
 	}
+
+	// Compare the first color texture's identity against the one used to build
+	// the cached bind group. GBuffer::resize replaces every color texture, so a
+	// pointer change here means the cached bind group is sampling destroyed views.
+	const auto &textures = m_gBuffer->getColorTextures();
+	const webgpu::WebGPUTexture *currentFingerprint =
+		textures.empty() ? nullptr : textures[0].get();
+	if (m_gBufferBindGroup && m_gBufferBindGroupFingerprint == currentFingerprint)
+		return true;
+
+	m_gBufferBindGroup.reset();
 
 	auto layoutInfo = m_shader->getBindGroupLayout(GBUFFER_BIND_GROUP_NAME);
 	if (!layoutInfo)
@@ -83,11 +90,9 @@ bool CompositionPass::ensureGBufferBindGroup()
 	}
 
 	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> overrides;
-	const auto &textures = m_gBuffer->getColorTextures();
 	for (uint32_t binding = 0; binding < textures.size(); ++binding)
 	{
-		// First tuple element is the group index, which the factory only uses
-		// to disambiguate keys: any consistent value works.
+		// Group index is only used to disambiguate map keys here.
 		overrides.emplace(
 			std::make_tuple(uint32_t{0}, binding),
 			webgpu::BindGroupResource(textures[binding])
@@ -106,6 +111,7 @@ bool CompositionPass::ensureGBufferBindGroup()
 		spdlog::error("CompositionPass: failed to create G-buffer bind group");
 		return false;
 	}
+	m_gBufferBindGroupFingerprint = currentFingerprint;
 	return true;
 }
 
@@ -195,6 +201,8 @@ void CompositionPass::render(FrameCache &frameCache)
 	};
 
 	auto encoder = m_context->createCommandEncoder("CompositionPass.Encoder");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Composition", encoder);
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 	renderPass.setPipeline(m_pipeline->getPipeline());
 
@@ -218,6 +226,8 @@ void CompositionPass::render(FrameCache &frameCache)
 	renderPass.draw(3, 1, 0, 0);
 
 	m_renderPassContext->end(renderPass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Composition", encoder);
 	m_context->submitCommandEncoder(encoder, "CompositionPass.Commands");
 }
 

@@ -6,6 +6,7 @@
 
 #include "engine/rendering/BindGroupBinder.h"
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/MaterialFeatureMask.h"
 #include "engine/rendering/Mesh.h"
@@ -92,22 +93,17 @@ void ForwardTransparencyPass::render(FrameCache &frameCache)
 		if (!MaterialFeature::hasFlag(features, MaterialFeature::Flag::Transparent))
 			continue;
 
-		// Use object position from the world transform's translation row as the
-		// sort key. Per-submesh AABB centre would be slightly more accurate for
-		// large meshes but requires an extra cache lookup; object-origin sorting
-		// is what the global RenderCollector::sort already uses.
+		// Sort key uses object-origin (translation row), matching what
+		// RenderCollector::sort uses globally.
 		const glm::vec3 itemPos = glm::vec3(item.worldTransform[3]);
 		const glm::vec3 diff = itemPos - m_cameraPosition;
 		candidates.push_back({idx, glm::dot(diff, diff)});
 	}
 
 	if (candidates.empty())
-	{
-		// Nothing to draw - skip the encoder + render-pass overhead entirely.
 		return;
-	}
 
-	// Back-to-front: largest distance first so closer surfaces blend on top.
+	// Back-to-front so closer surfaces blend on top of farther ones.
 	std::sort(
 		candidates.begin(),
 		candidates.end(),
@@ -115,6 +111,8 @@ void ForwardTransparencyPass::render(FrameCache &frameCache)
 	);
 
 	auto encoder = m_context->createCommandEncoder("ForwardTransparencyPass.Encoder");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.ForwardTransparency", encoder);
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 
 	BindGroupBinder binder(&frameCache);
@@ -141,8 +139,8 @@ void ForwardTransparencyPass::render(FrameCache &frameCache)
 				continue;
 			}
 
-			// pipelineManager pulls blend-enabled + depth-write-off from the
-			// material's Transparent flag (see WebGPUPipelineFactory::createRenderPipeline).
+			// Blend + depth-write-off come from the material's Transparent flag
+			// (see WebGPUPipelineFactory::createRenderPipeline).
 			auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
 				cpuMeshOpt.value(),
 				cpuMaterialOpt.value(),
@@ -201,6 +199,8 @@ void ForwardTransparencyPass::render(FrameCache &frameCache)
 	}
 
 	m_renderPassContext->end(renderPass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.ForwardTransparency", encoder);
 	m_context->submitCommandEncoder(encoder, "ForwardTransparencyPass.Commands");
 
 	spdlog::debug("ForwardTransparencyPass: drew {} transparent items ({} skipped)", drawn, skipped);
