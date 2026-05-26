@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
@@ -83,12 +84,16 @@ void SkyboxPass::render(FrameCache &frameCache)
 	}
 
 	auto encoder = m_context->createCommandEncoder("SkyboxPass Encoder");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Skybox", encoder);
 	auto pass = m_renderPassContext->begin(encoder);
 	pass.setPipeline(pipeline->getPipeline());
 	pass.setBindGroup(0, frameBindGroupIt->second->getBindGroup(), 0, nullptr);
 	pass.setBindGroup(1, m_environmentBindGroup->getBindGroup(), 0, nullptr);
 	pass.draw(36, 1, 0, 0);
 	m_renderPassContext->end(pass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Skybox", encoder);
 	m_context->submitCommandEncoder(encoder, "SkyboxPass Commands");
 }
 

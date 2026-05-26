@@ -35,6 +35,7 @@ class SceneLightBuffer;
 namespace engine::rendering
 {
 class ClusterManager;
+class FrameProfiler;
 } // namespace engine::rendering
 
 namespace engine::rendering::webgpu
@@ -90,6 +91,16 @@ class WebGPUContext
 	[[nodiscard]] const wgpu::Limits &resolvedLimits() const { return m_resolvedLimits; }
 	/** @brief Returns the device limits configuration. */
 	[[nodiscard]] const DeviceLimitsConfig &limitsConfig() const { return m_limitsConfig; }
+
+	/** @brief True iff the device was created with the `timestamp-query` feature.
+	 *  FrameProfiler checks this before allocating its query set. */
+	[[nodiscard]] bool supportsTimestampQuery() const { return m_supportsTimestampQuery; }
+
+	/** @brief Renderer-owned FrameProfiler (set during Renderer::initialize).
+	 *  Passes use this to write GPU timestamps without taking a profiler
+	 *  reference themselves. Null until Renderer wires it up. */
+	void setFrameProfiler(engine::rendering::FrameProfiler *profiler) { m_frameProfiler = profiler; }
+	[[nodiscard]] engine::rendering::FrameProfiler *frameProfiler() const { return m_frameProfiler; }
 
 	/** @brief Returns the surface manager. */
 	[[nodiscard]] WebGPUSurfaceManager &surfaceManager();
@@ -171,6 +182,8 @@ class WebGPUContext
 	wgpu::Sampler m_defaultSampler = nullptr;
 
 	wgpu::Limits m_resolvedLimits{};
+	bool m_supportsTimestampQuery = false;
+	engine::rendering::FrameProfiler *m_frameProfiler = nullptr;
 	DeviceLimitsConfig m_limitsConfig{};
 
 	void *m_lastWindowHandle = nullptr;

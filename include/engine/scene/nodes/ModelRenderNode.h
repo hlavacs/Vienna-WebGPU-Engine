@@ -121,15 +121,14 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 	{
 		if (m_modelHandle.valid())
 		{
-			// Use node ID as object ID for bind group caching
 			uint64_t objectID = getId();
-
-			// Add model directly to collector
 			collector.addModel(
 				m_modelHandle,
 				getTransform().getWorldMatrix(),
 				m_renderLayer,
-				objectID
+				objectID,
+				nullptr,
+				castsShadows()
 			);
 		}
 	}

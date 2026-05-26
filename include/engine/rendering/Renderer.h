@@ -13,6 +13,7 @@
 #include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/ForwardTransparencyPass.h"
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/GBufferPass.h"
 #include "engine/rendering/MeshPass.h"
 // #include "engine/rendering/RenderPassManager.h" ToDo: future use
@@ -218,6 +219,13 @@ class Renderer
 	std::unique_ptr<ForwardTransparencyPass> m_transparencyPass;
 	std::unique_ptr<CompositePass> m_compositePass;
 
+	FrameProfiler m_profiler;
+
+public:
+	/// Read-only access to the frame profiler for UI display.
+	[[nodiscard]] const FrameProfiler &getProfiler() const { return m_profiler; }
+
+private:
 	FrameCache m_frameCache{};
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;

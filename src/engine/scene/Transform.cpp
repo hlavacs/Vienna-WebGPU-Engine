@@ -142,8 +142,11 @@ glm::mat4 Transform::getLocalMatrix() const
 
 glm::mat4 Transform::getWorldMatrix() const
 {
-	if (m_dirtyWorld)
+	if (m_dirtyWorld || (m_parent && m_parent->getVersion() != m_cachedParentVersion))
+	{
 		updateWorldMatrix();
+		m_cachedParentVersion = m_parent ? m_parent->getVersion() : 0;
+	}
 	return m_worldMatrixCache;
 }
 

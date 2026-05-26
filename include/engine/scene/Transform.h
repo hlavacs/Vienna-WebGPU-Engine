@@ -243,6 +243,7 @@ class Transform : public engine::core::Versioned
 
 	// Hierarchy (parent only - children are managed by Node hierarchy)
 	Transform *m_parent = nullptr;
+	mutable uint64_t m_cachedParentVersion = 0ul;
 
 	/**
 	 * @brief Marks this transform as needing matrix recomputation.

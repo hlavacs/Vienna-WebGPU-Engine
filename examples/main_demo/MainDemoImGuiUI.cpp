@@ -1,5 +1,9 @@
 #include "MainDemoImGuiUI.h"
 
+#include <algorithm>
+#include <cstdio>
+#include <string>
+
 #include <imgui.h>
 #include <spdlog/spdlog.h>
 
@@ -54,6 +58,134 @@ void MainDemoImGuiUI::renderPerformanceWindow()
 	ImGui::Begin("Performance");
 	ImGui::Text("FPS: %.1f", m_engine.getFPS());
 	ImGui::Text("Frame Time: %.2f ms", m_engine.getFrameTime());
+
+	// Per-pass CPU timings (rolling average over the profiler's window). Times
+	// are CPU encode + submit cost - they DON'T include GPU work that runs
+	// async after submit. If total CPU << frame time, the bottleneck is GPU.
+	if (auto renderer = m_engine.getRenderer().lock())
+	{
+		const auto &prof = renderer->getProfiler();
+		auto entries = prof.getEntries();
+		if (!entries.empty() && ImGui::CollapsingHeader("Per-pass timing", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			const bool gpuEnabled = prof.isGpuTimingEnabled();
+			// Hide the GPU columns when no entry has any GPU sample yet -
+			// avoids showing a column of zeros when timestamp-query is
+			// enabled but the first readback hasn't completed.
+			bool gpuHasData = false;
+			float totalCpuAvg = 0.0f, totalCpuLast = 0.0f, totalGpuAvg = 0.0f, totalGpuLast = 0.0f;
+			for (const auto &e : entries)
+			{
+				if (e.lastGpuMs > 0.0f || e.averageGpuMs > 0.0f)
+					gpuHasData = true;
+				if (e.label.rfind("Pass.", 0) == 0) // only sum per-pass rows
+				{
+					totalCpuAvg += e.averageCpuMs;
+					totalCpuLast += e.lastCpuMs;
+					totalGpuAvg += e.averageGpuMs;
+					totalGpuLast += e.lastGpuMs;
+				}
+			}
+			const bool gpu = gpuEnabled && gpuHasData;
+
+			ImGui::TextDisabled(
+				gpuEnabled
+					? (gpu ? "CPU (encode+submit) / GPU (real execution)"
+							: "GPU readback pending - values appear in 1-3 frames")
+					: "CPU only - device lacks timestamp-query"
+			);
+
+			// --- Copy to clipboard (TSV) ---
+			if (ImGui::Button("Copy table"))
+			{
+				std::string out;
+				out += "Pass\tCPU avg\tCPU last";
+				if (gpu) out += "\tGPU avg\tGPU last";
+				out += "\n";
+				for (const auto &e : entries)
+				{
+					char line[256];
+					if (gpu)
+						std::snprintf(line, sizeof(line), "%s\t%.3f\t%.3f\t%.3f\t%.3f\n",
+							e.label.c_str(), e.averageCpuMs, e.lastCpuMs, e.averageGpuMs, e.lastGpuMs);
+					else
+						std::snprintf(line, sizeof(line), "%s\t%.3f\t%.3f\n",
+							e.label.c_str(), e.averageCpuMs, e.lastCpuMs);
+					out += line;
+				}
+				char totalLine[256];
+				if (gpu)
+					std::snprintf(totalLine, sizeof(totalLine), "Pass.Total\t%.3f\t%.3f\t%.3f\t%.3f\n",
+						totalCpuAvg, totalCpuLast, totalGpuAvg, totalGpuLast);
+				else
+					std::snprintf(totalLine, sizeof(totalLine), "Pass.Total\t%.3f\t%.3f\n",
+						totalCpuAvg, totalCpuLast);
+				out += totalLine;
+				ImGui::SetClipboardText(out.c_str());
+			}
+			ImGui::SameLine();
+			ImGui::Text("(%zu rows)", entries.size());
+
+			if (ImGui::BeginTable("ProfilerTable", gpu ? 5 : 3,
+				ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Sortable))
+			{
+				ImGui::TableSetupColumn("Pass", ImGuiTableColumnFlags_NoSort);
+				ImGui::TableSetupColumn("CPU avg");
+				ImGui::TableSetupColumn("CPU last");
+				if (gpu)
+				{
+					ImGui::TableSetupColumn("GPU avg", ImGuiTableColumnFlags_DefaultSort);
+					ImGui::TableSetupColumn("GPU last");
+				}
+				ImGui::TableHeadersRow();
+
+				// Sort if user clicked a header
+				if (auto *specs = ImGui::TableGetSortSpecs())
+				{
+					if (specs->SpecsCount > 0)
+					{
+						const auto &s = specs->Specs[0];
+						std::sort(entries.begin(), entries.end(),
+							[&](const auto &a, const auto &b) {
+								float av = 0, bv = 0;
+								switch (s.ColumnIndex)
+								{
+								case 1: av = a.averageCpuMs; bv = b.averageCpuMs; break;
+								case 2: av = a.lastCpuMs;    bv = b.lastCpuMs;    break;
+								case 3: av = a.averageGpuMs; bv = b.averageGpuMs; break;
+								case 4: av = a.lastGpuMs;    bv = b.lastGpuMs;    break;
+								}
+								return s.SortDirection == ImGuiSortDirection_Ascending ? av < bv : av > bv;
+							});
+					}
+				}
+
+				for (const auto &e : entries)
+				{
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(e.label.c_str());
+					ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", e.averageCpuMs);
+					ImGui::TableSetColumnIndex(2); ImGui::Text("%.3f", e.lastCpuMs);
+					if (gpu)
+					{
+						ImGui::TableSetColumnIndex(3); ImGui::Text("%.3f", e.averageGpuMs);
+						ImGui::TableSetColumnIndex(4); ImGui::Text("%.3f", e.lastGpuMs);
+					}
+				}
+				// Totals row (sum of Pass.* rows only)
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0); ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f), "Pass.Total");
+				ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", totalCpuAvg);
+				ImGui::TableSetColumnIndex(2); ImGui::Text("%.3f", totalCpuLast);
+				if (gpu)
+				{
+					ImGui::TableSetColumnIndex(3); ImGui::Text("%.3f", totalGpuAvg);
+					ImGui::TableSetColumnIndex(4); ImGui::Text("%.3f", totalGpuLast);
+				}
+				ImGui::EndTable();
+			}
+		}
+	}
 	ImGui::End();
 }
 
@@ -485,29 +617,32 @@ void MainDemoImGuiUI::renderLightsSection()
 void MainDemoImGuiUI::renderFlockControls()
 {
 	ImGui::Separator();
-	if (ImGui::CollapsingHeader("Free-Flying Point Lights"))
+	if (ImGui::CollapsingHeader("Scattered Point Lights (Sponza-style)"))
 	{
-		ImGui::Checkbox("Enable Flock", &m_flockEnabled);
-		ImGui::SliderInt("Amount", &m_flockAmount, 0, 1000);
-		ImGui::SliderFloat("Attraction", &m_flockAttraction, 0.0f, 10.0f);
+		ImGui::Checkbox("Enable", &m_flockEnabled);
+		ImGui::SliderInt("Count", &m_flockAmount, 0, 1000);
+		ImGui::SliderFloat("Intensity", &m_flockIntensity, 0.0f, 500.0f);
+		ImGui::SliderFloat("Range",     &m_flockRange,     0.5f, 30.0f);
+		ImGui::SliderFloat("Marker scale", &m_flockMarkerScale, 0.01f, 1.0f);
+		ImGui::SliderFloat("Bob amplitude", &m_flockBobAmplitude, 0.0f, 5.0f);
+		ImGui::SliderFloat("Bob speed",     &m_flockBobSpeed,     0.0f, 5.0f);
 		ImGui::InputFloat3("Center", glm::value_ptr(m_flockCenter));
+		ImGui::InputFloat3("Extent", glm::value_ptr(m_flockExtent));
 
-		if (ImGui::Button("Spawn/Apply"))
+		if (ImGui::Button("Spawn / Re-apply"))
 		{
-			// Adjust existing flock to requested amount
+			// Easiest way to re-randomise positions / colours on parameter change.
+			clearFlock();
 			if (m_flockAmount > 0)
 				spawnFlock(m_flockAmount);
-			else
-				clearFlock();
 		}
 		ImGui::SameLine();
-		if (ImGui::Button("Clear Flock"))
+		if (ImGui::Button("Clear"))
 		{
 			clearFlock();
 			m_flockEnabled = false;
 		}
 
-		// Update positions every frame when enabled
 		if (m_flockEnabled && !m_flockLights.empty())
 		{
 			float dt = m_engine.getFrameTime() * 0.001f; // ms -> seconds
@@ -516,19 +651,33 @@ void MainDemoImGuiUI::renderFlockControls()
 	}
 }
 
+// Saturated HSV-based palette gives a Sponza-style rainbow scatter rather than
+// the muted pastels the old `0.5 + rand*0.5` produced.
+static glm::vec3 hsvToRgb(float h, float s, float v)
+{
+	const float c = v * s;
+	const float hp = h * 6.0f;
+	const float x = c * (1.0f - std::fabs(std::fmod(hp, 2.0f) - 1.0f));
+	glm::vec3 rgb;
+	if      (hp < 1.0f) rgb = {c, x, 0};
+	else if (hp < 2.0f) rgb = {x, c, 0};
+	else if (hp < 3.0f) rgb = {0, c, x};
+	else if (hp < 4.0f) rgb = {0, x, c};
+	else if (hp < 5.0f) rgb = {x, 0, c};
+	else                rgb = {c, 0, x};
+	return rgb + glm::vec3(v - c);
+}
+
 void MainDemoImGuiUI::spawnFlock(int amount)
 {
-	// Clamp amount to reasonable maximum
 	amount = std::min(1000, std::max(0, amount));
 
-	// If we already have lights, adjust up/down
 	const int current = static_cast<int>(m_flockLights.size());
 	if (amount == current)
 		return;
 
 	if (amount < current)
 	{
-		// Remove extras
 		for (int i = amount; i < current; ++i)
 		{
 			auto node = m_flockLights[i];
@@ -536,101 +685,93 @@ void MainDemoImGuiUI::spawnFlock(int amount)
 				node->getParent()->removeChild(node);
 		}
 		m_flockLights.resize(amount);
-		m_flockVelocities.resize(amount);
+		m_flockOrigins.resize(amount);
+		m_flockNoisePhases.resize(amount);
 		return;
 	}
 
-	// Add missing lights
-		spdlog::info("Spawning flock: current={}, target={}", current, amount);
-		for (int i = current; i < amount; ++i)
+	spdlog::info("Spawning scattered lights: current={}, target={}", current, amount);
+
+	auto resourceManager = m_engine.getResourceManager();
+	for (int i = current; i < amount; ++i)
 	{
 		auto newLight = std::make_shared<engine::scene::nodes::LightNode>();
+
+		// HSV cycle gives evenly distributed saturated hues across the count.
+		float hue = static_cast<float>(i) / static_cast<float>(std::max(amount, 1));
+		glm::vec3 col = hsvToRgb(hue, 1.0f, 1.0f);
+
 		engine::rendering::PointLight pointData;
-			// Give each flock light a noticeable intensity and varied color
-			float r = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
-			float g = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
-			float b = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
-			pointData.color = glm::vec3(r, g, b);
-			pointData.intensity = 100.0f; // make bright enough to be visible
-		pointData.castShadows = false; // No shadows
+		pointData.color       = col;
+		pointData.intensity   = m_flockIntensity;
+		pointData.range       = m_flockRange;
+		pointData.castShadows = false;
 		newLight->getLight().setData(pointData);
 
-		// Randomize initial position around center
-		float radius = 10.0f;
-		float angle = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159265f;
-		float h = (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 4.0f;
-		glm::vec3 pos = m_flockCenter + glm::vec3(cos(angle) * radius, h, sin(angle) * radius);
+		// Uniform scatter inside the configured extent box around center.
+		auto frand = [](float lo, float hi) {
+			return lo + (hi - lo) * (static_cast<float>(rand()) / RAND_MAX);
+		};
+		glm::vec3 pos = m_flockCenter + glm::vec3(
+			frand(-m_flockExtent.x, m_flockExtent.x),
+			frand(-m_flockExtent.y, m_flockExtent.y),
+			frand(-m_flockExtent.z, m_flockExtent.z)
+		);
 		newLight->getTransform().setLocalPosition(pos);
-
-		// Add to scene root
 		if (m_rootNode)
 			m_rootNode->addChild(newLight);
-
-		// Enable debug marker so the light has a visible particle-like visualization
 		newLight->setDebugEnabled(true);
 
-		// Attach a tiny sphere model as a visible marker (if available).
-		// Create a unique model instance and a matching material so the sphere matches the light color.
-		auto resourceManager = m_engine.getResourceManager();
+		// Marker sphere co-located with the light.
 		if (resourceManager)
 		{
-			// Load base model once via manager but create a uniquely named instance so we can assign a per-instance material
-			std::string instanceName = std::string("sphere_inst_") + std::to_string(newLight->getId());
+			std::string instanceName = "sphere_inst_" + std::to_string(newLight->getId());
 			auto spherePath = engine::core::PathProvider::getResource("sphere.obj");
-			auto maybeModelInst = resourceManager->m_modelManager->createModel(spherePath, std::optional<std::string>(instanceName));
+			auto maybeModelInst = resourceManager->m_modelManager->createModel(
+				spherePath, std::optional<std::string>(instanceName));
 			if (maybeModelInst.has_value())
 			{
-				// Create a simple PBR material colored like the light (emissive + diffuse)
 				engine::rendering::PBRProperties props{};
-				props.diffuse[0] = pointData.color.r;
-				props.diffuse[1] = pointData.color.g;
-				props.diffuse[2] = pointData.color.b;
-				props.diffuse[3] = 1.0f;
-				// Make the marker visibly emissive to better match the light
-				props.emission[0] = pointData.color.r;
-				props.emission[1] = pointData.color.g;
-				props.emission[2] = pointData.color.b;
+				props.diffuse[0]  = col.r; props.diffuse[1] = col.g; props.diffuse[2] = col.b; props.diffuse[3] = 1.0f;
+				// Strong emission so the marker reads as a glowing bulb against
+				// the deferred-lit background (deferred composition adds emission
+				// post-lighting, so values can sit comfortably above 1 in linear HDR).
+				props.emission[0] = col.r * 5.0f; props.emission[1] = col.g * 5.0f; props.emission[2] = col.b * 5.0f;
 				props.emission[3] = 1.0f;
-				props.roughness = 1.0f;
-				props.metallic = 0.0f;
+				props.roughness   = 1.0f;
+				props.metallic    = 0.0f;
 
-				auto maybeMat = resourceManager->m_materialManager->createPBRMaterial(std::string("SphereMat_") + instanceName, props, {});
+				auto maybeMat = resourceManager->m_materialManager->createPBRMaterial(
+					"SphereMat_" + instanceName, props, {});
 				if (maybeMat.has_value())
 				{
 					auto matHandle = maybeMat.value()->getHandle();
-					// Assign material to all submeshes of this model instance
 					for (auto &sm : maybeModelInst.value()->getSubmeshes())
 						sm.material = matHandle;
 				}
 
-				// Add model node as child, then set its local scale
-				newLight->addChild(std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelInst.value()));
-				auto children = newLight->getChildren();
-				if (!children.empty())
-				{
-					auto lastChild = std::dynamic_pointer_cast<engine::scene::nodes::ModelRenderNode>(children.back());
-					if (lastChild)
-						lastChild->getTransform().setLocalScale(glm::vec3(0.03f));
-				}
+				auto marker = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelInst.value());
+				marker->getTransform().setLocalScale(glm::vec3(m_flockMarkerScale));
+				// Skip shadow extraction (visual-only marker).
+				marker->setCastsShadows(false);
+				// keepWorldTransform=false: the marker has no world position of
+				// its own, we want it anchored at the light's origin and to
+				// follow the light when updateFlock moves it. With the default
+				// keepWorld=true, addChild would rewrite local = -lightPos to
+				// hold the marker at (0,0,0) - it would then track only the
+				// bob delta, not the light's absolute motion.
+				newLight->addChild(marker, false);
 			}
 		}
 
-		// Also expose to main light list/UI so they are visible and collectible
 		m_flockLights.push_back(newLight);
 		m_lightNodes.push_back(newLight);
-		// Initial random velocity (small)
-		glm::vec3 vel((static_cast<float>(rand()) / RAND_MAX - 0.5f) * 1.0f,
-				  (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 0.5f,
-				  (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 1.0f);
-		m_flockVelocities.push_back(vel);
-		// Per-light noise phase for smooth jitter
-		float phase = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159265f;
-		m_flockNoisePhases.push_back(phase);
-		spdlog::debug("Spawned flock light {} at {} {} {}", i, pos.x, pos.y, pos.z);
+		m_flockOrigins.push_back(pos);
+		m_flockNoisePhases.push_back(frand(0.0f, 2.0f * 3.14159265f));
 	}
-	// Ensure flock movement is active after spawn
+
 	m_flockEnabled = true;
-	spdlog::info("Flock spawn complete. total flock lights={}", m_flockLights.size());
+	spdlog::info("Scattered lights spawn complete. total={}", m_flockLights.size());
 }
 
 void MainDemoImGuiUI::clearFlock()
@@ -641,88 +782,30 @@ void MainDemoImGuiUI::clearFlock()
 			node->getParent()->removeChild(node);
 	}
 	m_flockLights.clear();
-	m_flockVelocities.clear();
+	m_flockOrigins.clear();
 	m_flockNoisePhases.clear();
 }
 
 void MainDemoImGuiUI::updateFlock(float deltaSeconds)
 {
-	const float damping = 0.995f;
-	const float maxSpeed = 8.0f;
-	const float noiseFreq = 0.6f;
-	const float noiseAmp = 0.8f;
-	const float neighborRadius = 2.5f;
+	// Per-light independent sin-based bobbing around the static origin. Cheaper
+	// and more readable than boids - the Sponza-style demo wants the eye to
+	// register a stable scatter of glowing bulbs, not a swarm.
 	for (size_t i = 0; i < m_flockLights.size(); ++i)
 	{
 		auto &node = m_flockLights[i];
-		if (!node)
+		if (!node || i >= m_flockOrigins.size() || i >= m_flockNoisePhases.size())
 			continue;
-		glm::vec3 pos = node->getTransform().getLocalPosition();
 
-		// Per-light smooth noise
-		float phase = (i < m_flockNoisePhases.size()) ? m_flockNoisePhases[i] : 0.0f;
-		glm::vec3 noiseVec(
-			sinf(phase),
-			sinf(phase * 1.37f + 1.0f),
-			sinf(phase * 1.73f + 2.0f)
+		float &phase = m_flockNoisePhases[i];
+		phase += deltaSeconds * m_flockBobSpeed;
+
+		glm::vec3 bob(
+			std::sin(phase),
+			std::sin(phase * 1.37f + 1.0f),
+			std::sin(phase * 1.73f + 2.0f)
 		);
-		phase += deltaSeconds * noiseFreq;
-		if (i < m_flockNoisePhases.size())
-			m_flockNoisePhases[i] = phase;
-		glm::vec3 jitter = noiseVec * noiseAmp * 0.3f;
-
-		// Boids-like behavior: separation, alignment, cohesion
-		glm::vec3 separation(0.0f);
-		glm::vec3 alignment(0.0f);
-		glm::vec3 cohesion(0.0f);
-		int neighborCount = 0;
-		for (size_t j = 0; j < m_flockLights.size(); ++j)
-		{
-			if (i == j) continue;
-			auto &other = m_flockLights[j];
-			if (!other) continue;
-			glm::vec3 otherPos = other->getTransform().getLocalPosition();
-			glm::vec3 diff = pos - otherPos;
-			float dist = glm::length(diff);
-			if (dist < 0.0001f) continue;
-			if (dist < neighborRadius)
-			{
-				// separation (repel)
-				separation += glm::normalize(diff) / dist;
-				// alignment (match velocity)
-				alignment += m_flockVelocities[j];
-				// cohesion (move towards average)
-				cohesion += otherPos;
-				neighborCount++;
-			}
-		}
-		if (neighborCount > 0)
-		{
-			alignment /= static_cast<float>(neighborCount);
-			cohesion = (cohesion / static_cast<float>(neighborCount)) - pos;
-		}
-
-		glm::vec3 vel = m_flockVelocities[i];
-		glm::vec3 steer(0.0f);
-		// weights tuned for stable motion
-		steer += separation * 1.5f;
-		steer += (alignment - vel) * 0.5f;
-		steer += cohesion * 0.6f;
-		// gentle pull to global center to keep flock localized, but weak
-		glm::vec3 toCenter = m_flockCenter - pos;
-		steer += toCenter * (m_flockAttraction * 0.01f);
-		// add smooth noise
-		steer += jitter;
-
-		vel += steer * deltaSeconds;
-		// damping and clamp
-		vel *= damping;
-		float speed = glm::length(vel);
-		if (speed > maxSpeed) vel = glm::normalize(vel) * maxSpeed;
-
-		pos += vel * deltaSeconds;
-		node->getTransform().setLocalPosition(pos);
-		m_flockVelocities[i] = vel;
+		node->getTransform().setLocalPosition(m_flockOrigins[i] + bob * m_flockBobAmplitude);
 	}
 }
 

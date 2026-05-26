@@ -35,6 +35,12 @@ bool Renderer::initialize()
 {
 	spdlog::info("Initializing Renderer");
 
+	// Profiler must be wired into the context BEFORE passes initialise so any
+	// startup encoder also has the option to write timestamps. initGpu is a
+	// no-op when the device lacks `timestamp-query`.
+	m_context->setFrameProfiler(&m_profiler);
+	m_profiler.initGpu(*m_context);
+
 	// Initialize rendering passes
 	m_shadowPass = std::make_unique<ShadowPass>(m_context);
 	if (!m_shadowPass->initialize())
@@ -129,9 +135,14 @@ bool Renderer::renderFrame(
 	std::function<void(wgpu::RenderPassEncoder)> uiCallback
 )
 {
+	m_profiler.beginFrame();
+	FrameProfiler::Scope frameScope(m_profiler, "Frame.Total");
+
 	// === PHASE 1: Frame Initialization ===
-	// Acquire swap chain texture and reset GPU resource cache
-	startFrame();
+	{
+		FrameProfiler::Scope s(m_profiler, "Frame.StartFrame");
+		startFrame();
+	}
 	if (renderTargets.empty())
 	{
 		spdlog::warn("renderFrame called with no render targets");
@@ -139,20 +150,19 @@ bool Renderer::renderFrame(
 	}
 
 	// === PHASE 2: Prepare Render Targets ===
-	// Deduplicate render targets (one per camera) and prepare per-camera frame uniforms.
-	// Frame uniforms contain: view matrix, projection matrix, camera position, time, etc.
 	std::unordered_map<uint64_t, RenderTarget> uniqueRenderTargets;
-	for (const auto &target : renderTargets)
 	{
-		if (uniqueRenderTargets.count(target.cameraId))
+		FrameProfiler::Scope s(m_profiler, "Frame.UpdateFrameBindGroups");
+		for (const auto &target : renderTargets)
 		{
-			spdlog::warn("Duplicate render target for cameraId {} detected; skipping", target.cameraId);
-			continue;
+			if (uniqueRenderTargets.count(target.cameraId))
+			{
+				spdlog::warn("Duplicate render target for cameraId {} detected; skipping", target.cameraId);
+				continue;
+			}
+			uniqueRenderTargets[target.cameraId] = target;
+			updateFrameBindGroup(target, time);
 		}
-		uniqueRenderTargets[target.cameraId] = target;
-
-		// Create/update bind group with camera-specific uniforms (view, projection)
-		updateFrameBindGroup(target, time);
 	}
 
 	// === PHASE 3: Setup Frame-Wide Data ===
@@ -170,16 +180,20 @@ bool Renderer::renderFrame(
 	m_renderTargets = m_frameCache.renderTargets;
 
 	// Extract light data and determine which lights need shadow maps
-	auto [lightUniforms, shadowRequests] = renderCollector.extractLightsAndShadows(
-		constants::MAX_SHADOW_MAPS_2D,
-		constants::MAX_SHADOW_MAPS_CUBE
-	);
-	m_frameCache.lightUniforms = std::move(lightUniforms);
-	m_frameCache.shadowRequests = std::move(shadowRequests);
+	{
+		FrameProfiler::Scope s(m_profiler, "Frame.ExtractLights");
+		auto [lightUniforms, shadowRequests] = renderCollector.extractLightsAndShadows(
+			constants::MAX_SHADOW_MAPS_2D,
+			constants::MAX_SHADOW_MAPS_CUBE
+		);
+		m_frameCache.lightUniforms = std::move(lightUniforms);
+		m_frameCache.shadowRequests = std::move(shadowRequests);
+	}
 
 	// Upload current frame lights to the shared scene light storage buffer for deferred composition.
 	if (auto lightManager = m_context->lightManager())
 	{
+		FrameProfiler::Scope s(m_profiler, "Frame.UploadLights");
 		lightManager->updateLights(renderCollector);
 		if (auto sceneLightBuffer = m_context->sceneLightBuffer())
 		{
@@ -217,7 +231,10 @@ bool Renderer::renderFrame(
 	{
 		// Render shadow maps from the perspective of lights visible to this camera
 		m_shadowPass->setCameraId(target.cameraId);
-		m_shadowPass->render(m_frameCache);
+		{
+			FrameProfiler::Scope s(m_profiler, "Pass.Shadow");
+			m_shadowPass->render(m_frameCache);
+		}
 
 		// Render scene from camera's perspective (with shadows applied)
 		renderToTexture(renderCollector, debugRenderCollector, target, customBindGroupProviders);
@@ -225,8 +242,19 @@ bool Renderer::renderFrame(
 
 	// === PHASE 5: Composite & Present ===
 	// Combine all camera render targets into final surface texture, then present to screen
-	compositeTexturesToSurface(uiCallback);
-	m_context->getSurface().present();
+	{
+		FrameProfiler::Scope s(m_profiler, "Pass.Composite+UI");
+		compositeTexturesToSurface(uiCallback);
+	}
+	// Resolve any pending GPU timestamps from this frame's passes. Must come
+	// AFTER every pass submission but BEFORE present so the queue still has
+	// the per-pass encoders ahead of the resolve copy.
+	m_profiler.resolveGpuTimestamps(*m_context);
+
+	{
+		FrameProfiler::Scope s(m_profiler, "Frame.Present");
+		m_context->getSurface().present();
+	}
 	m_surfaceTexture.reset();
 
 	// === PHASE 6: Post-Frame Cleanup ===
@@ -463,18 +491,21 @@ void Renderer::renderToTexture(
 	// ========================================
 	// Update or create the texture we'll render this camera's view into.
 	// Uses HDR format (RGBA16Float) for better color precision in lighting calculations.
-	renderTarget.gpuTexture = updateRenderTexture(
-		renderTargetId,
-		renderTarget.gpuTexture,
-		renderTarget.cpuTarget,
-		renderTarget.viewport,
-		wgpu::TextureFormat::RGBA16Float,
-		static_cast<WGPUTextureUsage>(
-			wgpu::TextureUsage::RenderAttachment | // Can render to it
-			wgpu::TextureUsage::TextureBinding |   // Can sample from it in shaders
-			wgpu::TextureUsage::CopySrc			   // Can copy data from it (for readback)
-		)
-	);
+	{
+		FrameProfiler::Scope s(m_profiler, "Frame.UpdateRenderTextures");
+		renderTarget.gpuTexture = updateRenderTexture(
+			renderTargetId,
+			renderTarget.gpuTexture,
+			renderTarget.cpuTarget,
+			renderTarget.viewport,
+			wgpu::TextureFormat::RGBA16Float,
+			static_cast<WGPUTextureUsage>(
+				wgpu::TextureUsage::RenderAttachment | // Can render to it
+				wgpu::TextureUsage::TextureBinding |   // Can sample from it in shaders
+				wgpu::TextureUsage::CopySrc			   // Can copy data from it (for readback)
+			)
+		);
+	}
 
 	if (!renderTarget.gpuTexture)
 	{
@@ -514,7 +545,11 @@ void Renderer::renderToTexture(
 	// Build camera frustum from view-projection matrix and cull objects outside view.
 	// Frustum culling optimization: don't render objects the camera can't see.
 	auto cameraFrustum = engine::math::Frustum::fromViewProjection(renderTarget.viewProjectionMatrix);
-	std::vector<size_t> visibleIndices = collector.extractVisible(cameraFrustum);
+	std::vector<size_t> visibleIndices;
+	{
+		FrameProfiler::Scope s(m_profiler, "Frame.FrustumCull");
+		visibleIndices = collector.extractVisible(cameraFrustum);
+	}
 
 	spdlog::debug("Frustum culling: {} visible of {} total items", visibleIndices.size(), collector.getRenderItems().size());
 
@@ -534,7 +569,10 @@ void Renderer::renderToTexture(
 	// ========================================
 	// Upload/update GPU buffers for visible meshes and materials.
 	// Only creates GPU resources for objects that passed frustum culling.
-	m_frameCache.prepareGPUResources(m_context, collector, visibleIndices);
+	{
+		FrameProfiler::Scope s(m_profiler, "Frame.PrepareGPU");
+		m_frameCache.prepareGPUResources(m_context, collector, visibleIndices);
+	}
 
 	// ========================================
 	// STEP 5: Deferred Geometry + Composition
@@ -548,25 +586,33 @@ void Renderer::renderToTexture(
 	m_gBufferPass->resize(renderFromTexture->getWidth(), renderFromTexture->getHeight());
 	m_gBufferPass->setCameraId(renderTargetId);
 	m_gBufferPass->setVisibleIndices(visibleIndices);
-	m_gBufferPass->render(m_frameCache);
+	{
+		FrameProfiler::Scope s(m_profiler, "Pass.GBuffer");
+		m_gBufferPass->render(m_frameCache);
+	}
 
-	// Cluster assignment is a no-op today (placeholder in ClusterManager) but
-	// the call still has to wire the scene light buffer + shadow data so the
-	// composition pass has a valid cluster bind group to read from.
+	// Run the compute clustering pass for this camera. Has to come AFTER the
+	// frame bind group + scene light buffer are populated (both happen earlier
+	// in renderToTexture's setup) and BEFORE the composition pass reads from
+	// the cluster buffers.
 	auto sceneLightBuffer = m_context->sceneLightBuffer();
 	auto shadowBindGroup = m_shadowPass ? m_shadowPass->getShadowBindGroup() : nullptr;
 	auto clusterManager = m_context->clusterManager();
 	auto clusterBindGroup = clusterManager ? clusterManager->getClusterBindGroup() : nullptr;
 	if (sceneLightBuffer && sceneLightBuffer->getBindGroup() && shadowBindGroup && clusterManager)
 	{
-		if (!clusterManager->assignLights(m_frameCache, sceneLightBuffer->getBindGroup()))
+		FrameProfiler::Scope s(m_profiler, "Pass.ClusterCompute");
+		if (!clusterManager->assignLights(renderTargetId, m_frameCache, sceneLightBuffer->getLightCount()))
 			spdlog::warn("Failed to assign lights to clusters");
 	}
 
 	// Build the per-camera environment bind group: composition pass uses it
 	// for IBL, the skybox pass uses a parallel one built against its own
 	// shader's layout.
-	updateEnvironmentBindGroup(renderTarget);
+	{
+		FrameProfiler::Scope s(m_profiler, "Frame.EnvBindGroup");
+		updateEnvironmentBindGroup(renderTarget);
+	}
 	auto environmentBindGroup = m_environmentBindGroups[renderTargetId];
 
 	if (!sceneLightBuffer || !sceneLightBuffer->getBindGroup() || !shadowBindGroup || !clusterBindGroup || !environmentBindGroup)
@@ -592,7 +638,10 @@ void Renderer::renderToTexture(
 		m_compositionPass->setClusterBindGroup(clusterBindGroup);
 		m_compositionPass->setEnvironmentBindGroup(environmentBindGroup);
 		m_compositionPass->setCameraId(renderTargetId);
-		m_compositionPass->render(m_frameCache);
+		{
+			FrameProfiler::Scope s(m_profiler, "Pass.Composition");
+			m_compositionPass->render(m_frameCache);
+		}
 	}
 
 	// ========================================
@@ -618,7 +667,10 @@ void Renderer::renderToTexture(
 			m_skyboxPass->setRenderPassContext(skyboxPassContext);
 			m_skyboxPass->setCameraId(renderTargetId);
 			m_skyboxPass->setEnvironmentBindGroup(skyboxBindGroup);
-			m_skyboxPass->render(m_frameCache);
+			{
+				FrameProfiler::Scope s(m_profiler, "Pass.Skybox");
+				m_skyboxPass->render(m_frameCache);
+			}
 		}
 	}
 
@@ -644,7 +696,10 @@ void Renderer::renderToTexture(
 		m_transparencyPass->setLightBindGroup(sceneLightBuffer->getBindGroup());
 		m_transparencyPass->setShadowBindGroup(shadowBindGroup);
 		m_transparencyPass->setEnvironmentBindGroup(environmentBindGroup);
-		m_transparencyPass->render(m_frameCache);
+		{
+			FrameProfiler::Scope s(m_profiler, "Pass.ForwardTransparency");
+			m_transparencyPass->render(m_frameCache);
+		}
 	}
 
 	// ========================================
@@ -662,7 +717,10 @@ void Renderer::renderToTexture(
 	m_debugPass->setRenderPassContext(debugPassContext);
 	m_debugPass->setCameraId(renderTargetId);
 	m_debugPass->setDebugCollector(&debugCollector);
-	m_debugPass->render(m_frameCache);
+	{
+		FrameProfiler::Scope s(m_profiler, "Pass.Debug");
+		m_debugPass->render(m_frameCache);
+	}
 
 	// ========================================
 	// STEP 7: Post-Processing Pass

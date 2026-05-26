@@ -4,6 +4,7 @@
 
 #include "engine/rendering/BindGroupBinder.h"
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/Mesh.h" // for engine::rendering::Topology
 #include "engine/rendering/RenderItemGPU.h"
@@ -98,6 +99,8 @@ void GBufferPass::render(FrameCache &frameCache)
 	}
 
 	auto encoder = m_context->createCommandEncoder("GBufferPass.Encoder");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.GBuffer", encoder);
 	wgpu::RenderPassEncoder renderPass = passContext->begin(encoder);
 
 	BindGroupBinder binder(&frameCache);
@@ -123,14 +126,6 @@ void GBufferPass::render(FrameCache &frameCache)
 			continue;
 		}
 
-		// Material reads serve two purposes:
-		//   1. Pick per-material cull mode (DoubleSided GLTF geometry needs
-		//      CullMode::None - the SeaKeep is the textbook case).
-		//   2. Skip Transparent items. They are drawn by ForwardTransparencyPass
-		//      against the same depth buffer after composition + skybox, sorted
-		//      back-to-front with blending on and depth writes off. Including
-		//      them here would either burn them into albedo (no transparency)
-		//      or write opaque depth that occludes the forward pass later.
 		auto cpuMaterialOpt = item.gpuMaterial->getCPUHandle().get();
 		if (!cpuMaterialOpt.has_value())
 		{
@@ -138,6 +133,8 @@ void GBufferPass::render(FrameCache &frameCache)
 			continue;
 		}
 		const auto matFeatures = cpuMaterialOpt.value()->getFeatureMask();
+		// Transparent items belong to ForwardTransparencyPass - here they would
+		// either lose their alpha or write depth that occludes the forward pass.
 		if (engine::rendering::MaterialFeature::hasFlag(
 				matFeatures,
 				engine::rendering::MaterialFeature::Flag::Transparent))
@@ -162,8 +159,7 @@ void GBufferPass::render(FrameCache &frameCache)
 		{
 			currentPipeline = pipeline;
 			renderPass.setPipeline(currentPipeline->getPipeline());
-			// New pipeline invalidates the cached vertex-buffer binding too
-			// (vertex layout may differ between pipelines in principle).
+			// New pipeline may use a different vertex layout - drop cached mesh binding.
 			currentMesh = nullptr;
 		}
 
@@ -195,6 +191,8 @@ void GBufferPass::render(FrameCache &frameCache)
 	}
 
 	passContext->end(renderPass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.GBuffer", encoder);
 	m_context->submitCommandEncoder(encoder, "GBufferPass.Commands");
 
 	spdlog::debug("GBufferPass: rendered {} items ({} skipped)", rendered, skipped);

@@ -131,21 +131,25 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 	return output;
 }
 
-// Helper: Get cluster index from screen position
-fn getClusterIndex(uv: vec2<f32>, depth: f32) -> u32 {
+// Cluster math MUST match light_clustering.wgsl. depth is VIEW-SPACE depth in
+// world units (positionData.w from g_buffer), not NDC depth - log-Z over view
+// space distributes lights across the Z slabs; NDC depth concentrates 95% of
+// fragments in the last slab and collapses the grid to 1D.
+const CLUSTER_Z_NEAR: f32 = 0.1;
+const CLUSTER_Z_FAR:  f32 = 1000.0;
+
+fn getClusterIndex(uv: vec2<f32>, viewDepth: f32) -> u32 {
 	let gridDimX = 24u;
 	let gridDimY = 14u;
 	let gridDimZ = 32u;
-	
-	// XY clustering
-	let x = u32(uv.x * f32(gridDimX));
-	let y = u32(uv.y * f32(gridDimY));
-	
-	// Logarithmic depth clustering
-	let logDepth = log(mix(0.1, 1.0, depth));
-	let normalizedDepth = (logDepth - log(0.1)) / (log(1.0) - log(0.1));
-	let z = u32(clamp(normalizedDepth, 0.0, 1.0) * f32(gridDimZ - 1u));
-	
+
+	let x = u32(clamp(uv.x, 0.0, 0.999999) * f32(gridDimX));
+	let y = u32(clamp(uv.y, 0.0, 0.999999) * f32(gridDimY));
+
+	let clamped = clamp(viewDepth, CLUSTER_Z_NEAR, CLUSTER_Z_FAR);
+	let normalized = log(clamped / CLUSTER_Z_NEAR) / log(CLUSTER_Z_FAR / CLUSTER_Z_NEAR);
+	let z = u32(clamp(normalized, 0.0, 0.999999) * f32(gridDimZ));
+
 	return z * (gridDimX * gridDimY) + y * gridDimX + x;
 }
 
@@ -297,8 +301,14 @@ fn toneMapACES(color: vec3<f32>) -> vec3<f32> {
 // Fragment shader: PBR composition
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+	// Y is flipped ONLY for the G-buffer texture sample (gbuffer textures are
+	// stored y-down). The cluster lookup must use the un-flipped uv to match
+	// the NDC convention the compute shader writes with - otherwise lights
+	// land in vertically mirrored cells from the reads and every pixel sees
+	// count=0 even when there are lights right above them.
 	let uvFlipped = vec2<f32>(input.uv.x, 1.0 - input.uv.y);
 	let uv = clamp(uvFlipped, vec2<f32>(0.0, 0.0), vec2<f32>(0.999999, 0.999999));
+	let uvCluster = clamp(input.uv, vec2<f32>(0.0, 0.0), vec2<f32>(0.999999, 0.999999));
 	let texSize = textureDimensions(gBufferPositionTexture, 0);
 	let pixelCoord = vec2<i32>(
 		i32(uv.x * f32(texSize.x)),
@@ -325,19 +335,17 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	// materialData.w = materialType id (0 = standard PBR). Reserved for the
 	// future data-reinterpretation deferred design - ignored today.
 	let emission = emissionData.rgb;
-	let depth01 = positionData.w; // Normalized depth from geometry pass
+	// position.w is VIEW-SPACE depth in world units (gbuffer wrote -viewPos.z).
+	let viewDepth = positionData.w;
 	let viewDir = normalize(uFrame.cameraWorldPosition - worldPos);
 
-	
-	// Get cluster containing this pixel
-	let clusterIdx = getClusterIndex(uv, depth01);
-	
-	// Fetch lights in this cluster
+	// Trust the cluster compute - count=0 means no direct light affects this
+	// pixel and we just emit IBL + emission. The old "scan all 512 lights as
+	// a fallback when count=0" path defeated the entire optimization for
+	// every pixel outside the lit volume.
+	let clusterIdx = getClusterIndex(uvCluster, viewDepth);
 	let clusterLights = uClusterGrid[clusterIdx];
-	let clusteredLightCount = min(clusterLights.count, 256u);
-	let fallbackLightCount = min(uLights.count, 512u);
-	let useFallbackAllLights = clusteredLightCount == 0u;
-	let lightCount = select(clusteredLightCount, fallbackLightCount, useFallbackAllLights);
+	let lightCount = min(clusterLights.count, 256u);
 
 	// Accumulate lighting. Start with image-based ambient: sample the
 	// environment map along the world normal as a cheap diffuse-irradiance
@@ -354,13 +362,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
 	// Iterate through lights affecting this pixel
 	for (var i: u32 = 0u; i < lightCount; i++) {
-		var lightIdx: u32 = i;
-		if (!useFallbackAllLights) {
-			let lightIndexOffset = clusterLights.offset + i;
-			if (lightIndexOffset >= arrayLength(&uClusterLightIndices)) { break; }
-			lightIdx = uClusterLightIndices[lightIndexOffset];
-			if (lightIdx >= 512u) { break; } // Safety check
-		}
+		let lightIndexOffset = clusterLights.offset + i;
+		if (lightIndexOffset >= arrayLength(&uClusterLightIndices)) { break; }
+		let lightIdx = uClusterLightIndices[lightIndexOffset];
+		if (lightIdx >= 5120u) { break; } // Safety check
 		
 		let light = uLights.lights[lightIdx];
 		let lightType = light.lightType;

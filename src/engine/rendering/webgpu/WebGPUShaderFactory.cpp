@@ -550,11 +550,17 @@ bool WebGPUShaderFactory::reloadShader(std::shared_ptr<WebGPUShaderInfo> shaderI
 		shaderInfo->isBackFaceCullingEnabled()
 	);
 
-	// Copy bind group layouts from old shader to new one
+	// Preserve post-construction state the builder populates separately - the
+	// constructor only takes the basics. Dropping any of these silently breaks
+	// pipelines after hot reload; e.g. losing colorTargetFormats made GBufferPass
+	// try to bind a 1-attachment pipeline against the 5-attachment G-buffer pass.
 	for (const auto &[groupIndex, layoutInfo] : shaderInfo->getBindGroupLayouts())
 	{
 		newShaderInfo->addBindGroupLayout(groupIndex, layoutInfo);
 	}
+	newShaderInfo->setColorTargetFormats(shaderInfo->getColorTargetFormats());
+	newShaderInfo->setDepthCompare(shaderInfo->getDepthCompare());
+	newShaderInfo->setDepthWriteEnabled(shaderInfo->isDepthWriteEnabled());
 
 	return m_context.shaderRegistry().registerShader(newShaderInfo, true);
 }
