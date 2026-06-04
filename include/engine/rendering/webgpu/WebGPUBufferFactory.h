@@ -13,47 +13,52 @@ namespace engine::rendering::webgpu
 {
 class WebGPUContext;
 
+/**
+ * @brief Builder for GPU buffers — raw wgpu::Buffer for low-level needs,
+ *        wrapped WebGPUBuffer (default) for everything that binds to a
+ *        shader.
+ *
+ * **Naming convention**
+ *   - `createX(name, binding, ...)` returns `shared_ptr<WebGPUBuffer>` —
+ *     carries name/binding/size for the bind-group factory and matches the
+ *     rest of the engine's wrapper convention. Use this for UBOs / SSBOs.
+ *   - `createBuffer(desc)` / `createBufferWithData(...)` return raw
+ *     `wgpu::Buffer` — for low-level needs like vertex / index buffers
+ *     that the mesh layer manages directly.
+ *
+ * BufferFactory deliberately has no cache: every buffer is a unique
+ * resource owned by its caller (a material, a scene-light buffer, a
+ * mesh). There's no descriptor-keyed identity worth deduplicating.
+ */
 class WebGPUBufferFactory
 {
   public:
 	explicit WebGPUBufferFactory(WebGPUContext &context);
 
-	/**
-	 * @brief Creates a generic GPU buffer with the given descriptor.
-	 */
+	// === Raw wgpu::Buffer creation (low-level, no engine wrapper) ===
+
+	/// Generic GPU buffer from an explicit descriptor.
 	wgpu::Buffer createBuffer(const wgpu::BufferDescriptor &desc);
 
-	/**
-	 * @brief Creates and uploads data to a GPU buffer.
-	 * @param data Pointer to data to upload.
-	 * @param size Size in bytes.
-	 * @param usage Buffer usage flags.
-	 * @param mappedAtCreation Whether to create the buffer with mappedAtCreation=true for initial data.
-	 */
+	/// Buffer pre-populated with @p data of @p size bytes. The CopyDst usage
+	/// bit is OR-ed in so the buffer can be written via queue.writeBuffer
+	/// later. If @p mappedAtCreation is true (default), data is mapped+copied
+	/// at construction; otherwise it's uploaded via the queue.
 	wgpu::Buffer createBufferWithData(const void *data, size_t size, wgpu::BufferUsage usage, bool mappedAtCreation = true);
 
-	/**
-	 * @brief Creates and uploads data from a std::vector<T>.
-	 */
+	/// Vector-flavoured overload. Size is `vec.size() * sizeof(T)`.
 	template <typename T>
 	wgpu::Buffer createBufferWithData(const std::vector<T> &vec, wgpu::BufferUsage usage, bool mappedAtCreation = true)
 	{
 		return createBufferWithData(vec.data(), vec.size() * sizeof(T), usage, mappedAtCreation);
 	}
 
-	/**
-	 * @brief Creates a WebGPUBuffer from a bind group layout entry.
-	 *
-	 * Creates a buffer with the appropriate usage flags based on the layout entry's buffer type.
-	 * The buffer is created with the size from the layout entry's minBindingSize, or a custom size if provided.
-	 * No data is uploaded - use queue.writeBuffer() or mappedAtCreation separately to upload data.
-	 *
-	 * @param layoutInfo The bind group layout info containing the entry.
-	 * @param binding The binding number to create buffer for.
-	 * @param name Debug name for the buffer.
-	 * @param size The size in bytes (if 0, uses minBindingSize from entry).
-	 * @return Shared pointer to WebGPUBuffer configured according to the layout entry.
-	 */
+	// === WebGPUBuffer creation (engine wrapper — default for UBO/SSBO) ===
+
+	/// Construct a WebGPUBuffer from a bind-group layout entry: usage flags
+	/// derive from the entry's buffer type, size from minBindingSize unless
+	/// an explicit @p size is supplied. No data uploaded — caller writes
+	/// via queue.writeBuffer or via WebGPUBuffer's update helpers.
 	std::shared_ptr<WebGPUBuffer> createBufferFromLayoutEntry(
 		const WebGPUBindGroupLayoutInfo &layoutInfo,
 		uint32_t binding,
@@ -61,97 +66,86 @@ class WebGPUBufferFactory
 		size_t size = 0
 	);
 
-	// === WebGPUBuffer Creation Methods ===
-
-	/**
-	 * @brief Creates a uniform buffer wrapped in WebGPUBuffer.
-	 * @param name Debug name for the buffer.
-	 * @param binding Binding index in the shader.
-	 * @param size Size in bytes.
-	 */
-	std::shared_ptr<WebGPUBuffer> createUniformBufferWrapped(
+	/// Empty uniform buffer of @p size bytes, wrapped as WebGPUBuffer with
+	/// the supplied debug @p name and shader @p binding.
+	std::shared_ptr<WebGPUBuffer> createUniformBuffer(
 		const std::string &name,
 		uint32_t binding,
 		std::size_t size
 	);
 
-	/**
-	 * @brief Creates a uniform buffer with data, wrapped in WebGPUBuffer.
-	 */
+	/// Uniform buffer pre-populated with @p count items from @p data.
 	template <typename T>
-	std::shared_ptr<WebGPUBuffer> createUniformBufferWrapped(
+	std::shared_ptr<WebGPUBuffer> createUniformBuffer(
 		const std::string &name,
 		uint32_t binding,
 		const T *data,
 		std::size_t count
-	);
+	)
+	{
+		size_t size = sizeof(T) * count;
+		auto buffer = createUniformBuffer(name, binding, size);
+		if (data && count > 0)
+		{
+			writeToBuffer(buffer, data, size);
+		}
+		return buffer;
+	}
 
-	/**
-	 * @brief Creates a uniform buffer from vector, wrapped in WebGPUBuffer.
-	 */
+	/// Uniform buffer pre-populated from a vector.
 	template <typename T>
-	std::shared_ptr<WebGPUBuffer> createUniformBufferWrapped(
+	std::shared_ptr<WebGPUBuffer> createUniformBuffer(
 		const std::string &name,
 		uint32_t binding,
 		const std::vector<T> &data
-	);
+	)
+	{
+		return createUniformBuffer(name, binding, data.data(), data.size());
+	}
 
-	/**
-	 * @brief Creates a storage buffer wrapped in WebGPUBuffer.
-	 */
-	std::shared_ptr<WebGPUBuffer> createStorageBufferWrapped(
+	/// Empty storage buffer.
+	std::shared_ptr<WebGPUBuffer> createStorageBuffer(
 		const std::string &name,
 		uint32_t binding,
 		std::size_t size
 	);
 
-	/**
-	 * @brief Creates a storage buffer with data, wrapped in WebGPUBuffer.
-	 */
+	/// Storage buffer pre-populated with @p count items from @p data.
 	template <typename T>
-	std::shared_ptr<WebGPUBuffer> createStorageBufferWrapped(
+	std::shared_ptr<WebGPUBuffer> createStorageBuffer(
 		const std::string &name,
 		uint32_t binding,
 		const T *data,
 		std::size_t count
-	);
+	)
+	{
+		size_t size = sizeof(T) * count;
+		auto buffer = createStorageBuffer(name, binding, size);
+		if (data && count > 0)
+		{
+			writeToBuffer(buffer, data, size);
+		}
+		return buffer;
+	}
 
-	/**
-	 * @brief Creates a storage buffer from vector, wrapped in WebGPUBuffer.
-	 */
+	/// Storage buffer pre-populated from a vector.
 	template <typename T>
-	std::shared_ptr<WebGPUBuffer> createStorageBufferWrapped(
+	std::shared_ptr<WebGPUBuffer> createStorageBuffer(
 		const std::string &name,
 		uint32_t binding,
 		const std::vector<T> &data
-	);
-
-	// === Legacy Raw Buffer Creation Methods (deprecated, kept for compatibility) ===
-
-	wgpu::Buffer createUniformBuffer(std::size_t size);
-	template <typename T>
-	wgpu::Buffer createUniformBuffer(const T *data, std::size_t count);
-	template <typename T>
-	wgpu::Buffer createUniformBuffer(const std::vector<T> &data);
-
-	wgpu::Buffer createStorageBuffer(std::size_t size);
-	template <typename T>
-	wgpu::Buffer createStorageBuffer(const T *data, std::size_t count);
-	template <typename T>
-	wgpu::Buffer createStorageBuffer(const std::vector<T> &data);
-
-	template <typename T>
-	wgpu::Buffer createVertexBuffer(const T *data, std::size_t count);
-	template <typename T>
-	wgpu::Buffer createVertexBuffer(const std::vector<T> &data);
-
-	template <typename T>
-	wgpu::Buffer createIndexBuffer(const T *data, std::size_t count);
-	template <typename T>
-	wgpu::Buffer createIndexBuffer(const std::vector<T> &data);
+	)
+	{
+		return createStorageBuffer(name, binding, data.data(), data.size());
+	}
 
   private:
 	WebGPUContext &m_context;
+
+	/// Helper: write @p size bytes from @p data to the wrapped buffer via
+	/// queue.writeBuffer. Lives here so the template overloads above don't
+	/// have to pull in WebGPUContext's full header transitively.
+	void writeToBuffer(const std::shared_ptr<WebGPUBuffer> &buffer, const void *data, size_t size);
 };
 
 } // namespace engine::rendering::webgpu
