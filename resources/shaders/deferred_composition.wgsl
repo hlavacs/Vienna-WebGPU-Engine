@@ -163,24 +163,35 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let clusterLights = u_cluster_grid[clusterIdx];
 	let lightCount = min(clusterLights.count, 256u);
 
-	// Accumulate lighting. Start with image-based ambient: sample the
-	// environment map along the world normal as a cheap diffuse-irradiance
-	// approximation. u_environment.params.x toggles it, .y is intensity.
-	// Doing this BEFORE the direct light loop means scenes with zero
-	// dynamic lights still pick up environment color instead of going black.
-	// Matches PBR_Lit_Shader: irradiance * baseColor * (1 - metallic) * ao
-	// so metals don't get diffuse ambient and cavities stay dark.
+	// IBL ambient: diffuse from env-along-normal (clamped sample), specular
+	// from the proper split-sum approximation using the GGX-prefiltered env
+	// mip chain + BRDF integration LUT. Both gated on
+	// u_environment.params.x; intensity from u_environment.params.y.
 	//
-	// NOTE: specular IBL is intentionally NOT applied here. The cheap
-	// "sample env at reflect vector" approach blooms grazing-angle fresnel
-	// into every pixel without proper split-sum prefiltering — even clamped,
-	// it changes the look of every material. The helper
-	// sampleEnvironmentReflection() stays in this file for the future
-	// pre-filtered cubemap pass to plug into; today's path is diffuse-only.
+	// Energy conservation: F is the Fresnel reflectance at NdotV (with the
+	// roughness-aware Schlick variant from lib/lighting); (1 - F) is the
+	// diffuse share, (1 - metallic) kills diffuse on metals so they only
+	// reflect the env via the specular path.
 	var finalColor = vec3<f32>(0.0);
 	if (u_environment.params.x > 0.5) {
+		let F0    = mix(vec3<f32>(0.04), albedoLinear, metallic);
+		let NdotV = max(dot(worldNormal, viewDir), 0.0);
+		let F     = fresnel_schlick_roughness(NdotV, F0, roughness);
+		let kD    = (vec3<f32>(1.0) - F) * (1.0 - metallic);
+
 		let envIrradiance = sampleEnvironmentAtDirection(worldNormal);
-		finalColor += albedoLinear * envIrradiance * u_environment.params.y * (1.0 - metallic) * ao;
+		finalColor += kD * albedoLinear * envIrradiance * u_environment.params.y * ao;
+
+		// Specular IBL via split-sum: prefiltered env sample at roughness *
+		// maxMip combined with the BRDF LUT's (scale, bias) Fresnel terms.
+		// textureNumLevels gives the actual baked mip count so this stays
+		// correct if PrefilteredEnv::MIP_LEVELS changes.
+		let reflectVec = reflect(-viewDir, worldNormal);
+		let prefilteredUV = direction_to_equirect_uv(reflectVec);
+		let maxMip = max(0.0, f32(textureNumLevels(prefiltered_env)) - 1.0);
+		let envSpec = textureSampleLevel(prefiltered_env, environment_sampler, prefilteredUV, roughness * maxMip).rgb;
+		let envBRDF = textureSample(brdf_lut, environment_sampler, vec2<f32>(NdotV, roughness)).rg;
+		finalColor += envSpec * (F * envBRDF.x + envBRDF.y) * u_environment.params.y * ao;
 	}
 
 	// Iterate through lights affecting this pixel

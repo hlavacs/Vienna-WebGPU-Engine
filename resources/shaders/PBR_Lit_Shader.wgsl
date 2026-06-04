@@ -254,19 +254,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         Lo += (k_d * base_color / PI + specular) * radiance * n_dot_l * shadow;
     }
 
-    // Diffuse IBL only. Specular IBL via raw env sampling (even mipped) blooms
-    // grazing-angle Fresnel into every pixel and changes the look of every
-    // material — needs proper split-sum prefiltering to be correct. Helpers
-    // sample_environment_reflection() and the refract path stay here for the
-    // future prefiltered cubemap pass to plug into. Today's path matches the
-    // deferred composition: diffuse env * base_color * (1 - metallic) * ao.
-    //
-    // Transmission keeps its energy-conservation hooks on the direct light
-    // loop (k_d above scales by (1 - transmittance.a)), but the IBL-side
-    // transmission tap is gated on the same prefiltered-env work; without it
-    // the refracted env sample has the same bloom problem.
-    let irradiance = sample_environment_irradiance(normal) * base_color * (1.0 - metallic) * ao;
-    let final_color  = Lo + irradiance + emission;
+    // IBL ambient: split-sum diffuse + specular using the BRDF LUT and
+    // GGX-prefiltered env mip chain. Matches the deferred composition's
+    // IBL block so opaque and transparent surfaces stay visually
+    // consistent across the deferred/forward boundary.
+    let ibl_NdotV   = max(dot(normal, v), 0.0);
+    let ibl_F       = fresnel_schlick_roughness(ibl_NdotV, f0, roughness);
+    let ibl_kD      = (vec3f(1.0) - ibl_F) * (1.0 - metallic);
+    let ibl_irrad   = sample_environment_irradiance(normal);
+    let ibl_diffuse = ibl_kD * ibl_irrad * base_color * ao;
+
+    let reflect_dir = reflect(-v, normal);
+    let prefiltered_uv = direction_to_equirect_uv(reflect_dir);
+    let max_mip = max(0.0, f32(textureNumLevels(prefiltered_env)) - 1.0);
+    let env_spec = textureSampleLevel(prefiltered_env, environment_sampler, prefiltered_uv, roughness * max_mip).rgb;
+    let env_brdf = textureSample(brdf_lut, environment_sampler, vec2f(ibl_NdotV, roughness)).rg;
+    let ibl_specular = env_spec * (ibl_F * env_brdf.x + env_brdf.y) * u_environment.params.y * ao;
+
+    let final_color  = Lo + ibl_diffuse + ibl_specular + emission;
 
     // Raw linear HDR. The blend stage (SrcAlpha / OneMinusSrcAlpha for Transparent
     // pipelines) uses the returned alpha; no fake glass refraction is folded in

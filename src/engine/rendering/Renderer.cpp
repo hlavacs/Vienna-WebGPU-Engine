@@ -597,6 +597,18 @@ void Renderer::updateSceneBindGroup(const RenderTarget &target)
 	overrides.emplace(std::make_tuple(1u, 8u), webgpu::BindGroupResource(clusterGrid));
 	overrides.emplace(std::make_tuple(1u, 9u), webgpu::BindGroupResource(clusterIndices));
 
+	// IBL pair: BRDF integration LUT + GGX-prefiltered env mip chain.
+	// Falls back to a 1x1 black texture when either bake is unavailable
+	// (early init, scene load gap) so the bind group still validates;
+	// the shader treats the missing data as a zero contribution.
+	auto brdfLutTex = m_brdfLut.getTexture();
+	if (!brdfLutTex) brdfLutTex = m_defaultEnvironmentTexture;
+	overrides.emplace(std::make_tuple(1u, 10u), webgpu::BindGroupResource(brdfLutTex));
+
+	auto prefilteredEnvTex = m_prefilteredEnv.getTexture();
+	if (!prefilteredEnvTex) prefilteredEnvTex = environmentTexture; // fall back to raw env
+	overrides.emplace(std::make_tuple(1u, 11u), webgpu::BindGroupResource(prefilteredEnvTex));
+
 	auto sceneBindGroup = m_context->bindGroupFactory().createBindGroup(
 		sceneLayout, overrides, nullptr, "Scene.BindGroup"
 	);

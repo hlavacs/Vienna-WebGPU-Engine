@@ -363,6 +363,35 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 		bindGroupBuilder.bindings.push_back(b);
 	}
 
+	// @binding(10) — BRDF integration LUT for split-sum IBL specular.
+	{
+		ShaderBinding b;
+		b.type                  = BindingType::Texture;
+		b.name                  = "brdfLut";
+		b.binding               = 10;
+		b.visibility            = WGPUShaderStage_Fragment;
+		b.textureSampleType     = wgpu::TextureSampleType::Float;
+		b.textureViewDimension  = wgpu::TextureViewDimension::_2D;
+		b.textureMultisampled   = false;
+		bindGroupBuilder.bindings.push_back(b);
+	}
+
+	// @binding(11) — GGX-prefiltered environment mip chain. Same equirect
+	// layout as binding(7) but pre-convolved per mip level so
+	// textureSampleLevel(roughness * maxMip) gives the right specular
+	// response without per-pixel importance sampling.
+	{
+		ShaderBinding b;
+		b.type                  = BindingType::Texture;
+		b.name                  = "prefilteredEnv";
+		b.binding               = 11;
+		b.visibility            = WGPUShaderStage_Fragment;
+		b.textureSampleType     = wgpu::TextureSampleType::Float;
+		b.textureViewDimension  = wgpu::TextureViewDimension::_2D;
+		b.textureMultisampled   = false;
+		bindGroupBuilder.bindings.push_back(b);
+	}
+
 	m_lastBindGroupIndex = static_cast<int32_t>(groupIndex);
 	return *this;
 }

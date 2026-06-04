@@ -259,9 +259,9 @@ uint32_t EngineCoreRegistry::regenerateAll()
 	}
 
 	// Scene bindings: emit a single core/scene_bindings.wgsl with the struct
-	// includes + the 10 @group(1) @binding(N) declarations the consolidated
+	// includes + the 12 @group(1) @binding(N) declarations the consolidated
 	// Scene layout owns. Consumers include this one file instead of
-	// re-typing the same 10 declarations every time.
+	// re-typing the same declarations every time.
 	{
 		std::ostringstream body;
 		body << "#include \"engine://core/lights_buffer.wgsl\"\n"
@@ -269,16 +269,18 @@ uint32_t EngineCoreRegistry::regenerateAll()
 		     << "#include \"engine://core/environment_uniforms.wgsl\"\n"
 		     << "#include \"engine://core/cluster_light_list.wgsl\"\n"
 		     << "\n"
-		     << "@group(1) @binding(0) var<storage, read> u_lights:                 LightsBuffer;\n"
-		     << "@group(1) @binding(1) var                shadow_sampler:           sampler_comparison;\n"
-		     << "@group(1) @binding(2) var                shadow_maps_2d:           texture_depth_2d_array;\n"
-		     << "@group(1) @binding(3) var                shadow_maps_cube:         texture_depth_cube_array;\n"
-		     << "@group(1) @binding(4) var<storage, read> u_shadows:                array<ShadowUniform>;\n"
-		     << "@group(1) @binding(5) var<uniform>       u_environment:            EnvironmentUniforms;\n"
-		     << "@group(1) @binding(6) var                environment_sampler:      sampler;\n"
-		     << "@group(1) @binding(7) var                environment_texture:      texture_2d<f32>;\n"
-		     << "@group(1) @binding(8) var<storage, read> u_cluster_grid:           array<ClusterLightList>;\n"
-		     << "@group(1) @binding(9) var<storage, read> u_cluster_light_indices:  array<u32>;\n";
+		     << "@group(1) @binding(0)  var<storage, read> u_lights:                 LightsBuffer;\n"
+		     << "@group(1) @binding(1)  var                shadow_sampler:           sampler_comparison;\n"
+		     << "@group(1) @binding(2)  var                shadow_maps_2d:           texture_depth_2d_array;\n"
+		     << "@group(1) @binding(3)  var                shadow_maps_cube:         texture_depth_cube_array;\n"
+		     << "@group(1) @binding(4)  var<storage, read> u_shadows:                array<ShadowUniform>;\n"
+		     << "@group(1) @binding(5)  var<uniform>       u_environment:            EnvironmentUniforms;\n"
+		     << "@group(1) @binding(6)  var                environment_sampler:      sampler;\n"
+		     << "@group(1) @binding(7)  var                environment_texture:      texture_2d<f32>;\n"
+		     << "@group(1) @binding(8)  var<storage, read> u_cluster_grid:           array<ClusterLightList>;\n"
+		     << "@group(1) @binding(9)  var<storage, read> u_cluster_light_indices:  array<u32>;\n"
+		     << "@group(1) @binding(10) var                brdf_lut:                 texture_2d<f32>;\n"
+		     << "@group(1) @binding(11) var                prefiltered_env:          texture_2d<f32>;\n";
 		const std::string contents = ShaderCodegen::emitGeneratedFile(
 			"Scene_BindGroup (struct includes + binding declarations)",
 			body.str());
