@@ -21,6 +21,7 @@
 #include "engine/rendering/webgpu/GBuffer.h"
 #include "engine/rendergraph/RenderGraph.h"
 #include "engine/rendering/ibl/BRDFLut.h"
+#include "engine/rendering/ibl/PrefilteredEnv.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
 namespace engine::rendering
@@ -143,6 +144,24 @@ bool Renderer::initialize()
 
 	spdlog::info("Renderer initialized successfully");
 	return true;
+}
+
+void Renderer::prefilterEnvironment(const std::shared_ptr<webgpu::WebGPUTexture> &sourceEquirect)
+{
+	if (!sourceEquirect) return;
+
+	// Identity by raw wgpu handle: shared_ptr wrappers swap when the factory
+	// hot-reloads but the underlying texture stays the same. If the same
+	// source comes through twice in a row, the prior bake is still valid.
+	WGPUTexture rawHandle = static_cast<WGPUTexture>(sourceEquirect->getTexture());
+	if (rawHandle == m_prefilteredEnvSource && m_prefilteredEnv.getTexture()) return;
+
+	if (!m_prefilteredEnv.bake(*m_context, sourceEquirect))
+	{
+		spdlog::warn("Renderer: env prefilter bake failed — IBL specular falls back to flat env");
+		return;
+	}
+	m_prefilteredEnvSource = rawHandle;
 }
 
 void Renderer::logFrameGraphLayout()
@@ -515,6 +534,12 @@ void Renderer::updateSceneBindGroup(const RenderTarget &target)
 		auto texture = m_context->textureFactory().createFromHandle(target.environmentTexture.value(), options);
 		if (texture) environmentTexture = texture;
 	}
+
+	// Refresh the prefiltered env mip chain if the source texture changed
+	// since the last bake. Identity check by raw WGPUTexture handle —
+	// shared_ptr swaps under us when the factory rebuilds (after hot reload
+	// / cache eviction) but the handle is stable per backing GPU resource.
+	prefilterEnvironment(environmentTexture);
 
 	const bool irradianceEnabled =
 		target.skyboxEnabled &&

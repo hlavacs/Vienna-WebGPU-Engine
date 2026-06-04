@@ -17,6 +17,7 @@
 #include "engine/rendering/GBufferPass.h"
 #include "engine/rendering/MeshPass.h"
 #include "engine/rendering/ibl/BRDFLut.h"
+#include "engine/rendering/ibl/PrefilteredEnv.h"
 // #include "engine/rendering/RenderPassManager.h" ToDo: future use
 #include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/SkyboxPass.h"
@@ -237,6 +238,18 @@ public:
 	/// `vec2(NdotV, roughness)` to get the split-sum (scale, bias) terms.
 	[[nodiscard]] const engine::rendering::ibl::BRDFLut &getBRDFLut() const { return m_brdfLut; }
 
+	/// The pre-filtered environment mip chain used by IBL specular. Baked
+	/// from whatever env texture the engine is using; rebakes lazily when
+	/// the env source changes via prefilterEnvironment(). nullptr until
+	/// the first successful bake. The IBL specular tap is:
+	///   `textureSampleLevel(prefilteredEnv, smp, uv, roughness * maxMip)`.
+	[[nodiscard]] const engine::rendering::ibl::PrefilteredEnv &getPrefilteredEnv() const { return m_prefilteredEnv; }
+
+	/// (Re)bake the prefiltered environment from @p sourceEquirect. Called
+	/// by the env-loading path when the scene's env texture changes.
+	/// Idempotent for the same source — cheap to call.
+	void prefilterEnvironment(const std::shared_ptr<webgpu::WebGPUTexture> &sourceEquirect);
+
 private:
 	/// Build a representative render graph mirroring the per-camera frame
 	/// flow, compile it, and log the resolved execution order. Called once
@@ -257,6 +270,13 @@ private:
 	// Split-sum BRDF LUT — baked once during initialize(), sampled by the
 	// IBL specular term in the deferred composition + PBR forward shaders.
 	engine::rendering::ibl::BRDFLut m_brdfLut;
+
+	// Pre-filtered env mip chain — baked from whatever env texture the
+	// scene is using. The "source texture identity" we baked from is tracked
+	// so we don't re-prefilter unnecessarily when the same env is supplied
+	// twice in a row (scene reload, ImGui touch, ...).
+	engine::rendering::ibl::PrefilteredEnv m_prefilteredEnv;
+	WGPUTexture                            m_prefilteredEnvSource = nullptr;
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_depthBuffers;
