@@ -10,6 +10,12 @@
 //
 // This shader demonstrates shadow receiving without implementing full lighting.
 // The result is an unlit texture that darkens in shadowed areas.
+//
+// Engine-side struct decls (FrameUniforms @group(0), ObjectUniforms @group(3))
+// are auto-generated from C++ — pulled in by URI so the tutorial stays in
+// sync with whatever the engine actually binds.
+#include "engine://core/frame_uniforms.wgsl"
+#include "engine://core/object_uniforms.wgsl"
 
 struct VertexInput {
     @location(0) position: vec3f,
@@ -22,29 +28,10 @@ struct VertexOutput {
     @location(0) texCoord: vec2f,
 }
 
-struct FrameUniforms {
-    viewMatrix: mat4x4f,
-    projectionMatrix: mat4x4f,
-    viewProjectionMatrix: mat4x4f,
-    cameraPosition: vec3f,
-    time: f32,
-}
-
-struct ObjectUniforms {
-    modelMatrix: mat4x4f,
-    normalMatrix: mat4x4f,
-}
-
 struct UnlitMaterialUniforms {
     color: vec4f,
 }
 
-
-@group(0) @binding(0)
-var<uniform> frameUniforms: FrameUniforms;
-
-@group(1) @binding(0)
-var<uniform> objectUniforms: ObjectUniforms;
 
 @group(2) @binding(0)
 var<uniform> unlitMaterialUniforms: UnlitMaterialUniforms;
@@ -56,9 +43,9 @@ var baseColorTexture: texture_2d<f32>;
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    let worldPos = objectUniforms.modelMatrix * vec4f(input.position, 1.0);
-    let viewPos = frameUniforms.viewMatrix * worldPos;
-    output.position = frameUniforms.projectionMatrix * viewPos;
+    let worldPos = u_object.modelMatrix * vec4f(input.position, 1.0);
+    let viewPos = u_frame.viewMatrix * worldPos;
+    output.position = u_frame.projectionMatrix * viewPos;
     output.texCoord = input.texCoord;
     return output;
 }
