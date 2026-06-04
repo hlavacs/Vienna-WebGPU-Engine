@@ -23,39 +23,12 @@
 //                        baseColor (2), normal (3), ao (4),
 //                        roughness (5), metallic (6), emission (7)
 
-struct FrameUniforms {
-	viewMatrix: mat4x4<f32>,
-	projectionMatrix: mat4x4<f32>,
-	viewProjectionMatrix: mat4x4<f32>,
-	cameraWorldPosition: vec3<f32>,
-	time: f32,
-}
+#include "engine://core/frame_uniforms.wgsl"
 
-struct ObjectUniforms {
-	modelMatrix: mat4x4<f32>,
-	modelInvTranspose: mat4x4<f32>,
-}
+#include "engine://core/object_uniforms.wgsl"
 
-// Layout MUST match C++ engine::rendering::PBRProperties.
-struct PBRProperties {
-	diffuse: vec4<f32>,
-	emission: vec4<f32>,
-	transmittance: vec4<f32>,
-	ambient: vec4<f32>,
-	roughness: f32,
-	metallic: f32,
-	ior: f32,
-	normalTextureScale: f32,
-	alphaMode: u32,
-	alphaCutoff: f32,
-	_alphaPad0: u32,
-	_alphaPad1: u32,
-}
+#include "engine://core/material.wgsl"
 
-@group(0) @binding(0) var<uniform> uFrame: FrameUniforms;
-@group(1) @binding(0) var<uniform> uObject: ObjectUniforms;
-
-@group(2) @binding(0) var<uniform> uMaterial: PBRProperties;
 @group(2) @binding(1) var textureSampler: sampler;
 @group(2) @binding(2) var baseColorTexture: texture_2d<f32>;
 @group(2) @binding(3) var normalTexture: texture_2d<f32>;
@@ -93,15 +66,15 @@ struct FragmentOutput {
 fn vs_main(input: VertexInput) -> VertexOutput {
 	var output: VertexOutput;
 
-	let worldPos = (uObject.modelMatrix * vec4<f32>(input.position, 1.0)).xyz;
+	let worldPos = (u_object.modelMatrix * vec4<f32>(input.position, 1.0)).xyz;
 	output.worldPos = worldPos;
-	output.clipPosition = uFrame.viewProjectionMatrix * vec4<f32>(worldPos, 1.0);
+	output.clipPosition = u_frame.viewProjectionMatrix * vec4<f32>(worldPos, 1.0);
 
 	// Pass through raw world-space N and T - the fragment shader re-orthogonalises
 	// and reconstructs B from them. Mirrors the PBR_Lit_Shader setup so the visual
 	// result of normal mapping is identical across forward and deferred paths.
-	output.worldNormal = normalize((uObject.modelInvTranspose * vec4<f32>(input.normal, 0.0)).xyz);
-	output.worldTangent = (uObject.modelMatrix * vec4<f32>(input.tangent.xyz, 0.0)).xyz;
+	output.worldNormal = normalize((u_object.normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
+	output.worldTangent = (u_object.modelMatrix * vec4<f32>(input.tangent.xyz, 0.0)).xyz;
 	// tangent.w carries the handedness sign produced by the importer.
 	output.tangentSign = input.tangent.w;
 
@@ -114,10 +87,10 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
 	let baseSample = textureSample(baseColorTexture, textureSampler, input.texCoord);
 
 	// Alpha source ONLY from texture (or material override if you want later)
-	let alpha = baseSample.a * uMaterial.diffuse.a;
+	let alpha = baseSample.a * u_material.diffuse.a;
 
 	// Cutout only (opaque + masked materials live here)
-	if (alpha < uMaterial.alphaCutoff) {
+	if (alpha < u_material.alphaCutoff) {
 		discard;
 	}
 
@@ -141,25 +114,25 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
 	let TBN = mat3x3<f32>(t0, b0, n0);
 
 	let normalUnpacked = normalSample.rgb * 2.0 - 1.0;
-	let scaledXY = clamp(normalUnpacked.xy * uMaterial.normalTextureScale, vec2<f32>(-2.0), vec2<f32>(2.0));
+	let scaledXY = clamp(normalUnpacked.xy * u_material.normalTextureScale, vec2<f32>(-2.0), vec2<f32>(2.0));
 	let worldNormal = normalize(TBN * vec3<f32>(scaledXY.x, scaledXY.y, normalUnpacked.z));
 
-	let roughness = roughnessSample * uMaterial.roughness;
-	let metallic = metallicSample * uMaterial.metallic;
+	let roughness = roughnessSample * u_material.roughness;
+	let metallic = metallicSample * u_material.metallic;
 	let ao = aoSample;
 
 	// View-space depth is packed into the alpha channel of position/normal targets
 	// so the composition pass can do depth-based clustering without a separate sample.
-	let viewPos = uFrame.viewMatrix * vec4<f32>(input.worldPos, 1.0);
+	let viewPos = u_frame.viewMatrix * vec4<f32>(input.worldPos, 1.0);
 	let viewDepth = -viewPos.z;
 
-	let baseColor = baseSample.rgb * uMaterial.diffuse.rgb;
+	let baseColor = baseSample.rgb * u_material.diffuse.rgb;
 	let coverage = alpha;
 	// Full RGB emission, scaled by the emissive factor's W (matches how PBR
 	// forward applies it). Lives in its own RT so it survives the deferred
 	// pipeline's "albedo * lighting" multiplication - emission is added
 	// post-lighting in the composition pass.
-	let emission = emissionSample * uMaterial.emission.rgb * uMaterial.emission.w;
+	let emission = emissionSample * u_material.emission.rgb * u_material.emission.w;
 
 	// Standard PBR material; future shading models will write their own id here
 	// and the composition pass can branch on it via override constants / switch.

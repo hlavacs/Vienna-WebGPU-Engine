@@ -19,15 +19,17 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     return output;
 }
 
-@group(0) @binding(0) var cameraTexture: texture_2d<f32>;
-@group(0) @binding(1) var cameraSampler: sampler;
+//@bind_group(name="FullscreenQuad_BindGroup", reuse=Global, role=Custom)
+@group(4) @binding(0) var cameraTexture: texture_2d<f32>;
+@group(4) @binding(1) var cameraSampler: sampler;
 
 // params: x = exposure, y = mode (0 = clamp, 1 = ACES Filmic), z/w reserved.
 struct PostProcessUniforms {
     params: vec4f,
 }
 
-@group(1) @binding(0) var<uniform> uPost: PostProcessUniforms;
+//@bind_group(name="PostProcess_BindGroup", reuse=Global, role=Custom)
+@group(5) @binding(0) var<uniform> uPost: PostProcessUniforms;
 
 // ACES Filmic approximation (Krzysztof Narkowicz). Rolls bright HDR values
 // off gracefully while keeping LDR-range inputs near 1:1; Reinhard compresses

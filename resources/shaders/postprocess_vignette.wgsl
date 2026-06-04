@@ -2,8 +2,8 @@
 // Applies screen-space effects to the rendered scene texture.
 
 // Bind Group 0: Input texture from previous render pass
-@group(0) @binding(0) var inputSampler: sampler;
-@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(4) @binding(0) var inputSampler: sampler;
+@group(4) @binding(1) var inputTexture: texture_2d<f32>;
 
 // Vertex shader output / Fragment shader input
 struct VertexOutput {

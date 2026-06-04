@@ -3,13 +3,13 @@ struct VertexOutput {
     @location(0) uv: vec2f,
 }
 
-@group(0) @binding(0)
+@group(4) @binding(0)
 var depthTexture: texture_depth_2d_array;
 
-@group(0) @binding(1)
+@group(4) @binding(1)
 var depthSampler: sampler;
 
-@group(0) @binding(2)
+@group(4) @binding(2)
 var<uniform> layer: u32;
 
 @vertex

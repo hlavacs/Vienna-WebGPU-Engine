@@ -12,10 +12,7 @@ struct FragmentOutput {
     @builtin(frag_depth) depth: f32,
 };
 
-// Uniforms
-struct ObjectUniforms {
-    modelMatrix: mat4x4f,
-};
+#include "engine://core/object_uniforms.wgsl"
 
 struct ShadowPassCubeUniform {
     lightViewProjectionMatrix: mat4x4f,  // view-projection matrix for this cube face
@@ -23,16 +20,13 @@ struct ShadowPassCubeUniform {
     farPlane: f32,      // far plane for normalization
 };
 
-@group(0) @binding(0)
+@group(4) @binding(0)
 var<uniform> uShadowCube: ShadowPassCubeUniform;
-
-@group(1) @binding(0)
-var<uniform> uObject: ObjectUniforms;
 
 @vertex
 fn vs_shadow_cube(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let worldPos = (uObject.modelMatrix * vec4f(in.position, 1.0)).xyz;
+    let worldPos = (u_object.modelMatrix * vec4f(in.position, 1.0)).xyz;
     out.world_position = worldPos;
 
     // Clip-space for rasterization

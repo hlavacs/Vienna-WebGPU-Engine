@@ -1,7 +1,7 @@
 // Mipmap generation shader - blits from source texture to render target with linear filtering
 
-@group(0) @binding(0) var srcTexture: texture_2d<f32>;
-@group(0) @binding(1) var srcSampler: sampler;
+@group(4) @binding(0) var srcTexture: texture_2d<f32>;
+@group(4) @binding(1) var srcSampler: sampler;
 
 struct VertexOutput {
 	@builtin(position) position: vec4<f32>,

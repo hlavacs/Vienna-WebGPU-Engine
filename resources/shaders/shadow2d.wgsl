@@ -13,20 +13,15 @@ struct ShadowPass2DUniforms {
     farPlane: f32,
 };
 
-struct ObjectUniforms {
-    modelMatrix: mat4x4f,
-    normalMatrix: mat4x4f,
-};
+#include "engine://core/object_uniforms.wgsl"
 
-@group(0) @binding(0)
+@group(4) @binding(0)
 var<uniform> uShadow: ShadowPass2DUniforms;
-@group(1) @binding(0)
-var<uniform> uObject: ObjectUniforms;
 
 @vertex
 fn vs_shadow(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let worldPos = (uObject.modelMatrix * vec4f(in.position, 1.0)).xyz;
+    let worldPos = (u_object.modelMatrix * vec4f(in.position, 1.0)).xyz;
 
     out.position = uShadow.lightViewProjectionMatrix * vec4f(worldPos, 1.0);
 

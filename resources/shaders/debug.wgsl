@@ -4,14 +4,7 @@ const PRIM_DISK: u32 = 1u;
 const PRIM_AABB: u32 = 2u;
 const PRIM_ARROW: u32 = 3u;
 
-// Frame uniforms (matches FrameUniforms.h)
-struct FrameUniforms {
-    viewMatrix: mat4x4<f32>,
-    projectionMatrix: mat4x4<f32>,
-    viewProjectionMatrix: mat4x4<f32>,
-    cameraPosition: vec3<f32>,
-    time: f32,
-}
+#include "engine://core/frame_uniforms.wgsl"
 
 // Debug primitive structure (matches DebugCollector.h - 80 bytes total)
 struct DebugPrimitive {
@@ -29,10 +22,7 @@ struct VertexOut {
     @location(0) color: vec4<f32>,
 }
 
-@group(0) @binding(0)
-var<uniform> uFrame: FrameUniforms;
-
-@group(1) @binding(0)
+@group(4) @binding(0)
 var<storage, read> uDebugPrimitives: array<DebugPrimitive>;
 
 @vertex
@@ -187,7 +177,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) ins
     }
 
     var out: VertexOut;
-    out.position = uFrame.viewProjectionMatrix * vec4<f32>(worldPos, 1.0);
+    out.position = u_frame.viewProjectionMatrix * vec4<f32>(worldPos, 1.0);
     out.color = color;
     return out;
 }

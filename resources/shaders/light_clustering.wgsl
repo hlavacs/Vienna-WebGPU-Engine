@@ -9,11 +9,8 @@
 // atomic<u32> here so multiple threads can append to the same cluster safely.
 // Same buffer memory; just a different WGSL view.
 
-const CLUSTER_GRID_DIM_X: u32 = 24u;
-const CLUSTER_GRID_DIM_Y: u32 = 14u;
-const CLUSTER_GRID_DIM_Z: u32 = 32u;
-const CLUSTER_GRID_TOTAL: u32 = CLUSTER_GRID_DIM_X * CLUSTER_GRID_DIM_Y * CLUSTER_GRID_DIM_Z;
-const MAX_LIGHTS_PER_CLUSTER: u32 = 256u;
+#include "engine://core/constants_cluster.wgsl"
+
 const MAX_LIGHTS: u32 = 5120u;
 
 const LIGHT_TYPE_AMBIENT: u32 = 0u;
@@ -21,52 +18,31 @@ const LIGHT_TYPE_DIRECTIONAL: u32 = 1u;
 const LIGHT_TYPE_POINT: u32 = 2u;
 const LIGHT_TYPE_SPOT: u32 = 3u;
 
-// Mirrors engine::rendering::FrameUniforms exactly.
-struct FrameUniforms {
-    viewMatrix: mat4x4<f32>,
-    projectionMatrix: mat4x4<f32>,
-    viewProjectionMatrix: mat4x4<f32>,
-    cameraWorldPosition: vec3<f32>,
-    time: f32,
-}
+#include "engine://core/frame_uniforms.wgsl"
 
-// Mirrors engine::rendering::LightStruct exactly (transform + scalars, 112 B).
-struct LightStruct {
-    transform: mat4x4<f32>,
-    color: vec3<f32>,
-    intensity: f32,
-    lightType: u32,
-    spotAngle: f32,
-    spotSoftness: f32,
-    range: f32,
-    shadowIndex: u32,
-    shadowCount: u32,
-    _pad1: f32,
-    _pad2: f32,
-}
+#include "engine://core/lights_buffer.wgsl"
 
-// Mirrors LightsBuffer in deferred_composition.wgsl (header + runtime array).
-struct LightsBuffer {
-    count: u32,
-    _pad: array<u32, 3>,
-    lights: array<LightStruct>,
-}
-
+// Atomic counter view of ClusterLightList used during compute. Same memory
+// as the read-only ClusterLightList that composition reads — just a
+// different WGSL view (atomic write vs. plain read).
 struct ClusterCellAtomic {
     offset: u32,
     count: atomic<u32>,
 }
 
-@group(0) @binding(0) var<uniform> uFrame: FrameUniforms;
-@group(0) @binding(1) var<storage, read> uLights: LightsBuffer;
-@group(0) @binding(2) var<storage, read_write> uClusterGrid: array<ClusterCellAtomic>;
-@group(0) @binding(3) var<storage, read_write> uClusterIndices: array<u32>;
+// Compute-side Scene view at @group(1). Same SLOT as the render Scene group
+// but a separate bind-group layout instance because:
+//   - cluster grid is read_write storage with atomic counters (the render
+//     pipeline reads from the same memory but plain `array<ClusterLightList>`);
+//   - the binding set is a small subset of the 10-binding render Scene.
+@group(1) @binding(0) var<storage, read> u_lights: LightsBuffer;
+@group(1) @binding(1) var<storage, read_write> uClusterGrid: array<ClusterCellAtomic>;
+@group(1) @binding(2) var<storage, read_write> uClusterIndices: array<u32>;
 
 // View-space log-Z mapping. MUST match getClusterIndex() in
 // deferred_composition.wgsl exactly or lights land in different Z slabs than
-// the fragment lookups read. Constants must match too.
-const CLUSTER_Z_NEAR: f32 = 0.1;
-const CLUSTER_Z_FAR:  f32 = 1000.0;
+// the fragment lookups read. CLUSTER_Z_NEAR/FAR come from the codegen include
+// above so the value lives in one place (C++ ClusterManager constants).
 
 fn cluster3dTo1d(x: u32, y: u32, z: u32) -> u32 {
     return z * (CLUSTER_GRID_DIM_X * CLUSTER_GRID_DIM_Y) + y * CLUSTER_GRID_DIM_X + x;
@@ -88,7 +64,7 @@ struct NdcPos {
 
 fn worldToNdc(worldPos: vec3<f32>) -> NdcPos {
     var out: NdcPos;
-    let clip = uFrame.viewProjectionMatrix * vec4<f32>(worldPos, 1.0);
+    let clip = u_frame.viewProjectionMatrix * vec4<f32>(worldPos, 1.0);
     if (clip.w <= 0.0001) {
         out.xy = vec2<f32>(0.0);
         out.depth01 = 0.0;
@@ -126,12 +102,12 @@ fn cs_clear(@builtin(global_invocation_id) gid: vec3<u32>) {
 @compute @workgroup_size(64)
 fn cs_assign(@builtin(global_invocation_id) gid: vec3<u32>) {
     let lightIdx = gid.x;
-    if (lightIdx >= uLights.count || lightIdx >= MAX_LIGHTS) {
+    if (lightIdx >= u_lights.count || lightIdx >= MAX_LIGHTS) {
         return;
     }
 
-    let light = uLights.lights[lightIdx];
-    let lightType = light.lightType;
+    let light = u_lights.lights[lightIdx];
+    let lightType = light.light_type;
 
     // Ambient + directional are screen-wide: append to every cluster so the
     // composition shader (which no longer has a scan-all fallback) still sees
@@ -150,7 +126,7 @@ fn cs_assign(@builtin(global_invocation_id) gid: vec3<u32>) {
     // the world-space position; range is the radius. View-space depth picks
     // the cluster Z slab, NDC radius picks the XY cluster rectangle.
     let worldPos = light.transform[3].xyz;
-    let viewPos = (uFrame.viewMatrix * vec4<f32>(worldPos, 1.0)).xyz;
+    let viewPos = (u_frame.viewMatrix * vec4<f32>(worldPos, 1.0)).xyz;
     let viewDepth = -viewPos.z; // engine convention: -Z is forward
 
     // Skip lights fully behind the camera (cheap early-out before the more
@@ -178,7 +154,7 @@ fn cs_assign(@builtin(global_invocation_id) gid: vec3<u32>) {
     // Screen-space radius in NDC: range / |z| * focal_length. The focal-length
     // proxy is projectionMatrix[0][0] (2 * near / (right - left)) for a
     // standard perspective. Conservative on the high side.
-    let ndcRadius = light.range / max(abs(viewPos.z), 0.001) * uFrame.projectionMatrix[0][0];
+    let ndcRadius = light.range / max(abs(viewPos.z), 0.001) * u_frame.projectionMatrix[0][0];
     let cellsX = max(1u, u32(ceil(ndcRadius * 0.5 * f32(CLUSTER_GRID_DIM_X))));
     let cellsY = max(1u, u32(ceil(ndcRadius * 0.5 * f32(CLUSTER_GRID_DIM_Y))));
 
