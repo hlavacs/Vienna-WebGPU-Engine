@@ -17,6 +17,7 @@
 #include "engine/rendering/GBufferPass.h"
 #include "engine/rendering/MeshPass.h"
 #include "engine/rendering/ibl/BRDFLut.h"
+#include "engine/rendering/ibl/IrradianceMap.h"
 #include "engine/rendering/ibl/PrefilteredEnv.h"
 // #include "engine/rendering/RenderPassManager.h" ToDo: future use
 #include "engine/rendering/ShadowPass.h"
@@ -250,6 +251,11 @@ public:
 	/// Idempotent for the same source — cheap to call.
 	void prefilterEnvironment(const std::shared_ptr<webgpu::WebGPUTexture> &sourceEquirect);
 
+	/// The Lambertian diffuse irradiance map. Sampled at the surface normal
+	/// to get the radiometrically-correct diffuse IBL term — no clamp or
+	/// hand-rolled hemisphere convolution at the shader call site.
+	[[nodiscard]] const engine::rendering::ibl::IrradianceMap &getIrradianceMap() const { return m_irradianceMap; }
+
 private:
 	/// Build a representative render graph mirroring the per-camera frame
 	/// flow, compile it, and log the resolved execution order. Called once
@@ -277,6 +283,11 @@ private:
 	// twice in a row (scene reload, ImGui touch, ...).
 	engine::rendering::ibl::PrefilteredEnv m_prefilteredEnv;
 	WGPUTexture                            m_prefilteredEnvSource = nullptr;
+
+	// Cosine-weighted diffuse irradiance map. Same per-env lifetime as
+	// PrefilteredEnv — we bake both off the same source whenever the env
+	// changes, and share the "did the source change" check.
+	engine::rendering::ibl::IrradianceMap m_irradianceMap;
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_depthBuffers;

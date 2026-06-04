@@ -391,6 +391,17 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 		b.textureMultisampled   = false;
 		bindGroupBuilder.bindings.push_back(b);
 	}
+	{
+		ShaderBinding b;
+		b.type                  = BindingType::Texture;
+		b.name                  = "irradianceMap";
+		b.binding               = 12;
+		b.visibility            = WGPUShaderStage_Fragment;
+		b.textureSampleType     = wgpu::TextureSampleType::Float;
+		b.textureViewDimension  = wgpu::TextureViewDimension::_2D;
+		b.textureMultisampled   = false;
+		bindGroupBuilder.bindings.push_back(b);
+	}
 
 	m_lastBindGroupIndex = static_cast<int32_t>(groupIndex);
 	return *this;

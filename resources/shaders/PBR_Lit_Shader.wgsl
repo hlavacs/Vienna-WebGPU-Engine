@@ -113,14 +113,14 @@ fn sample_environment_irradiance(normal: vec3f) -> vec3f {
         return vec3f(0.0);
     }
 
+    // Pre-convolved cosine-weighted irradiance map — radiometrically correct
+    // diffuse IBL with no per-fragment work. The bake already applies the
+    // PI / sampleCount normalization that the Lambertian BRDF expects, so
+    // the consumer just multiplies by baseColor * (1 - metallic) * ao here
+    // and by params.y as the intensity scalar.
     let uv = direction_to_equirect_uv(normalize(normal));
-    let raw = textureSample(environment_texture, environment_sampler, uv).rgb;
-    // Cap matches deferred_composition. Without a pre-convolved irradiance
-    // map an HDR equirect sample can spike well above 1 at sunlit bands;
-    // forward-transparent surfaces would then read a much brighter ambient
-    // than the deferred-lit opaque geometry below them and the blend would
-    // look like two unrelated lighting models stacked.
-    return min(raw, vec3f(0.3)) * u_environment.params.y;
+    return textureSample(irradiance_map, environment_sampler, uv).rgb
+         * u_environment.params.y;
 }
 
 // Specular IBL sample (analog of sample_environment_irradiance but at the

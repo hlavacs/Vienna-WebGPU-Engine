@@ -18,3 +18,4 @@
 @group(1) @binding(9)  var<storage, read> u_cluster_light_indices:  array<u32>;
 @group(1) @binding(10) var                brdf_lut:                 texture_2d<f32>;
 @group(1) @binding(11) var                prefiltered_env:          texture_2d<f32>;
+@group(1) @binding(12) var                irradiance_map:           texture_2d<f32>;

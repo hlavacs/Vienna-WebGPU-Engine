@@ -161,6 +161,13 @@ void Renderer::prefilterEnvironment(const std::shared_ptr<webgpu::WebGPUTexture>
 		spdlog::warn("Renderer: env prefilter bake failed — IBL specular falls back to flat env");
 		return;
 	}
+	// Same env source produces both prefilter (specular) and irradiance map
+	// (diffuse), so bake them together — if one fails the other still has a
+	// chance to produce a valid texture.
+	if (!m_irradianceMap.bake(*m_context, sourceEquirect))
+	{
+		spdlog::warn("Renderer: env irradiance bake failed — IBL diffuse falls back to raw env sample");
+	}
 	m_prefilteredEnvSource = rawHandle;
 }
 
@@ -634,6 +641,13 @@ void Renderer::updateSceneBindGroup(const RenderTarget &target)
 	auto prefilteredEnvTex = m_prefilteredEnv.getTexture();
 	if (!prefilteredEnvTex) prefilteredEnvTex = environmentTexture; // fall back to raw env
 	overrides.emplace(std::make_tuple(1u, 11u), webgpu::BindGroupResource(prefilteredEnvTex));
+
+	// Diffuse irradiance map (cosine-weighted Lambertian convolution).
+	// Falls back to the raw env texture when the bake hasn't finished —
+	// shaders sample it the same way; the raw env just looks less correct.
+	auto irradianceTex = m_irradianceMap.getTexture();
+	if (!irradianceTex) irradianceTex = environmentTexture;
+	overrides.emplace(std::make_tuple(1u, 12u), webgpu::BindGroupResource(irradianceTex));
 
 	auto sceneBindGroup = m_context->bindGroupFactory().createBindGroup(
 		sceneLayout, overrides, nullptr, "Scene.BindGroup"

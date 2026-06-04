@@ -26,16 +26,14 @@ const PI: f32 = 3.141592653589793;
 const INV_PI: f32 = 0.31830988618;
 const INV_2PI: f32 = 0.15915494309;
 
-// Sample the equirect environment map at a world-space direction as a cheap
-// diffuse-irradiance approximation. Without a pre-convolved irradiance map
-// we just clamp the raw HDR sample to a low ceiling: high enough to provide
-// useful ambient colour but low enough that geometry with its own baked
-// detail (like a textured GLTF sky-dome) doesn't get washed out by the
-// per-channel multiply in the lighting equation.
+// Sample the cosine-weighted diffuse irradiance map at a world-space
+// direction (typically the surface normal). The map is baked once per env
+// change with the proper Lambertian convolution (PI / sampleCount), so the
+// consumer just multiplies by baseColor * (1 - metallic) * ao — no extra
+// PI division, no clamping, no hand-rolled hemisphere walk per fragment.
 fn sampleEnvironmentAtDirection(direction: vec3<f32>) -> vec3<f32> {
-	let uv  = direction_to_equirect_uv(direction);
-	let raw = textureSample(environment_texture, environment_sampler, uv).rgb;
-	return min(raw, vec3<f32>(0.3));
+	let uv = direction_to_equirect_uv(direction);
+	return textureSample(irradiance_map, environment_sampler, uv).rgb;
 }
 
 // Specular IBL: sample the env equirect at the reflection vector and select

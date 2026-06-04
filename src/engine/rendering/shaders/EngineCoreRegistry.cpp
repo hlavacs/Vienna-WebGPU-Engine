@@ -280,7 +280,8 @@ uint32_t EngineCoreRegistry::regenerateAll()
 		     << "@group(1) @binding(8)  var<storage, read> u_cluster_grid:           array<ClusterLightList>;\n"
 		     << "@group(1) @binding(9)  var<storage, read> u_cluster_light_indices:  array<u32>;\n"
 		     << "@group(1) @binding(10) var                brdf_lut:                 texture_2d<f32>;\n"
-		     << "@group(1) @binding(11) var                prefiltered_env:          texture_2d<f32>;\n";
+		     << "@group(1) @binding(11) var                prefiltered_env:          texture_2d<f32>;\n"
+		     << "@group(1) @binding(12) var                irradiance_map:           texture_2d<f32>;\n";
 		const std::string contents = ShaderCodegen::emitGeneratedFile(
 			"Scene_BindGroup (struct includes + binding declarations)",
 			body.str());
