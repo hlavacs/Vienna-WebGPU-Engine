@@ -186,6 +186,75 @@ void MainDemoImGuiUI::renderPerformanceWindow()
 			}
 		}
 	}
+
+	// Cache overview. snapshotAll() walks every registered factory cache under
+	// one mutex acquire — cheap enough to run each frame the panel is open.
+	// "Size" is total entries, "Alive" is entries still holding a resource
+	// (for weak-ref caches these can diverge; for the strong-ref factory
+	// caches alive == size). Idle window in frames; 0 = never evict.
+	if (ImGui::CollapsingHeader("Cache overview"))
+	{
+		auto &reg = m_engine.getContext()->cacheRegistry();
+		const auto snaps = reg.snapshotAll();
+		ImGui::TextDisabled("Total caches: %zu", snaps.size());
+
+		if (ImGui::BeginTable("CacheTable", 4,
+			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("Cache");
+			ImGui::TableSetupColumn("Size");
+			ImGui::TableSetupColumn("Alive");
+			ImGui::TableSetupColumn("Idle window (frames)");
+			ImGui::TableHeadersRow();
+			for (const auto &s : snaps)
+			{
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0); ImGui::Text("%s", s.label ? s.label : "(unnamed)");
+				ImGui::TableSetColumnIndex(1); ImGui::Text("%zu", s.size);
+				ImGui::TableSetColumnIndex(2); ImGui::Text("%zu", s.alive);
+				ImGui::TableSetColumnIndex(3);
+				if (s.maxIdleFrames == 0)
+				{
+					ImGui::TextDisabled("never");
+				}
+				else
+				{
+					// Slider per-row so you can tune live without recompiling.
+					// 60-frame increments at 0..18000 (5 minutes @ 60fps).
+					int frames = static_cast<int>(s.maxIdleFrames);
+					ImGui::PushID(s.label);
+					if (ImGui::SliderInt("##idle", &frames, 60, 18000, "%d frames"))
+					{
+						reg.setMaxIdleFramesFor(s.label, static_cast<uint32_t>(frames));
+					}
+					ImGui::PopID();
+				}
+			}
+			ImGui::EndTable();
+		}
+
+		// Global controls
+		static int globalFrames = 1800;
+		ImGui::SetNextItemWidth(180);
+		ImGui::SliderInt("##all", &globalFrames, 60, 18000, "All: %d frames");
+		ImGui::SameLine();
+		if (ImGui::Button("Apply to all"))
+		{
+			reg.setMaxIdleFramesForAll(static_cast<uint32_t>(globalFrames));
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Run cleanAll now"))
+		{
+			const std::size_t evicted = reg.cleanAll();
+			spdlog::info("Manual cleanAll evicted {} entries", evicted);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Clear all caches"))
+		{
+			reg.clearAll();
+			spdlog::info("Manual clearAll dropped every cache entry");
+		}
+	}
 	ImGui::End();
 }
 
@@ -341,10 +410,10 @@ void MainDemoImGuiUI::renderMaterialProperties()
 			{
 				auto materialProperties = material->getProperties<engine::rendering::PBRProperties>();
 				bool materialsChanged = false;
-				materialsChanged |= ImGui::ColorEdit4("Diffuse (Kd)", materialProperties.diffuse);
-				materialsChanged |= ImGui::ColorEdit4("Emission (Ke)", materialProperties.emission);
-				materialsChanged |= ImGui::ColorEdit4("Transmittance (Kt)", materialProperties.transmittance);
-				materialsChanged |= ImGui::ColorEdit4("Ambient (Ka)", materialProperties.ambient);
+				materialsChanged |= ImGui::ColorEdit4("Diffuse (Kd)", &materialProperties.diffuse[0]);
+				materialsChanged |= ImGui::ColorEdit4("Emission (Ke)", &materialProperties.emission[0]);
+				materialsChanged |= ImGui::ColorEdit4("Transmittance (Kt)", &materialProperties.transmittance[0]);
+				materialsChanged |= ImGui::ColorEdit4("Ambient (Ka)", &materialProperties.ambient[0]);
 				materialsChanged |= ImGui::SliderFloat("Roughness (Pr)", &materialProperties.roughness, 0.0f, 1.0f);
 				materialsChanged |= ImGui::SliderFloat("Metallic (Pm)", &materialProperties.metallic, 0.0f, 1.0f);
 				materialsChanged |= ImGui::SliderFloat("IOR (Ni)", &materialProperties.ior, 0.0f, 5.0f);
