@@ -1,0 +1,13 @@
+# C++ sources and headers use CRLF.
+*.cpp text eol=crlf
+*.h   text eol=crlf
+*.hpp text eol=crlf
+
+# WGSL shader files
+*.wgsl text eol=crlf
+
+# Markdown CRLF is more common and works better with diff tools, so enforce it for docs.
+*.md text eol=crlf
+
+# Everything else: let git auto-detect.
+* text=auto
