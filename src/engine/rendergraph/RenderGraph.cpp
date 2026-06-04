@@ -267,7 +267,7 @@ namespace
 // real pass migrates.
 class StubReadWritePass : public Pass
 {
-public:
+  public:
 	StubReadWritePass(const char *n, ResourceHandle read_, ResourceHandle write_) :
 		m_name(n), m_read(read_), m_write(write_) {}
 	const char *name() const override { return m_name; }
@@ -277,7 +277,7 @@ public:
 		if (m_write.valid()) b.write(m_write);
 	}
 	void execute(RenderContext &) override {}
-private:
+  private:
 	const char    *m_name;
 	ResourceHandle m_read;
 	ResourceHandle m_write;

@@ -26,7 +26,7 @@ std::string oneLiteral(SlotType t);
  */
 class ConstantF32 : public Node
 {
-public:
+  public:
 	explicit ConstantF32(float v) : m_value(v) {}
 
 	const char *typeName() const override { return "ConstantF32"; }
@@ -40,7 +40,7 @@ public:
 		return "    let " + outs[0] + ": f32 = " + formatFloat(m_value) + ";\n";
 	}
 
-private:
+  private:
 	float m_value;
 	static std::string formatFloat(float v);
 };
@@ -52,7 +52,7 @@ private:
  */
 class ConstantVec3 : public Node
 {
-public:
+  public:
 	explicit ConstantVec3(float r, float g, float b) : m_rgb{r, g, b} {}
 
 	const char *typeName() const override { return "ConstantVec3"; }
@@ -63,7 +63,7 @@ public:
 		const std::vector<std::string> & /*inputs*/,
 		const std::vector<std::string> &outs) const override;
 
-private:
+  private:
 	std::array<float, 3> m_rgb;
 };
 
@@ -73,7 +73,7 @@ private:
  */
 class Multiply : public Node
 {
-public:
+  public:
 	explicit Multiply(SlotType t) : m_type(t) {}
 
 	const char *typeName() const override { return "Multiply"; }
@@ -94,7 +94,7 @@ public:
 		const std::vector<std::string> &ins,
 		const std::vector<std::string> &outs) const override;
 
-private:
+  private:
 	SlotType m_type;
 	static std::string defaultExpr(SlotType t);
 };
@@ -104,7 +104,7 @@ private:
  */
 class Add : public Node
 {
-public:
+  public:
 	explicit Add(SlotType t) : m_type(t) {}
 
 	const char *typeName() const override { return "Add"; }
@@ -125,7 +125,7 @@ public:
 		const std::vector<std::string> &ins,
 		const std::vector<std::string> &outs) const override;
 
-private:
+  private:
 	SlotType m_type;
 	static std::string defaultExpr(SlotType t);
 };
@@ -136,7 +136,7 @@ private:
  */
 class Mix : public Node
 {
-public:
+  public:
 	explicit Mix(SlotType t) : m_type(t) {}
 
 	const char *typeName() const override { return "Mix"; }
@@ -158,7 +158,7 @@ public:
 		const std::vector<std::string> &ins,
 		const std::vector<std::string> &outs) const override;
 
-private:
+  private:
 	SlotType m_type;
 };
 
@@ -166,7 +166,7 @@ private:
 /// the input is.
 class Saturate : public Node
 {
-public:
+  public:
 	explicit Saturate(SlotType t) : m_type(t) {}
 
 	const char *typeName() const override { return "Saturate"; }
@@ -182,14 +182,14 @@ public:
 		const std::vector<std::string> &ins,
 		const std::vector<std::string> &outs) const override;
 
-private:
+  private:
 	SlotType m_type;
 };
 
 /// `normalize(v)` — unit-length vector. Vec2/Vec3/Vec4 only.
 class Normalize : public Node
 {
-public:
+  public:
 	explicit Normalize(SlotType t) : m_type(t) {}
 
 	const char *typeName() const override { return "Normalize"; }
@@ -205,7 +205,7 @@ public:
 		const std::vector<std::string> &ins,
 		const std::vector<std::string> &outs) const override;
 
-private:
+  private:
 	SlotType m_type;
 };
 
@@ -213,7 +213,7 @@ private:
 /// is always f32.
 class Dot : public Node
 {
-public:
+  public:
 	explicit Dot(SlotType t) : m_type(t) {}
 
 	const char *typeName() const override { return "Dot"; }
@@ -232,14 +232,14 @@ public:
 		const std::vector<std::string> &ins,
 		const std::vector<std::string> &outs) const override;
 
-private:
+  private:
 	SlotType m_type;
 };
 
 /// `pow(base, exponent)` — power. Slot-type agnostic.
 class Pow : public Node
 {
-public:
+  public:
 	explicit Pow(SlotType t) : m_type(t) {}
 
 	const char *typeName() const override { return "Pow"; }
@@ -258,14 +258,14 @@ public:
 		const std::vector<std::string> &ins,
 		const std::vector<std::string> &outs) const override;
 
-private:
+  private:
 	SlotType m_type;
 };
 
 /// Split a vec3 into three f32 channels (r/g/b).
 class SplitVec3 : public Node
 {
-public:
+  public:
 	const char *typeName() const override { return "SplitVec3"; }
 
 	std::vector<SlotSpec> inputs() const override
@@ -288,7 +288,7 @@ public:
 /// Combine three f32 channels into a vec3.
 class CombineVec3 : public Node
 {
-public:
+  public:
 	const char *typeName() const override { return "CombineVec3"; }
 
 	std::vector<SlotSpec> inputs() const override
@@ -317,7 +317,7 @@ public:
  */
 class FragmentUV : public Node
 {
-public:
+  public:
 	const char *typeName() const override { return "FragmentUV"; }
 	std::vector<SlotSpec> inputs() const override { return {}; }
 	std::vector<SlotSpec> outputs() const override
@@ -337,7 +337,7 @@ public:
  */
 class FragmentNormal : public Node
 {
-public:
+  public:
 	const char *typeName() const override { return "FragmentNormal"; }
 	std::vector<SlotSpec> inputs() const override { return {}; }
 	std::vector<SlotSpec> outputs() const override
@@ -364,7 +364,7 @@ public:
  */
 class TextureSample : public Node
 {
-public:
+  public:
 	TextureSample(std::string wgslName,
 	              uint32_t    textureBinding,
 	              uint32_t    samplerBinding) :
@@ -389,7 +389,7 @@ public:
 		const std::vector<std::string> &ins,
 		const std::vector<std::string> &outs) const override;
 
-private:
+  private:
 	std::string m_name;
 	uint32_t    m_textureBinding;
 	uint32_t    m_samplerBinding;
@@ -412,7 +412,7 @@ private:
  */
 class MaterialOutput : public Node
 {
-public:
+  public:
 	const char *typeName() const override { return "MaterialOutput"; }
 
 	std::vector<SlotSpec> inputs() const override

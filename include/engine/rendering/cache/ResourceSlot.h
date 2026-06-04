@@ -62,7 +62,7 @@ namespace engine::rendering::cache
 template <typename T>
 class ResourceSlot
 {
-public:
+  public:
 	using ResourcePtr = std::shared_ptr<T>;
 	using BuildFn     = std::function<ResourcePtr()>;
 
@@ -183,7 +183,7 @@ public:
 	/// compiling while the codebase migrates.
 	bool valid() const { return isAlive(); }
 
-private:
+  private:
 	void stampLastAccess_locked()
 	{
 		if (m_frameSource)
@@ -214,7 +214,7 @@ private:
 template <typename T>
 class Handle
 {
-public:
+  public:
 	using SlotPtr     = std::shared_ptr<ResourceSlot<T>>;
 	using ResourcePtr = std::shared_ptr<T>;
 
@@ -249,7 +249,7 @@ public:
 	bool operator==(const Handle &other) const { return m_slot == other.m_slot; }
 	bool operator!=(const Handle &other) const { return m_slot != other.m_slot; }
 
-private:
+  private:
 	SlotPtr m_slot;
 };
 

@@ -53,7 +53,7 @@ struct CacheView
  */
 class CacheRegistry
 {
-public:
+  public:
 	CacheRegistry() = default;
 
 	CacheRegistry(const CacheRegistry &)            = delete;
@@ -134,7 +134,7 @@ public:
 	/// frame from a debug panel.
 	[[nodiscard]] std::vector<Snapshot> snapshotAll() const;
 
-private:
+  private:
 	mutable std::mutex      m_mutex;
 	std::vector<CacheView>  m_views;
 };

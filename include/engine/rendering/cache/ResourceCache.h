@@ -65,7 +65,7 @@ namespace engine::rendering::cache
 template <typename Key, typename Resource, typename KeyHash = std::hash<Key>>
 class ResourceCache
 {
-public:
+  public:
 	using ResourcePtr = std::shared_ptr<Resource>;
 	using BuildFn     = std::function<ResourcePtr()>;
 
@@ -256,7 +256,7 @@ public:
 		return alive;
 	}
 
-private:
+  private:
 	struct Entry
 	{
 		std::weak_ptr<Resource> resource;

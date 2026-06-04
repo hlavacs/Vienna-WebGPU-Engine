@@ -95,7 +95,7 @@ struct NodeId
  */
 class Node
 {
-public:
+  public:
 	virtual ~Node() = default;
 
 	/// Short type-name for diagnostics (e.g. `"ConstantF32"`, `"Multiply"`).
@@ -157,7 +157,7 @@ struct Edge
  */
 class Graph
 {
-public:
+  public:
 	/// Add a node. Ownership transfers to the Graph. Returns the new id.
 	NodeId addNode(std::unique_ptr<Node> node);
 
@@ -189,7 +189,7 @@ public:
 	/// Number of nodes currently in the graph.
 	[[nodiscard]] std::size_t nodeCount() const { return m_nodes.size(); }
 
-private:
+  private:
 	struct Stored
 	{
 		std::unique_ptr<Node> node;

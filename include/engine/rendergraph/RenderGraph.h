@@ -73,7 +73,7 @@ class RenderGraph;
  */
 class PassBuilder
 {
-public:
+  public:
 	PassBuilder(RenderGraph &graph, PassHandle ownerPass);
 
 	/// Mark @p resource as read by this pass. The graph ensures any
@@ -89,7 +89,7 @@ public:
 	/// against (the pass that calls create() is implicitly the writer).
 	ResourceHandle create(const ResourceDesc &desc);
 
-private:
+  private:
 	RenderGraph &m_graph;
 	PassHandle   m_pass;
 };
@@ -123,7 +123,7 @@ struct RenderContext
  */
 class Pass
 {
-public:
+  public:
 	virtual ~Pass() = default;
 
 	virtual const char *name() const = 0;
@@ -151,7 +151,7 @@ public:
  */
 class FunctionPass : public Pass
 {
-public:
+  public:
 	using ExecuteFn = std::function<void(RenderContext &)>;
 
 	FunctionPass(std::string                 name,
@@ -176,7 +176,7 @@ public:
 		if (m_exec) m_exec(ctx);
 	}
 
-private:
+  private:
 	std::string                 m_name;
 	std::vector<ResourceHandle> m_reads;
 	std::vector<ResourceHandle> m_writes;
@@ -201,7 +201,7 @@ private:
  */
 class RenderGraph
 {
-public:
+  public:
 	/// Import an external resource (e.g. the swapchain backbuffer, a
 	/// persistent UBO). The graph treats it as both readable and
 	/// writable — pass declarations against it form the dependency
@@ -249,7 +249,7 @@ public:
 	/// debug overlay. Returns empty until compile() succeeds.
 	[[nodiscard]] std::vector<std::string> compiledOrder() const;
 
-private:
+  private:
 	struct StoredPass
 	{
 		std::unique_ptr<Pass>         pass;

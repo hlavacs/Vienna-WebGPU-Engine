@@ -32,7 +32,7 @@ namespace engine::rendering::ibl
  */
 class BRDFLut
 {
-public:
+  public:
 	static constexpr uint32_t LUT_SIZE = 256;
 
 	BRDFLut() = default;
@@ -45,7 +45,7 @@ public:
 	/// The baked LUT texture. nullptr until initialize() succeeds.
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUTexture> getTexture() const { return m_texture; }
 
-private:
+  private:
 	std::shared_ptr<webgpu::WebGPUTexture> m_texture;
 	bool                                   m_initialized = false;
 };

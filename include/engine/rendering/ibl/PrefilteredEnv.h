@@ -40,7 +40,7 @@ namespace engine::rendering::ibl
  */
 class PrefilteredEnv
 {
-public:
+  public:
 	/// Default mip count fits the typical 1024×512 / 2048×1024 equirect
 	/// HDRs we ship. Equivalent to roughness step ≈ 1/5 between mips, which
 	/// hardware bilinear filtering smooths into a continuous spectrum.
@@ -66,7 +66,7 @@ public:
 		return m_texture ? (MIP_LEVELS - 1) : 0;
 	}
 
-private:
+  private:
 	std::shared_ptr<webgpu::WebGPUTexture> m_texture;
 };
 
