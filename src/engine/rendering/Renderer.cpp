@@ -164,72 +164,104 @@ void Renderer::prefilterEnvironment(const std::shared_ptr<webgpu::WebGPUTexture>
 	m_prefilteredEnvSource = rawHandle;
 }
 
-void Renderer::logFrameGraphLayout()
+namespace
+{
+
+/// Logical resource handles the per-camera frame graph wires its passes
+/// against. Names are descriptive — they don't bind to wgpu objects yet;
+/// that's the next migration step.
+struct FrameGraphResources
+{
+	engine::rendergraph::ResourceHandle shadowMaps;
+	engine::rendergraph::ResourceHandle shadowUniform;
+	engine::rendergraph::ResourceHandle gbufferColor;
+	engine::rendergraph::ResourceHandle gbufferDepth;
+	engine::rendergraph::ResourceHandle clusterGrid;
+	engine::rendergraph::ResourceHandle clusterIdx;
+	engine::rendergraph::ResourceHandle litHdr;
+	engine::rendergraph::ResourceHandle backbuffer;
+};
+
+FrameGraphResources importFrameGraphResources(engine::rendergraph::RenderGraph &g)
 {
 	using namespace engine::rendergraph;
-	RenderGraph g;
+	FrameGraphResources r{};
+	r.shadowMaps    = g.addImported("ShadowMaps",     ResourceType::DepthTexture);
+	r.shadowUniform = g.addImported("ShadowUniform",  ResourceType::Buffer);
+	r.gbufferColor  = g.addImported("GBuffer.Color",  ResourceType::ColorTexture);
+	r.gbufferDepth  = g.addImported("GBuffer.Depth",  ResourceType::DepthTexture);
+	r.clusterGrid   = g.addImported("ClusterGrid",    ResourceType::Buffer);
+	r.clusterIdx    = g.addImported("ClusterIndices", ResourceType::Buffer);
+	r.litHdr        = g.addImported("LitHDR",         ResourceType::ColorTexture);
+	r.backbuffer    = g.addImported("Backbuffer",     ResourceType::ColorTexture);
+	return r;
+}
 
-	// Logical resources the per-camera passes share. Names are descriptive
-	// — they don't bind to wgpu objects yet; that's the next migration step.
-	auto shadowMaps    = g.addImported("ShadowMaps",      ResourceType::DepthTexture);
-	auto shadowUniform = g.addImported("ShadowUniform",   ResourceType::Buffer);
-	auto gbufferColor  = g.addImported("GBuffer.Color",   ResourceType::ColorTexture);
-	auto gbufferDepth  = g.addImported("GBuffer.Depth",   ResourceType::DepthTexture);
-	auto clusterGrid   = g.addImported("ClusterGrid",     ResourceType::Buffer);
-	auto clusterIdx    = g.addImported("ClusterIndices",  ResourceType::Buffer);
-	auto litHdr        = g.addImported("LitHDR",          ResourceType::ColorTexture);
-	auto backbuffer    = g.addImported("Backbuffer",      ResourceType::ColorTexture);
-
-	// Each adapter declares its real reads/writes. Execute lambdas are
-	// no-ops here — the integration step is replacing the renderFrame
-	// per-pass blocks with `graph.execute(ctx)` and letting these lambdas
-	// run the existing pass.render() calls.
+void registerFrameGraphPasses(
+	engine::rendergraph::RenderGraph &g,
+	const FrameGraphResources &r)
+{
+	using namespace engine::rendergraph;
+	// Execute lambdas are no-ops here — the integration step is replacing
+	// the renderFrame per-pass blocks with `graph.execute(ctx)` and letting
+	// these lambdas run the existing pass.render() calls. Skybox /
+	// ForwardTransparency / Debug all LOAD (not clear) litHdr — they sample
+	// the existing lit pixels and additively modify, so they must declare a
+	// read in addition to the write. Without the read the graph has no edge
+	// from Composition to them and would be free to reorder.
 	auto noop = [](RenderContext &) {};
 
 	g.addPass(std::make_unique<FunctionPass>("Shadow",
 		std::vector<ResourceHandle>{},
-		std::vector<ResourceHandle>{shadowMaps, shadowUniform},
-		noop));
+		std::vector<ResourceHandle>{r.shadowMaps, r.shadowUniform}, noop));
 
 	g.addPass(std::make_unique<FunctionPass>("GBuffer",
 		std::vector<ResourceHandle>{},
-		std::vector<ResourceHandle>{gbufferColor, gbufferDepth},
-		noop));
+		std::vector<ResourceHandle>{r.gbufferColor, r.gbufferDepth}, noop));
 
 	g.addPass(std::make_unique<FunctionPass>("ClusterCompute",
 		std::vector<ResourceHandle>{},
-		std::vector<ResourceHandle>{clusterGrid, clusterIdx},
-		noop));
+		std::vector<ResourceHandle>{r.clusterGrid, r.clusterIdx}, noop));
 
 	g.addPass(std::make_unique<FunctionPass>("Composition",
-		std::vector<ResourceHandle>{gbufferColor, gbufferDepth, shadowMaps, shadowUniform, clusterGrid, clusterIdx},
-		std::vector<ResourceHandle>{litHdr},
-		noop));
+		std::vector<ResourceHandle>{r.gbufferColor, r.gbufferDepth, r.shadowMaps, r.shadowUniform, r.clusterGrid, r.clusterIdx},
+		std::vector<ResourceHandle>{r.litHdr}, noop));
 
-	// Skybox / ForwardTransparency / Debug all LOAD (not clear) litHdr —
-	// they sample the existing lit pixels and additively modify, so they
-	// must declare a read in addition to the write. Without the read the
-	// graph has no edge from Composition to them and would be free to
-	// reorder, producing the wrong output.
 	g.addPass(std::make_unique<FunctionPass>("Skybox",
-		std::vector<ResourceHandle>{gbufferDepth, litHdr},
-		std::vector<ResourceHandle>{litHdr},
-		noop));
+		std::vector<ResourceHandle>{r.gbufferDepth, r.litHdr},
+		std::vector<ResourceHandle>{r.litHdr}, noop));
 
 	g.addPass(std::make_unique<FunctionPass>("ForwardTransparency",
-		std::vector<ResourceHandle>{gbufferDepth, litHdr},
-		std::vector<ResourceHandle>{litHdr},
-		noop));
+		std::vector<ResourceHandle>{r.gbufferDepth, r.litHdr},
+		std::vector<ResourceHandle>{r.litHdr}, noop));
 
 	g.addPass(std::make_unique<FunctionPass>("Debug",
-		std::vector<ResourceHandle>{litHdr},
-		std::vector<ResourceHandle>{litHdr},
-		noop));
+		std::vector<ResourceHandle>{r.litHdr},
+		std::vector<ResourceHandle>{r.litHdr}, noop));
 
 	g.addPass(std::make_unique<FunctionPass>("Composite",
-		std::vector<ResourceHandle>{litHdr},
-		std::vector<ResourceHandle>{backbuffer},
-		noop));
+		std::vector<ResourceHandle>{r.litHdr},
+		std::vector<ResourceHandle>{r.backbuffer}, noop));
+}
+
+std::string joinPassNames(const std::vector<std::string> &names)
+{
+	std::string trace;
+	for (const auto &n : names)
+	{
+		if (!trace.empty()) trace += " → ";
+		trace += n;
+	}
+	return trace;
+}
+
+} // namespace
+
+void Renderer::logFrameGraphLayout()
+{
+	engine::rendergraph::RenderGraph g;
+	const auto resources = importFrameGraphResources(g);
+	registerFrameGraphPasses(g, resources);
 
 	auto result = g.compile();
 	if (!result.success)
@@ -238,15 +270,9 @@ void Renderer::logFrameGraphLayout()
 		return;
 	}
 
-	std::string trace;
-	for (const auto &n : g.compiledOrder())
-	{
-		if (!trace.empty()) trace += " → ";
-		trace += n;
-	}
 	spdlog::info("Frame render graph compiled: {} passes, {} resources",
 		g.passCount(), g.resourceCount());
-	spdlog::info("Order: {}", trace);
+	spdlog::info("Order: {}", joinPassNames(g.compiledOrder()));
 }
 
 bool Renderer::renderFrame(
