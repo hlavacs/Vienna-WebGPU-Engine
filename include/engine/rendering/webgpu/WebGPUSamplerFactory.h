@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <webgpu/webgpu.hpp>
@@ -98,9 +100,30 @@ class WebGPUSamplerFactory : public debug::Loggable
 	 */
 	void cleanup();
 
+	/// Cached sampler count. Used by CacheRegistry / debug overlays.
+	[[nodiscard]] std::size_t cacheSize() const { return m_samplerCache.size(); }
+
+	/// Bump the frame counter — called by CacheRegistry once per frame.
+	void notifyFrame() { m_frameCounter.fetch_add(1, std::memory_order_relaxed); }
+
+	/// Drop entries whose lastAccessFrame is more than maxIdleFrames behind.
+	/// No-op when maxIdleFrames == 0. Returns count dropped.
+	std::size_t evictStale();
+
+	void setMaxIdleFrames(uint32_t frames) { m_maxIdleFrames = frames; }
+	[[nodiscard]] uint32_t maxIdleFrames() const { return m_maxIdleFrames; }
+
   private:
 	WebGPUContext &m_context;
-	std::unordered_map<std::string, wgpu::Sampler> m_samplerCache;
+	struct Entry
+	{
+		wgpu::Sampler sampler          = nullptr;
+		uint32_t      lastAccessFrame  = 0;
+	};
+	std::unordered_map<std::string, Entry> m_samplerCache;
+
+	std::atomic<uint32_t> m_frameCounter{0};
+	uint32_t              m_maxIdleFrames = 0;
 
 	wgpu::Sampler createDefaultSampler();
 	wgpu::Sampler createMipmapSampler();

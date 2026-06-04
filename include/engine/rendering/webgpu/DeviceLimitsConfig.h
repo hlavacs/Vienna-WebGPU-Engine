@@ -48,7 +48,10 @@ struct DeviceLimitsConfig
 	// -------------------------------------------------------------------------
 
 	uint32_t maxBindGroups = 8;
-	///< Maximum number of bind groups usable in a pipeline.
+	///< Maximum number of bind groups usable in a pipeline. The engine
+	///< convention is @group(0..3) for engine roles (Frame/Scene/Material/Object)
+	///< and @group(4..7) for custom shader resources. wgpu-native's
+	///< hardware-reported limit caps this at 8 for the foreseeable future.
 
 	uint32_t maxBindingsPerBindGroup = 16;
 	///< Maximum number of bindings (buffers, textures, samplers) per bind group.

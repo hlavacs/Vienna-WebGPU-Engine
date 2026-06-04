@@ -8,6 +8,8 @@
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/RenderingConstants.h"
+#include "engine/rendering/shaders/ShaderValidator.h"
+#include "engine/rendering/shaders/WgslIncludeResolver.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
@@ -77,6 +79,17 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	group.reuse = reuse;
 	m_bindGroupsBuilder[index] = std::move(group);
 	m_lastBindGroupIndex = index;
+	return *this;
+}
+
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addBindGroupAt(uint32_t index, const std::string &name, BindGroupReuse reuse, BindGroupType type)
+{
+	BindGroupBuilder group;
+	group.name = name;
+	group.type = type;
+	group.reuse = reuse;
+	m_bindGroupsBuilder[index] = std::move(group);
+	m_lastBindGroupIndex = static_cast<int32_t>(index);
 	return *this;
 }
 
@@ -161,7 +174,9 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 
 WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addFrameBindGroup()
 {
-	uint32_t groupIndex = static_cast<uint32_t>(m_bindGroupsBuilder.size());
+	// Canonical: Frame is always @group(0). Pinned (not auto-assigned) so the
+	// builder call order can't drift the bind-group convention.
+	constexpr uint32_t groupIndex = 0;
 	auto &bindGroupBuilder = m_bindGroupsBuilder[groupIndex];
 	bindGroupBuilder.isEngineDefault = true;
 	bindGroupBuilder.name = bindgroup::defaults::FRAME;
@@ -183,7 +198,11 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 
 WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addObjectBindGroup()
 {
-	uint32_t groupIndex = static_cast<uint32_t>(m_bindGroupsBuilder.size());
+	// Canonical: Object is always @group(3). Pinned (not auto-assigned) so
+	// the builder call order can't drift the bind-group convention. Empty
+	// slots between this and other groups get filled with the shared empty
+	// bind-group layout by the pipeline factory.
+	constexpr uint32_t groupIndex = 3;
 	auto &bindGroupBuilder = m_bindGroupsBuilder[groupIndex];
 	bindGroupBuilder.isEngineDefault = true;
 	bindGroupBuilder.name = bindgroup::defaults::OBJECT;
@@ -203,86 +222,148 @@ WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuild
 	return *this;
 }
 
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addLightBindGroup()
+WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addSceneBindGroup()
 {
-	uint32_t groupIndex = static_cast<uint32_t>(m_bindGroupsBuilder.size());
+	// Canonical: Scene is always @group(1).
+	constexpr uint32_t groupIndex = 1;
 	auto &bindGroupBuilder = m_bindGroupsBuilder[groupIndex];
 	bindGroupBuilder.isEngineDefault = true;
-	bindGroupBuilder.name = bindgroup::defaults::LIGHT;
-	bindGroupBuilder.type = BindGroupType::Light;
+	bindGroupBuilder.name  = bindgroup::defaults::SCENE;
+	bindGroupBuilder.type  = BindGroupType::Scene;
 	bindGroupBuilder.reuse = BindGroupReuse::PerFrame;
 
-	size_t headerSize = sizeof(engine::rendering::LightsBuffer);
-	size_t lightArraySize = constants::MAX_LIGHTS * sizeof(engine::rendering::LightStruct);
-	size_t totalSize = headerSize + lightArraySize;
+	// @binding(0) — lights storage buffer.
+	{
+		const size_t headerSize     = sizeof(engine::rendering::LightsBuffer);
+		const size_t lightArraySize = constants::MAX_LIGHTS * sizeof(engine::rendering::LightStruct);
+		ShaderBinding b;
+		b.type       = BindingType::StorageBuffer;
+		b.name       = "lightUniforms";
+		b.binding    = 0;
+		b.size       = headerSize + lightArraySize;
+		b.usage      = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+		b.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+		b.readOnly   = true;
+		bindGroupBuilder.bindings.push_back(b);
+	}
 
-	ShaderBinding buffer;
-	buffer.type = BindingType::StorageBuffer;
-	buffer.name = "lightUniforms";
-	buffer.binding = 0;
-	buffer.size = totalSize;
-	buffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
-	buffer.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-	buffer.readOnly = true;
+	// @binding(1) — shadow comparison sampler.
+	{
+		ShaderBinding b;
+		b.type        = BindingType::Sampler;
+		b.name        = "shadowSampler";
+		b.binding     = 1;
+		b.visibility  = WGPUShaderStage_Fragment;
+		b.samplerType = wgpu::SamplerBindingType::Comparison;
+		bindGroupBuilder.bindings.push_back(b);
+	}
 
-	bindGroupBuilder.bindings.push_back(buffer);
-	m_lastBindGroupIndex = groupIndex;
-	return *this;
-}
+	// @binding(2) — 2D shadow map array (CSM cascades + spotlights).
+	{
+		ShaderBinding b;
+		b.type                  = BindingType::Texture;
+		b.name                  = "shadowMaps2D";
+		b.binding               = 2;
+		b.visibility            = WGPUShaderStage_Fragment;
+		b.textureSampleType     = wgpu::TextureSampleType::Depth;
+		b.textureViewDimension  = wgpu::TextureViewDimension::_2DArray;
+		b.textureMultisampled   = false;
+		bindGroupBuilder.bindings.push_back(b);
+	}
 
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addShadowBindGroup()
-{
-	uint32_t groupIndex = static_cast<uint32_t>(m_bindGroupsBuilder.size());
-	auto &bindGroupBuilder = m_bindGroupsBuilder[groupIndex];
-	bindGroupBuilder.isEngineDefault = true;
-	bindGroupBuilder.name = bindgroup::defaults::SHADOW;
-	bindGroupBuilder.type = BindGroupType::Shadow;
-	bindGroupBuilder.reuse = BindGroupReuse::PerFrame;
+	// @binding(3) — cube shadow map array (point lights).
+	{
+		ShaderBinding b;
+		b.type                  = BindingType::Texture;
+		b.name                  = "shadowMapsCube";
+		b.binding               = 3;
+		b.visibility            = WGPUShaderStage_Fragment;
+		b.textureSampleType     = wgpu::TextureSampleType::Depth;
+		b.textureViewDimension  = wgpu::TextureViewDimension::CubeArray;
+		b.textureMultisampled   = false;
+		bindGroupBuilder.bindings.push_back(b);
+	}
 
-	ShaderBinding samplerBinding;
-	samplerBinding.type = BindingType::Sampler;
-	samplerBinding.name = "shadowSampler";
-	samplerBinding.binding = 0;
-	samplerBinding.visibility = WGPUShaderStage_Fragment;
-	samplerBinding.samplerType = wgpu::SamplerBindingType::Comparison;
-	bindGroupBuilder.bindings.push_back(samplerBinding);
+	// @binding(4) — shadow uniforms storage. Size matches the engine's full
+	// shadow budget (2D + cube) so the default-built buffer is sized for the
+	// worst case; per-shadow population happens elsewhere.
+	{
+		ShaderBinding b;
+		b.type       = BindingType::StorageBuffer;
+		b.name       = "uShadows";
+		b.binding    = 4;
+		b.size       = (constants::MAX_SHADOW_MAPS_2D + constants::MAX_SHADOW_MAPS_CUBE) * sizeof(engine::rendering::ShadowUniform);
+		b.usage      = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+		b.visibility = WGPUShaderStage_Fragment;
+		b.readOnly   = true;
+		bindGroupBuilder.bindings.push_back(b);
+	}
 
-	ShaderBinding shadowMaps2D;
-	shadowMaps2D.type = BindingType::Texture;
-	shadowMaps2D.name = "shadowMaps2D";
-	shadowMaps2D.binding = 1;
-	shadowMaps2D.visibility = WGPUShaderStage_Fragment;
-	shadowMaps2D.textureSampleType = wgpu::TextureSampleType::Depth;
-	shadowMaps2D.textureViewDimension = wgpu::TextureViewDimension::_2DArray;
-	shadowMaps2D.textureMultisampled = false;
-	bindGroupBuilder.bindings.push_back(shadowMaps2D);
+	// @binding(5) — environment uniforms (intensity, skybox enable flags).
+	{
+		ShaderBinding b;
+		b.type       = BindingType::UniformBuffer;
+		b.name       = "environmentUniforms";
+		b.binding    = 5;
+		b.size       = sizeof(glm::vec4);
+		b.usage      = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+		b.visibility = WGPUShaderStage_Fragment;
+		bindGroupBuilder.bindings.push_back(b);
+	}
 
-	ShaderBinding shadowMapsCube;
-	shadowMapsCube.type = BindingType::Texture;
-	shadowMapsCube.name = "shadowMapsCube";
-	shadowMapsCube.binding = 2;
-	shadowMapsCube.visibility = WGPUShaderStage_Fragment;
-	shadowMapsCube.textureSampleType = wgpu::TextureSampleType::Depth;
-	shadowMapsCube.textureViewDimension = wgpu::TextureViewDimension::CubeArray;
-	shadowMapsCube.textureMultisampled = false;
-	bindGroupBuilder.bindings.push_back(shadowMapsCube);
+	// @binding(6) — environment sampler (filtering, used for IBL).
+	{
+		ShaderBinding b;
+		b.type        = BindingType::Sampler;
+		b.name        = "environmentSampler";
+		b.binding     = 6;
+		b.visibility  = WGPUShaderStage_Fragment;
+		b.samplerType = wgpu::SamplerBindingType::Filtering;
+		bindGroupBuilder.bindings.push_back(b);
+	}
 
-	// The shader declares uShadows as an unbounded runtime array, but the
-	// engine still has to provision a sensibly sized default buffer for
-	// callers that don't override the shadow bind group. Reserve room for
-	// the engine's full shadow budget (2D + cube) so the default is usable
-	// even without an override.
-	ShaderBinding shadowUniformBuffer;
-	shadowUniformBuffer.type = BindingType::StorageBuffer;
-	shadowUniformBuffer.name = "uShadows";
-	shadowUniformBuffer.binding = 3;
-	shadowUniformBuffer.size = (constants::MAX_SHADOW_MAPS_2D + constants::MAX_SHADOW_MAPS_CUBE) * sizeof(engine::rendering::ShadowUniform);
-	shadowUniformBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
-	shadowUniformBuffer.visibility = WGPUShaderStage_Fragment;
-	shadowUniformBuffer.readOnly = true;
-	bindGroupBuilder.bindings.push_back(shadowUniformBuffer);
+	// @binding(7) — environment HDR equirect texture.
+	{
+		ShaderBinding b;
+		b.type                  = BindingType::Texture;
+		b.name                  = "environmentTexture";
+		b.binding               = 7;
+		b.visibility            = WGPUShaderStage_Fragment;
+		b.textureSampleType     = wgpu::TextureSampleType::Float;
+		b.textureViewDimension  = wgpu::TextureViewDimension::_2D;
+		b.textureMultisampled   = false;
+		bindGroupBuilder.bindings.push_back(b);
+	}
 
-	m_lastBindGroupIndex = groupIndex;
+	// @binding(8) — clustered light culling grid (per-cluster {offset, count}).
+	// Shaders that don't sample cluster data (forward PBR) still get the
+	// binding in their pipeline layout but ignore the resource at runtime.
+	{
+		ShaderBinding b;
+		b.type       = BindingType::StorageBuffer;
+		b.name       = "uClusterGrid";
+		b.binding    = 8;
+		b.size       = 0; ///< Runtime-sized; populated by ClusterManager.
+		b.usage      = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+		b.visibility = WGPUShaderStage_Fragment;
+		b.readOnly   = true;
+		bindGroupBuilder.bindings.push_back(b);
+	}
+
+	// @binding(9) — flat u32 index pool referenced by the cluster grid.
+	{
+		ShaderBinding b;
+		b.type       = BindingType::StorageBuffer;
+		b.name       = "uClusterIndices";
+		b.binding    = 9;
+		b.size       = 0;
+		b.usage      = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+		b.visibility = WGPUShaderStage_Fragment;
+		b.readOnly   = true;
+		bindGroupBuilder.bindings.push_back(b);
+	}
+
+	m_lastBindGroupIndex = static_cast<int32_t>(groupIndex);
 	return *this;
 }
 
@@ -498,10 +579,33 @@ wgpu::ShaderModule WebGPUShaderFactory::loadShaderModule(const std::filesystem::
 	file.seekg(0);
 	file.read(shaderSource.data(), size);
 
+	// Expand `#include "..."` directives BEFORE handing the WGSL to wgpu.
+	// Errors here mean the include couldn't be read - log loud and let the
+	// compiler fail too so the user sees both messages.
+	engine::rendering::shaders::WgslIncludeResolver resolver;
+	auto resolved = resolver.expand(shaderSource, shaderPath);
+	for (const auto &diag : resolved.errors)
+	{
+		spdlog::error("Shader include error in {} (line {}): {}",
+		              diag.file.string(), diag.line, diag.message);
+	}
+	const std::string &expandedSource = resolved.finalSource;
+
+	// Post-codegen validation: parse the expanded WGSL and confirm every
+	// generated struct + binding it contains matches the codegen's recorded
+	// intent. Diagnostics are logged but DO NOT fail the load - wgpu's own
+	// validation will reject anything that's actually broken, and we want both
+	// surfaces visible to the user during the migration.
+	auto vdiags = engine::rendering::shaders::validateExpandedWgsl(expandedSource, shaderPath);
+	for (const auto &d : vdiags)
+	{
+		spdlog::error("Shader validator [{}]: {}", d.file.filename().string(), d.message);
+	}
+
 	wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc;
 	shaderCodeDesc.chain.next = nullptr;
 	shaderCodeDesc.chain.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-	shaderCodeDesc.code = shaderSource.c_str();
+	shaderCodeDesc.code = expandedSource.c_str();
 	wgpu::ShaderModuleDescriptor shaderDesc;
 	shaderDesc.nextInChain = &shaderCodeDesc.chain;
 #ifdef WEBGPU_BACKEND_WGPU

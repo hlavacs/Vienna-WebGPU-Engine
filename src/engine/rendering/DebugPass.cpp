@@ -113,6 +113,7 @@ void DebugPass::render(FrameCache &frameCache)
 
 		// Use BindGroupBinder to bind frame and debug bind groups
 		BindGroupBinder binder(&frameCache);
+		binder.setContext(m_context.get());
 		binder.bind(
 			renderPass,
 			pipeline,

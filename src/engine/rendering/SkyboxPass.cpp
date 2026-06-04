@@ -88,8 +88,14 @@ void SkyboxPass::render(FrameCache &frameCache)
 		prof->beginGpuScope("Pass.Skybox", encoder);
 	auto pass = m_renderPassContext->begin(encoder);
 	pass.setPipeline(pipeline->getPipeline());
+	// Fill Scene/Material/Object slots with the shared empty bind group; skybox
+	// only samples Frame@0 and its own custom env at @4. wgpu validates every
+	// declared pipeline-layout slot at draw time.
+	auto emptyBg = m_context->pipelineManager().getOrCreateEmptyBindGroup();
 	pass.setBindGroup(0, frameBindGroupIt->second->getBindGroup(), 0, nullptr);
-	pass.setBindGroup(1, m_environmentBindGroup->getBindGroup(), 0, nullptr);
+	for (uint32_t slot = 1; slot < 4; ++slot)
+		pass.setBindGroup(slot, emptyBg, 0, nullptr);
+	pass.setBindGroup(4, m_environmentBindGroup->getBindGroup(), 0, nullptr);
 	pass.draw(36, 1, 0, 0);
 	m_renderPassContext->end(pass);
 	if (auto *prof = m_context->frameProfiler())

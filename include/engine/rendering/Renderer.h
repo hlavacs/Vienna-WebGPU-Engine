@@ -16,6 +16,7 @@
 #include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/GBufferPass.h"
 #include "engine/rendering/MeshPass.h"
+#include "engine/rendering/ibl/BRDFLut.h"
 // #include "engine/rendering/RenderPassManager.h" ToDo: future use
 #include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/SkyboxPass.h"
@@ -161,13 +162,6 @@ class Renderer
 	void updateFrameBindGroup(const RenderTarget &target, float time);
 
 	/**
-	 * @brief Updates the per-camera environment bind group used by the PBR
-	 *        shader (forward) and by the deferred composition pass (IBL).
-	 *        Cached in @c m_environmentBindGroups keyed by camera id.
-	 */
-	void updateEnvironmentBindGroup(const RenderTarget &target);
-
-	/**
 	 * @brief Updates the per-camera bind group used by the skybox pass.
 	 *        Cached in @c m_skyboxBindGroups keyed by camera id.
 	 *        SKYBOX and ENVIRONMENT layouts have the same binding shape but
@@ -187,6 +181,19 @@ class Renderer
 		const RenderTarget &target,
 		const char *debugLabel
 	);
+
+	/**
+	 * @brief Build / refresh the consolidated Scene bind group for the given camera.
+	 *
+	 * Ten bindings: lights buffer (0), shadow comparison sampler (1),
+	 * shadow 2D-array (2), shadow cube-array (3), shadow uniforms (4),
+	 * environment uniforms (5), environment sampler (6), environment HDR
+	 * equirect texture (7), cluster grid (8), cluster light indices (9).
+	 * Resources are sourced from ShadowPass / SceneLightBuffer / ClusterManager;
+	 * the env uniform UBO is owned per-camera in @c m_sceneEnvironmentBuffers
+	 * and written here. Cached in @c m_sceneBindGroups keyed by camera id.
+	 */
+	void updateSceneBindGroup(const RenderTarget &target);
 
 	/**
 	 * @brief Creates or resizes render target textures.
@@ -225,13 +232,41 @@ public:
 	/// Read-only access to the frame profiler for UI display.
 	[[nodiscard]] const FrameProfiler &getProfiler() const { return m_profiler; }
 
+	/// The baked BRDF integration LUT used by IBL specular. nullptr until
+	/// Renderer::initialize() bakes it. Sampled in WGSL via
+	/// `vec2(NdotV, roughness)` to get the split-sum (scale, bias) terms.
+	[[nodiscard]] const engine::rendering::ibl::BRDFLut &getBRDFLut() const { return m_brdfLut; }
+
 private:
+	/// Build a representative render graph mirroring the per-camera frame
+	/// flow, compile it, and log the resolved execution order. Called once
+	/// at initialize() time so any dependency drift between the hand-coded
+	/// orchestration and the graph's declared edges fails loud on startup.
+	/// The graph itself is throwaway today — the integration step that
+	/// makes it drive rendering replaces the manual sequence in renderFrame
+	/// with graph.execute(ctx).
+	void logFrameGraphLayout();
+
 	FrameCache m_frameCache{};
+
+	// Counts frames since last CacheRegistry::cleanAll() — the renderer
+	// pumps notifyFrameAll() every frame but only runs the heavier
+	// cleanAll() sweep every kCacheCleanInterval frames.
+	uint32_t m_cacheCleanTick = 0;
+
+	// Split-sum BRDF LUT — baked once during initialize(), sampled by the
+	// IBL specular term in the deferred composition + PBR forward shaders.
+	engine::rendering::ibl::BRDFLut m_brdfLut;
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_depthBuffers;
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_environmentBindGroups;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_skyboxBindGroups;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_sceneBindGroups;
+	/// Per-camera environment-uniforms buffer (vec4 params) injected into the
+	/// Scene bind group at @binding(5). Cached so its identity is stable
+	/// across frames — the bind group keeps it valid and we can write env
+	/// params directly via the wgpu queue.
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBuffer>> m_sceneEnvironmentBuffers;
 
 	// Cross-frame cache of the last frame's render targets. Distinct from
 	// m_frameCache.renderTargets (which is cleared between frames) because

@@ -31,14 +31,17 @@ constexpr const char *VISUALIZE_DEPTH = "Visualize_Depth_Shader";
 constexpr const char *VIGNETTE = "Vignette_Shader";
 } // namespace shader::defaults
 
+namespace shader::resource_paths
+{
+constexpr const char *CLUSTER_COMPUTE = "shaders/light_clustering.wgsl";
+} // namespace shader::resource_paths
+
 namespace bindgroup::defaults
 {
 constexpr const char *FRAME = "Frame_BindGroup";
-constexpr const char *LIGHT = "Light_BindGroup";
-constexpr const char *ENVIRONMENT = "Environment_BindGroup";
+constexpr const char *SCENE = "Scene_BindGroup";
 constexpr const char *OBJECT = "Object_BindGroup";
 constexpr const char *MATERIAL = "Material_BindGroup";
-constexpr const char *SHADOW = "Shadow_BindGroup";
 constexpr const char *SHADOW_PASS_2D = "ShadowPass2D_BindGroup";
 constexpr const char *SHADOW_PASS_CUBE = "ShadowPassCube_BindGroup";
 constexpr const char *MIPMAP_BLIT = "MipmapBlit_BindGroup";

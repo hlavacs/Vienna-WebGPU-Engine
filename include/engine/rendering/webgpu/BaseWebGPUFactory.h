@@ -1,7 +1,11 @@
 #pragma once
+
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <type_traits>
+#include <unordered_map>
 
 #include "engine/core/Identifiable.h"
 
@@ -11,6 +15,28 @@ class WebGPUContext;
 
 /**
  * @brief Templated base class for all WebGPU factories.
+ *
+ * Adds the **uniform cache lifecycle surface** every cached factory in the
+ * engine exposes:
+ *  - `cleanup()` — clear the entire cache (resize / scene reset / device loss)
+ *  - `cacheSize()` — entry count (debug overlays)
+ *  - `notifyFrame()` — bump frame counter (called by CacheRegistry once per frame)
+ *  - `evictStale()` — drop entries whose lastAccessFrame is more than
+ *    `maxIdleFrames` behind the current frame (called periodically by
+ *    CacheRegistry)
+ *  - `setMaxIdleFrames(N)` / `maxIdleFrames()` — per-factory eviction window;
+ *    0 = "keep forever" (default for safety; the WebGPUContext init sets a
+ *    real default per-factory).
+ *
+ * The cache stores entries as `{resource, lastAccessFrame}`. Every `get()`
+ * / `createFromHandle()` cache hit updates `lastAccessFrame`, so a frequently
+ * touched entry never times out. Note: only factory calls refresh the
+ * timestamp — once a caller stashes their `shared_ptr<ProductT>`, they own
+ * lifetime themselves (the factory's strong ref becoming a "tombstone"
+ * just means it'll get rebuilt on the next factory call). This matches
+ * what you want for "scene change / run away from object": when no one
+ * fetches a resource for N frames, the factory drops its strong ref.
+ *
  * @tparam SourceT Type used to create the GPU resource.
  * @tparam ProductT GPU resource type produced by the factory.
  */
@@ -35,24 +61,24 @@ class BaseWebGPUFactory
 
 	/**
 	 * @brief Get a GPU resource from a source handle if it exists.
-	 * @param handle Handle to the source object.
 	 * @return Shared pointer to the GPU resource, or nullptr if not found.
-	 * @note This does not create the resource if it does not exist; it only retrieves from cache.
+	 * @note Refreshes lastAccessFrame on hit so eviction's "idle" timer
+	 *       restarts.
 	 */
 	std::shared_ptr<ProductT> get(const typename SourceT::Handle &handle)
 	{
 		auto it = m_cache.find(handle);
 		if (it != m_cache.end())
 		{
-			return it->second;
+			it->second.lastAccessFrame = m_frameCounter.load(std::memory_order_relaxed);
+			return it->second.resource;
 		}
 		return nullptr;
 	}
 
 	/**
 	 * @brief Check if a GPU resource exists for the given source handle.
-	 * @param handle Handle to the source object.
-	 * @return True if the resource exists in the cache, false otherwise.
+	 * @note Pure observer — does NOT refresh lastAccessFrame.
 	 */
 	bool has(const typename SourceT::Handle &handle)
 	{
@@ -61,11 +87,7 @@ class BaseWebGPUFactory
 
 	/**
 	 * @brief Get or create a GPU resource from a source object.
-	 * @param source The source object to create from.
-	 * @return Shared pointer to the created GPU resource.
 	 * @note This automatically creates a handle from the source and calls createFromHandle.
-	 * If handle creation is not possible, it throws an error.
-	 * This means there cannot be a GPU resource without a valid handle.
 	 */
 	std::shared_ptr<ProductT> createFrom(const SourceT &source)
 	{
@@ -84,51 +106,95 @@ class BaseWebGPUFactory
 
 	/**
 	 * @brief Get or create a GPU resource from a source handle.
-	 * @param handle Handle to the source object.
-	 * @return Shared pointer to the GPU resource.
-	 * @note This uses an internal cache to avoid duplicate creations.
+	 * @note Cache hit refreshes lastAccessFrame; cache miss builds a fresh
+	 *       resource and inserts it with the current frame as lastAccess.
 	 */
 	virtual std::shared_ptr<ProductT> createFromHandle(const typename SourceT::Handle &handle)
 	{
+		const uint32_t now = m_frameCounter.load(std::memory_order_relaxed);
 		auto it = m_cache.find(handle);
 		if (it != m_cache.end())
 		{
-			return it->second;
+			it->second.lastAccessFrame = now;
+			return it->second.resource;
 		}
 		auto product = createFromHandleUncached(handle);
-		m_cache[handle] = product;
+		m_cache.emplace(handle, Entry{product, now});
 		return product;
 	}
 
 	/**
 	 * @brief Clear the internal cache of created resources.
-	 * Careful: this does not delete the resources themselves if they are still referenced elsewhere.
-	 * @note Override this method in derived classes if additional cleanup is needed.
-	 * @warning If used it might lead to dangling pointers in existing resources!
+	 * @warning Existing shared_ptrs held by callers still keep their resources
+	 *          alive; this only drops the factory's strong refs.
 	 */
 	virtual void cleanup()
 	{
 		m_cache.clear();
 	}
 
+	/// Total cached entries — for CacheRegistry / debug overlays.
+	[[nodiscard]] std::size_t cacheSize() const { return m_cache.size(); }
+
+	/// Bump the frame counter. Called by CacheRegistry::notifyFrameAll once
+	/// per frame. Atomic, lock-free.
+	void notifyFrame() { m_frameCounter.fetch_add(1, std::memory_order_relaxed); }
+
+	/// Drop cache entries whose lastAccessFrame is more than `maxIdleFrames`
+	/// behind the current frame. No-op when `maxIdleFrames == 0` (the
+	/// "keep forever" default). Returns count dropped.
+	std::size_t evictStale()
+	{
+		if (m_maxIdleFrames == 0) return 0;
+		const uint32_t now = m_frameCounter.load(std::memory_order_relaxed);
+		std::size_t evicted = 0;
+		for (auto it = m_cache.begin(); it != m_cache.end();)
+		{
+			// Unsigned subtraction wraps cleanly under m_frameCounter
+			// overflow at 2^32 frames (~2 years at 60fps).
+			if ((now - it->second.lastAccessFrame) > m_maxIdleFrames)
+			{
+				it = m_cache.erase(it);
+				++evicted;
+			}
+			else
+			{
+				++it;
+			}
+		}
+		return evicted;
+	}
+
+	/// Configure the age-eviction window. After @p frames of no
+	/// get()/createFromHandle access, an entry is dropped on the next
+	/// evictStale() sweep. 0 = never evict by age.
+	void setMaxIdleFrames(uint32_t frames) { m_maxIdleFrames = frames; }
+	[[nodiscard]] uint32_t maxIdleFrames() const { return m_maxIdleFrames; }
+
   protected:
 	/**
 	 * @brief Create a GPU resource from a handle to a source object.
-	 * @param handle Handle to the source object.
-	 * @return Shared pointer to the created GPU resource.
 	 */
 	virtual std::shared_ptr<ProductT> createFromHandleUncached(const typename SourceT::Handle &handle) = 0;
 
   protected:
-	/**
-	 * @brief Reference to the WebGPU context for resource creation.
-	 */
+	/// One cache entry: resource pointer + last-access frame stamp.
+	/// Wrapping in a struct lets every factory share the eviction code path.
+	struct Entry
+	{
+		std::shared_ptr<ProductT> resource;
+		uint32_t                  lastAccessFrame = 0;
+	};
+
 	WebGPUContext &m_context;
 
-	/**
-	 * @brief Cache mapping source handles to created GPU resources.
-	 */
-	std::unordered_map<typename SourceT::Handle, std::shared_ptr<ProductT>> m_cache;
+	std::unordered_map<typename SourceT::Handle, Entry> m_cache;
+
+	// Frame counter source — slots/lookups read from this. Atomic so the
+	// renderer can tick it without holding a factory mutex.
+	std::atomic<uint32_t> m_frameCounter{0};
+
+	uint32_t m_maxIdleFrames = 0;
 };
 
 } // namespace engine::rendering::webgpu

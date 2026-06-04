@@ -88,13 +88,29 @@ class WebGPUShaderFactory
 		 * After calling this, you can retrieve the bind group layout from the shader via:
 		 * ```
 		 * auto shader = factory.begin(...)
-		 *     .addBindGroup("shadow", BindGroupReuse::Shared, BindGroupType::Shadow)
+		 *     .addBindGroup("Debug_BindGroup", BindGroupReuse::PerFrame, BindGroupType::Debug)
 		 *     .build();
-		 * auto shadowLayout = shader->getBindGroupLayout("shadow");
-		 * auto shadowLayoutByType = shader->getBindGroupLayout(BindGroupType::Shadow);
+		 * auto layout       = shader->getBindGroupLayout("Debug_BindGroup");
+		 * auto layoutByType = shader->getBindGroupLayout(BindGroupType::Debug);
 		 * ```
 		 */
 		WebGPUShaderBuilder &addBindGroup(
+			const std::string &name,
+			BindGroupReuse reuse = BindGroupReuse::PerObject,
+			BindGroupType type = BindGroupType::Custom
+		);
+
+		/**
+		 * @brief Add a bind group at an explicit @group(N) index.
+		 *
+		 * Required for the canonical layout: engine groups go to @group(0..3),
+		 * custom groups go to @group(20)+. Auto-assigning sequential indices
+		 * can't reach @20 without filling slots 4..19 with dummies, so this
+		 * variant accepts the index directly. Slots between the highest auto
+		 * index and @p index are simply left absent in the layout map.
+		 */
+		WebGPUShaderBuilder &addBindGroupAt(
+			uint32_t index,
 			const std::string &name,
 			BindGroupReuse reuse = BindGroupReuse::PerObject,
 			BindGroupType type = BindGroupType::Custom
@@ -196,18 +212,18 @@ class WebGPUShaderFactory
 		WebGPUShaderBuilder &addObjectBindGroup();
 
 		/**
-		 * @brief Adds light data bind group (light count + array of lights).
-		 * Automatically creates a new "Light" bind group with BindGroupType::Light.
-		 * @return Reference to this builder for chaining.
+		 * @brief Adds the consolidated Scene bind group at @group(1).
+		 *
+		 * Scene packs every per-camera scene resource into a single bind group
+		 * with eight `@binding(N)` slots: lights buffer (0), shadow comparison
+		 * sampler (1), shadow 2D-array textures (2), shadow cube-array textures
+		 * (3), shadow uniforms (4), environment uniforms (5), environment
+		 * sampler (6), environment HDR equirect texture (7). Pipelines that
+		 * use Scene replace the older Light + Shadow + Environment bind groups
+		 * with one binding call. Cluster bindings (8, 9) will join here when
+		 * the deferred composition shader migrates.
 		 */
-		WebGPUShaderBuilder &addLightBindGroup(); // ToDo: Move configurations out
-
-		/**
-		 * @brief Adds shadow mapping bind group (shadow textures, samplers, uniforms).
-		 * Automatically creates a new "Shadow" bind group with BindGroupType::Shadow.
-		 * @return Reference to this builder for chaining.
-		 */
-		WebGPUShaderBuilder &addShadowBindGroup();
+		WebGPUShaderBuilder &addSceneBindGroup();
 
 		/**
 		 * @brief Adds a custom uniform buffer (per-material or global).

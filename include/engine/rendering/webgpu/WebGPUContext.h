@@ -5,6 +5,7 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/cache/CacheRegistry.h"
 #include "engine/rendering/webgpu/DeviceLimitsConfig.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
@@ -131,6 +132,10 @@ class WebGPUContext
 	[[nodiscard]] ShaderRegistry &shaderRegistry();
 	/** @brief Returns the pipeline manager. */
 	[[nodiscard]] WebGPUPipelineManager &pipelineManager();
+	/** @brief Central registry for every factory's resource cache. Renderer
+	 *  pumps notifyFrameAll() each frame and clearAll() on resize/scene
+	 *  reload; factories register themselves on construction. */
+	[[nodiscard]] engine::rendering::cache::CacheRegistry &cacheRegistry();
 	/** @brief Returns the light manager. */
 	[[nodiscard]] std::shared_ptr<engine::lighting::LightManager> lightManager() const;
 	/** @brief Returns the scene light buffer. */
@@ -187,6 +192,12 @@ class WebGPUContext
 	DeviceLimitsConfig m_limitsConfig{};
 
 	void *m_lastWindowHandle = nullptr;
+
+	// Declared BEFORE the factories so it outlives them — factories register
+	// (and may unregister on destruction) CacheViews with the registry, and
+	// C++ destroys fields in reverse declaration order. The registry must
+	// still exist while factories are tearing down.
+	engine::rendering::cache::CacheRegistry m_cacheRegistry;
 
 	// Surface manager
 	std::unique_ptr<WebGPUSurfaceManager> m_surfaceManager;

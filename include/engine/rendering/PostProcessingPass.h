@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 
 #include <memory>
 #include <unordered_map>
@@ -96,7 +97,7 @@ class PostProcessingPass : public RenderPass
 	 * using the shader info and render pass context. Caches the pipeline for future use.
 	 * @return Shared pointer to the render pipeline.
 	 */
-	std::shared_ptr<webgpu::WebGPUPipeline> getOrCreatePipeline();
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> getOrCreatePipeline();
 
 	/**
 	 * @brief Record and submit GPU commands for the post-processing pass.

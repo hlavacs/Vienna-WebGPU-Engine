@@ -102,6 +102,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 
 	// Pipeline descriptor
 	wgpu::RenderPipelineDescriptor desc{};
+	desc.label = shaderInfo->getName().c_str();
 
 	// Vertex stage
 	desc.vertex.module = shaderInfo->getModule();
@@ -146,7 +147,10 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 		desc.depthStencil = &depthStencil;
 	}
 
-	// Bind group layouts
+	// Bind group layouts. Slots between the highest declared group and a custom
+	// @group(20)+ are filled with a shared empty layout — wgpu requires a real
+	// (non-null) BindGroupLayout at every index up to the highest one the shader
+	// uses, even if the shader doesn't sample that slot.
 	auto layouts = shaderInfo->getBindGroupLayoutVector();
 	std::vector<wgpu::BindGroupLayout> layoutArray;
 	layoutArray.reserve(layouts.size());
@@ -155,7 +159,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 		if (layoutInfo)
 			layoutArray.push_back(layoutInfo->getLayout());
 		else
-			layoutArray.push_back(nullptr); // Preserve index for unused bind groups
+			layoutArray.push_back(getOrCreateEmptyBindGroupLayout());
 	}
 
 	wgpu::PipelineLayout layout = createPipelineLayout(layoutArray.data(), static_cast<uint32_t>(layoutArray.size()));
@@ -190,6 +194,37 @@ wgpu::PipelineLayout WebGPUPipelineFactory::createPipelineLayout(const wgpu::Bin
 	layoutDesc.bindGroupLayoutCount = layoutCount;
 	layoutDesc.bindGroupLayouts = (WGPUBindGroupLayout *)layouts;
 	return m_context.getDevice().createPipelineLayout(layoutDesc);
+}
+
+wgpu::BindGroupLayout WebGPUPipelineFactory::getOrCreateEmptyBindGroupLayout()
+{
+	// Single device-wide empty layout reused as a placeholder for every
+	// unused bind-group slot in every pipeline. wgpu refuses null entries in
+	// the pipeline layout array, so even a shader that only uses @group(4)
+	// needs slots 0..3 to be real BindGroupLayouts. Sharing one instance
+	// keeps the GPU memory footprint at one descriptor.
+	if (!m_emptyBindGroupLayout)
+	{
+		wgpu::BindGroupLayoutDescriptor desc{};
+		desc.entryCount = 0;
+		desc.entries    = nullptr;
+		m_emptyBindGroupLayout = m_context.getDevice().createBindGroupLayout(desc);
+	}
+	return m_emptyBindGroupLayout;
+}
+
+wgpu::BindGroup WebGPUPipelineFactory::getOrCreateEmptyBindGroup()
+{
+	if (!m_emptyBindGroup)
+	{
+		auto layout = getOrCreateEmptyBindGroupLayout();
+		wgpu::BindGroupDescriptor desc{};
+		desc.layout     = layout;
+		desc.entryCount = 0;
+		desc.entries    = nullptr;
+		m_emptyBindGroup = m_context.getDevice().createBindGroup(desc);
+	}
+	return m_emptyBindGroup;
 }
 
 wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engine::rendering::VertexLayout layout, std::vector<wgpu::VertexAttribute> &attributes) const

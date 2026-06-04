@@ -48,7 +48,7 @@ bool CompositionPass::initialize()
 
 void CompositionPass::cleanup()
 {
-	m_pipeline.reset();
+	m_pipeline = {};
 	m_gBufferBindGroup.reset();
 	m_gBufferBindGroupFingerprint = nullptr;
 }
@@ -117,7 +117,7 @@ bool CompositionPass::ensureGBufferBindGroup()
 
 bool CompositionPass::ensurePipeline()
 {
-	if (m_pipeline)
+	if (m_pipeline.valid())
 		return true;
 
 	if (!m_renderPassContext || m_renderPassContext->getColorAttachmentCount() == 0)
@@ -143,10 +143,11 @@ bool CompositionPass::ensurePipeline()
 		1
 	);
 
-	if (!m_pipeline || !m_pipeline->isValid())
+	auto pipelineSnapshot = m_pipeline.lock();
+	if (!pipelineSnapshot || !pipelineSnapshot->isValid())
 	{
 		spdlog::error("CompositionPass: failed to create pipeline");
-		m_pipeline.reset();
+		m_pipeline = {};
 		return false;
 	}
 	return true;
@@ -164,9 +165,9 @@ void CompositionPass::render(FrameCache &frameCache)
 		spdlog::error("CompositionPass::render called without a render pass context");
 		return;
 	}
-	if (!m_lightBindGroup || !m_shadowBindGroup || !m_clusterBindGroup || !m_environmentBindGroup)
+	if (!m_sceneBindGroup)
 	{
-		spdlog::error("CompositionPass::render missing required bind groups (light/shadow/cluster/env)");
+		spdlog::error("CompositionPass::render missing scene bind group");
 		return;
 	}
 	if (!ensureGBufferBindGroup())
@@ -192,19 +193,32 @@ void CompositionPass::render(FrameCache &frameCache)
 		std::shared_ptr<webgpu::WebGPUBindGroup> bindGroup;
 	};
 	const NamedGroup namedGroups[] = {
-		{"GBuffer_BindGroup", m_gBufferBindGroup},
 		{bindgroup::defaults::FRAME, frameIt->second},
-		{bindgroup::defaults::LIGHT, m_lightBindGroup},
-		{bindgroup::defaults::SHADOW, m_shadowBindGroup},
-		{"ClusterGrid_BindGroup", m_clusterBindGroup},
-		{bindgroup::defaults::ENVIRONMENT, m_environmentBindGroup},
+		{bindgroup::defaults::SCENE, m_sceneBindGroup},
+		{"GBuffer_BindGroup",        m_gBufferBindGroup},
 	};
 
 	auto encoder = m_context->createCommandEncoder("CompositionPass.Encoder");
 	if (auto *prof = m_context->frameProfiler())
 		prof->beginGpuScope("Pass.Composition", encoder);
+	// Pin the pipeline snapshot for the duration of this render pass — a
+	// concurrent hot-reload swap inside the slot can't pull it out from
+	// under the in-flight draws.
+	auto pipelineSnapshot = m_pipeline.lock();
+	if (!pipelineSnapshot)
+	{
+		spdlog::error("CompositionPass::render: pipeline handle is empty");
+		return;
+	}
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
-	renderPass.setPipeline(m_pipeline->getPipeline());
+	renderPass.setPipeline(pipelineSnapshot->getPipeline());
+
+	// Fill unused engine slots (Material@2, Object@3 — composition is a
+	// fullscreen quad) with the shared empty bind group. wgpu requires every
+	// pipeline-layout slot to have a bind group bound at draw time.
+	auto emptyBg = m_context->pipelineManager().getOrCreateEmptyBindGroup();
+	for (uint32_t slot = 0; slot < 4; ++slot)
+		renderPass.setBindGroup(slot, emptyBg, 0, nullptr);
 
 	for (const auto &slot : namedGroups)
 	{

@@ -28,6 +28,19 @@ class WebGPUPipelineFactory
 	// Helper to create a pipeline layout from bind group layouts
 	wgpu::PipelineLayout createPipelineLayout(const wgpu::BindGroupLayout *layouts, uint32_t layoutCount);
 
+	/// Shared empty `wgpu::BindGroupLayout`, lazily created on first request.
+	/// Used to fill unused slots in a sparse pipeline layout (e.g. a shader
+	/// that only declares @group(4) still needs slots 0..3 in the pipeline
+	/// layout array; wgpu refuses null entries).
+	wgpu::BindGroupLayout getOrCreateEmptyBindGroupLayout();
+
+	/// Shared empty `wgpu::BindGroup` paired with the empty layout above.
+	/// Render passes must bind something at every pipeline slot the shader's
+	/// pipeline layout declares — utility shaders that only sample @group(4)
+	/// still need an empty bind group at slots 0..3 to satisfy wgpu's
+	/// "bind group at index N is unbound" validation.
+	wgpu::BindGroup getOrCreateEmptyBindGroup();
+
 	/**
 	 * @brief Converts engine::rendering::Topology::Type to wgpu::PrimitiveTopology.
 	 * @param topology The engine topology enum.
@@ -57,6 +70,8 @@ class WebGPUPipelineFactory
   private:
 	WebGPUContext &m_context;
 	wgpu::BlendState m_defaultBlendState;
+	wgpu::BindGroupLayout m_emptyBindGroupLayout = nullptr;
+	wgpu::BindGroup       m_emptyBindGroup       = nullptr;
 };
 
 } // namespace engine::rendering::webgpu

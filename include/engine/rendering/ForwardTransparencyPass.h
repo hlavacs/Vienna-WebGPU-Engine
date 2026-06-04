@@ -54,9 +54,10 @@ class ForwardTransparencyPass : public RenderPass
 	/// Callers may pass the full visible set; the pass filters to Transparent itself.
 	void setVisibleIndices(const std::vector<size_t> &indices) { m_visibleIndices = indices; }
 
-	void setLightBindGroup(const std::shared_ptr<webgpu::WebGPUBindGroup> &bg) { m_lightBindGroup = bg; }
-	void setShadowBindGroup(const std::shared_ptr<webgpu::WebGPUBindGroup> &bg) { m_shadowBindGroup = bg; }
-	void setEnvironmentBindGroup(const std::shared_ptr<webgpu::WebGPUBindGroup> &bg) { m_environmentBindGroup = bg; }
+	/// Consolidated scene bind group (lights + shadow + env + cluster). Same
+	/// layout PBR forward + deferred composition share; Renderer builds the
+	/// instance once per camera.
+	void setSceneBindGroup(const std::shared_ptr<webgpu::WebGPUBindGroup> &bg) { m_sceneBindGroup = bg; }
 
 	void render(FrameCache &frameCache) override;
 	void cleanup() override;
@@ -69,10 +70,8 @@ class ForwardTransparencyPass : public RenderPass
 
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
 
-	// Shared bind groups injected by Renderer per frame.
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowBindGroup;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_environmentBindGroup;
+	// Shared scene bind group injected by Renderer per frame.
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_sceneBindGroup;
 };
 
 } // namespace engine::rendering

@@ -9,6 +9,7 @@ namespace engine::rendering::webgpu
 {
 class WebGPUContext;
 class WebGPUBindGroup;
+class WebGPUBuffer;
 } // namespace engine::rendering::webgpu
 
 namespace engine::lighting
@@ -58,6 +59,13 @@ class SceneLightBuffer
 	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroup> getBindGroup() const { return m_bindGroup; }
 
 	/**
+	 * @brief Get the wrapped lights storage buffer. The Scene bind group
+	 *        constructed by Renderer::updateSceneBindGroup uses this as its
+	 *        @binding(0).
+	 */
+	std::shared_ptr<engine::rendering::webgpu::WebGPUBuffer> getBufferWrapped() const { return m_bufferWrapped; }
+
+	/**
 	 * @brief Get current light count as GPU-readable uint.
 	 * @return Number of lights last updated
 	 */
@@ -66,7 +74,8 @@ class SceneLightBuffer
   private:
 	engine::rendering::webgpu::WebGPUContext &m_context;
 	wgpu::Buffer m_storageBuffer = nullptr;
-	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroup> m_bindGroup;
+	std::shared_ptr<engine::rendering::webgpu::WebGPUBuffer>    m_bufferWrapped;
+	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroup> m_bindGroup; ///< Retained nullptr after Scene consolidation; getBindGroup kept as a transition shim.
 	uint32_t m_lightCount{0};
 	size_t m_bufferCapacity{0};
 };

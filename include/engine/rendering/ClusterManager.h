@@ -83,11 +83,8 @@ class ClusterManager
 	 */
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBuffer> getClusterGridBuffer() const { return m_clusterGridBuffer; }
 
-	/**
-	 * @brief Get the cluster bind group for the composition pass.
-	 * @return Shared pointer to cluster bind group.
-	 */
-	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBindGroup> getClusterBindGroup() const { return m_clusterBindGroup; }
+	/// Flat u32 index pool storing the per-cluster light lists.
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBuffer> getClusterIndicesBuffer() const { return m_clusterIndicesBuffer; }
 
 	/**
 	 * @brief Clear cluster assignments (resets count to 0 for all clusters).
@@ -104,21 +101,24 @@ class ClusterManager
 	// read_write for the compute shader).
 	std::shared_ptr<webgpu::WebGPUBuffer> m_clusterGridBuffer;	  // {offset, count} per cluster
 	std::shared_ptr<webgpu::WebGPUBuffer> m_clusterIndicesBuffer; // Flat u32 index pool
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_clusterBindGroup;  // composition-side, read-only
 
-	// Compute pipeline (clear + assign share one bind group layout).
-	wgpu::ShaderModule m_computeShaderModule = nullptr;
-	wgpu::BindGroupLayout m_computeBindGroupLayout = nullptr;
-	wgpu::PipelineLayout m_computePipelineLayout = nullptr;
-	wgpu::ComputePipeline m_clearPipeline = nullptr;
-	wgpu::ComputePipeline m_assignPipeline = nullptr;
+	// Compute pipeline (clear + assign share one pipeline layout). Canonical
+	// split: Frame @group(0), Scene-like @group(1) for lights + cluster grid
+	// + cluster indices.
+	wgpu::ShaderModule    m_computeShaderModule         = nullptr;
+	wgpu::BindGroupLayout m_computeFrameBindGroupLayout = nullptr;
+	wgpu::BindGroupLayout m_computeBindGroupLayout      = nullptr; ///< Scene-like layout (@group(1)).
+	wgpu::PipelineLayout  m_computePipelineLayout       = nullptr;
+	wgpu::ComputePipeline m_clearPipeline               = nullptr;
+	wgpu::ComputePipeline m_assignPipeline              = nullptr;
 
-	// Per-camera compute bind-group cache. Recreated only when the underlying
-	// buffer identities change (e.g. SceneLightBuffer reallocates on capacity
-	// growth). Rebuilding every frame was the dominant clustering overhead.
+	// Per-camera compute bind-group cache. Two bind groups per camera (Frame +
+	// Scene-like). Recreated only when the underlying buffer identities
+	// change (e.g. SceneLightBuffer reallocates on capacity growth).
 	struct CachedComputeBindGroup
 	{
-		wgpu::BindGroup bindGroup = nullptr;
+		wgpu::BindGroup frameBindGroup = nullptr;
+		wgpu::BindGroup sceneBindGroup = nullptr;
 
 		WGPUBuffer frameBuffer = nullptr;
 		WGPUBuffer lightBuffer = nullptr;
@@ -140,11 +140,16 @@ class ClusterManager
 	bool createComputePipeline();
 
 	/**
-	 * @brief Get the cached compute bind group for this camera, rebuilding it
-	 * only when the underlying frame / light buffer identities change.
-	 * Returns nullptr on failure.
+	 * @brief Get the cached compute bind groups (Frame + Scene-like) for this
+	 *        camera, rebuilding them only when the underlying frame / light
+	 *        buffer identities change. Returns pointer to the cache entry on
+	 *        success, nullptr on failure.
 	 */
-	wgpu::BindGroup getOrCreateComputeBindGroup(uint64_t cameraId, wgpu::Buffer frameBuffer, wgpu::Buffer lightBuffer, uint32_t lightCount);
+	const CachedComputeBindGroup *getOrCreateComputeBindGroups(
+		uint64_t cameraId,
+		wgpu::Buffer frameBuffer,
+		wgpu::Buffer lightBuffer,
+		uint32_t lightCount);
 };
 
 } // namespace engine::rendering

@@ -6,6 +6,7 @@
 
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 #include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
@@ -77,7 +78,7 @@ class CompositePass : public RenderPass
 
 	void flushPostProcessUniformsIfDirty();
 
-	std::shared_ptr<webgpu::WebGPUPipeline> m_pipeline;
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> m_pipeline;
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
 	wgpu::Sampler m_sampler = nullptr;
 

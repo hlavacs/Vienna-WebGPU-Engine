@@ -60,9 +60,9 @@ void GBufferPass::cleanup()
 	// PipelineManager owns and invalidates the pipeline cache on hot reload.
 }
 
-std::shared_ptr<webgpu::WebGPUPipeline> GBufferPass::getPipelineFor(wgpu::CullMode cullMode)
+engine::rendering::cache::Handle<webgpu::WebGPUPipeline> GBufferPass::getPipelineFor(wgpu::CullMode cullMode)
 {
-	auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
+	auto handle = m_context->pipelineManager().getOrCreatePipeline(
 		m_shader,
 		// Fallback color format; the shader's declared color-target list wins
 		// inside the pipeline factory for the actual MRT setup.
@@ -74,13 +74,13 @@ std::shared_ptr<webgpu::WebGPUPipeline> GBufferPass::getPipelineFor(wgpu::CullMo
 		1
 	);
 
-	if (!pipeline || !pipeline->isValid())
+	if (auto snap = handle.lock(); !snap || !snap->isValid())
 	{
 		spdlog::error("GBufferPass: failed to create pipeline for cullMode={}",
 			cullMode == wgpu::CullMode::Back ? "Back" : "None");
-		return nullptr;
+		return {};
 	}
-	return pipeline;
+	return handle;
 }
 
 void GBufferPass::render(FrameCache &frameCache)
@@ -104,8 +104,13 @@ void GBufferPass::render(FrameCache &frameCache)
 	wgpu::RenderPassEncoder renderPass = passContext->begin(encoder);
 
 	BindGroupBinder binder(&frameCache);
+	binder.setContext(m_context.get());
 
 	const auto &gpuItems = frameCache.gpuRenderItems;
+	// Track the active pipeline by Handle identity (compares slot ptr, not
+	// resource ptr) so that even if a hot-reload swap happens mid-pass the
+	// snapshot we already pinned for the current draw stays valid.
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> currentHandle;
 	std::shared_ptr<webgpu::WebGPUPipeline> currentPipeline;
 	webgpu::WebGPUMesh *currentMesh = nullptr;
 	size_t rendered = 0;
@@ -148,16 +153,22 @@ void GBufferPass::render(FrameCache &frameCache)
 			? wgpu::CullMode::None
 			: wgpu::CullMode::Back;
 
-		auto pipeline = getPipelineFor(cullMode);
-		if (!pipeline)
+		auto pipelineHandle = getPipelineFor(cullMode);
+		if (!pipelineHandle.valid())
 		{
 			++skipped;
 			continue;
 		}
 
-		if (pipeline != currentPipeline)
+		if (pipelineHandle != currentHandle)
 		{
-			currentPipeline = pipeline;
+			currentHandle = pipelineHandle;
+			currentPipeline = currentHandle.lock();
+			if (!currentPipeline)
+			{
+				++skipped;
+				continue;
+			}
 			renderPass.setPipeline(currentPipeline->getPipeline());
 			// New pipeline may use a different vertex layout - drop cached mesh binding.
 			currentMesh = nullptr;

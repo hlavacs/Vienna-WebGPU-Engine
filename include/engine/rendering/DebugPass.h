@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 
 #include <memory>
 
@@ -48,7 +49,7 @@ class DebugPass : public RenderPass
 
 	// Pipeline, shader, and sampler for debug rendering
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
-	std::weak_ptr<webgpu::WebGPUPipeline> m_pipeline;
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> m_pipeline;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_debugBindGroup;
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 

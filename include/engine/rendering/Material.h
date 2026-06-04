@@ -96,17 +96,20 @@ enum class AlphaMode : uint32_t
 
 struct PBRProperties
 {
-	float diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-	float emission[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-	float transmittance[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-	float ambient[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+	// glm::vec4 instead of float[4]: same ABI / `[]` access, but plays nicely
+	// with the aggregate-reflect codegen (array members can't be reflected
+	// through structured bindings without extra plumbing).
+	glm::vec4 diffuse       {1.0f, 1.0f, 1.0f, 1.0f};
+	glm::vec4 emission      {0.0f, 0.0f, 0.0f, 0.0f};
+	glm::vec4 transmittance {0.0f, 0.0f, 0.0f, 0.0f};
+	glm::vec4 ambient       {1.0f, 1.0f, 1.0f, 1.0f};
 
-	float roughness = 0.5f;
-	float metallic = 0.0f;
-	float ior = 1.5f;
-	float normalTextureScale = 1.0f;
+	float roughness           = 0.5f;
+	float metallic            = 0.0f;
+	float ior                 = 1.5f;
+	float normalTextureScale  = 1.0f;
 
-	// alphaCutoff is only used when alphaMode == Mask. Padding keeps the
+	// alphaCutoff is only used when alphaMode == Mask. Trailing pads keep the
 	// struct 16-byte aligned for WGSL std140.
 	uint32_t alphaMode   = static_cast<uint32_t>(AlphaMode::Opaque);
 	float    alphaCutoff = 0.0f;

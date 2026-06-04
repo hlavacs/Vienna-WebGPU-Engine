@@ -59,11 +59,11 @@ void ForwardTransparencyPass::render(FrameCache &frameCache)
 		return;
 	}
 
-	// Skip rather than crash if the deferred path's shared bind groups failed
-	// to bind this frame - the lit HDR target is already valid.
-	if (!m_lightBindGroup || !m_shadowBindGroup || !m_environmentBindGroup)
+	// Skip rather than crash if the deferred path's shared scene bind group
+	// failed to build this frame - the lit HDR target is already valid.
+	if (!m_sceneBindGroup)
 	{
-		spdlog::debug("ForwardTransparencyPass skipped: missing light/shadow/env bind group");
+		spdlog::debug("ForwardTransparencyPass skipped: missing scene bind group");
 		return;
 	}
 
@@ -116,6 +116,10 @@ void ForwardTransparencyPass::render(FrameCache &frameCache)
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 
 	BindGroupBinder binder(&frameCache);
+	binder.setContext(m_context.get());
+	// currentHandle drives the change-detection (slot identity); currentPipeline
+	// is the pinned snapshot used for the actual setPipeline / draw calls.
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> currentHandle;
 	std::shared_ptr<webgpu::WebGPUPipeline> currentPipeline;
 	webgpu::WebGPUMesh *currentMesh = nullptr;
 	webgpu::WebGPUMaterial *currentMaterial = nullptr;
@@ -141,20 +145,22 @@ void ForwardTransparencyPass::render(FrameCache &frameCache)
 
 			// Blend + depth-write-off come from the material's Transparent flag
 			// (see WebGPUPipelineFactory::createRenderPipeline).
-			auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
+			auto pipelineHandle = m_context->pipelineManager().getOrCreatePipeline(
 				cpuMeshOpt.value(),
 				cpuMaterialOpt.value(),
 				m_renderPassContext
 			);
-			if (!pipeline || !pipeline->isValid())
+			auto pipelineSnap = pipelineHandle.lock();
+			if (!pipelineSnap || !pipelineSnap->isValid())
 			{
 				++skipped;
 				continue;
 			}
 
-			if (pipeline != currentPipeline)
+			if (pipelineHandle != currentHandle)
 			{
-				currentPipeline = pipeline;
+				currentHandle   = pipelineHandle;
+				currentPipeline = std::move(pipelineSnap);
 				renderPass.setPipeline(currentPipeline->getPipeline());
 				// New pipeline can invalidate vertex-buffer binding.
 				currentMesh = nullptr;
@@ -174,11 +180,9 @@ void ForwardTransparencyPass::render(FrameCache &frameCache)
 			currentPipeline,
 			m_cameraId,
 			{
-				{BindGroupType::Object, item.objectBindGroup},
+				{BindGroupType::Object,   item.objectBindGroup},
 				{BindGroupType::Material, item.gpuMaterial->getBindGroup()},
-				{BindGroupType::Light, m_lightBindGroup},
-				{BindGroupType::Shadow, m_shadowBindGroup},
-				{BindGroupType::Environment, m_environmentBindGroup},
+				{BindGroupType::Scene,    m_sceneBindGroup},
 			},
 			item.objectID,
 			materialId

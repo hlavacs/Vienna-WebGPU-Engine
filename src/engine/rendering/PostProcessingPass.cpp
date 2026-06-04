@@ -43,10 +43,10 @@ void PostProcessingPass::setRenderPassContext(const std::shared_ptr<webgpu::WebG
 	// Tutorial 04 - Step 3: Set render pass context
 }
 
-std::shared_ptr<webgpu::WebGPUPipeline> PostProcessingPass::getOrCreatePipeline()
+engine::rendering::cache::Handle<webgpu::WebGPUPipeline> PostProcessingPass::getOrCreatePipeline()
 {
 	// Tutorial 04 - Step 4: Get or create pipeline
-	return nullptr;
+	return {};
 }
 
 void PostProcessingPass::recordAndSubmitCommands(

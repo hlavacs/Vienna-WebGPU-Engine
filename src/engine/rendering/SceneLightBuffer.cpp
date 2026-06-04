@@ -5,6 +5,7 @@
 
 #include "engine/lighting/LightManager.h"
 #include "engine/rendering/LightUniforms.h"
+#include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
@@ -17,36 +18,26 @@ SceneLightBuffer::SceneLightBuffer(engine::rendering::webgpu::WebGPUContext &con
 	m_context(context),
 	m_lightCount(0)
 {
-	// Get the light bind group layout from shader registry
-	auto layoutInfo = m_context.bindGroupFactory().getGlobalBindGroupLayout(
-		engine::rendering::bindgroup::defaults::LIGHT
+	// Owns the lights storage buffer directly. The Scene bind group (built by
+	// Renderer::updateSceneBindGroup) references this buffer as its
+	// @binding(0); SceneLightBuffer itself no longer maintains a bind group
+	// since the per-shader bindings are owned by Scene's consolidated layout.
+	const size_t headerSize     = sizeof(engine::rendering::LightsBuffer);
+	const size_t lightArraySize = engine::rendering::constants::MAX_LIGHTS * sizeof(engine::rendering::LightStruct);
+	const size_t totalSize      = headerSize + lightArraySize;
+
+	m_bufferWrapped = m_context.bufferFactory().createStorageBuffer(
+		"SceneLights",
+		0,
+		totalSize
 	);
-
-	if (!layoutInfo)
+	if (!m_bufferWrapped)
 	{
-		spdlog::error("Failed to get light bind group layout from shader registry");
+		spdlog::error("Failed to create SceneLightBuffer storage buffer");
 		return;
 	}
-
-	// Create bind group (factory will create the storage buffer based on layout)
-	m_bindGroup = m_context.bindGroupFactory().createBindGroup(layoutInfo, {}, nullptr, "SceneLightBuffer");
-
-	if (!m_bindGroup)
-	{
-		spdlog::error("Failed to create scene light bind group");
-		return;
-	}
-
-	// Get the buffer from the bind group for later access
-	if (!m_bindGroup->getBuffers().empty())
-	{
-		auto buffer = m_bindGroup->getBuffer(0);
-		if (buffer)
-		{
-			m_storageBuffer = buffer->getBuffer();
-			m_bufferCapacity = buffer->getSize();
-		}
-	}
+	m_storageBuffer  = m_bufferWrapped->getBuffer();
+	m_bufferCapacity = totalSize;
 
 	spdlog::info("SceneLightBuffer initialized successfully");
 }
@@ -54,10 +45,10 @@ SceneLightBuffer::SceneLightBuffer(engine::rendering::webgpu::WebGPUContext &con
 SceneLightBuffer::~SceneLightBuffer()
 {
 	// The storage buffer handle cached in m_storageBuffer is owned by the
-	// WebGPUBuffer instance held inside m_bindGroup. That WebGPUBuffer
-	// destructor will call destroy()/release() on the underlying wgpu handle.
-	// Releasing it manually here would double-free the wgpu handle.
-	m_bindGroup.reset();
+	// WebGPUBuffer instance held in m_bufferWrapped. Its destructor calls
+	// destroy()/release() on the underlying wgpu handle — manual release
+	// here would double-free.
+	m_bufferWrapped.reset();
 	m_storageBuffer = nullptr;
 }
 
@@ -68,9 +59,9 @@ void SceneLightBuffer::updateFromManager(const LightManager &lightManager)
 
 void SceneLightBuffer::updateFromLights(const std::vector<engine::rendering::LightStruct> &lightData)
 {
-	if (!m_bindGroup)
+	if (!m_bufferWrapped)
 	{
-		spdlog::warn("Cannot update light buffer - bind group not initialized");
+		spdlog::warn("Cannot update light buffer - storage buffer not initialized");
 		return;
 	}
 
@@ -89,26 +80,18 @@ void SceneLightBuffer::updateFromLights(const std::vector<engine::rendering::Lig
 
 	uint32_t lightCount = static_cast<uint32_t>(lightCountToUpload);
 
-	// Write header (light count)
+	auto &queue = m_context.getQueue();
 	engine::rendering::LightsBuffer header;
 	header.count = lightCount;
-	m_bindGroup->updateBuffer(
-		0, // binding 0 is the storage buffer
-		&header,
-		sizeof(engine::rendering::LightsBuffer),
-		0, // offset 0
-		m_context.getQueue()
-	);
+	queue.writeBuffer(m_storageBuffer, 0, &header, sizeof(header));
 
-	// Write light data if there are lights
 	if (!lightData.empty())
 	{
-		m_bindGroup->updateBuffer(
-			0,
+		queue.writeBuffer(
+			m_storageBuffer,
+			sizeof(header),
 			lightData.data(),
-			lightCountToUpload * sizeof(engine::rendering::LightStruct),
-			sizeof(engine::rendering::LightsBuffer), // offset after header
-			m_context.getQueue()
+			lightCountToUpload * sizeof(engine::rendering::LightStruct)
 		);
 	}
 

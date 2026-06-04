@@ -19,14 +19,12 @@ enum class BindGroupReuse
 enum class BindGroupType
 {
 	Frame,
-	Light,
-	Environment,
-	Mipmap,
-	Object,
+	Scene,           ///< Consolidates Light + Shadow + Environment + Cluster into one @group(1).
 	Material,
-	Shadow,
-	ShadowPass2D,
-	ShadowPassCube,
+	Object,
+	Mipmap,
+	ShadowPass2D,    ///< Shadow render pass — light view-proj uniforms for 2D atlas slot
+	ShadowPassCube,  ///< Shadow render pass — light pos + far plane for cube face
 	Debug,
 	Custom,
 };

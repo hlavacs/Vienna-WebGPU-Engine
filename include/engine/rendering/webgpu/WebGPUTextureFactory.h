@@ -29,6 +29,7 @@ struct hash<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>>
 
 #include "engine/rendering/ColorSpace.h"
 #include "engine/rendering/Texture.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 #include "engine/rendering/webgpu/BaseWebGPUFactory.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
@@ -219,13 +220,15 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 		const WebGPUTextureOptions &options
 	)
 	{
+		const uint32_t now = m_frameCounter.load(std::memory_order_relaxed);
 		auto it = m_cache.find(handle);
 		if (it != m_cache.end())
 		{
-			return it->second;
+			it->second.lastAccessFrame = now;
+			return it->second.resource;
 		}
 		auto product = createFromHandleUncached(handle, options);
-		m_cache[handle] = product;
+		m_cache.emplace(handle, Entry{product, now});
 		return product;
 	}
 
@@ -248,9 +251,9 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	/**
 	 * @brief Get or create a mipmap generation pipeline for a specific texture format.
 	 * @param format Texture format for the mipmap pipeline.
-	 * @return Shared pointer to the mipmap pipeline.
+	 * @return Handle to the mipmap pipeline (lock() for a snapshot during use).
 	 */
-	std::shared_ptr<WebGPUPipeline> getOrCreateMipmapPipeline(wgpu::TextureFormat format);
+	engine::rendering::cache::Handle<WebGPUPipeline> getOrCreateMipmapPipeline(wgpu::TextureFormat format);
 
   private:
 	std::shared_ptr<WebGPUTexture> m_whiteTexture;

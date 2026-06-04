@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 
 namespace engine::rendering::webgpu
 {
@@ -109,11 +110,11 @@ private:
 	 * @brief Resolves the pipeline for the given cull mode via @ref WebGPUPipelineManager.
 	 *
 	 * Two variants exist in practice (Back for sealed opaque, None for double-sided
-	 * GLTF geometry). The manager keys its own cache by @c PipelineKey so the local
-	 * GBufferPass does not need a parallel cache - having one breaks hot reload
-	 * (manager swaps the entry; the local copy keeps the old shared_ptr).
+	 * GLTF geometry). The manager keys its own cache by @c PipelineKey; returning
+	 * a Handle (not a raw shared_ptr) means a hot-reload swap inside the manager
+	 * propagates here too — pin the handle's lock() snapshot for the draw call.
 	 */
-	std::shared_ptr<webgpu::WebGPUPipeline> getPipelineFor(wgpu::CullMode cullMode);
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> getPipelineFor(wgpu::CullMode cullMode);
 
 	std::unique_ptr<webgpu::GBuffer> m_gBuffer;
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shader;

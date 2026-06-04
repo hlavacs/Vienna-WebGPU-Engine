@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 
 namespace engine::rendering::webgpu
 {
@@ -78,19 +79,10 @@ public:
 	/// G-buffer to read from. Setting a different G-buffer invalidates the cached bind group.
 	void setGBuffer(webgpu::GBuffer *gBuffer);
 
-	/// Scene-wide light bind group (storage buffer with header + LightStruct array).
-	void setSceneLightBindGroup(std::shared_ptr<webgpu::WebGPUBindGroup> bg) { m_lightBindGroup = std::move(bg); }
-
-	/// Shadow bind group (sampler + 2D-array + cube-array + ShadowUniform array).
-	void setShadowBindGroup(std::shared_ptr<webgpu::WebGPUBindGroup> bg) { m_shadowBindGroup = std::move(bg); }
-
-	/// Cluster grid bind group (offset/count + flat light-index buffer).
-	void setClusterBindGroup(std::shared_ptr<webgpu::WebGPUBindGroup> bg) { m_clusterBindGroup = std::move(bg); }
-
-	/// Environment irradiance bind group (sampler + equirect HDR + vec4 params).
-	/// Optional: when null, the composition shader's IBL branch returns zero
-	/// because @c uEnvironment.params.x (irradiance enable) defaults to 0.
-	void setEnvironmentBindGroup(std::shared_ptr<webgpu::WebGPUBindGroup> bg) { m_environmentBindGroup = std::move(bg); }
+	/// Consolidated scene bind group: @binding(0) lights, @1-4 shadow, @5-7
+	/// environment, @8-9 cluster. Renderer::updateSceneBindGroup builds it once
+	/// per camera; the forward transparency pass shares the same instance.
+	void setSceneBindGroup(std::shared_ptr<webgpu::WebGPUBindGroup> bg) { m_sceneBindGroup = std::move(bg); }
 
 	/// Camera identifier for per-frame bind-group lookup in BindGroupBinder.
 	void setCameraId(uint64_t id) { m_cameraId = id; }
@@ -103,7 +95,9 @@ private:
 	bool ensurePipeline();
 
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shader;
-	std::shared_ptr<webgpu::WebGPUPipeline> m_pipeline;
+	// Pipeline lives in the PipelineManager's cache; we hold a Handle so a
+	// hot-reload swap inside the manager is picked up here automatically.
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> m_pipeline;
 
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 	webgpu::GBuffer *m_gBuffer = nullptr;
@@ -114,10 +108,7 @@ private:
 	// when the GBuffer pointer is unchanged (the common case for in-frame resizes
 	// like multi-camera with different viewports, where Renderer::onResize never fires).
 	const webgpu::WebGPUTexture *m_gBufferBindGroupFingerprint = nullptr;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_lightBindGroup;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_shadowBindGroup;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_clusterBindGroup;
-	std::shared_ptr<webgpu::WebGPUBindGroup> m_environmentBindGroup;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_sceneBindGroup;
 
 	uint64_t m_cameraId = 0;
 };

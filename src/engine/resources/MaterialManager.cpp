@@ -233,6 +233,39 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	props.roughness = static_cast<float>(gltfMat.pbrMetallicRoughness.roughnessFactor);
 	props.normalTextureScale = gltfMat.normalTexture.scale;
 
+	// KHR_materials_ior: per-material refractive index. Default 1.5 (window
+	// glass). Drives the dielectric F0 and the refract() bend angle in the
+	// PBR shader's IBL block.
+	if (gltfMat.extensions.count("KHR_materials_ior") != 0)
+	{
+		const auto &ext = gltfMat.extensions.at("KHR_materials_ior");
+		if (ext.Has("ior"))
+			props.ior = static_cast<float>(ext.Get("ior").GetNumberAsDouble());
+	}
+
+	// KHR_materials_transmission: fraction of refracted light that passes
+	// through (vs being absorbed and re-emitted as diffuse). The transmission
+	// factor lives in .a; the tint stays white so the shader's per-channel
+	// multiply doesn't darken anything unless an asset also opts in to
+	// KHR_materials_volume.attenuationColor (not parsed yet — follow-up).
+	bool hasTransmission = false;
+	if (gltfMat.extensions.count("KHR_materials_transmission") != 0)
+	{
+		const auto &ext = gltfMat.extensions.at("KHR_materials_transmission");
+		if (ext.Has("transmissionFactor"))
+		{
+			const float factor = static_cast<float>(ext.Get("transmissionFactor").GetNumberAsDouble());
+			if (factor > 0.0f)
+			{
+				props.transmittance[0] = 1.0f;
+				props.transmittance[1] = 1.0f;
+				props.transmittance[2] = 1.0f;
+				props.transmittance[3] = factor;
+				hasTransmission = true;
+			}
+		}
+	}
+
 	// Emission
 	if (gltfMat.emissiveFactor.size() == 3)
 	{
@@ -318,6 +351,16 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 		props.alphaCutoff = 0.0f;
 		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Opaque);
 	}
+
+	// KHR_materials_transmission spec: transmissive materials are tagged
+	// alphaMode=OPAQUE because the transmission factor — not the base color
+	// alpha — drives the see-through look. They still need to render in the
+	// forward-transparent pass because the deferred G-buffer path skips the
+	// PBR fragment shader (where the refract/IBL block lives). Upgrade them
+	// here so the renderer routes them correctly without changing alphaMode
+	// (which would let the per-pixel cutout discard kick in).
+	if (hasTransmission)
+		features |= MaterialFeature::Flag::Transparent;
 
 	mat->setFeatureMask(features);
 	mat->setProperties(props);

@@ -19,6 +19,7 @@ namespace webgpu
 class WebGPUBindGroup;
 class WebGPUBindGroupLayoutInfo;
 class WebGPUPipeline;
+class WebGPUContext;
 } // namespace webgpu
 
 /**
@@ -51,6 +52,12 @@ class BindGroupBinder
 {
   public:
 	explicit BindGroupBinder(FrameCache *frameCache) : m_frameCache(frameCache) {}
+
+	/// Optional context binding so the binder can fill unused @group slots
+	/// with the engine-wide empty bind group (required by wgpu when the
+	/// pipeline layout has empty placeholders at lower indices than the
+	/// shader actually uses).
+	void setContext(webgpu::WebGPUContext *context) { m_context = context; }
 
 	/**
 	 * @brief Binds all bind groups defined in the shader's layout.
@@ -107,6 +114,7 @@ class BindGroupBinder
 
 	// Dependencies
 	FrameCache *m_frameCache = nullptr;
+	webgpu::WebGPUContext *m_context = nullptr;
 
 	// State tracking for automatic rebinding detection
 	WGPURenderPassEncoder m_lastRenderPassHandle = nullptr;

@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 
 namespace engine::rendering
 {
@@ -51,7 +52,7 @@ class SkyboxPass : public RenderPass
 
   private:
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
-	std::weak_ptr<webgpu::WebGPUPipeline> m_pipeline;
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> m_pipeline;
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_environmentBindGroup;
 	uint64_t m_cameraId{0};

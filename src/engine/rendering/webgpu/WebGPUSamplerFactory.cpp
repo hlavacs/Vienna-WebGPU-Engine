@@ -14,10 +14,15 @@ WebGPUSamplerFactory::WebGPUSamplerFactory(WebGPUContext &context) :
 
 wgpu::Sampler WebGPUSamplerFactory::getSampler(const std::string &name)
 {
+	const uint32_t now = m_frameCounter.load(std::memory_order_relaxed);
+
 	// already cached?
 	auto it = m_samplerCache.find(name);
 	if (it != m_samplerCache.end())
-		return it->second;
+	{
+		it->second.lastAccessFrame = now;
+		return it->second.sampler;
+	}
 
 	// lazy-create only known defaults
 	if (name == SamplerNames::DEFAULT)
@@ -59,16 +64,18 @@ void WebGPUSamplerFactory::registerSampler(const std::string &name, wgpu::Sample
 		return;
 	}
 
+	const uint32_t now = m_frameCounter.load(std::memory_order_relaxed);
 	auto it = m_samplerCache.find(name);
 	if (it != m_samplerCache.end())
 	{
 		spdlog::warn("Sampler '{}' already exists, replacing it", name);
-		it->second.release();
-		it->second = sampler;
+		if (it->second.sampler) it->second.sampler.release();
+		it->second.sampler         = sampler;
+		it->second.lastAccessFrame = now;
 	}
 	else
 	{
-		m_samplerCache.insert({name, sampler});
+		m_samplerCache.emplace(name, Entry{sampler, now});
 	}
 }
 
@@ -104,11 +111,32 @@ wgpu::Sampler WebGPUSamplerFactory::getShadowComparisonSampler()
 
 void WebGPUSamplerFactory::cleanup()
 {
-	for (auto &[name, sampler] : m_samplerCache)
+	for (auto &kv : m_samplerCache)
 	{
-		sampler.release();
+		if (kv.second.sampler) kv.second.sampler.release();
 	}
 	m_samplerCache.clear();
+}
+
+std::size_t WebGPUSamplerFactory::evictStale()
+{
+	if (m_maxIdleFrames == 0) return 0;
+	const uint32_t now = m_frameCounter.load(std::memory_order_relaxed);
+	std::size_t evicted = 0;
+	for (auto it = m_samplerCache.begin(); it != m_samplerCache.end();)
+	{
+		if ((now - it->second.lastAccessFrame) > m_maxIdleFrames)
+		{
+			if (it->second.sampler) it->second.sampler.release();
+			it = m_samplerCache.erase(it);
+			++evicted;
+		}
+		else
+		{
+			++it;
+		}
+	}
+	return evicted;
 }
 
 wgpu::Sampler WebGPUSamplerFactory::createDefaultSampler()

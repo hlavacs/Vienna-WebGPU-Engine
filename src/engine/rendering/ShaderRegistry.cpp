@@ -10,6 +10,7 @@
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowUniforms.h"
+#include "engine/rendering/shaders/EngineStructDescriptors.h"
 #include "engine/rendering/webgpu/GBuffer.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
@@ -30,6 +31,12 @@ ShaderRegistry::ShaderRegistry(webgpu::WebGPUContext &context) : m_context(conte
 bool ShaderRegistry::initializeDefaultShaders()
 {
 	spdlog::info("Initializing default shaders...");
+
+	// Regenerate every WGSL header under resources/generated/ before any
+	// shader load. Idempotent (writeIfChanged); cheap when descriptors haven't
+	// moved. Must run BEFORE loadShaderModule so the include resolver sees the
+	// freshest text on first compile.
+	shaders::regenerateEngineGeneratedFiles();
 
 	auto pbrShader = createPBRShader();
 	if (!pbrShader || !pbrShader->isValid())
@@ -238,20 +245,17 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 			.begin(
 				shader::defaults::PBR,
 				ShaderType::Lit,
-				PathProvider::getResource("PBR_Lit_Shader.wgsl"),
+				PathProvider::getResource("shaders/PBR_Lit_Shader.wgsl"),
 				"vs_main",
 				"fs_main",
 				VertexLayout::PositionNormalUVTangentColor,
 				true,  // depthEnabled
 				true   // cullBackFaces
 			)
-			// Group 0: Frame uniforms (camera, time)
+			// Canonical layout per `doc/SpecShaderSystem.md` §4: Frame@0,
+			// Scene@1 (lights + shadow + environment), Material@2, Object@3.
 			.addFrameBindGroup()
-			// Group 1: Lighting data (storage buffer with max 16 lights)
-			.addLightBindGroup()
-			// Group 2: Object uniforms (model matrix, normal matrix)
-			.addObjectBindGroup()
-			// Group 3: Material data (properties + textures)
+			.addSceneBindGroup()
 			.addBindGroup(bindgroup::defaults::MATERIAL, BindGroupReuse::PerObject, BindGroupType::Material)
 			.addUniform(
 				bindgroup::entry::defaults::MATERIAL_PROPERTIES,
@@ -265,73 +269,53 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()
 			)
 			.addMaterialTexture(
 				"baseColorTexture",
-				MaterialTextureSlots::DIFFUSE, // material slot name
+				MaterialTextureSlots::DIFFUSE,
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				WGPUShaderStage_Fragment,
-				glm::vec3(1.0f, 1.0f, 1.0f) // default white for base color
+				glm::vec3(1.0f, 1.0f, 1.0f)
 			)
 			.addMaterialTexture(
 				"normalTexture",
-				MaterialTextureSlots::NORMAL, // material slot name
+				MaterialTextureSlots::NORMAL,
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				WGPUShaderStage_Fragment,
-				glm::vec3(0.5f, 0.5f, 1.0f) // default normal map color
+				glm::vec3(0.5f, 0.5f, 1.0f)
 			)
 			.addMaterialTexture(
 				"aoTexture",
-				MaterialTextureSlots::AMBIENT, // material slot name
+				MaterialTextureSlots::AMBIENT,
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				WGPUShaderStage_Fragment,
-				glm::vec3(1.0f, 1.0f, 1.0f) // default white for AO
+				glm::vec3(1.0f, 1.0f, 1.0f)
 			)
 			.addMaterialTexture(
 				"roughnessTexture",
-				MaterialTextureSlots::ROUGHNESS, // material slot name
+				MaterialTextureSlots::ROUGHNESS,
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				WGPUShaderStage_Fragment,
-				glm::vec3(1.0f, 1.0f, 1.0f) // default white for roughness
+				glm::vec3(1.0f, 1.0f, 1.0f)
 			)
 			.addMaterialTexture(
 				"metallicTexture",
-				MaterialTextureSlots::METALLIC, // material slot name
+				MaterialTextureSlots::METALLIC,
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				WGPUShaderStage_Fragment,
-				glm::vec3(0.0f, 0.0f, 0.0f) // default black for metallic
+				glm::vec3(0.0f, 0.0f, 0.0f)
 			)
 			.addMaterialTexture(
 				"emissionTexture",
-				MaterialTextureSlots::EMISSIVE, // material slot name
+				MaterialTextureSlots::EMISSIVE,
 				wgpu::TextureSampleType::Float,
 				wgpu::TextureViewDimension::_2D,
 				WGPUShaderStage_Fragment,
-				glm::vec3(0.0f, 0.0f, 0.0f) // default black for emission
+				glm::vec3(0.0f, 0.0f, 0.0f)
 			)
-			// Group 4: Shadow mapping (sampler, 2D array, cube array, storage buffers)
-			.addShadowBindGroup()
-			// Group 5: Environment irradiance (uniform + sampler + HDR equirect texture)
-			.addBindGroup(bindgroup::defaults::ENVIRONMENT, BindGroupReuse::PerFrame, BindGroupType::Environment)
-			.addUniform(
-				"environmentUniforms",
-				sizeof(glm::vec4),
-				WGPUShaderStage_Fragment
-			)
-			.addSampler(
-				"environmentSampler",
-				wgpu::SamplerBindingType::Filtering,
-				WGPUShaderStage_Fragment
-			)
-			.addTexture(
-				"environmentTexture",
-				wgpu::TextureSampleType::Float,
-				wgpu::TextureViewDimension::_2D,
-				false,
-				WGPUShaderStage_Fragment
-			)
+			.addObjectBindGroup()
 			.build();
 
 	return shaderInfo;
@@ -358,7 +342,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
 			.begin(
 				shader::defaults::GBUFFER,
 				ShaderType::Lit,
-				PathProvider::getResource("g_buffer.wgsl"),
+				PathProvider::getResource("shaders/g_buffer.wgsl"),
 				"vs_main",
 				"fs_main",
 				VertexLayout::PositionNormalUVTangentColor,
@@ -443,28 +427,25 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCompositionDeferredShader()
 {
-	// Create deferred composition shader for final lighting pass
-	// Reads G-buffers and applies clustered lighting
-	//
-	// deferred_composition.wgsl structure:
-	// @group(0) @binding(0-3) G-buffer textures
-	// @group(1) @binding(0) var<uniform> uFrame: FrameUniforms;
-	// @group(2) @binding(0) var<storage, read> uLights: LightBuffer;
-	// @group(3) @binding(0) var<storage, read> uClusterGrid: array<ClusterLightList>;
+	// Canonical layout per `doc/SpecShaderSystem.md` §4: Frame@0, Scene@1
+	// (lights + shadow + environment + cluster), GBuffer custom@4. Object@3
+	// is reserved by convention (this pass is a fullscreen quad, no per-object
+	// state) so the pipeline layout slot stays as an empty placeholder.
 	auto shaderInfo =
 		m_context.shaderFactory()
 			.begin(
 				shader::defaults::COMPOSITION_DEFERRED,
 				ShaderType::Unlit,
-				PathProvider::getResource("deferred_composition.wgsl"),
+				PathProvider::getResource("shaders/deferred_composition.wgsl"),
 				"vs_main",
 				"fs_main",
-				VertexLayout::None,  // Full-screen quad generated in vertex shader
-				false,               // No depth testing for composition
-				false                // No backface culling
+				VertexLayout::None,
+				false,
+				false
 			)
-			// Group 0: G-buffer textures
-			.addBindGroup(
+			.addFrameBindGroup()
+			.addSceneBindGroup()
+			.addBindGroupAt(4,
 				"GBuffer_BindGroup",
 				BindGroupReuse::Global,
 				BindGroupType::Custom
@@ -504,51 +485,6 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCompositionDefer
 				false,
 				WGPUShaderStage_Fragment
 			)
-			// Group 1: Frame uniforms (camera, time)
-			.addFrameBindGroup()
-			// Group 2: Lights (shared scene light buffer)
-			.addLightBindGroup()
-				// Group 3: Shadow mapping (sampler, 2D array, cube array, storage buffers)
-				.addShadowBindGroup()
-				// Group 4: Cluster grid
-			.addBindGroup(
-				"ClusterGrid_BindGroup",
-				BindGroupReuse::PerFrame,
-				BindGroupType::Custom
-			)
-			.addStorageBuffer(
-				"uClusterGrid",
-				10752 * sizeof(uint32_t) * 2,
-				true,
-				WGPUShaderStage_Fragment
-			)
-			.addStorageBuffer(
-				"uClusterLightIndices",
-				10752 * 256 * sizeof(uint32_t),
-				true,
-				WGPUShaderStage_Fragment
-			)
-			// Group 5: Environment irradiance (matches PBR's ENVIRONMENT
-			// layout exactly so Renderer::updateEnvironmentBindGroup feeds
-			// both forward and deferred from a single bind-group build).
-			.addBindGroup(bindgroup::defaults::ENVIRONMENT, BindGroupReuse::PerFrame, BindGroupType::Environment)
-			.addUniform(
-				"environmentUniforms",
-				sizeof(glm::vec4),
-				WGPUShaderStage_Fragment
-			)
-			.addSampler(
-				"environmentSampler",
-				wgpu::SamplerBindingType::Filtering,
-				WGPUShaderStage_Fragment
-			)
-			.addTexture(
-				"environmentTexture",
-				wgpu::TextureSampleType::Float,
-				wgpu::TextureViewDimension::_2D,
-				false,
-				WGPUShaderStage_Fragment
-			)
 			.build();
 
 	return shaderInfo;
@@ -564,9 +500,9 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 
 	auto shaderInfo =
 		m_context.shaderFactory()
-			.begin(shader::defaults::DEBUG, ShaderType::Debug, PathProvider::getResource("debug.wgsl"), "vs_main", "fs_main", VertexLayout::None, false, false)
+			.begin(shader::defaults::DEBUG, ShaderType::Debug, PathProvider::getResource("shaders/debug.wgsl"), "vs_main", "fs_main", VertexLayout::None, false, false)
 			.addFrameBindGroup()
-			.addBindGroup(
+			.addBindGroupAt(4,
 				bindgroup::defaults::DEBUG,
 				BindGroupReuse::PerFrame,
 				BindGroupType::Debug
@@ -589,14 +525,14 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadSh
 			.begin(
 				shader::defaults::FULLSCREEN_QUAD,
 				ShaderType::Unlit,
-				PathProvider::getResource("fullscreen_quad.wgsl"),
+				PathProvider::getResource("shaders/fullscreen_quad.wgsl"),
 				"vs_main",
 				"fs_main",
 				VertexLayout::None,
 				false,
 				false
 			)
-			.addBindGroup(
+			.addBindGroupAt(4,
 				bindgroup::defaults::FULLSCREEN_QUAD,
 				BindGroupReuse::Global,
 				BindGroupType::Custom
@@ -613,10 +549,10 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadSh
 				wgpu::SamplerBindingType::Filtering,
 				WGPUShaderStage_Fragment
 			)
-			// Group 1: post-process settings (HDR on/off + exposure).
+			// Group 5: post-process settings (HDR on/off + exposure).
 			// Owned by CompositePass; one shared buffer for all per-camera draws
 			// since the tonemap configuration is global.
-			.addBindGroup(
+			.addBindGroupAt(5,
 				"PostProcess_BindGroup",
 				BindGroupReuse::Global,
 				BindGroupType::Custom
@@ -643,7 +579,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createSkyboxShader()
 			.begin(
 				shader::defaults::SKYBOX,
 				ShaderType::Unlit,
-				PathProvider::getResource("skybox.wgsl"),
+				PathProvider::getResource("shaders/skybox.wgsl"),
 				"vs_main",
 				"fs_main",
 				VertexLayout::None,
@@ -653,7 +589,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createSkyboxShader()
 			.withDepthCompare(wgpu::CompareFunction::LessEqual)
 			.withDepthWrite(false)
 			.addFrameBindGroup()
-			.addBindGroup(
+			.addBindGroupAt(4,
 				bindgroup::defaults::SKYBOX,
 				BindGroupReuse::PerFrame,
 				BindGroupType::Custom
@@ -695,13 +631,13 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createMipmapBlitShader
 			.begin(
 				shader::defaults::MIPMAP_BLIT,
 				ShaderType::Unlit,
-				PathProvider::getResource("mipmap_blit.wgsl"),
+				PathProvider::getResource("shaders/mipmap_blit.wgsl"),
 				"vs_main",
 				"fs_main",
 				VertexLayout::None,
 				false
 			)
-			.addBindGroup(
+			.addBindGroupAt(4,
 				bindgroup::defaults::MIPMAP_BLIT,
 				BindGroupReuse::Global,
 				BindGroupType::Custom
@@ -735,17 +671,17 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPass2DShad
 			.begin(
 				shader::defaults::SHADOW_PASS_2D,
 				ShaderType::Unlit,
-				PathProvider::getResource("shadow2d.wgsl"),
+				PathProvider::getResource("shaders/shadow2d.wgsl"),
 				"vs_shadow",
 				"fs_shadow",
 				engine::rendering::VertexLayout::Position
 			)
-			.addBindGroup(
+			.addBindGroupAt(4,
 				bindgroup::defaults::SHADOW_PASS_2D,
 				BindGroupReuse::PerFrame,
 				BindGroupType::ShadowPass2D
 			)
-			// Group 0: Shadow uniforms (light view-projection matrix)
+			// Group 4: Shadow uniforms (light view-projection matrix)
 			.addCustomUniform(
 				"uShadow",
 				sizeof(ShadowPass2DUniforms),
@@ -769,17 +705,17 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPassCubeSh
 			.begin(
 				shader::defaults::SHADOW_PASS_CUBE,
 				ShaderType::Unlit,
-				PathProvider::getResource("shadow3d.wgsl"),
+				PathProvider::getResource("shaders/shadow3d.wgsl"),
 				"vs_shadow_cube",
 				"fs_shadow_cube",
 				engine::rendering::VertexLayout::Position
 			)
-			.addBindGroup(
+			.addBindGroupAt(4,
 				bindgroup::defaults::SHADOW_PASS_CUBE,
 				BindGroupReuse::PerFrame,
 				BindGroupType::ShadowPassCube
 			)
-			// Group 0: Shadow cube uniforms (light position and far plane)
+			// Group 4: Shadow cube uniforms (light position and far plane)
 			.addCustomUniform(
 				"uShadowCube",
 				sizeof(ShadowPassCubeUniforms),
@@ -806,13 +742,13 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVisualizeDepthSh
 			.begin(
 				shader::defaults::VISUALIZE_DEPTH,
 				ShaderType::Unlit,
-				PathProvider::getResource("visualize_depth.wgsl"),
+				PathProvider::getResource("shaders/visualize_depth.wgsl"),
 				"vs_main",
 				"fs_main",
 				VertexLayout::None,
 				false
 			)
-			.addBindGroup(
+			.addBindGroupAt(4,
 				bindgroup::defaults::VISUALIZE_DEPTH,
 				BindGroupReuse::Global,
 				BindGroupType::Custom
@@ -850,15 +786,15 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVignetteShader()
 			.begin(
 				shader::defaults::VIGNETTE,
 				ShaderType::Unlit,
-				PathProvider::getResource("postprocess_vignette.wgsl"),
+				PathProvider::getResource("shaders/postprocess_vignette.wgsl"),
 				"vs_main",
 				"fs_main",
 				VertexLayout::None,  // No vertex buffers (fullscreen triangle)
 				false,  // depthEnabled
 				false   // cullBackFaces
 			)
-			// Group 0: Input texture from previous render pass
-			.addBindGroup(
+			// Group 4: Input texture from previous render pass
+			.addBindGroupAt(4,
 				bindgroup::defaults::VIGNETTE,
 				BindGroupReuse::PerFrame,
 				BindGroupType::Custom

@@ -594,8 +594,11 @@ void WebGPUTextureFactory::generateMipmaps(
 		return;
 	}
 
-	// Get or create mipmap pipeline for this format
-	auto mipmapPipeline = getOrCreateMipmapPipeline(format);
+	// Get or create mipmap pipeline for this format. Pin a snapshot via
+	// lock() for the lifetime of this mipmap generation — a concurrent
+	// hot-reload swap can't pull the pipeline out from under us.
+	auto mipmapPipelineHandle = getOrCreateMipmapPipeline(format);
+	auto mipmapPipeline = mipmapPipelineHandle.lock();
 	if (!mipmapPipeline || !mipmapPipeline->isValid())
 	{
 		spdlog::error("Failed to get/create mipmap pipeline for format {}", static_cast<int>(format));
@@ -610,10 +613,13 @@ void WebGPUTextureFactory::generateMipmaps(
 		return;
 	}
 
-	auto bindGroupLayouts = mipmapShader->getBindGroupLayoutVector();
-	if (bindGroupLayouts.empty())
+	// Mipmap blit declares its custom bind group at @group(4) per the engine
+	// convention (engine roles 0..3, custom 4..7). Fetch by canonical index
+	// instead of [0]: the vector now has empty-layout placeholders at 0..3.
+	auto mipmapBindGroupLayout = mipmapShader->getBindGroupLayout(4);
+	if (!mipmapBindGroupLayout)
 	{
-		spdlog::error("Mipmap shader has no bind group layouts");
+		spdlog::error("Mipmap shader missing @group(4) bind group layout");
 		return;
 	}
 
@@ -650,7 +656,7 @@ void WebGPUTextureFactory::generateMipmaps(
 		entries[1].sampler = mipmapSampler;
 
 		wgpu::BindGroupDescriptor bindGroupDesc{};
-		bindGroupDesc.layout = bindGroupLayouts[0]->getLayout();
+		bindGroupDesc.layout = mipmapBindGroupLayout->getLayout();
 		bindGroupDesc.entryCount = entries.size();
 		bindGroupDesc.entries = entries.data();
 		wgpu::BindGroup bindGroup = m_context.getDevice().createBindGroup(bindGroupDesc);
@@ -668,7 +674,14 @@ void WebGPUTextureFactory::generateMipmaps(
 
 		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDesc);
 		renderPass.setPipeline(mipmapPipeline->getPipeline());
-		renderPass.setBindGroup(0, bindGroup, 0, nullptr);
+		// Pipeline layout has empty placeholders at slots 0..3 (engine
+		// convention reserves those for Frame/Scene/Material/Object); wgpu
+		// requires SOMETHING bound at every layout slot, so we bind the
+		// shared empty group there even though mipmap_blit only samples @4.
+		auto emptyBg = m_context.pipelineManager().getOrCreateEmptyBindGroup();
+		for (uint32_t slot = 0; slot < 4; ++slot)
+			renderPass.setBindGroup(slot, emptyBg, 0, nullptr);
+		renderPass.setBindGroup(4, bindGroup, 0, nullptr);
 		renderPass.draw(3, 1, 0, 0); // Fullscreen triangle
 		renderPass.end();
 
@@ -685,18 +698,18 @@ void WebGPUTextureFactory::generateMipmaps(
 	spdlog::debug("Generated {} mipmap levels for texture", mipLevelCount - 1);
 }
 
-std::shared_ptr<WebGPUPipeline> WebGPUTextureFactory::getOrCreateMipmapPipeline(wgpu::TextureFormat format)
+engine::rendering::cache::Handle<WebGPUPipeline> WebGPUTextureFactory::getOrCreateMipmapPipeline(wgpu::TextureFormat format)
 {
 	// Get the mipmap blit shader from registry
 	auto mipmapShader = m_context.shaderRegistry().getShader(shader::defaults ::MIPMAP_BLIT);
 	if (!mipmapShader || !mipmapShader->isValid())
 	{
 		spdlog::error("Failed to get mipmap blit shader from registry");
-		return nullptr;
+		return {};
 	}
 
 	// Create render pipeline using the pipeline manager with the specific format
-	auto mipmapPipeline = m_context.pipelineManager().getOrCreatePipeline(
+	auto handle = m_context.pipelineManager().getOrCreatePipeline(
 		mipmapShader,					// shader
 		format,							// color format (specific to this texture)
 		wgpu::TextureFormat::Undefined, // no depth
@@ -706,14 +719,14 @@ std::shared_ptr<WebGPUPipeline> WebGPUTextureFactory::getOrCreateMipmapPipeline(
 		1 // sample count
 	);
 
-	if (!mipmapPipeline || !mipmapPipeline->getPipeline())
+	if (auto snap = handle.lock(); !snap || !snap->getPipeline())
 	{
 		spdlog::error("Failed to create mipmap pipeline for format {}", static_cast<int>(format));
-		return nullptr;
+		return {};
 	}
 	spdlog::debug("Created mipmap generation pipeline for format {}", static_cast<int>(format));
 
-	return mipmapPipeline;
+	return handle;
 }
 
 } // namespace engine::rendering::webgpu

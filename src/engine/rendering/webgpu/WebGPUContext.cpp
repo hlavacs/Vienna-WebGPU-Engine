@@ -43,6 +43,41 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 	m_renderPassFactory = std::make_unique<WebGPURenderPassFactory>(*this);
 	m_shaderFactory = std::make_unique<WebGPUShaderFactory>(*this);
 	m_pipelineManager = std::make_unique<WebGPUPipelineManager>(*this);
+
+	// Uniform registration: every factory now exposes the same cache
+	// lifecycle surface (cleanup / cacheSize / notifyFrame / evictStale /
+	// setMaxIdleFrames). The template wires all of it up — no per-factory
+	// boilerplate. Add a new factory in three lines: add cacheSize() +
+	// the eviction methods (BaseWebGPUFactory derivatives get them for
+	// free), construct it here, register it.
+	m_cacheRegistry.registerFactoryCache(*m_pipelineManager, "PipelineManager");
+	m_cacheRegistry.registerFactoryCache(*m_samplerFactory,  "SamplerFactory");
+	m_cacheRegistry.registerFactoryCache(*m_textureFactory,  "TextureFactory");
+	m_cacheRegistry.registerFactoryCache(*m_meshFactory,     "MeshFactory");
+	m_cacheRegistry.registerFactoryCache(*m_materialFactory, "MaterialFactory");
+	m_cacheRegistry.registerFactoryCache(*m_modelFactory,    "ModelFactory");
+
+	// Sensible defaults — values in frames; assume ~60fps target. The
+	// principle: cheaper-to-rebuild + smaller-resource caches keep stuff
+	// longer; bigger / more-expensive resources evict faster so memory
+	// doesn't accumulate.
+	//  - Pipelines (heavy to rebuild, but smallish per-instance): 10s
+	//  - Textures (huge memory per entry, fast to recreate from disk):  60s
+	//  - Meshes (largest GPU resource we own):                          60s
+	//  - Models (lightweight wrappers):                                 60s
+	//  - Materials (tiny structs):                                     120s
+	//  - Samplers (tiny wgpu handles, churn is wasteful):                0 (never evict)
+	//
+	// Override these per-scene from any caller via
+	// `context.cacheRegistry().setMaxIdleFramesFor("TextureFactory", N);`
+	// or apply a uniform window with `setMaxIdleFramesForAll(N)`.
+	m_cacheRegistry.setMaxIdleFramesFor("PipelineManager",  600);
+	m_cacheRegistry.setMaxIdleFramesFor("TextureFactory", 3600);
+	m_cacheRegistry.setMaxIdleFramesFor("MeshFactory",    3600);
+	m_cacheRegistry.setMaxIdleFramesFor("ModelFactory",   3600);
+	m_cacheRegistry.setMaxIdleFramesFor("MaterialFactory",7200);
+	m_cacheRegistry.setMaxIdleFramesFor("SamplerFactory",    0);
+
 	m_lightManager = std::make_shared<engine::lighting::LightManager>();
 	m_clusterManager = std::make_shared<engine::rendering::ClusterManager>(*this);
 
@@ -183,6 +218,11 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	supportedLimits.limits.minStorageBufferOffsetAlignment = 256;
 	supportedLimits.limits.minUniformBufferOffsetAlignment = 256;
 #endif
+
+	spdlog::info("[WebGPU] Adapter limits: maxBindGroups={}, maxBindingsPerBindGroup={}, maxSampledTexturesPerShaderStage={}",
+	             supportedLimits.limits.maxBindGroups,
+	             supportedLimits.limits.maxBindingsPerBindGroup,
+	             supportedLimits.limits.maxSampledTexturesPerShaderStage);
 
 	// --------------- Clamp requested limits against hardware ---------------
 	wgpu::RequiredLimits requiredLimits = wgpu::Default;
@@ -428,6 +468,12 @@ WebGPUPipelineManager &WebGPUContext::pipelineManager()
 		throw std::runtime_error("WebGPUPipelineManager not initialized!");
 	}
 	return *m_pipelineManager;
+}
+
+engine::rendering::cache::CacheRegistry &WebGPUContext::cacheRegistry()
+{
+	// Default-constructed at WebGPUContext construction; no init guard needed.
+	return m_cacheRegistry;
 }
 
 std::shared_ptr<engine::lighting::LightManager> WebGPUContext::lightManager() const
