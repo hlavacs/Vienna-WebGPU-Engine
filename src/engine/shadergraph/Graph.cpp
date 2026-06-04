@@ -122,14 +122,18 @@ std::string varName(NodeId id, uint32_t slot)
 
 /// Walk the graph from @p start, populating @p order with nodes in
 /// post-order (deepest first). Detects cycles by tracking the current
-/// recursion stack. Returns true on success; on cycle, returns false
-/// and fills @p errorOut.
+/// recursion stack. Returns true on success; on cycle or dangling edge,
+/// returns false and fills @p errorOut.
+///
+/// @p existingNodes is the set of node ids the graph holds. Only used
+/// to detect dangling edges that reference deleted nodes — the actual
+/// Node pointers are never dereferenced here.
 bool topoSort(
-	const std::unordered_map<uint32_t, std::unique_ptr<Node>> &nodes,
-	const std::vector<Edge>                                    &edges,
-	NodeId                                                      start,
-	std::vector<NodeId>                                        &order,
-	std::string                                                &errorOut)
+	const std::unordered_set<uint32_t> &existingNodes,
+	const std::vector<Edge>            &edges,
+	NodeId                              start,
+	std::vector<NodeId>                &order,
+	std::string                        &errorOut)
 {
 	std::unordered_set<uint32_t> visited;
 	std::unordered_set<uint32_t> onStack;
@@ -168,7 +172,7 @@ bool topoSort(
 				errorOut = "Cycle detected at node " + std::to_string(nextNode.value);
 				return false;
 			}
-			if (!nodes.count(nextNode.value))
+			if (!existingNodes.count(nextNode.value))
 			{
 				errorOut = "Dangling edge references node " + std::to_string(nextNode.value);
 				return false;
@@ -188,6 +192,86 @@ bool topoSort(
 	return true;
 }
 
+/// Resolve every input slot of @p node into a WGSL expression — either the
+/// upstream variable name (if connected) or the slot's defaultExpr. Returns
+/// false + writes @p errorOut if an opaque input is unconnected (textures
+/// and samplers can't fall back to a literal default).
+bool resolveInputExpressions(
+	NodeId                          id,
+	const Node                     &node,
+	const std::vector<SlotSpec>    &inputSpecs,
+	const std::vector<Edge>        &edges,
+	std::vector<std::string>       &outExprs,
+	std::string                    &errorOut)
+{
+	outExprs.reserve(inputSpecs.size());
+	for (uint32_t i = 0; i < inputSpecs.size(); ++i)
+	{
+		std::string expr;
+		bool        connected = false;
+		for (const auto &e : edges)
+		{
+			if (e.dstNode == id && e.dstSlot == i)
+			{
+				expr      = varName(e.srcNode, e.srcSlot);
+				connected = true;
+				break;
+			}
+		}
+		if (!connected)
+		{
+			if (isOpaque(inputSpecs[i].type))
+			{
+				errorOut = "Node " + std::to_string(id.value)
+				         + " (" + node.typeName() + ") input '"
+				         + inputSpecs[i].name + "' is opaque and unconnected";
+				return false;
+			}
+			expr = inputSpecs[i].defaultExpr.empty() ? "0.0" : inputSpecs[i].defaultExpr;
+		}
+		outExprs.push_back(std::move(expr));
+	}
+	return true;
+}
+
+/// Allocate deterministic output variable names for @p node — one per slot,
+/// `n<id>_<slot>`. Used by the next node's resolveInputExpressions when
+/// looking up the upstream variable.
+std::vector<std::string> allocateOutputVarNames(NodeId id, std::size_t outputCount)
+{
+	std::vector<std::string> outs;
+	outs.reserve(outputCount);
+	for (uint32_t i = 0; i < outputCount; ++i)
+	{
+		outs.push_back(varName(id, i));
+	}
+	return outs;
+}
+
+/// Collect module-scope declarations from every node in @p order, dedupe by
+/// exact text — two TextureSample nodes that bind the same texture should
+/// only emit the binding decl once.
+std::string collectDeclarations(
+	const std::vector<NodeId> &order,
+	const std::unordered_map<uint32_t, Node *> &nodesById)
+{
+	std::ostringstream out;
+	std::unordered_set<std::string> seen;
+	for (NodeId id : order)
+	{
+		const Node *node = nodesById.at(id.value);
+		for (const auto &d : node->declarations())
+		{
+			if (d.wgsl.empty()) continue;
+			if (seen.insert(d.wgsl).second)
+			{
+				out << d.wgsl;
+			}
+		}
+	}
+	return out.str();
+}
+
 } // namespace
 
 Graph::CompileResult Graph::compile(NodeId outputNode) const
@@ -199,100 +283,45 @@ Graph::CompileResult Graph::compile(NodeId outputNode) const
 		return result;
 	}
 
-	// Re-pack nodes into a name-bare map so the helper can stay header-free.
-	std::unordered_map<uint32_t, std::unique_ptr<Node>> bare;
+	// Build the set of valid node ids + a raw-pointer view of the node map.
+	// topoSort only needs the id set (for dangling-edge detection); the
+	// emit/declaration helpers need raw Node* lookups.
+	std::unordered_set<uint32_t> existingIds;
+	std::unordered_map<uint32_t, Node *> nodesById;
+	existingIds.reserve(m_nodes.size());
+	nodesById.reserve(m_nodes.size());
 	for (const auto &kv : m_nodes)
 	{
-		// Borrow; we don't actually own the unique_ptr here. Wrap raw pointer
-		// in a no-op deleter so the map stays a unique_ptr.
-		bare.emplace(kv.first, std::unique_ptr<Node>(kv.second.node.get()));
+		existingIds.insert(kv.first);
+		nodesById.emplace(kv.first, kv.second.node.get());
 	}
 
 	std::vector<NodeId> order;
-	std::string err;
-	if (!topoSort(bare, m_edges, outputNode, order, err))
+	if (!topoSort(existingIds, m_edges, outputNode, order, result.error))
 	{
-		// Release the borrowed unique_ptrs without deleting (the real owners
-		// in m_nodes will free them).
-		for (auto &kv : bare) (void)kv.second.release();
-		result.error = err;
 		return result;
 	}
-	for (auto &kv : bare) (void)kv.second.release();
 
 	// Emit WGSL in topological order. Each node's outputs become a `let`
 	// binding (non-opaque) or an identifier substitution (opaque).
 	std::ostringstream wgsl;
 	for (NodeId id : order)
 	{
-		const Node *node = m_nodes.at(id.value).node.get();
-		const auto inputSpecs  = node->inputs();
-		const auto outputSpecs = node->outputs();
+		const Node *node = nodesById.at(id.value);
+		const auto  inputSpecs  = node->inputs();
+		const auto  outputSpecs = node->outputs();
 
-		// Build input expressions: connected edge → upstream variable name;
-		// unconnected → slot's defaultExpr (or error if opaque + unconnected).
 		std::vector<std::string> inputExprs;
-		inputExprs.reserve(inputSpecs.size());
-		for (uint32_t i = 0; i < inputSpecs.size(); ++i)
+		if (!resolveInputExpressions(id, *node, inputSpecs, m_edges, inputExprs, result.error))
 		{
-			std::string expr;
-			bool        connected = false;
-			for (const auto &e : m_edges)
-			{
-				if (e.dstNode == id && e.dstSlot == i)
-				{
-					expr = varName(e.srcNode, e.srcSlot);
-					connected = true;
-					break;
-				}
-			}
-			if (!connected)
-			{
-				if (isOpaque(inputSpecs[i].type))
-				{
-					result.error = "Node " + std::to_string(id.value)
-					            + " (" + node->typeName() + ") input '"
-					            + inputSpecs[i].name + "' is opaque and unconnected";
-					return result;
-				}
-				expr = inputSpecs[i].defaultExpr.empty() ? "0.0" : inputSpecs[i].defaultExpr;
-			}
-			inputExprs.push_back(std::move(expr));
+			return result;
 		}
-
-		// Allocate output variable names. Opaque outputs share the destination
-		// edge's substitution — but for emission we still pass a deterministic
-		// name; the upstream node owns the binding when the slot is opaque.
-		std::vector<std::string> outputVars;
-		outputVars.reserve(outputSpecs.size());
-		for (uint32_t i = 0; i < outputSpecs.size(); ++i)
-		{
-			outputVars.push_back(varName(id, i));
-		}
-
+		auto outputVars = allocateOutputVarNames(id, outputSpecs.size());
 		wgsl << node->emit(inputExprs, outputVars);
 	}
 
-	// Collect module-scope declarations from every emitted node. Dedupe by
-	// exact text — two TextureSample nodes that bind the same texture should
-	// only emit the binding decl once.
-	std::ostringstream decls;
-	std::unordered_set<std::string> seen;
-	for (NodeId id : order)
-	{
-		const Node *node = m_nodes.at(id.value).node.get();
-		for (const auto &d : node->declarations())
-		{
-			if (d.wgsl.empty()) continue;
-			if (seen.insert(d.wgsl).second)
-			{
-				decls << d.wgsl;
-			}
-		}
-	}
-
 	result.success      = true;
-	result.declarations = decls.str();
+	result.declarations = collectDeclarations(order, nodesById);
 	result.wgsl         = wgsl.str();
 	result.resultExpr   = varName(outputNode, 0);
 	return result;

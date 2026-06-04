@@ -113,13 +113,85 @@ void RenderGraph::resetCompileState()
 	m_compiled = false;
 }
 
+std::vector<PassHandle> RenderGraph::sortedRegistrationOrder(
+	const std::unordered_map<uint32_t, StoredPass> &passes)
+{
+	std::vector<PassHandle> out;
+	out.reserve(passes.size());
+	for (const auto &kv : passes) out.push_back(PassHandle{kv.first});
+	std::sort(out.begin(), out.end(),
+	          [](PassHandle a, PassHandle b) { return a.id < b.id; });
+	return out;
+}
+
+RenderGraph::DependencyEdges RenderGraph::buildDependencyEdges(
+	const std::unordered_map<uint32_t, StoredPass> &passes,
+	const std::vector<PassHandle>                  &registrationOrder)
+{
+	DependencyEdges out{};
+	std::unordered_map<uint32_t, PassHandle> lastWriter;
+	for (PassHandle ph : registrationOrder) out.inDegree[ph.id] = 0;
+
+	for (PassHandle ph : registrationOrder)
+	{
+		const StoredPass &p = passes.at(ph.id);
+		for (ResourceHandle r : p.reads)
+		{
+			auto it = lastWriter.find(r.id);
+			if (it != lastWriter.end() && it->second.id != ph.id)
+			{
+				if (out.successors[it->second.id].insert(ph.id).second)
+				{
+					out.inDegree[ph.id] += 1;
+				}
+			}
+		}
+		for (ResourceHandle r : p.writes)
+		{
+			lastWriter[r.id] = ph;
+		}
+	}
+	return out;
+}
+
+std::vector<PassHandle> RenderGraph::kahnTopologicalOrder(
+	const std::vector<PassHandle> &registrationOrder,
+	DependencyEdges               &edges)
+{
+	std::vector<PassHandle> ready;
+	for (PassHandle ph : registrationOrder)
+	{
+		if (edges.inDegree[ph.id] == 0) ready.push_back(ph);
+	}
+
+	std::vector<PassHandle> order;
+	while (!ready.empty())
+	{
+		PassHandle ph = ready.front();
+		ready.erase(ready.begin());
+		order.push_back(ph);
+
+		auto edgeIt = edges.successors.find(ph.id);
+		if (edgeIt == edges.successors.end()) continue;
+		std::vector<uint32_t> successors(edgeIt->second.begin(), edgeIt->second.end());
+		std::sort(successors.begin(), successors.end());
+		for (uint32_t successorId : successors)
+		{
+			if (--edges.inDegree[successorId] == 0)
+			{
+				ready.push_back(PassHandle{successorId});
+			}
+		}
+	}
+	return order;
+}
+
 RenderGraph::CompileResult RenderGraph::compile()
 {
 	CompileResult result{};
 	m_executionOrder.clear();
 
-	// Step 1: run each pass's setup() through a PassBuilder. This populates
-	// the read/write lists on every StoredPass.
+	// Run each pass's setup(), populating its read/write lists.
 	for (auto &kv : m_passes)
 	{
 		PassHandle  handle{kv.first};
@@ -127,88 +199,9 @@ RenderGraph::CompileResult RenderGraph::compile()
 		kv.second.pass->setup(builder);
 	}
 
-	// Step 2: build a "last writer" map — for each resource, which pass
-	// most recently wrote it? Two writers without a reader between them is
-	// a write-after-write hazard the graph rejects (the second pass
-	// silently clobbers the first — usually a bug).
-	std::unordered_map<uint32_t, PassHandle> lastWriter;  // resource id → writer
-	// We'll process passes in registration order to detect write/write
-	// conflicts before computing the real topological order.
-	std::vector<PassHandle> registrationOrder;
-	registrationOrder.reserve(m_passes.size());
-	for (const auto &kv : m_passes)
-		registrationOrder.push_back(PassHandle{kv.first});
-	std::sort(registrationOrder.begin(), registrationOrder.end(),
-	          [](PassHandle a, PassHandle b) { return a.id < b.id; });
-
-	// Step 3: build edges. For each pass P and each resource R it reads,
-	// add an edge "last-writer-of-R → P". For each resource it writes,
-	// update lastWriter to P after we've processed P's reads. This is the
-	// canonical render-graph dependency rule.
-	std::unordered_map<uint32_t, std::unordered_set<uint32_t>> edges;       // pass.id → {successor pass.id}
-	std::unordered_map<uint32_t, uint32_t>                     inDegree;
-	for (PassHandle ph : registrationOrder) inDegree[ph.id] = 0;
-
-	for (PassHandle ph : registrationOrder)
-	{
-		const StoredPass &p = m_passes.at(ph.id);
-
-		// Reads create dependencies on the prior writer.
-		for (ResourceHandle r : p.reads)
-		{
-			auto it = lastWriter.find(r.id);
-			if (it != lastWriter.end() && it->second.id != ph.id)
-			{
-				auto &succ = edges[it->second.id];
-				if (succ.insert(ph.id).second)
-				{
-					inDegree[ph.id] += 1;
-				}
-			}
-		}
-
-		// Writes update lastWriter. We don't reject write-after-write here
-		// outright — the second writer just overwrites. Add a debug log
-		// hook if you want to flag those in the future.
-		for (ResourceHandle r : p.writes)
-		{
-			lastWriter[r.id] = ph;
-		}
-	}
-
-	// Step 4: Kahn's algorithm — repeatedly emit passes with no remaining
-	// incoming edges. Use a FIFO so ties are broken by registration order
-	// (deterministic + matches the hand-coded sequence when the deps match).
-	// std::vector with front()+erase(begin()) is O(n²) in the worst case;
-	// fine for the dozens-of-passes range we expect. Swap for std::deque if
-	// the graph ever grows larger.
-	std::vector<PassHandle> ready;
-	for (PassHandle ph : registrationOrder)
-	{
-		if (inDegree[ph.id] == 0) ready.push_back(ph);
-	}
-
-	while (!ready.empty())
-	{
-		PassHandle ph = ready.front();
-		ready.erase(ready.begin());
-		m_executionOrder.push_back(ph);
-
-		auto edgeIt = edges.find(ph.id);
-		if (edgeIt == edges.end()) continue;
-		// Iterate successors in deterministic order — std::unordered_set's
-		// iteration is unspecified. Materialise + sort so tie-breaking by
-		// registration id holds across runs / compilers.
-		std::vector<uint32_t> successors(edgeIt->second.begin(), edgeIt->second.end());
-		std::sort(successors.begin(), successors.end());
-		for (uint32_t successorId : successors)
-		{
-			if (--inDegree[successorId] == 0)
-			{
-				ready.push_back(PassHandle{successorId});
-			}
-		}
-	}
+	const auto registrationOrder = sortedRegistrationOrder(m_passes);
+	auto       edges             = buildDependencyEdges(m_passes, registrationOrder);
+	m_executionOrder             = kahnTopologicalOrder(registrationOrder, edges);
 
 	if (m_executionOrder.size() != m_passes.size())
 	{
@@ -220,7 +213,7 @@ RenderGraph::CompileResult RenderGraph::compile()
 		return result;
 	}
 
-	m_compiled    = true;
+	m_compiled     = true;
 	result.success = true;
 	return result;
 }

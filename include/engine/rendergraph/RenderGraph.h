@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <webgpu/webgpu.hpp>
@@ -250,6 +251,9 @@ class RenderGraph
 	[[nodiscard]] std::vector<std::string> compiledOrder() const;
 
   private:
+	// One pass entry as the graph stores it — pass instance + the resource
+	// dependencies its setup() declared. Public-by-virtue-of-nesting so
+	// .cpp-local helpers can take references without friend gymnastics.
 	struct StoredPass
 	{
 		std::unique_ptr<Pass>         pass;
@@ -262,6 +266,29 @@ class RenderGraph
 		ResourceDesc desc;
 		bool         imported = false;
 	};
+
+	// Dependency-graph builder result — successors per pass + remaining
+	// in-degree count. Built by buildDependencyEdges, consumed by Kahn's.
+	struct DependencyEdges
+	{
+		std::unordered_map<uint32_t, std::unordered_set<uint32_t>> successors;
+		std::unordered_map<uint32_t, uint32_t>                     inDegree;
+	};
+
+	/// Pass ids sorted by registration order. Stable across hash-map churn.
+	static std::vector<PassHandle> sortedRegistrationOrder(
+		const std::unordered_map<uint32_t, StoredPass> &passes);
+
+	/// Build the read/write dependency graph using the "edge from last writer
+	/// of R to every reader of R" rule.
+	static DependencyEdges buildDependencyEdges(
+		const std::unordered_map<uint32_t, StoredPass> &passes,
+		const std::vector<PassHandle>                  &registrationOrder);
+
+	/// Kahn's topological sort with FIFO + sorted-successors tie-breaking.
+	static std::vector<PassHandle> kahnTopologicalOrder(
+		const std::vector<PassHandle> &registrationOrder,
+		DependencyEdges               &edges);
 
 	std::unordered_map<uint32_t, StoredPass>     m_passes;
 	std::unordered_map<uint32_t, StoredResource> m_resources;
