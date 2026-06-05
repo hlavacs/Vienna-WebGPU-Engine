@@ -57,10 +57,9 @@ namespace engine::rendering::cache
  *  - `notifyFrame()` is atomic (no mutex), so the renderer thread can tick
  *    the frame counter without contending with cache lookups.
  *
- * **Hot-reload tagging (for task #8).** Out of scope for this header —
- * the cache's invalidate predicate is generic enough that a tag system
- * can be layered on by the caller (key includes a tag, predicate filters
- * by tag).
+ * **Hot-reload tagging.** Out of scope for this header — the cache's
+ * invalidate predicate is generic enough that a tag system can be layered
+ * on by the caller (e.g. encode a tag into the key, filter by predicate).
  */
 template <typename Key, typename Resource, typename KeyHash = std::hash<Key>>
 class ResourceCache

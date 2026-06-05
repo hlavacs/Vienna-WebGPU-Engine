@@ -85,9 +85,11 @@ class PassBuilder
 	/// read it will be scheduled after this one.
 	void write(ResourceHandle resource);
 
-	/// Allocate a new transient resource owned by the graph. Returned
-	/// handle is immediately valid to declare further reads/writes
-	/// against (the pass that calls create() is implicitly the writer).
+	/// Register a transient resource descriptor with the graph. The pass
+	/// that calls create() is recorded as the implicit writer for
+	/// scheduling. No GPU resource is allocated by the graph today — the
+	/// caller's pass execute() is still responsible for actual allocation;
+	/// this just buys the handle for use in subsequent declarations.
 	ResourceHandle create(const ResourceDesc &desc);
 
   private:
@@ -98,16 +100,18 @@ class PassBuilder
 /**
  * @brief Per-frame context handed to a Pass's `execute()` call.
  *
- * Carries the wgpu encoder so passes can record their commands. Future
- * fields here: resolved resource pointers (textures / buffers / views)
- * looked up by ResourceHandle so passes don't have to stash them in
- * member variables.
+ * Carries the wgpu encoder so passes can record their commands. The
+ * `textures` and `buffers` maps are caller-populated: the graph's
+ * execute() does NOT allocate or resolve transient resources today, it
+ * just iterates the compiled order and invokes each pass. The maps are
+ * here so a caller that DOES manage resources externally (the current
+ * Renderer migration path) has a place to publish them under
+ * ResourceHandle ids, and so a future executor that does transient
+ * allocation can fill them in without changing the Pass interface.
  */
 struct RenderContext
 {
 	wgpu::CommandEncoder *encoder = nullptr;
-	// Resolved transient/imported resources — keyed by ResourceHandle::id.
-	// Populated by the graph's executor before calling each pass.
 	std::unordered_map<uint32_t, wgpu::Texture> textures;
 	std::unordered_map<uint32_t, wgpu::Buffer>  buffers;
 };
@@ -190,15 +194,15 @@ class FunctionPass : public Pass
  *
  * Workflow:
  *   1. addPass / addImported to register passes and external resources
- *   2. compile() — runs setup() on every pass, resolves the read/write
- *      dependency graph into an execution order
- *   3. execute(ctx) — pumps the compiled order, calling each pass's
- *      execute() with the resolved RenderContext
+ *   2. compile() — runs setup() on every pass, builds the read/write
+ *      dependency graph, topologically sorts the passes
+ *   3. execute(ctx) — iterates the compiled order, calling each pass's
+ *      execute(). RenderContext is opaque to the graph — passes use
+ *      whatever the caller put in it (encoder, resource maps).
  *
- * Compiling is deterministic and re-runnable: changing resource
- * dimensions or adding/removing passes is a recompile, not an
- * incremental edit. The expected pattern is "compile once at
- * window resize / pipeline change, execute every frame".
+ * Compiling is deterministic but cheap: re-running it after a window
+ * resize / pipeline change just re-walks the existing reads/writes. The
+ * intended pattern is compile-on-config-change, execute-per-frame.
  */
 class RenderGraph
 {
@@ -214,10 +218,12 @@ class RenderGraph
 	/// are inferred from setup()'s resource declarations).
 	PassHandle addPass(std::unique_ptr<Pass> pass);
 
-	/// Compile: run every pass's setup(), build the read/write graph,
-	/// topologically sort. Detects cycles (write-after-write where two
-	/// passes both write the same resource with no read in between, or
-	/// genuine A→B→A loops). Returns true on success.
+	/// Compile: run every pass's setup() to gather its reads/writes, build
+	/// the dependency graph (edge from the last writer of each resource to
+	/// every subsequent reader), and topologically sort. Cycles fail loud
+	/// in CompileResult::error. Write-after-write with no intermediate
+	/// reader is NOT rejected — the second writer silently shadows the
+	/// first; downstream readers depend on the most-recent writer only.
 	struct CompileResult
 	{
 		bool        success = false;
@@ -225,12 +231,15 @@ class RenderGraph
 	};
 	CompileResult compile();
 
-	/// Run every pass in compile-determined order. Caller fills
-	/// @p ctx with the resolved resources for this frame.
+	/// Iterate the compiled order, calling each pass's execute(@p ctx).
+	/// No-op if compile() hasn't succeeded yet.
 	void execute(RenderContext &ctx);
 
-	/// Reset state before re-compiling (e.g. after window resize). Passes
-	/// stay registered; only the dependency graph + order are cleared.
+	/// Reset compile state before re-running compile(): clears the cached
+	/// execution order, drops the read/write declarations on every
+	/// registered pass (so setup() will repopulate them), and drops any
+	/// transient resources (imported resources are preserved). Use after a
+	/// window resize / pass reconfiguration.
 	void resetCompileState();
 
 	// Internal hooks for PassBuilder — public so the builder can call

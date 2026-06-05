@@ -162,8 +162,8 @@ class Mix : public Node
 	SlotType m_type;
 };
 
-/// `saturate(x)` — clamp to [0, 1]. Slot type-agnostic; operates on whatever
-/// the input is.
+/// `saturate(x)` — clamp to [0, 1]. The constructor pins which numeric type
+/// to operate on (F32 or Vec2/3/4); input and output share that type.
 class Saturate : public Node
 {
   public:
@@ -236,7 +236,8 @@ class Dot : public Node
 	SlotType m_type;
 };
 
-/// `pow(base, exponent)` — power. Slot-type agnostic.
+/// `pow(base, exponent)` — power. The constructor pins which numeric type
+/// to operate on; base, exponent, and result share that type.
 class Pow : public Node
 {
   public:
@@ -330,10 +331,10 @@ class FragmentUV : public Node
 };
 
 /**
- * @brief Pull the per-fragment world-space normal from the interpolant.
- *
- * Output is a Vec3; the engine's PBR template populates this from the
- * vertex shader after TBN math.
+ * @brief Pull the per-fragment world-space normal from the vertex
+ *        interpolant — assumes the fragment input struct has a
+ *        `normal: vec3<f32>` field. Emit re-normalises in case
+ *        interpolation has shrunk the length.
  */
 class FragmentNormal : public Node
 {
@@ -396,19 +397,19 @@ class TextureSample : public Node
 };
 
 /**
- * @brief Terminal "material output" node. Inputs are the PBR channels the
- *        engine's material struct exposes:
+ * @brief Terminal node. Inputs are the four PBR channels:
  *
  *   - `albedo`    : Vec3 (defaults to white)
  *   - `metallic`  : F32  (defaults to 0)
  *   - `roughness` : F32  (defaults to 0.5)
  *   - `emission`  : Vec3 (defaults to black)
  *
- * Output slot 0 (`material`) is the type the compiler treats as the graph's
- * final result — by convention it carries the `albedo` value so a freshly-
- * wired graph "just shows the colour" with no extra plumbing. The full PBR
- * integration (writing all four channels into the engine's `Material`
- * struct) is wired in a follow-up.
+ * Output slot 0 carries the albedo value because that's what
+ * Graph::compile uses as the result expression (`resultExpr =
+ * varName(outputNode, 0)`). emit() additionally emits the other three
+ * channels as named `let` bindings (`<out>_metallic`, `<out>_roughness`,
+ * `<out>_emission`) so a future MaterialTemplate pass can pick them up
+ * when it stops using `vec4f(albedo, 1.0)` as the fragment return value.
  */
 class MaterialOutput : public Node
 {

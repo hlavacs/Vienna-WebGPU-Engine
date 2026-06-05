@@ -12,11 +12,14 @@ namespace engine::shadergraph
 /**
  * @brief WGSL value types a slot can carry.
  *
- * Opaque types (Texture2D, Sampler) are valid for inputs/outputs but cannot
- * be emitted as `let` values — they must be passed through unchanged. The
- * compiler treats them specially: only Texture2D/Sampler edges produce no
- * intermediate variable; the consumer reads the source slot's identifier
- * directly.
+ * Texture2D and Sampler are opaque types: WGSL doesn't allow them as `let`
+ * binding values, so a graph that connects an opaque OUTPUT to a downstream
+ * input would emit invalid WGSL. The current compiler doesn't handle this
+ * case specially — it just rejects unconnected opaque INPUTS (see
+ * isOpaque() and the error path in Graph::compile). No node in the stock
+ * library exposes an opaque output today; TextureSample's rgba output is
+ * Vec4. Opaque pass-through would need a real implementation step before
+ * a node like that can be added.
  */
 enum class SlotType : uint8_t
 {
@@ -35,8 +38,8 @@ enum class SlotType : uint8_t
 const char *wgslTypeName(SlotType t);
 
 /// True for types that cannot be assigned to a `let` binding (textures,
-/// samplers). The compiler routes their edges as identifier substitution
-/// instead of intermediate-variable emission.
+/// samplers). compile() uses this to reject unconnected opaque inputs;
+/// connected opaque outputs aren't actually emitted by any stock node.
 bool isOpaque(SlotType t);
 
 /// One named slot on a node (input or output). `defaultExpr` provides a
@@ -152,8 +155,10 @@ struct Edge
  *     node and emit the WGSL fragment-shader body
  *
  * Compilation is single-pass and deterministic: topo sort + per-node
- * emission. Cycles, type mismatches, and dangling opaque inputs are
- * reported as errors in CompileResult.
+ * emission. Errors surfaced in CompileResult::error: cycles, dangling
+ * edges to deleted node ids, and unconnected opaque inputs. Slot-type
+ * compatibility between connected outputs and inputs is NOT checked —
+ * the compiler trusts the graph editor / caller to wire compatible types.
  */
 class Graph
 {
@@ -167,10 +172,11 @@ class Graph
 	void connect(NodeId srcNode, uint32_t srcSlot,
 	             NodeId dstNode, uint32_t dstSlot);
 
-	/// Bytes-of-effort-friendly result. `success == false` carries a human-
-	/// readable error string for the editor / log; on success, `wgsl`
-	/// holds the fragment-shader body and `resultExpr` is the variable
-	/// name carrying the chosen output slot's value.
+	/// Compile output. On success, `declarations` holds module-scope decls
+	/// (texture/sampler bindings collected from all nodes), `wgsl` holds the
+	/// per-node `let` bindings in topological order, and `resultExpr` is the
+	/// variable name carrying the output node's slot-0 value. On failure
+	/// `error` is non-empty and the other strings are unspecified.
 	struct CompileResult
 	{
 		bool        success    = false;
@@ -180,10 +186,11 @@ class Graph
 		std::string error;         ///< Non-empty when success == false.
 	};
 
-	/// Walk the graph from @p outputNode (depth-first, post-order) and
-	/// emit WGSL. Each non-opaque output slot becomes a unique `let`
-	/// binding; opaque slots forward identifiers. Returns CompileResult.
-	/// Output slot 0 of @p outputNode is the result.
+	/// Walk the graph from @p outputNode (iterative DFS, post-order),
+	/// emit each node's WGSL fragment in topological order, and collect
+	/// the deduplicated module-scope declarations. Every output slot
+	/// becomes a `let` binding named `n<id>_<slot>`. Output slot 0 of
+	/// @p outputNode names the final result.
 	CompileResult compile(NodeId outputNode) const;
 
 	/// Number of nodes currently in the graph.

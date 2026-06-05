@@ -22,10 +22,11 @@ namespace engine::shadergraph
  * etc. nodes can reference `in.uv` / `in.normal` directly.
  *
  * Final output is `vec4f(result, 1.0)` where `result` is the graph's
- * designated output expression — typically the `albedo` channel of the
- * MaterialOutput node. A future enhancement extends this to write the full
- * MaterialOutput tuple (albedo + metallic + roughness + emission) into a
- * G-buffer-style multi-target output.
+ * designated output expression — for a MaterialOutput-terminated graph
+ * that's the albedo channel. MaterialOutput's other named bindings
+ * (`<out>_metallic` etc.) are present in the emitted body but not yet
+ * routed to G-buffer color attachments; a future PBR-MRT template would
+ * need to do that.
  */
 [[nodiscard]] std::string wrapAsPBRFragmentShader(const Graph::CompileResult &compileResult);
 
