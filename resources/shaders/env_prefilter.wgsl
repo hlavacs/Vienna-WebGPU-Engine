@@ -38,12 +38,11 @@ struct PrefilterParams {
     params: vec4<f32>,
 }
 
-// This shader is a self-contained one-shot bake — it builds its own
-// pipeline layout in PrefilteredEnv.cpp and never gets bound through the
-// engine's Frame/Scene/Material/Object convention. The validator's warning
-// about @group(0) being reserved is correct in general but not actionable
-// here; an opt-out hook (e.g. a "standalone-shader" tag) would be cleaner
-// than skewing the bindings.
+// @standalone-shader — built its own pipeline layout in PrefilteredEnv.cpp,
+// never bound through the engine's Frame/Scene/Material/Object convention.
+// The marker tells the WGSL reflector to skip the canonical bind-group
+// validation; without it the validator would (correctly, in general)
+// complain that @group(0) collides with the engine-reserved range.
 @group(0) @binding(0) var          srcEnv:    texture_2d<f32>;
 @group(0) @binding(1) var          srcSmp:    sampler;
 @group(0) @binding(2) var<uniform> u_params:  PrefilterParams;
@@ -105,7 +104,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Split-sum simplification: take N == R == V. This is the same shortcut
     // UE4 uses — exact at mirror roughness, biased at high roughness but
     // visually acceptable.
-    let N = equirectUvToDir(in.uv);
+    //
+    // V-axis flip: WebGPU rasterizes vs.uv.y=0 to texel row H-1 while
+    // runtime textureSample reads uv.y=0 from row 0. Without the inversion
+    // the prefiltered env is stored upside-down — a reflection pointing up
+    // would sample the down-direction's GGX-convolved env, producing a
+    // mirrored sky/ground swap on every reflective surface.
+    let N = equirectUvToDir(vec2<f32>(in.uv.x, 1.0 - in.uv.y));
     let R = N;
     let V = R;
 

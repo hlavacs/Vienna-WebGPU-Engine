@@ -36,10 +36,9 @@ const PI: f32 = 3.14159265358979323846;
 const PHI_STEP:   f32 = 0.025;
 const THETA_STEP: f32 = 0.025;
 
-// This shader is a self-contained one-shot bake — it builds its own pipeline
-// layout in IrradianceMap.cpp and never goes through the engine's
-// Frame/Scene/Material/Object convention. Same warning the validator gives
-// for env_prefilter.wgsl applies here.
+// @standalone-shader — built its own pipeline layout in IrradianceMap.cpp,
+// never bound through the engine's Frame/Scene/Material/Object convention.
+// See env_prefilter.wgsl for the same opt-out rationale.
 @group(0) @binding(0) var srcEnv: texture_2d<f32>;
 @group(0) @binding(1) var srcSmp: sampler;
 
@@ -63,7 +62,11 @@ fn directionToEquirectUv(direction: vec3<f32>) -> vec2<f32> {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Treat the output texel's equirect direction as the surface normal.
     // At render time, the consumer sampler maps normal → uv → this texel.
-    let N = equirectUvToDir(in.uv);
+    //
+    // V-axis flip: see env_prefilter.wgsl — without the inversion the
+    // irradiance map ends up vertically mirrored relative to the loaded
+    // equirect HDR, so an upward-facing normal samples ground irradiance.
+    let N = equirectUvToDir(vec2<f32>(in.uv.x, 1.0 - in.uv.y));
 
     // Build an orthonormal basis around N so we can walk a hemisphere
     // aligned to it. `up` picks a non-degenerate ref vector; up × N gives

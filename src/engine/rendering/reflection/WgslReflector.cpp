@@ -1156,6 +1156,15 @@ ReflectResult reflectWgsl(std::string_view source, std::string path)
 	}
 	if (isComputeOnly) return result;
 
+	// Standalone-shader opt-out. Shaders marked with a `// @standalone-shader`
+	// comment anywhere in the source are exempt from canonical-layout
+	// validation: they build their own pipeline layout (no engine roles),
+	// never get bound through the Frame/Scene/Material/Object convention,
+	// and don't participate in the per-frame orchestration. Used for
+	// one-shot baker shaders (IBL prefilter, irradiance convolution, BRDF
+	// LUT) that legitimately put their inputs at @group(0).
+	if (source.find("@standalone-shader") != std::string_view::npos) return result;
+
 	// Canonical-layout validation. SKILL.md fixes the four engine roles at known
 	// indices and reserves the [0..ENGINE_GROUPS_END) range; custom groups must
 	// start at ENGINE_GROUPS_END. Misplacements are surfaced as diagnostics so
