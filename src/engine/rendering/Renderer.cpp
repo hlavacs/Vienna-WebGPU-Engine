@@ -253,10 +253,14 @@ void registerFrameGraphPasses(
 
 std::string joinPassNames(const std::vector<std::string> &names)
 {
+	// ASCII separator — Windows console default code page mangles UTF-8
+	// arrows ('→' shows as 'ÔåÆ' on cp1252). spdlog doesn't force the
+	// console to UTF-8 either, so we keep the log readable by sticking to
+	// 7-bit ASCII for the separator.
 	std::string trace;
 	for (const auto &n : names)
 	{
-		if (!trace.empty()) trace += " → ";
+		if (!trace.empty()) trace += " -> ";
 		trace += n;
 	}
 	return trace;

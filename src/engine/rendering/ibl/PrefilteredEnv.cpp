@@ -6,9 +6,14 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
+#include "engine/rendering/Texture.h"
+#include "engine/rendering/ibl/internal/OneShotPipeline.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
+#include "engine/rendering/webgpu/WebGPUBuffer.h"
+#include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUSamplerFactory.h"
-#include "engine/rendering/webgpu/WebGPUShaderFactory.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 
@@ -18,106 +23,96 @@ namespace engine::rendering::ibl
 namespace
 {
 
-wgpu::Texture allocateDestinationTexture(
+/// Allocate a multi-mip destination texture for the prefilter result.
+///
+/// @c WebGPUTextureFactory::createColorRenderTarget hardcodes mipLevelCount=1
+/// (the common case). For the GGX prefilter we need a mip chain, so we go
+/// through @c createFromDescriptors, the same factory entry point the
+/// single-mip helper forwards to. That keeps texture creation flowing
+/// through the factory rather than the raw device API.
+std::shared_ptr<webgpu::WebGPUTexture> allocateMipChainTarget(
 	webgpu::WebGPUContext &context,
 	uint32_t width,
 	uint32_t height,
 	uint32_t mipLevels,
 	wgpu::TextureFormat format)
 {
-	wgpu::TextureDescriptor desc{};
-	desc.label           = "PrefilteredEnv";
-	desc.dimension       = wgpu::TextureDimension::_2D;
-	desc.size            = {width, height, 1};
-	desc.mipLevelCount   = mipLevels;
-	desc.sampleCount     = 1;
-	desc.format          = format;
-	desc.usage           = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
-	desc.viewFormatCount = 0;
-	desc.viewFormats     = nullptr;
-	return context.getDevice().createTexture(desc);
+	wgpu::TextureDescriptor texDesc{};
+	texDesc.label                   = "PrefilteredEnv";
+	texDesc.dimension               = wgpu::TextureDimension::_2D;
+	texDesc.size                    = {width, height, 1};
+	texDesc.mipLevelCount           = mipLevels;
+	texDesc.sampleCount             = 1;
+	texDesc.format                  = format;
+	texDesc.usage                   = static_cast<WGPUTextureUsageFlags>(
+		webgpu::TextureUsage::RenderAttachment | webgpu::TextureUsage::TextureBinding);
+	texDesc.viewFormatCount         = 0;
+	texDesc.viewFormats             = nullptr;
+
+	// Default view covers every mip — IBL consumers sample across the chain
+	// via textureSampleLevel with a roughness-driven LOD.
+	wgpu::TextureViewDescriptor viewDesc{};
+	viewDesc.label           = "PrefilteredEnv.FullView";
+	viewDesc.format          = format;
+	viewDesc.dimension       = wgpu::TextureViewDimension::_2D;
+	viewDesc.baseMipLevel    = 0;
+	viewDesc.mipLevelCount   = mipLevels;
+	viewDesc.baseArrayLayer  = 0;
+	viewDesc.arrayLayerCount = 1;
+	viewDesc.aspect          = wgpu::TextureAspect::All;
+
+	return context.textureFactory().createFromDescriptors(
+		texDesc, viewDesc, engine::rendering::Texture::Type::RenderTarget);
 }
 
-wgpu::BindGroupLayout makeBindGroupLayout(webgpu::WebGPUContext &context)
+/// Bind-group layout the prefilter shader expects at @group(0):
+/// 0 = source equirect, 1 = sampler, 2 = roughness uniform (vec4).
+std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> buildBindGroupLayoutInfo(webgpu::WebGPUContext &context)
 {
-	std::array<wgpu::BindGroupLayoutEntry, 3> entries{};
-	entries[0]                         = wgpu::Default;
+	std::vector<wgpu::BindGroupLayoutEntry> entries(3, wgpu::Default);
+
 	entries[0].binding                 = 0;
 	entries[0].visibility              = wgpu::ShaderStage::Fragment;
 	entries[0].texture.sampleType      = wgpu::TextureSampleType::Float;
 	entries[0].texture.viewDimension   = wgpu::TextureViewDimension::_2D;
 	entries[0].texture.multisampled    = false;
-	entries[1]                         = wgpu::Default;
+
 	entries[1].binding                 = 1;
 	entries[1].visibility              = wgpu::ShaderStage::Fragment;
 	entries[1].sampler.type            = wgpu::SamplerBindingType::Filtering;
-	entries[2]                         = wgpu::Default;
+
 	entries[2].binding                 = 2;
 	entries[2].visibility              = wgpu::ShaderStage::Fragment;
 	entries[2].buffer.type             = wgpu::BufferBindingType::Uniform;
 	entries[2].buffer.minBindingSize   = sizeof(float) * 4;
 
-	wgpu::BindGroupLayoutDescriptor desc{};
-	desc.label      = "PrefilteredEnv.BindGroupLayout";
-	desc.entryCount = static_cast<uint32_t>(entries.size());
-	desc.entries    = entries.data();
-	return context.getDevice().createBindGroupLayout(desc);
+	return context.bindGroupFactory().createBindGroupLayoutInfo(
+		"PrefilteredEnv.BindGroupLayout",
+		BindGroupType::Custom,
+		BindGroupReuse::Global,
+		std::move(entries),
+		{});
 }
 
-wgpu::RenderPipeline makePipeline(
-	webgpu::WebGPUContext &context,
-	wgpu::ShaderModule shaderModule,
-	wgpu::PipelineLayout pipelineLayout,
-	wgpu::TextureFormat targetFormat)
-{
-	wgpu::ColorTargetState colorTarget{};
-	colorTarget.format    = targetFormat;
-	colorTarget.writeMask = wgpu::ColorWriteMask::All;
-	colorTarget.blend     = nullptr;
-
-	wgpu::FragmentState fragState{};
-	fragState.module        = shaderModule;
-	fragState.entryPoint    = "fs_main";
-	fragState.constantCount = 0;
-	fragState.constants     = nullptr;
-	fragState.targetCount   = 1;
-	fragState.targets       = &colorTarget;
-
-	wgpu::RenderPipelineDescriptor desc{};
-	desc.label                = "PrefilteredEnv.Pipeline";
-	desc.layout               = pipelineLayout;
-	desc.vertex.module        = shaderModule;
-	desc.vertex.entryPoint    = "vs_main";
-	desc.vertex.bufferCount   = 0;
-	desc.vertex.buffers       = nullptr;
-	desc.primitive.topology   = wgpu::PrimitiveTopology::TriangleList;
-	desc.primitive.frontFace  = wgpu::FrontFace::CCW;
-	desc.primitive.cullMode   = wgpu::CullMode::None;
-	desc.depthStencil         = nullptr;
-	desc.multisample.count    = 1;
-	desc.multisample.mask     = ~0u;
-	desc.fragment             = &fragState;
-	return context.getDevice().createRenderPipeline(desc);
-}
-
-/// One mip level's worth of per-pass state — kept together so the bake loop
-/// can pin everything until the encoder submission completes.
+/// Per-mip ephemera that has to outlive the encoder submission. Kept in a
+/// vector so the destination views in particular stay valid for the entire
+/// bake — the encoder records pass attachments against them.
 struct MipResources
 {
-	wgpu::Buffer      roughnessUniform = nullptr;
-	wgpu::BindGroup   bindGroup        = nullptr;
-	wgpu::TextureView destinationView  = nullptr;
+	std::shared_ptr<webgpu::WebGPUBuffer> roughnessUniform;
+	wgpu::BindGroup                       bindGroup       = nullptr;
+	wgpu::TextureView                     destinationView = nullptr;
 };
 
 MipResources makeMipResources(
-	webgpu::WebGPUContext &context,
-	uint32_t mipIndex,
-	uint32_t mipCount,
+	webgpu::WebGPUContext               &context,
+	uint32_t                             mipIndex,
+	uint32_t                             mipCount,
 	const std::shared_ptr<webgpu::WebGPUTexture> &sourceEquirect,
-	wgpu::Sampler sampler,
-	wgpu::BindGroupLayout bindGroupLayout,
-	wgpu::Texture destinationTexture,
-	wgpu::TextureFormat destinationFormat)
+	wgpu::Sampler                        sampler,
+	const wgpu::BindGroupLayout         &bindGroupLayout,
+	wgpu::Texture                        destinationTexture,
+	wgpu::TextureFormat                  destinationFormat)
 {
 	MipResources out{};
 
@@ -125,33 +120,26 @@ MipResources makeMipResources(
 	const float roughness   = static_cast<float>(mipIndex) / maxMipDenom;
 	const float params[4]   = {roughness, 0.0f, 0.0f, 0.0f};
 
-	wgpu::BufferDescriptor bufDesc{};
-	bufDesc.label            = "PrefilteredEnv.RoughnessUniform";
-	bufDesc.size             = sizeof(params);
-	bufDesc.usage            = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-	bufDesc.mappedAtCreation = false;
-	out.roughnessUniform = context.getDevice().createBuffer(bufDesc);
-	context.getQueue().writeBuffer(out.roughnessUniform, 0, params, sizeof(params));
+	// Uniform buffer for this mip's roughness — created via the engine's
+	// buffer factory so it participates in the same lifetime tracking as
+	// every other UBO.
+	out.roughnessUniform = context.bufferFactory().createUniformBuffer(
+		"PrefilteredEnv.RoughnessUniform",
+		2,                          // binding index
+		params,
+		4 /* element count = sizeof(vec4f) / sizeof(float) */);
 
-	std::array<wgpu::BindGroupEntry, 3> bgEntries{};
-	bgEntries[0]             = wgpu::Default;
-	bgEntries[0].binding     = 0;
-	bgEntries[0].textureView = sourceEquirect->getTextureView();
-	bgEntries[1]             = wgpu::Default;
-	bgEntries[1].binding     = 1;
-	bgEntries[1].sampler     = sampler;
-	bgEntries[2]             = wgpu::Default;
-	bgEntries[2].binding     = 2;
-	bgEntries[2].buffer      = out.roughnessUniform;
-	bgEntries[2].offset      = 0;
-	bgEntries[2].size        = sizeof(params);
+	std::vector<wgpu::BindGroupEntry> entries(3, wgpu::Default);
+	entries[0].binding     = 0;
+	entries[0].textureView = sourceEquirect->getTextureView();
+	entries[1].binding     = 1;
+	entries[1].sampler     = sampler;
+	entries[2].binding     = 2;
+	entries[2].buffer      = out.roughnessUniform->getBuffer();
+	entries[2].offset      = 0;
+	entries[2].size        = sizeof(params);
 
-	wgpu::BindGroupDescriptor bgDesc{};
-	bgDesc.label      = "PrefilteredEnv.BindGroup";
-	bgDesc.layout     = bindGroupLayout;
-	bgDesc.entryCount = static_cast<uint32_t>(bgEntries.size());
-	bgDesc.entries    = bgEntries.data();
-	out.bindGroup = context.getDevice().createBindGroup(bgDesc);
+	out.bindGroup = context.bindGroupFactory().createBindGroup(bindGroupLayout, entries);
 
 	wgpu::TextureViewDescriptor viewDesc{};
 	viewDesc.label           = "PrefilteredEnv.MipView";
@@ -162,46 +150,9 @@ MipResources makeMipResources(
 	viewDesc.baseArrayLayer  = 0;
 	viewDesc.arrayLayerCount = 1;
 	viewDesc.aspect          = wgpu::TextureAspect::All;
-	out.destinationView = destinationTexture.createView(viewDesc);
+	out.destinationView      = destinationTexture.createView(viewDesc);
 
 	return out;
-}
-
-void recordBakePasses(
-	wgpu::CommandEncoder &encoder,
-	wgpu::RenderPipeline pipeline,
-	const std::vector<MipResources> &mips)
-{
-	for (const auto &m : mips)
-	{
-		wgpu::RenderPassColorAttachment colorAttach{};
-		colorAttach.view       = m.destinationView;
-		colorAttach.loadOp     = wgpu::LoadOp::Clear;
-		colorAttach.storeOp    = wgpu::StoreOp::Store;
-		colorAttach.clearValue = wgpu::Color{0.0, 0.0, 0.0, 0.0};
-
-		wgpu::RenderPassDescriptor rpDesc{};
-		rpDesc.label                  = "PrefilteredEnv.RenderPass";
-		rpDesc.colorAttachmentCount   = 1;
-		rpDesc.colorAttachments       = &colorAttach;
-		rpDesc.depthStencilAttachment = nullptr;
-
-		wgpu::RenderPassEncoder pass = encoder.beginRenderPass(rpDesc);
-		pass.setPipeline(pipeline);
-		pass.setBindGroup(0, m.bindGroup, 0, nullptr);
-		pass.draw(3, 1, 0, 0); // fullscreen triangle from vertex_index
-		pass.end();
-	}
-}
-
-void releaseMipResources(std::vector<MipResources> &mips)
-{
-	for (auto &m : mips)
-	{
-		if (m.destinationView)  m.destinationView.release();
-		if (m.bindGroup)        m.bindGroup.release();
-		if (m.roughnessUniform) { m.roughnessUniform.destroy(); m.roughnessUniform.release(); }
-	}
 }
 
 } // namespace
@@ -224,105 +175,61 @@ bool PrefilteredEnv::bake(
 		return false;
 	}
 
-	// One-shot bake: bypass PipelineManager because we don't want the LUT
-	// occupying a slot in the cache (it never hot-reloads), don't need
-	// auto-rebuild, and don't want to register a single-use shader against
-	// the engine's canonical Frame/Scene/Material/Object bind-group layout
-	// (the prefilter shader binds its own resources at @group(0)). All the
-	// other primitives — texture, sampler, shader module — still go through
-	// the engine factories.
 	const wgpu::TextureFormat dstFormat = wgpu::TextureFormat::RGBA16Float;
-
-	wgpu::Texture dstTexture = allocateDestinationTexture(context, srcWidth, srcHeight, MIP_LEVELS, dstFormat);
-	if (!dstTexture)
+	m_texture = allocateMipChainTarget(context, srcWidth, srcHeight, MIP_LEVELS, dstFormat);
+	if (!m_texture)
 	{
 		spdlog::error("PrefilteredEnv: failed to allocate destination texture");
 		return false;
 	}
 
+	auto bglInfo = buildBindGroupLayoutInfo(context);
+	if (!bglInfo)
+	{
+		spdlog::error("PrefilteredEnv: failed to create bind group layout");
+		return false;
+	}
+
+	const wgpu::BindGroupLayout &bgl = bglInfo->getLayout();
 	const auto shaderPath = engine::core::PathProvider::getResource("shaders/env_prefilter.wgsl");
-	wgpu::ShaderModule shaderModule = context.shaderFactory().loadShaderModule(shaderPath);
-	if (!shaderModule)
+	auto oneShot = internal::createOneShotPipeline(
+		context, shaderPath,
+		&bgl, 1,
+		dstFormat,
+		"PrefilteredEnv");
+	if (!oneShot.pipeline)
 	{
-		spdlog::error("PrefilteredEnv: failed to load env_prefilter.wgsl");
-		dstTexture.destroy();
-		dstTexture.release();
 		return false;
 	}
 
-	wgpu::BindGroupLayout bindGroupLayout = makeBindGroupLayout(context);
-	std::array<WGPUBindGroupLayout, 1> bglRaw{static_cast<WGPUBindGroupLayout>(bindGroupLayout)};
-	wgpu::PipelineLayoutDescriptor plDesc{};
-	plDesc.label                = "PrefilteredEnv.PipelineLayout";
-	plDesc.bindGroupLayoutCount = static_cast<uint32_t>(bglRaw.size());
-	plDesc.bindGroupLayouts     = bglRaw.data();
-	wgpu::PipelineLayout pipelineLayout = context.getDevice().createPipelineLayout(plDesc);
+	wgpu::Sampler sampler = context.samplerFactory().getClampLinearSampler();
+	wgpu::Texture rawDst = m_texture->getTexture();
 
-	wgpu::RenderPipeline pipeline = makePipeline(context, shaderModule, pipelineLayout, dstFormat);
-	if (!pipeline)
-	{
-		spdlog::error("PrefilteredEnv: failed to create render pipeline");
-		pipelineLayout.release();
-		bindGroupLayout.release();
-		shaderModule.release();
-		dstTexture.destroy();
-		dstTexture.release();
-		return false;
-	}
-
-	auto sampler = context.samplerFactory().getClampLinearSampler();
 	std::vector<MipResources> mips;
 	mips.reserve(MIP_LEVELS);
 	for (uint32_t mip = 0; mip < MIP_LEVELS; ++mip)
 	{
 		mips.push_back(makeMipResources(
 			context, mip, MIP_LEVELS,
-			sourceEquirect, sampler, bindGroupLayout,
-			dstTexture, dstFormat));
+			sourceEquirect, sampler, bgl,
+			rawDst, dstFormat));
 	}
 
 	wgpu::CommandEncoder encoder = context.createCommandEncoder("PrefilteredEnv.Encoder");
-	recordBakePasses(encoder, pipeline, mips);
+	for (const auto &m : mips)
+	{
+		internal::recordOneShotPass(
+			encoder, m.destinationView, oneShot.pipeline, m.bindGroup, "PrefilteredEnv.RenderPass");
+	}
 	context.submitCommandEncoder(encoder, "PrefilteredEnv.Commands");
 
-	// The mip-chain texture isn't an Image-loaded texture, so we construct
-	// the engine wrapper by hand rather than going through createFromHandle.
-	// The default view covers every mip level — IBL consumers can sample
-	// across the chain via textureSampleLevel with a roughness-driven LOD.
-	wgpu::TextureDescriptor wrapTexDesc{};
-	wrapTexDesc.label                   = "PrefilteredEnv";
-	wrapTexDesc.dimension               = wgpu::TextureDimension::_2D;
-	wrapTexDesc.size                    = {srcWidth, srcHeight, 1};
-	wrapTexDesc.mipLevelCount           = MIP_LEVELS;
-	wrapTexDesc.sampleCount             = 1;
-	wrapTexDesc.format                  = dstFormat;
-	wrapTexDesc.usage                   = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
-	wrapTexDesc.viewFormatCount         = 0;
-	wrapTexDesc.viewFormats             = nullptr;
-
-	wgpu::TextureViewDescriptor wrapViewDesc{};
-	wrapViewDesc.label           = "PrefilteredEnv.FullView";
-	wrapViewDesc.format          = dstFormat;
-	wrapViewDesc.dimension       = wgpu::TextureViewDimension::_2D;
-	wrapViewDesc.baseMipLevel    = 0;
-	wrapViewDesc.mipLevelCount   = MIP_LEVELS;
-	wrapViewDesc.baseArrayLayer  = 0;
-	wrapViewDesc.arrayLayerCount = 1;
-	wrapViewDesc.aspect          = wgpu::TextureAspect::All;
-	wgpu::TextureView fullView   = dstTexture.createView(wrapViewDesc);
-
-	m_texture = std::make_shared<webgpu::WebGPUTexture>(
-		dstTexture,
-		fullView,
-		wrapTexDesc,
-		wrapViewDesc,
-		engine::rendering::Texture::Type::RenderTarget);
-
-	releaseMipResources(mips);
-	pipeline.release();
-	pipelineLayout.release();
-	bindGroupLayout.release();
-	shaderModule.release();
+	for (auto &m : mips)
+	{
+		if (m.destinationView) m.destinationView.release();
+		if (m.bindGroup)       m.bindGroup.release();
+		// roughnessUniform is a WebGPUBuffer shared_ptr — destruction handles release.
+	}
+	oneShot.release();
 
 	spdlog::info("PrefilteredEnv baked: {}x{} RGBA16Float, {} mips",
 		srcWidth, srcHeight, MIP_LEVELS);
