@@ -8,6 +8,7 @@
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/Texture.h"
 #include "engine/rendering/ibl/internal/OneShotPipeline.h"
+#include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
@@ -38,12 +39,19 @@ std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> buildBindGroupLayoutInfo(webg
 	entries[1].visibility              = wgpu::ShaderStage::Fragment;
 	entries[1].sampler.type            = wgpu::SamplerBindingType::Filtering;
 
+	// Typed binding metadata so WebGPUBindGroupLayoutInfo can answer
+	// reflection queries (lookup by name, by slot, etc.). The layout's
+	// assertion fires if this is empty.
+	std::vector<webgpu::BindGroupBinding> bindings;
+	bindings.push_back({0, "srcEnv", BindingType::Texture, wgpu::ShaderStage::Fragment, 0, std::nullopt, std::nullopt});
+	bindings.push_back({1, "srcSmp", BindingType::Sampler, wgpu::ShaderStage::Fragment, 0, std::nullopt, std::nullopt});
+
 	return context.bindGroupFactory().createBindGroupLayoutInfo(
 		"IrradianceMap.BindGroupLayout",
 		BindGroupType::Custom,
 		BindGroupReuse::Global,
 		std::move(entries),
-		{});
+		std::move(bindings));
 }
 
 /// Bind-group entries for the convolution pass: source texture view + sampler.

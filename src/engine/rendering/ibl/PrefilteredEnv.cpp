@@ -8,6 +8,7 @@
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/Texture.h"
 #include "engine/rendering/ibl/internal/OneShotPipeline.h"
+#include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
@@ -86,12 +87,20 @@ std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> buildBindGroupLayoutInfo(webg
 	entries[2].buffer.type             = wgpu::BufferBindingType::Uniform;
 	entries[2].buffer.minBindingSize   = sizeof(float) * 4;
 
+	// Typed binding metadata required by WebGPUBindGroupLayoutInfo's
+	// constructor — the assert fires on an empty bindings vector even when
+	// the wgpu-side entries are well-formed.
+	std::vector<webgpu::BindGroupBinding> bindings;
+	bindings.push_back({0, "srcEnv",   BindingType::Texture,       wgpu::ShaderStage::Fragment, 0, std::nullopt, std::nullopt});
+	bindings.push_back({1, "srcSmp",   BindingType::Sampler,       wgpu::ShaderStage::Fragment, 0, std::nullopt, std::nullopt});
+	bindings.push_back({2, "u_params", BindingType::UniformBuffer, wgpu::ShaderStage::Fragment, sizeof(float) * 4, std::nullopt, std::nullopt});
+
 	return context.bindGroupFactory().createBindGroupLayoutInfo(
 		"PrefilteredEnv.BindGroupLayout",
 		BindGroupType::Custom,
 		BindGroupReuse::Global,
 		std::move(entries),
-		{});
+		std::move(bindings));
 }
 
 /// Per-mip ephemera that has to outlive the encoder submission. Kept in a
