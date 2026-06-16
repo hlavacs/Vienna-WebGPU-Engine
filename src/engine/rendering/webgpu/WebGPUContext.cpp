@@ -104,6 +104,13 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 		spdlog::critical("[WebGPU] Failed to initialize default shaders.");
 		assert(false);
 	}
+	// Register the shader cache too. ShaderRegistry exposes the same
+	// six-method surface as every other factory now that it sits on
+	// SlotCache, so the debug overlay can list it alongside the
+	// Pipeline/Sampler/Texture caches and the global "soft clear" UI flow
+	// reaches it through a single iteration.
+	m_cacheRegistry.registerFactoryCache(*m_shaderRegistry, "ShaderRegistry");
+	m_cacheRegistry.setMaxIdleFramesFor("ShaderRegistry", 0);
 
 	// SceneLightBuffer depends on the light bind group layout that is registered
 	// during shader initialization, so create it after the shader registry is ready.
@@ -395,6 +402,11 @@ WebGPUBindGroupFactory &WebGPUContext::bindGroupFactory()
 		throw std::runtime_error("WebGPUBindGroupFactory not initialized!");
 	}
 	return *m_bindGroupFactory;
+}
+
+WebGPUPipelineFactory &WebGPUContext::pipelineFactory()
+{
+	return pipelineManager().factory();
 }
 
 /* Todo: Implement WebGPUSwapChainFactory

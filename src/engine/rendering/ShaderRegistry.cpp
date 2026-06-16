@@ -142,15 +142,16 @@ void ShaderRegistry::reloadAllShaders()
 {
 	spdlog::info("Reloading all shaders in ShaderRegistry...");
 
-	// Reload default shaders using the WebGPUShaderInfo overload (less reloading)#
-	auto shaders = m_shaders; // Copy to avoid modification during iteration
-	for (auto &[name, shaderInfo] : shaders)
+	// Snapshot keys + materialised shader infos under the SlotCache mutex,
+	// then iterate outside to avoid recursive lock if reloadShader → register
+	// re-enters the cache.
+	auto names = m_shaders.keys();
+	for (const auto &name : names)
 	{
-		if (shaderInfo)
-		{
-			spdlog::info("Reloading shader '{}'", name);
-			m_context.shaderFactory().reloadShader(shaderInfo);
-		}
+		auto info = m_shaders.find(name).lock();
+		if (!info) continue;
+		spdlog::info("Reloading shader '{}'", name);
+		m_context.shaderFactory().reloadShader(info);
 	}
 
 	spdlog::info("Shader reload complete");
@@ -158,46 +159,63 @@ void ShaderRegistry::reloadAllShaders()
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::getShader(const std::string &name) const
 {
-	auto it = m_shaders.find(name);
-	if (it != m_shaders.end())
-	{
-		return it->second;
-	}
-	return nullptr;
+	// SlotCache::find is const-safe here — it takes the internal mutex.
+	auto handle = const_cast<SlotCacheT &>(m_shaders).find(name);
+	return handle ? handle.lock() : nullptr;
+}
+
+engine::rendering::cache::Handle<webgpu::WebGPUShaderInfo>
+ShaderRegistry::getShaderHandle(const std::string &name)
+{
+	// Hand back the SlotCache Handle directly. Downstream caches use it for
+	// version-tracked bind-group invalidation; idle-eviction won't drop a
+	// shader slot because we set its maxIdleFrames to 0 in WebGPUContext.
+	return m_shaders.find(name);
 }
 
 bool ShaderRegistry::registerShader(std::shared_ptr<webgpu::WebGPUShaderInfo> shaderInfo, bool replaceIfExists)
 {
-	if (!replaceIfExists && m_shaders.find(shaderInfo->getName()) != m_shaders.end())
-	{
-		spdlog::warn("Shader '{}' already registered", shaderInfo->getName());
-		return false;
-	}
-
 	if (!shaderInfo || !shaderInfo->isValid())
 	{
-		spdlog::error("Cannot register invalid shader '{}'", shaderInfo->getName());
+		spdlog::error("Cannot register invalid shader '{}'", shaderInfo ? shaderInfo->getName() : "<null>");
 		return false;
 	}
 
-	m_shaders[shaderInfo->getName()] = shaderInfo;
-	if (replaceIfExists)
+	const std::string &name = shaderInfo->getName();
+	const bool         exists = m_shaders.find(name).valid();
+
+	if (exists && !replaceIfExists)
 	{
-		spdlog::info("Replaced existing shader '{}'", shaderInfo->getName());
+		spdlog::warn("Shader '{}' already registered", name);
+		return false;
+	}
+
+	if (exists)
+	{
+		// Hot-swap inside the slot — every outstanding shared_ptr from a
+		// previous getShader() call keeps the old shader alive until the
+		// caller drops it, which is what makes mid-frame hot reload safe.
+		m_shaders.replace(name, shaderInfo);
+		spdlog::info("Replaced existing shader '{}'", name);
 	}
 	else
 	{
-		spdlog::info("Registered shader '{}'", shaderInfo->getName());
+		// First registration creates the slot with a trivial build_fn that
+		// just returns the same info on demand — used by getOrCreate's
+		// initial build path. Subsequent eviction (rare for shaders) would
+		// hand out the captured pointer rather than rebuild from disk;
+		// since shaders are immutable once registered this is safe.
+		auto captured = shaderInfo;
+		m_shaders.getOrCreate(name, [captured]() { return captured; });
+		spdlog::info("Registered shader '{}'", name);
 	}
 	return true;
 }
 
 bool ShaderRegistry::unregisterShader(const std::string &name)
 {
-	auto it = m_shaders.find(name);
-	if (it != m_shaders.end())
+	if (m_shaders.erase(name))
 	{
-		m_shaders.erase(it);
 		spdlog::info("Unregistered shader '{}'", name);
 		return true;
 	}
@@ -207,13 +225,14 @@ bool ShaderRegistry::unregisterShader(const std::string &name)
 
 void ShaderRegistry::unregisterAll()
 {
-	spdlog::info("Unregistering all {} shaders", m_shaders.size());
-	m_shaders.clear();
+	const auto count = m_shaders.cacheSize();
+	spdlog::info("Unregistering all {} shaders", count);
+	m_shaders.cleanup();
 }
 
 bool ShaderRegistry::hasShader(const std::string &name) const
 {
-	return m_shaders.find(name) != m_shaders.end();
+	return const_cast<SlotCacheT &>(m_shaders).find(name).valid();
 }
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createPBRShader()

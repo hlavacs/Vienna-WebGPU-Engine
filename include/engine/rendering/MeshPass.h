@@ -53,6 +53,8 @@ class MeshPass : public RenderPass
 	 * @brief Initialize the mesh pass resources.
 	 * @return True if initialization succeeded.
 	 */
+	[[nodiscard]] const char *name() const override { return "Mesh"; }
+
 	bool initialize() override;
 
 	/**

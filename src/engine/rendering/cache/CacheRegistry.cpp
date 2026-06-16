@@ -135,6 +135,33 @@ void CacheRegistry::clearAll()
 	}
 }
 
+std::size_t CacheRegistry::softClearAll()
+{
+	std::vector<CacheView> snapshot;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		snapshot = m_views;
+	}
+	std::size_t softCount = 0;
+	for (const auto &v : snapshot)
+	{
+		if (v.softClear)
+		{
+			v.softClear(v.cache);
+			++softCount;
+		}
+		else if (v.clear)
+		{
+			// No soft-clear available — fall through to hard clear for any
+			// legacy cache that hasn't migrated. Consumer-held shared_ptrs
+			// keep resources alive across the call; the cache just forgets
+			// it had them.
+			v.clear(v.cache);
+		}
+	}
+	return softCount;
+}
+
 std::size_t CacheRegistry::totalSize() const
 {
 	std::vector<CacheView> snapshot;

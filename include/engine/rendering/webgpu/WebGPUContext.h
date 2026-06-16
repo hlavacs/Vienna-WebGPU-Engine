@@ -132,6 +132,10 @@ class WebGPUContext
 	[[nodiscard]] ShaderRegistry &shaderRegistry();
 	/** @brief Returns the pipeline manager. */
 	[[nodiscard]] WebGPUPipelineManager &pipelineManager();
+	/** @brief Returns the pipeline factory for low-level / uncached pipeline
+	 *  creation (compute pipelines, one-shot bakes). Prefer pipelineManager()
+	 *  for cached render pipelines. */
+	[[nodiscard]] WebGPUPipelineFactory &pipelineFactory();
 	/** @brief Central registry for every factory's resource cache. Renderer
 	 *  pumps notifyFrameAll() each frame and clearAll() on resize/scene
 	 *  reload; factories register themselves on construction. */

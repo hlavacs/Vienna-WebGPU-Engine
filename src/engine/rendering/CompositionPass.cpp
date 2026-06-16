@@ -50,7 +50,7 @@ void CompositionPass::cleanup()
 {
 	m_pipeline = {};
 	m_gBufferBindGroup.reset();
-	m_gBufferBindGroupFingerprint = nullptr;
+	m_gBufferBindGroupSignature.clear();
 }
 
 void CompositionPass::setGBuffer(webgpu::GBuffer *gBuffer)
@@ -58,7 +58,7 @@ void CompositionPass::setGBuffer(webgpu::GBuffer *gBuffer)
 	if (gBuffer != m_gBuffer)
 	{
 		m_gBufferBindGroup.reset();
-		m_gBufferBindGroupFingerprint = nullptr;
+		m_gBufferBindGroupSignature.clear();
 	}
 	m_gBuffer = gBuffer;
 }
@@ -71,13 +71,17 @@ bool CompositionPass::ensureGBufferBindGroup()
 		return false;
 	}
 
-	// Compare the first color texture's identity against the one used to build
-	// the cached bind group. GBuffer::resize replaces every color texture, so a
-	// pointer change here means the cached bind group is sampling destroyed views.
+	// Identity signature of every G-buffer texture. GBuffer::resize replaces
+	// the whole array, so any pointer move in the vector means the cached
+	// bind group is sampling destroyed views and must be rebuilt — even
+	// when the owning GBuffer* is unchanged (the common case for in-frame
+	// resizes like multi-camera split-screen with different viewports,
+	// where Renderer::onResize never fires).
 	const auto &textures = m_gBuffer->getColorTextures();
-	const webgpu::WebGPUTexture *currentFingerprint =
-		textures.empty() ? nullptr : textures[0].get();
-	if (m_gBufferBindGroup && m_gBufferBindGroupFingerprint == currentFingerprint)
+	engine::rendering::cache::BindGroupSignature signature;
+	for (const auto &tex : textures) signature.add(tex);
+
+	if (m_gBufferBindGroup && m_gBufferBindGroupSignature == signature)
 		return true;
 
 	m_gBufferBindGroup.reset();
@@ -111,7 +115,7 @@ bool CompositionPass::ensureGBufferBindGroup()
 		spdlog::error("CompositionPass: failed to create G-buffer bind group");
 		return false;
 	}
-	m_gBufferBindGroupFingerprint = currentFingerprint;
+	m_gBufferBindGroupSignature = std::move(signature);
 	return true;
 }
 

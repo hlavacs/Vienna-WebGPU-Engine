@@ -40,3 +40,7 @@ private
 *.png
 *.log
 /.claude
+
+# ImGui state — window positions / sizes / collapsed-flags, rewritten by
+# the runtime every session. Committing it just creates spurious diffs.
+imgui.ini

@@ -12,6 +12,7 @@
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPURenderPassContext.h"
+#include "engine/rendering/webgpu/WebGPUSampler.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 
 #include <webgpu/webgpu.hpp>
@@ -39,6 +40,8 @@ class CompositePass : public RenderPass
 	 * @brief Initialize the composite pass.
 	 * @return True if initialization succeeded.
 	 */
+	[[nodiscard]] const char *name() const override { return "Composite (Tonemap)"; }
+
 	bool initialize() override;
 
 	/**
@@ -80,7 +83,7 @@ class CompositePass : public RenderPass
 
 	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> m_pipeline;
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
-	wgpu::Sampler m_sampler = nullptr;
+	std::shared_ptr<webgpu::WebGPUSampler> m_sampler;
 
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 

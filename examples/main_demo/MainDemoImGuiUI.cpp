@@ -2,24 +2,38 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
+#include "engine/rendering/GBufferPass.h"
 #include "engine/rendering/Model.h"
+#include "engine/rendering/RenderPass.h"
+#include "engine/rendering/CacheStats.h"
+#include "engine/rendering/Renderer.h"
+#include "engine/rendering/webgpu/GBuffer.h"
+#include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
 #include "engine/resources/MaterialManager.h"
 #include "engine/resources/ModelManager.h"
 #include "engine/resources/ResourceManager.h"
+#include "engine/scene/nodes/CameraNode.h"
 #include "engine/scene/nodes/ModelRenderNode.h"
 
 namespace demo
 {
 
 MainDemoImGuiUI::MainDemoImGuiUI(
-	engine::GameEngine &engine
-) : m_engine(engine)
+	engine::GameEngine &engine,
+	std::shared_ptr<DayNightCycle> dayNightCycle
+) : m_engine(engine), m_dayNightCycle(std::move(dayNightCycle))
 {
 	m_rootNode = engine.getSceneManager()->getActiveScene()->getRoot();
 	for (const auto &child : m_rootNode->getChildrenOfType<engine::scene::nodes::LightNode>())
@@ -30,6 +44,19 @@ MainDemoImGuiUI::MainDemoImGuiUI(
 	auto renderer = m_engine.getRenderer().lock();
 	m_debugShadowCubeArray = renderer->getShadowPass().DEBUG_SHADOW_CUBE_ARRAY;
 	m_debugShadow2DArray = renderer->getShadowPass().DEBUG_SHADOW_2D_ARRAY;
+
+	registerSettingsPersistence();
+}
+
+MainDemoImGuiUI::~MainDemoImGuiUI()
+{
+	// wgpu raw handles aren't smart-ptr-managed; release them explicitly so
+	// the driver doesn't keep the shader module / pipeline objects alive
+	// past WebGPUContext shutdown.
+	if (m_depthPreviewPipeline)        m_depthPreviewPipeline.release();
+	if (m_depthPreviewPipelineLayout)  m_depthPreviewPipelineLayout.release();
+	if (m_depthPreviewBindGroupLayout) m_depthPreviewBindGroupLayout.release();
+	if (m_depthPreviewShaderModule)    m_depthPreviewShaderModule.release();
 }
 
 void MainDemoImGuiUI::render(const std::shared_ptr<engine::scene::SceneManager> &sceneManager)
@@ -44,18 +71,211 @@ void MainDemoImGuiUI::render(const std::shared_ptr<engine::scene::SceneManager> 
 			m_lightNodes.push_back(child);
 		};
 	}
-	ImGui::Begin("Lighting & Camera Controls");
+	// Snapshot panel visibility so we can flag imgui.ini dirty if anything is
+	// toggled this frame (via the menu or a window's close button), so the
+	// open/closed layout persists to next run.
+	const bool visBefore[] = {
+		m_showCameraLighting, m_showMaterials, m_showLights, m_showFlock,
+		m_showDayNight, m_showPerformance, m_showPassControls, m_showShadowDebug
+	};
 
-	renderLightingAndCameraControls();
-	ImGui::Separator();
-	renderMaterialProperties();
-	renderLightsSection();
+	// Animate the scattered point-light flock every frame, independent of
+	// whether its control panel is open — the panel only edits parameters.
+	if (m_flockEnabled && !m_flockLights.empty())
+	{
+		updateFlock(m_engine.getFrameTime() * 0.001f); // ms -> seconds
+	}
+
+	// Keep shadow-map debug rendering in sync with the panel toggle so the
+	// debug texture arrays are only populated while the panel is open.
+	if (auto renderer = m_engine.getRenderer().lock())
+	{
+		renderer->getShadowPass().setDebugMode(m_showShadowDebug);
+	}
+
+	renderMainMenuBar(sceneManager);
+
+	if (m_showCameraLighting)
+	{
+		if (ImGui::Begin("Camera & Lighting", &m_showCameraLighting))
+			renderLightingAndCameraControls();
+		ImGui::End();
+	}
+	if (m_showMaterials)
+	{
+		if (ImGui::Begin("Materials", &m_showMaterials))
+			renderMaterialProperties();
+		ImGui::End();
+	}
+	if (m_showLights)
+	{
+		if (ImGui::Begin("Lights", &m_showLights))
+			renderLightsSection();
+		ImGui::End();
+	}
+	if (m_showFlock)
+	{
+		if (ImGui::Begin("Light Flock", &m_showFlock))
+			renderFlockControls();
+		ImGui::End();
+	}
+	if (m_dayNightCycle && m_showDayNight)
+	{
+		renderDayNightWindow();
+	}
+
+	if (m_showPerformance)  renderPerformanceWindow();
+	if (m_showPassControls) renderPassControlsWindow();
+	if (m_showShadowDebug)  renderShadowDebugWindow();
+
+	const bool visAfter[] = {
+		m_showCameraLighting, m_showMaterials, m_showLights, m_showFlock,
+		m_showDayNight, m_showPerformance, m_showPassControls, m_showShadowDebug
+	};
+	if (std::memcmp(visBefore, visAfter, sizeof(visBefore)) != 0)
+		ImGui::MarkIniSettingsDirty();
+}
+
+void MainDemoImGuiUI::renderMainMenuBar(const std::shared_ptr<engine::scene::SceneManager> &sceneManager)
+{
+	if (!ImGui::BeginMainMenuBar())
+		return;
+
+	if (sceneManager && ImGui::BeginMenu("Scene"))
+	{
+		const std::string active = sceneManager->getActiveSceneName();
+		for (const auto &name : sceneManager->getSceneNames())
+		{
+			const bool selected = (name == active);
+			if (ImGui::MenuItem(name.c_str(), nullptr, selected) && !selected)
+				sceneManager->loadSceneAsync(name);
+		}
+		ImGui::EndMenu();
+	}
+
+	if (ImGui::BeginMenu("View"))
+	{
+		ImGui::MenuItem("Camera & Lighting", nullptr, &m_showCameraLighting);
+		ImGui::MenuItem("Materials",         nullptr, &m_showMaterials);
+		ImGui::MenuItem("Lights",            nullptr, &m_showLights);
+		ImGui::MenuItem("Light Flock",       nullptr, &m_showFlock);
+		if (m_dayNightCycle)
+			ImGui::MenuItem("Day-Night Cycle", nullptr, &m_showDayNight);
+		ImGui::EndMenu();
+	}
+
+	if (ImGui::BeginMenu("Debug"))
+	{
+		ImGui::MenuItem("Performance",   nullptr, &m_showPerformance);
+		ImGui::MenuItem("Pass Controls", nullptr, &m_showPassControls);
+		ImGui::MenuItem("Shadow Maps",   nullptr, &m_showShadowDebug);
+		ImGui::Separator();
+		if (ImGui::MenuItem("Reload Shaders"))
+		{
+			if (auto ctx = m_engine.getContext())
+				ctx->pipelineManager().reloadAllPipelines();
+		}
+		ImGui::EndMenu();
+	}
+
+	// Right-aligned scene name + FPS readout for at-a-glance status.
+	{
+		char status[128];
+		std::snprintf(status, sizeof(status), "%s  |  %.0f FPS",
+			sceneManager ? sceneManager->getActiveSceneName().c_str() : "",
+			m_engine.getFPS());
+		const float width = ImGui::CalcTextSize(status).x;
+		ImGui::SameLine(ImGui::GetWindowWidth() - width - 16.0f);
+		ImGui::TextUnformatted(status);
+	}
+
+	ImGui::EndMainMenuBar();
+}
+
+void MainDemoImGuiUI::renderDayNightWindow()
+{
+	if (!m_dayNightCycle)
+		return;
+
+	if (ImGui::Begin("Day-Night Cycle", &m_showDayNight))
+	{
+		float hour = m_dayNightCycle->getHour();
+		if (ImGui::SliderFloat("Hour of Day", &hour, 0.0f, 24.0f))
+			m_dayNightCycle->setHour(hour);
+
+		bool paused = m_dayNightCycle->isPaused();
+		if (ImGui::Checkbox("Pause Cycle", &paused))
+			m_dayNightCycle->setPaused(paused);
+
+		float cycleDuration = m_dayNightCycle->getCycleDuration();
+		if (ImGui::SliderFloat("Cycle Duration (s)", &cycleDuration, 10.0f, 600.0f))
+			m_dayNightCycle->setCycleDuration(cycleDuration);
+	}
 	ImGui::End();
+}
+
+std::vector<std::pair<const char *, bool *>> MainDemoImGuiUI::panelVisibilityTable()
+{
+	return {
+		{"CameraLighting", &m_showCameraLighting},
+		{"Materials",      &m_showMaterials},
+		{"Lights",         &m_showLights},
+		{"Flock",          &m_showFlock},
+		{"DayNight",       &m_showDayNight},
+		{"Performance",    &m_showPerformance},
+		{"PassControls",   &m_showPassControls},
+		{"ShadowDebug",    &m_showShadowDebug},
+	};
+}
+
+void MainDemoImGuiUI::applyPanelVisibility(const char *key, bool value)
+{
+	for (auto &[k, ptr] : panelVisibilityTable())
+	{
+		if (std::strcmp(k, key) == 0)
+		{
+			*ptr = value;
+			return;
+		}
+	}
+}
+
+void MainDemoImGuiUI::registerSettingsPersistence()
+{
+	// Persist each panel's open/closed state into imgui.ini (a "[MainDemoUI]
+	// [Panels]" block) so the window layout the user leaves behind is restored
+	// next run. ImGui reads this back on the first NewFrame, which happens
+	// after this constructor — so registering here catches the load.
+	ImGuiSettingsHandler handler;
+	handler.TypeName = "MainDemoUI";
+	handler.TypeHash = ImHashStr("MainDemoUI");
+	handler.UserData = this;
+	handler.ReadOpenFn = [](ImGuiContext *, ImGuiSettingsHandler *, const char *) -> void *
+	{
+		return (void *)1; // single implicit entry; state is keyed off UserData
+	};
+	handler.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *h, void *, const char *line)
+	{
+		auto *self = static_cast<MainDemoImGuiUI *>(h->UserData);
+		char key[64] = {};
+		int  value   = 0;
+		if (std::sscanf(line, "%63[^=]=%d", key, &value) == 2)
+			self->applyPanelVisibility(key, value != 0);
+	};
+	handler.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *h, ImGuiTextBuffer *buf)
+	{
+		auto *self = static_cast<MainDemoImGuiUI *>(h->UserData);
+		buf->appendf("[%s][Panels]\n", h->TypeName);
+		for (const auto &[key, ptr] : self->panelVisibilityTable())
+			buf->appendf("%s=%d\n", key, *ptr ? 1 : 0);
+		buf->append("\n");
+	};
+	ImGui::AddSettingsHandler(&handler);
 }
 
 void MainDemoImGuiUI::renderPerformanceWindow()
 {
-	ImGui::Begin("Performance");
+	ImGui::Begin("Performance", &m_showPerformance);
 	ImGui::Text("FPS: %.1f", m_engine.getFPS());
 	ImGui::Text("Frame Time: %.2f ms", m_engine.getFrameTime());
 
@@ -251,20 +471,136 @@ void MainDemoImGuiUI::renderPerformanceWindow()
 		ImGui::SameLine();
 		if (ImGui::Button("Clear all caches"))
 		{
-			reg.clearAll();
-			spdlog::info("Manual clearAll dropped every cache entry");
+			// Every cache now goes through SlotCache, so soft-clear is the
+			// single verb that does the right thing everywhere: drop each
+			// slot's resource pointer, keep the slot + build_fn alive,
+			// outstanding handles auto-rebuild on next access. Pipelines
+			// also need a shader-source reload first so the rebuild picks
+			// up edits-on-disk, not the same WGSL we just had.
+			auto ctx = m_engine.getContext();
+
+			// 1. Reload shader sources synchronously. ShaderRegistry slots
+			//    get their info replaced in place; pipelines that re-fetch
+			//    a shader after their soft-clear pick up the new info.
+			ctx->pipelineManager().reloadAllPipelines();
+
+			// 2. Soft-clear every registered cache (Pipeline, Sampler,
+			//    Shader, Texture, Mesh, Material, Model). Caches that don't
+			//    yet implement softClear fall through to their hard cleanup.
+			const std::size_t soft = reg.softClearAll();
+
+			// 3. Drop renderer-side cached bind groups so the next frame
+			//    rebuilds them with the fresh factory state. Still needed
+			//    until bind-group version-tracking lands (see Skill follow-
+			//    ups).
+			if (auto renderer = m_engine.getRenderer().lock())
+			{
+				renderer->resetCachedBindings();
+			}
+			spdlog::info("Manual clearAll: {} cache(s) soft-cleared, renderer bindings reset", soft);
 		}
 	}
+
+	if (ImGui::CollapsingHeader("Cache skip counters", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		ImGui::TextDisabled(
+			"Cumulative since session start (or last Reset). Skip rate = "
+			"how often each per-frame fingerprint cache hit. Hitting a high "
+			"skip rate on static-camera frames is the signal that the "
+			"recent optimisations are firing on your current workload."
+		);
+
+		using namespace engine::rendering;
+
+		struct Row
+		{
+			const char *label;
+			uint64_t    executed;
+			uint64_t    skipped;
+		};
+		const Row rows[] = {
+			{"Cluster compute (GPU dispatches)",
+			 CacheStats::clusterDispatchesExecuted.load(std::memory_order_relaxed),
+			 CacheStats::clusterDispatchesSkipped.load(std::memory_order_relaxed)},
+			{"Scene-light upload (writeBuffer)",
+			 CacheStats::sceneLightUploadsExecuted.load(std::memory_order_relaxed),
+			 CacheStats::sceneLightUploadsSkipped.load(std::memory_order_relaxed)},
+			{"Frustum cull (per camera)",
+			 CacheStats::frustumCullsExecuted.load(std::memory_order_relaxed),
+			 CacheStats::frustumCullsSkipped.load(std::memory_order_relaxed)},
+			{"Scene bind group rebuild",
+			 CacheStats::sceneBindGroupRebuilds.load(std::memory_order_relaxed),
+			 CacheStats::sceneBindGroupHits.load(std::memory_order_relaxed)},
+			{"Skybox bind group rebuild",
+			 CacheStats::skyboxBindGroupRebuilds.load(std::memory_order_relaxed),
+			 CacheStats::skyboxBindGroupHits.load(std::memory_order_relaxed)},
+		};
+
+		if (ImGui::BeginTable("CacheSkipTable", 4,
+			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("Cache");
+			ImGui::TableSetupColumn("Executed");
+			ImGui::TableSetupColumn("Skipped");
+			ImGui::TableSetupColumn("Skip %");
+			ImGui::TableHeadersRow();
+			for (const auto &row : rows)
+			{
+				const uint64_t total = row.executed + row.skipped;
+				const float skipPct = total > 0
+					? 100.0f * static_cast<float>(row.skipped) / static_cast<float>(total)
+					: 0.0f;
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(row.label);
+				ImGui::TableSetColumnIndex(1); ImGui::Text("%llu", static_cast<unsigned long long>(row.executed));
+				ImGui::TableSetColumnIndex(2); ImGui::Text("%llu", static_cast<unsigned long long>(row.skipped));
+				ImGui::TableSetColumnIndex(3); ImGui::Text("%.1f%%", skipPct);
+			}
+			ImGui::EndTable();
+		}
+
+		// Object prepare path is two-dimensional: fast vs slow PLUS how
+		// many of the fast-path items also wrote their transform. Showing
+		// it as its own line makes the "static scene = 0 transform writes"
+		// case immediately obvious.
+		const uint64_t fastObjects   = CacheStats::objectsFastPath.load(std::memory_order_relaxed);
+		const uint64_t slowObjects   = CacheStats::objectsSlowPath.load(std::memory_order_relaxed);
+		const uint64_t writeObjects  = CacheStats::objectTransformWrites.load(std::memory_order_relaxed);
+		const uint64_t totalObjects  = fastObjects + slowObjects;
+		const float    fastPct       = totalObjects > 0
+			? 100.0f * static_cast<float>(fastObjects) / static_cast<float>(totalObjects)
+			: 0.0f;
+		const float    writePct      = fastObjects > 0
+			? 100.0f * static_cast<float>(writeObjects) / static_cast<float>(fastObjects)
+			: 0.0f;
+		ImGui::Spacing();
+		ImGui::Text("Objects prepared: %llu (%.1f%% fast-path)",
+			static_cast<unsigned long long>(totalObjects), fastPct);
+		ImGui::Text("  of fast-path: %llu wrote transform (%.1f%%)",
+			static_cast<unsigned long long>(writeObjects), writePct);
+
+		ImGui::Spacing();
+		if (ImGui::Button("Reset counters"))
+		{
+			CacheStats::reset();
+		}
+	}
+
 	ImGui::End();
 }
 
 void MainDemoImGuiUI::renderShadowDebugWindow()
 {
 	auto renderer = m_engine.getRenderer().lock();
-	if (!renderer || !renderer->getShadowPass().isDebugMode())
+	if (!renderer)
 		return;
 
-	ImGui::Begin("Shadow Map Debug");
+	// Refresh the debug texture handles each frame — they're (re)created when
+	// shadow debug mode flips on, after this UI captured them at construction.
+	m_debugShadow2DArray   = renderer->getShadowPass().DEBUG_SHADOW_2D_ARRAY;
+	m_debugShadowCubeArray = renderer->getShadowPass().DEBUG_SHADOW_CUBE_ARRAY;
+
+	ImGui::Begin("Shadow Map Debug", &m_showShadowDebug);
 
 	const int thumbSize = 128;
 	const int columns = 3;
@@ -272,7 +608,7 @@ void MainDemoImGuiUI::renderShadowDebugWindow()
 	// --- Cube array debug ---
 	if (m_debugShadowCubeArray)
 	{
-		if (ImGui::CollapsingHeader("Cube Shadow Maps"))
+		if (ImGui::CollapsingHeader("Cube Shadow Maps", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			const int totalLayers = m_debugShadowCubeArray->getTextureViewDescriptor().arrayLayerCount;
 			const int numCubes = totalLayers / 6;
@@ -310,7 +646,7 @@ void MainDemoImGuiUI::renderShadowDebugWindow()
 	// --- 2D array debug ---
 	if (m_debugShadow2DArray)
 	{
-		if (ImGui::CollapsingHeader("2D Shadow Maps"))
+		if (ImGui::CollapsingHeader("2D Shadow Maps", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			const int totalLayers = m_debugShadow2DArray->getTextureViewDescriptor().arrayLayerCount;
 			ImGui::Columns(columns, nullptr, false);
@@ -331,6 +667,335 @@ void MainDemoImGuiUI::renderShadowDebugWindow()
 	else
 	{
 		ImGui::Text("No 2D shadow array texture available.");
+	}
+
+	ImGui::End();
+}
+
+bool MainDemoImGuiUI::ensureDepthPreviewPipeline()
+{
+	if (m_depthPreviewPipeline)
+		return true;
+
+	auto ctx = m_engine.getContext();
+	if (!ctx) return false;
+
+	// 1) Shader module — load directly via the shader factory's loader, the
+	// same way the IBL bakes do for their one-shot pipelines. We're not
+	// going through ShaderRegistry / PipelineManager because this pass
+	// doesn't participate in the canonical 0..3 bind-group convention
+	// (depth-preview shader is marked @standalone-shader).
+	const auto shaderPath = engine::core::PathProvider::getResource("shaders/depth_preview.wgsl");
+	m_depthPreviewShaderModule = ctx->shaderFactory().loadShaderModule(shaderPath);
+	if (!m_depthPreviewShaderModule)
+	{
+		spdlog::error("DepthPreview: failed to load shader '{}'", shaderPath.string());
+		return false;
+	}
+
+	// 2) Bind group layout — single depth texture binding at @group(0)
+	// @binding(0). textureLoad doesn't need a sampler, so the layout has
+	// exactly one entry.
+	wgpu::BindGroupLayoutEntry bglEntry{};
+	bglEntry.binding                  = 0;
+	bglEntry.visibility               = wgpu::ShaderStage::Fragment;
+	bglEntry.texture.sampleType       = wgpu::TextureSampleType::Depth;
+	bglEntry.texture.viewDimension    = wgpu::TextureViewDimension::_2D;
+	bglEntry.texture.multisampled     = false;
+
+	m_depthPreviewBindGroupLayout = ctx->bindGroupFactory().createBindGroupLayout(
+		std::vector<wgpu::BindGroupLayoutEntry>{bglEntry}, "DepthPreview.BindGroupLayout");
+	if (!m_depthPreviewBindGroupLayout)
+	{
+		spdlog::error("DepthPreview: failed to create bind group layout");
+		return false;
+	}
+
+	// 3) Pipeline layout — single bind group.
+	m_depthPreviewPipelineLayout = ctx->pipelineFactory().createPipelineLayout(
+		&m_depthPreviewBindGroupLayout, 1);
+	if (!m_depthPreviewPipelineLayout)
+	{
+		spdlog::error("DepthPreview: failed to create pipeline layout");
+		return false;
+	}
+
+	// 4) Render pipeline — fullscreen triangle, no vertex buffers, no
+	// depth, one Unorm color target. Matches the preview-texture format
+	// the textureFactory creates below.
+	wgpu::ColorTargetState colorTarget{};
+	colorTarget.format    = wgpu::TextureFormat::RGBA8Unorm;
+	colorTarget.writeMask = wgpu::ColorWriteMask::All;
+	colorTarget.blend     = nullptr;
+
+	wgpu::FragmentState fragState{};
+	fragState.module        = m_depthPreviewShaderModule;
+	fragState.entryPoint    = "fs_main";
+	fragState.constantCount = 0;
+	fragState.constants     = nullptr;
+	fragState.targetCount   = 1;
+	fragState.targets       = &colorTarget;
+
+	wgpu::RenderPipelineDescriptor pipeDesc{};
+	pipeDesc.label                = "DepthPreview.Pipeline";
+	pipeDesc.layout               = m_depthPreviewPipelineLayout;
+	pipeDesc.vertex.module        = m_depthPreviewShaderModule;
+	pipeDesc.vertex.entryPoint    = "vs_main";
+	pipeDesc.vertex.bufferCount   = 0;
+	pipeDesc.vertex.buffers       = nullptr;
+	pipeDesc.primitive.topology   = wgpu::PrimitiveTopology::TriangleList;
+	pipeDesc.primitive.frontFace  = wgpu::FrontFace::CCW;
+	pipeDesc.primitive.cullMode   = wgpu::CullMode::None;
+	pipeDesc.depthStencil         = nullptr;
+	pipeDesc.multisample.count    = 1;
+	pipeDesc.multisample.mask     = ~0u;
+	pipeDesc.fragment             = &fragState;
+
+	m_depthPreviewPipeline = ctx->pipelineFactory().createRenderPipeline(pipeDesc);
+	if (!m_depthPreviewPipeline)
+	{
+		spdlog::error("DepthPreview: failed to create render pipeline");
+		return false;
+	}
+
+	return true;
+}
+
+bool MainDemoImGuiUI::renderDepthPreviewBlit(
+	const std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> &depthSource
+)
+{
+	if (!depthSource) return false;
+	if (!ensureDepthPreviewPipeline()) return false;
+
+	auto ctx = m_engine.getContext();
+	if (!ctx) return false;
+
+	// (Re)allocate the preview target when the source dimensions change.
+	// Identity-fingerprint the source so a soft-clear that swaps the
+	// WebGPUTexture wrapper (factory rebuild after Clear All) also forces
+	// a fresh preview texture — keeps the preview's bind group's wgpu
+	// internal refs pointing at live source views.
+	const uint32_t srcW = depthSource->getWidth();
+	const uint32_t srcH = depthSource->getHeight();
+	const bool needsRealloc =
+		!m_depthPreviewTarget ||
+		m_depthPreviewSourceFingerprint != depthSource.get() ||
+		m_depthPreviewSourceWidth  != srcW ||
+		m_depthPreviewSourceHeight != srcH;
+
+	if (needsRealloc)
+	{
+		// Match the source's aspect ratio at a fixed width, same convention
+		// as the colour thumbnails so the depth row reads at the same
+		// scale.
+		const uint32_t targetW = 256;
+		const float    aspect  = srcH > 0 ? float(srcW) / float(srcH) : 1.0f;
+		const uint32_t targetH = std::max(1u, uint32_t(targetW / std::max(aspect, 0.01f)));
+
+		m_depthPreviewTarget = ctx->textureFactory().createColorRenderTarget(
+			"DepthPreview.Target",
+			targetW, targetH,
+			wgpu::TextureFormat::RGBA8Unorm,
+			WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
+		);
+		if (!m_depthPreviewTarget) return false;
+
+		m_depthPreviewSourceFingerprint = depthSource.get();
+		m_depthPreviewSourceWidth       = srcW;
+		m_depthPreviewSourceHeight      = srcH;
+	}
+
+	// Build the depth-sampling bind group on the fly. Cheap (one entry); not
+	// worth caching across frames given the depth source could move after
+	// any GBuffer resize. createBindGroup bumps wgpu's refcount internally,
+	// so the textureView value-copy doesn't need explicit refcount management.
+	wgpu::BindGroupEntry entry{};
+	entry.binding     = 0;
+	entry.textureView = depthSource->getTextureView();
+
+	wgpu::BindGroup bindGroup = ctx->bindGroupFactory().createBindGroup(
+		m_depthPreviewBindGroupLayout, std::vector<wgpu::BindGroupEntry>{entry});
+	if (!bindGroup) return false;
+
+	// Record + submit a one-shot encoder. Submitting from inside the ImGui
+	// callback is safe — wgpu sequences queue submissions in order, so
+	// this lands before the subsequent UI render pass samples the preview
+	// texture.
+	wgpu::CommandEncoder encoder = ctx->createCommandEncoder("DepthPreview.Encoder");
+
+	wgpu::RenderPassColorAttachment colorAttach{};
+	colorAttach.view       = m_depthPreviewTarget->getTextureView();
+	colorAttach.loadOp     = wgpu::LoadOp::Clear;
+	colorAttach.storeOp    = wgpu::StoreOp::Store;
+	colorAttach.clearValue = wgpu::Color{0.0, 0.0, 0.0, 1.0};
+
+	wgpu::RenderPassDescriptor rpDesc{};
+	rpDesc.label                  = "DepthPreview.RenderPass";
+	rpDesc.colorAttachmentCount   = 1;
+	rpDesc.colorAttachments       = &colorAttach;
+	rpDesc.depthStencilAttachment = nullptr;
+
+	wgpu::RenderPassEncoder pass = encoder.beginRenderPass(rpDesc);
+	pass.setPipeline(m_depthPreviewPipeline);
+	pass.setBindGroup(0, bindGroup, 0, nullptr);
+	pass.draw(3, 1, 0, 0); // fullscreen triangle from vertex_index
+	pass.end();
+
+	ctx->submitCommandEncoder(encoder, "DepthPreview.Commands");
+
+	// Release the per-frame bind group ref. The wgpu render pass internally
+	// retains it through submission, so this just drops our C++ side.
+	bindGroup.release();
+
+	return true;
+}
+
+void MainDemoImGuiUI::renderPassControlsWindow()
+{
+	auto renderer = m_engine.getRenderer().lock();
+	if (!renderer)
+		return;
+
+	ImGui::Begin("Pass Controls", &m_showPassControls);
+
+	ImGui::TextWrapped(
+		"Toggle individual passes live. Disabled passes are skipped each "
+		"frame; downstream consumers see whatever the last enabled frame "
+		"left in the target (great for A/B tests, dangerous for actual "
+		"renders). The list order matches the in-engine pipeline order."
+	);
+	ImGui::Separator();
+
+	auto passes = renderer->getAllPasses();
+
+	// Bulk toggles save 8 clicks for the common "give me JUST the GBuffer"
+	// debug intent.
+	if (ImGui::Button("Enable all"))
+	{
+		for (auto *p : passes) p->setEnabled(true);
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Disable all"))
+	{
+		for (auto *p : passes) p->setEnabled(false);
+	}
+	ImGui::SameLine();
+	int aliveCount = 0;
+	for (auto *p : passes) if (p->isEnabled()) ++aliveCount;
+	ImGui::Text("(%d / %d active)", aliveCount, static_cast<int>(passes.size()));
+
+	ImGui::Separator();
+
+	// Per-pass row with a checkbox. ImGui::Checkbox writes through to a bool
+	// so we trampoline via a local + setEnabled to keep the API surface
+	// pass-side clean.
+	for (auto *pass : passes)
+	{
+		bool enabled = pass->isEnabled();
+		ImGui::PushID(pass);
+		if (ImGui::Checkbox(pass->name(), &enabled))
+		{
+			pass->setEnabled(enabled);
+			spdlog::info("Pass '{}' {}", pass->name(), enabled ? "enabled" : "disabled");
+		}
+		ImGui::PopID();
+	}
+
+	ImGui::Separator();
+	if (ImGui::CollapsingHeader("Stage Preview (G-Buffer)", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		ImGui::TextWrapped(
+			"Live thumbnails of each G-buffer slot as the deferred pipeline "
+			"writes them. Same pattern as Shadow Map Debug: each ImGui::Image "
+			"samples the texture view directly, no extra pass needed. Empty "
+			"if GBufferPass is disabled above (the textures keep their "
+			"contents from the last enabled frame)."
+		);
+
+		auto *gbufPass = renderer->getGBufferPass();
+		if (gbufPass)
+		{
+			auto &gbuf = gbufPass->getGBuffer();
+			const float aspect = gbuf.getHeight() > 0
+				? static_cast<float>(gbuf.getWidth()) / static_cast<float>(gbuf.getHeight())
+				: 1.0f;
+			const float thumbW = 256.0f;
+			const float thumbH = thumbW / std::max(aspect, 0.01f);
+			const ImVec2 thumbSize{thumbW, thumbH};
+
+			const char *slotLabels[] = {
+				"Position (world.xyz, viewDepth.w)",
+				"Normal (world)",
+				"Albedo (RGB) + roughness (A)",
+				"Material (metallic / AO / flags)",
+				"Emission (HDR linear)",
+			};
+
+			// Black backdrop drawn under every thumbnail. The G-buffer slots
+			// pack non-coverage data into the alpha channel (RT3 alpha =
+			// materialType id ≈ small int / 255; RT4 alpha = unused ≈ 0),
+			// so ImGui::Image's straight-alpha blend reveals the panel
+			// background through the geometry pixels of those slots. Drawing
+			// a filled black rect at the image position first means the
+			// transparent areas reveal black instead, which reads as
+			// "this slot's alpha is data, not coverage" without us needing
+			// a separate alpha-force blit pass.
+			auto drawBlackBackdrop = [&](const ImVec2 &size)
+			{
+				const ImVec2 p0 = ImGui::GetCursorScreenPos();
+				const ImVec2 p1{p0.x + size.x, p0.y + size.y};
+				ImGui::GetWindowDrawList()->AddRectFilled(p0, p1, IM_COL32(0, 0, 0, 255));
+			};
+
+			auto &colors = gbuf.getColorTextures();
+			for (size_t i = 0; i < colors.size(); ++i)
+			{
+				if (!colors[i]) continue;
+				const char *label = i < std::size(slotLabels) ? slotLabels[i] : "(unnamed)";
+				ImGui::Text("RT%zu: %s", i, label);
+				drawBlackBackdrop(thumbSize);
+				// Same pattern the shadow debug uses: wgpu::TextureView is
+				// constructible-to-ImTextureID via the imgui-wgpu shim.
+				ImTextureID texId = colors[i]->getTextureView();
+				ImGui::Image(
+					texId,
+					thumbSize, ImVec2(0, 0), ImVec2(1, 1),
+					ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0)
+				);
+				ImGui::Separator();
+			}
+
+			// Depth: render through a linearise-blit pass that reads the
+			// Depth32Float source via textureLoad (no sampler needed —
+			// avoids the "filterable-Float vs Depth" sample-type mismatch
+			// that crashes ImGui::Image on a raw depth view) and writes
+			// grayscale to an RGBA8Unorm preview texture. The blit's
+			// command encoder submits inside this UI callback; wgpu
+			// sequences submissions in order so the preview lands before
+			// the subsequent UI render pass samples it.
+			if (auto depth = gbuf.getDepthTexture())
+			{
+				if (renderDepthPreviewBlit(depth) && m_depthPreviewTarget)
+				{
+					ImGui::Text("Depth (near = white)");
+					ImTextureID depthPreviewId = m_depthPreviewTarget->getTextureView();
+					ImGui::Image(
+						depthPreviewId,
+						thumbSize, ImVec2(0, 0), ImVec2(1, 1),
+						ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0)
+					);
+				}
+				else
+				{
+					ImGui::TextDisabled("Depth: preview blit not available.");
+				}
+			}
+		}
+		else
+		{
+			ImGui::TextDisabled("No GBufferPass available.");
+		}
 	}
 
 	ImGui::End();
@@ -371,12 +1036,39 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 		prevDebugState = showDebugRendering;
 	}
 	m_engine.getRenderer().lock()->getShadowPass().setDebugMode(showDebugShadowMaps);
+
+	// Environment controls: skybox visibility and IBL contribution are
+	// independent toggles (see Renderer.cpp comment near irradianceEnabled).
+	// "Visible" draws the sky behind everything; "Lighting" feeds the
+	// diffuse irradiance + GGX-prefiltered specular into PBR shading. With
+	// raw HDR equirects, lighting on top of direct lights tends to read as
+	// "everything shiny" on rough surfaces, so the demo starts with the
+	// lighting half off — toggle it on to A/B the env's contribution.
+	if (auto scene = m_engine.getSceneManager()->getActiveScene())
+	{
+		auto cameras = scene->getActiveCameras();
+		if (!cameras.empty() && cameras[0])
+		{
+			auto &cam = cameras[0];
+			ImGui::SeparatorText("Environment");
+			bool skyVisible = cam->isSkyboxEnabled();
+			if (ImGui::Checkbox("Skybox visible", &skyVisible))
+				cam->setSkyboxEnabled(skyVisible);
+			bool iblLighting = cam->isIrradianceEnabled();
+			if (ImGui::Checkbox("IBL lighting (skybox lights scene)", &iblLighting))
+				cam->setIrradianceEnabled(iblLighting);
+			float iblIntensity = cam->getIrradianceIntensity();
+			if (ImGui::SliderFloat("Env intensity", &iblIntensity, 0.0f, 2.0f))
+				cam->setIrradianceIntensity(iblIntensity);
+		}
+	}
 }
 
 void MainDemoImGuiUI::renderMaterialProperties()
 {
 	float windowWidth = ImGui::GetWindowWidth();
-	if (ImGui::CollapsingHeader("Material Properties") && m_rootNode)
+	// Single-topic window — content shown directly (no redundant header).
+	if (m_rootNode)
 	{
 		auto children = m_rootNode->getChildrenOfType<engine::scene::nodes::ModelRenderNode>();
 		std::set<engine::rendering::MaterialHandle> materials;
@@ -476,7 +1168,7 @@ void MainDemoImGuiUI::renderMaterialProperties()
 
 void MainDemoImGuiUI::renderLightsSection()
 {
-	if (ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen))
+	// Single-topic window — content shown directly (no redundant header).
 	{
 		// Display light count with limit
 		ImGui::Text("Lights: %zu / 512", m_lightNodes.size());
@@ -679,44 +1371,39 @@ void MainDemoImGuiUI::renderLightsSection()
 		}
 	}
 
-	// Free-flying point lights controls & update (SeaKeep-style)
-	renderFlockControls();
 }
 
 void MainDemoImGuiUI::renderFlockControls()
 {
+	ImGui::TextWrapped(
+		"Sponza-style scattered point lights — the clustered-shading stress "
+		"test. Tune the parameters, then Spawn / Re-apply. Animation runs "
+		"every frame while Enable is checked, even if this panel is closed."
+	);
 	ImGui::Separator();
-	if (ImGui::CollapsingHeader("Scattered Point Lights (Sponza-style)"))
+
+	ImGui::Checkbox("Enable", &m_flockEnabled);
+	ImGui::SliderInt("Count", &m_flockAmount, 0, 1000);
+	ImGui::SliderFloat("Intensity", &m_flockIntensity, 0.0f, 500.0f);
+	ImGui::SliderFloat("Range",     &m_flockRange,     0.5f, 30.0f);
+	ImGui::SliderFloat("Marker scale", &m_flockMarkerScale, 0.01f, 1.0f);
+	ImGui::SliderFloat("Bob amplitude", &m_flockBobAmplitude, 0.0f, 5.0f);
+	ImGui::SliderFloat("Bob speed",     &m_flockBobSpeed,     0.0f, 5.0f);
+	ImGui::InputFloat3("Center", glm::value_ptr(m_flockCenter));
+	ImGui::InputFloat3("Extent", glm::value_ptr(m_flockExtent));
+
+	if (ImGui::Button("Spawn / Re-apply"))
 	{
-		ImGui::Checkbox("Enable", &m_flockEnabled);
-		ImGui::SliderInt("Count", &m_flockAmount, 0, 1000);
-		ImGui::SliderFloat("Intensity", &m_flockIntensity, 0.0f, 500.0f);
-		ImGui::SliderFloat("Range",     &m_flockRange,     0.5f, 30.0f);
-		ImGui::SliderFloat("Marker scale", &m_flockMarkerScale, 0.01f, 1.0f);
-		ImGui::SliderFloat("Bob amplitude", &m_flockBobAmplitude, 0.0f, 5.0f);
-		ImGui::SliderFloat("Bob speed",     &m_flockBobSpeed,     0.0f, 5.0f);
-		ImGui::InputFloat3("Center", glm::value_ptr(m_flockCenter));
-		ImGui::InputFloat3("Extent", glm::value_ptr(m_flockExtent));
-
-		if (ImGui::Button("Spawn / Re-apply"))
-		{
-			// Easiest way to re-randomise positions / colours on parameter change.
-			clearFlock();
-			if (m_flockAmount > 0)
-				spawnFlock(m_flockAmount);
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Clear"))
-		{
-			clearFlock();
-			m_flockEnabled = false;
-		}
-
-		if (m_flockEnabled && !m_flockLights.empty())
-		{
-			float dt = m_engine.getFrameTime() * 0.001f; // ms -> seconds
-			updateFlock(dt);
-		}
+		// Easiest way to re-randomise positions / colours on parameter change.
+		clearFlock();
+		if (m_flockAmount > 0)
+			spawnFlock(m_flockAmount);
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Clear"))
+	{
+		clearFlock();
+		m_flockEnabled = false;
 	}
 }
 
@@ -761,7 +1448,6 @@ void MainDemoImGuiUI::spawnFlock(int amount)
 
 	spdlog::info("Spawning scattered lights: current={}, target={}", current, amount);
 
-	auto resourceManager = m_engine.getResourceManager();
 	for (int i = current; i < amount; ++i)
 	{
 		auto newLight = std::make_shared<engine::scene::nodes::LightNode>();
@@ -789,49 +1475,12 @@ void MainDemoImGuiUI::spawnFlock(int amount)
 		newLight->getTransform().setLocalPosition(pos);
 		if (m_rootNode)
 			m_rootNode->addChild(newLight);
-		newLight->setDebugEnabled(true);
 
-		// Marker sphere co-located with the light.
-		if (resourceManager)
-		{
-			std::string instanceName = "sphere_inst_" + std::to_string(newLight->getId());
-			auto spherePath = engine::core::PathProvider::getResource("sphere.obj");
-			auto maybeModelInst = resourceManager->m_modelManager->createModel(
-				spherePath, std::optional<std::string>(instanceName));
-			if (maybeModelInst.has_value())
-			{
-				engine::rendering::PBRProperties props{};
-				props.diffuse[0]  = col.r; props.diffuse[1] = col.g; props.diffuse[2] = col.b; props.diffuse[3] = 1.0f;
-				// Strong emission so the marker reads as a glowing bulb against
-				// the deferred-lit background (deferred composition adds emission
-				// post-lighting, so values can sit comfortably above 1 in linear HDR).
-				props.emission[0] = col.r * 5.0f; props.emission[1] = col.g * 5.0f; props.emission[2] = col.b * 5.0f;
-				props.emission[3] = 1.0f;
-				props.roughness   = 1.0f;
-				props.metallic    = 0.0f;
-
-				auto maybeMat = resourceManager->m_materialManager->createPBRMaterial(
-					"SphereMat_" + instanceName, props, {});
-				if (maybeMat.has_value())
-				{
-					auto matHandle = maybeMat.value()->getHandle();
-					for (auto &sm : maybeModelInst.value()->getSubmeshes())
-						sm.material = matHandle;
-				}
-
-				auto marker = std::make_shared<engine::scene::nodes::ModelRenderNode>(maybeModelInst.value());
-				marker->getTransform().setLocalScale(glm::vec3(m_flockMarkerScale));
-				// Skip shadow extraction (visual-only marker).
-				marker->setCastsShadows(false);
-				// keepWorldTransform=false: the marker has no world position of
-				// its own, we want it anchored at the light's origin and to
-				// follow the light when updateFlock moves it. With the default
-				// keepWorld=true, addChild would rewrite local = -lightPos to
-				// hold the marker at (0,0,0) - it would then track only the
-				// bob delta, not the light's absolute motion.
-				newLight->addChild(marker, false);
-			}
-		}
+		// No gizmo on scattered lights: spawning N of them used to add N
+		// debug-line-drawer enables AND N marker-sphere ModelRenderNodes
+		// (each forcing its own Model → Mesh → Material due to per-light
+		// color), which inflated the MeshFactory / MaterialFactory caches.
+		// Lights still emit photons; they just don't paint themselves.
 
 		m_flockLights.push_back(newLight);
 		m_lightNodes.push_back(newLight);

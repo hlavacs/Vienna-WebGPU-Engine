@@ -31,6 +31,8 @@ class SkyboxPass : public RenderPass
 	explicit SkyboxPass(std::shared_ptr<webgpu::WebGPUContext> context);
 	~SkyboxPass() override = default;
 
+	[[nodiscard]] const char *name() const override { return "Skybox"; }
+
 	bool initialize() override;
 	void render(FrameCache &frameCache) override;
 	void cleanup() override;

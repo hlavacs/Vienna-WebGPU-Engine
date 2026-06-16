@@ -41,6 +41,8 @@ class ForwardTransparencyPass : public RenderPass
 	explicit ForwardTransparencyPass(std::shared_ptr<webgpu::WebGPUContext> context);
 	~ForwardTransparencyPass() override = default;
 
+	[[nodiscard]] const char *name() const override { return "ForwardTransparency"; }
+
 	bool initialize() override;
 
 	void setRenderPassContext(const std::shared_ptr<webgpu::WebGPURenderPassContext> &context)

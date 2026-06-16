@@ -1,13 +1,13 @@
 #include "engine/rendering/ClusterManager.h"
 
 #include <array>
-#include <map>
 #include <vector>
 
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/BindGroupEnums.h"
+#include "engine/rendering/CacheStats.h"
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/FrameUniforms.h"
@@ -20,6 +20,7 @@
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
 #include "engine/rendering/webgpu/WebGPUShaderFactory.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
@@ -110,8 +111,6 @@ bool ClusterManager::createClusterGridBuffer()
 
 bool ClusterManager::createComputePipeline()
 {
-	auto device = m_context.getDevice();
-
 	// Load the compute shader module via the shader factory's low-level helper.
 	// We don't go through WebGPUShaderFactory::begin().build() because that path
 	// is wired for render pipelines (vertex + fragment entry points, color
@@ -131,64 +130,48 @@ bool ClusterManager::createComputePipeline()
 	// read-only, cluster grid + index pool read_write with atomics).
 	//
 	// Frame @group(0) @binding(0): FrameUniforms uniform
-	std::array<wgpu::BindGroupLayoutEntry, 1> frameEntries{};
+	std::vector<wgpu::BindGroupLayoutEntry> frameEntries(1);
 	frameEntries[0] = wgpu::Default;
-	frameEntries[0].binding             = 0;
-	frameEntries[0].visibility          = wgpu::ShaderStage::Compute;
-	frameEntries[0].buffer.type         = wgpu::BufferBindingType::Uniform;
+	frameEntries[0].binding               = 0;
+	frameEntries[0].visibility            = wgpu::ShaderStage::Compute;
+	frameEntries[0].buffer.type           = wgpu::BufferBindingType::Uniform;
 	frameEntries[0].buffer.minBindingSize = sizeof(engine::rendering::FrameUniforms);
-
-	wgpu::BindGroupLayoutDescriptor frameLayoutDesc{};
-	frameLayoutDesc.label      = "ClusterCompute.FrameLayout";
-	frameLayoutDesc.entryCount = static_cast<uint32_t>(frameEntries.size());
-	frameLayoutDesc.entries    = frameEntries.data();
-	m_computeFrameBindGroupLayout = device.createBindGroupLayout(frameLayoutDesc);
+	m_computeFrameBindGroupLayout = m_context.bindGroupFactory().createBindGroupLayout(
+		frameEntries, "ClusterCompute.FrameLayout");
 
 	// Scene @group(1) @binding(0..2): lights / cluster grid / cluster indices
-	std::array<wgpu::BindGroupLayoutEntry, 3> sceneEntries{};
+	std::vector<wgpu::BindGroupLayoutEntry> sceneEntries(3);
 	for (auto &e : sceneEntries) e = wgpu::Default;
 
-	sceneEntries[0].binding             = 0;
-	sceneEntries[0].visibility          = wgpu::ShaderStage::Compute;
-	sceneEntries[0].buffer.type         = wgpu::BufferBindingType::ReadOnlyStorage;
+	sceneEntries[0].binding               = 0;
+	sceneEntries[0].visibility            = wgpu::ShaderStage::Compute;
+	sceneEntries[0].buffer.type           = wgpu::BufferBindingType::ReadOnlyStorage;
 	sceneEntries[0].buffer.minBindingSize = 0; // runtime-sized array
 
-	sceneEntries[1].binding             = 1;
-	sceneEntries[1].visibility          = wgpu::ShaderStage::Compute;
-	sceneEntries[1].buffer.type         = wgpu::BufferBindingType::Storage;
+	sceneEntries[1].binding               = 1;
+	sceneEntries[1].visibility            = wgpu::ShaderStage::Compute;
+	sceneEntries[1].buffer.type           = wgpu::BufferBindingType::Storage;
 	sceneEntries[1].buffer.minBindingSize = 0;
 
-	sceneEntries[2].binding             = 2;
-	sceneEntries[2].visibility          = wgpu::ShaderStage::Compute;
-	sceneEntries[2].buffer.type         = wgpu::BufferBindingType::Storage;
+	sceneEntries[2].binding               = 2;
+	sceneEntries[2].visibility            = wgpu::ShaderStage::Compute;
+	sceneEntries[2].buffer.type           = wgpu::BufferBindingType::Storage;
 	sceneEntries[2].buffer.minBindingSize = 0;
 
-	wgpu::BindGroupLayoutDescriptor sceneLayoutDesc{};
-	sceneLayoutDesc.label      = "ClusterCompute.SceneLayout";
-	sceneLayoutDesc.entryCount = static_cast<uint32_t>(sceneEntries.size());
-	sceneLayoutDesc.entries    = sceneEntries.data();
-	m_computeBindGroupLayout = device.createBindGroupLayout(sceneLayoutDesc);
+	m_computeBindGroupLayout = m_context.bindGroupFactory().createBindGroupLayout(
+		sceneEntries, "ClusterCompute.SceneLayout");
 
-	std::array<WGPUBindGroupLayout, 2> pipelineLayouts{
-		static_cast<WGPUBindGroupLayout>(m_computeFrameBindGroupLayout),
-		static_cast<WGPUBindGroupLayout>(m_computeBindGroupLayout),
+	std::array<wgpu::BindGroupLayout, 2> pipelineLayouts{
+		m_computeFrameBindGroupLayout,
+		m_computeBindGroupLayout,
 	};
-	wgpu::PipelineLayoutDescriptor plDesc{};
-	plDesc.label                = "ClusterCompute.PipelineLayout";
-	plDesc.bindGroupLayoutCount = static_cast<uint32_t>(pipelineLayouts.size());
-	plDesc.bindGroupLayouts     = pipelineLayouts.data();
-	m_computePipelineLayout = device.createPipelineLayout(plDesc);
+	m_computePipelineLayout = m_context.pipelineFactory().createPipelineLayout(
+		pipelineLayouts.data(), static_cast<uint32_t>(pipelineLayouts.size()));
 
 	auto makePipeline = [&](const char *label, const char *entryPoint) -> wgpu::ComputePipeline
 	{
-		wgpu::ComputePipelineDescriptor desc{};
-		desc.label = label;
-		desc.layout = m_computePipelineLayout;
-		desc.compute.module = m_computeShaderModule;
-		desc.compute.entryPoint = entryPoint;
-		desc.compute.constantCount = 0;
-		desc.compute.constants = nullptr;
-		return device.createComputePipeline(desc);
+		return m_context.pipelineFactory().createComputePipeline(
+			m_computePipelineLayout, m_computeShaderModule, entryPoint, label);
 	};
 
 	m_clearPipeline = makePipeline("ClusterCompute.Clear", "cs_clear");
@@ -240,12 +223,8 @@ const ClusterManager::CachedComputeBindGroup *ClusterManager::getOrCreateCompute
 		e.offset  = 0;
 		e.size    = sizeof(engine::rendering::FrameUniforms);
 
-		wgpu::BindGroupDescriptor desc{};
-		desc.label      = "ClusterCompute.Frame.BindGroup";
-		desc.layout     = m_computeFrameBindGroupLayout;
-		desc.entryCount = 1;
-		desc.entries    = &e;
-		cached.frameBindGroup = m_context.getDevice().createBindGroup(desc);
+		cached.frameBindGroup = m_context.bindGroupFactory().createBindGroup(
+			m_computeFrameBindGroupLayout, std::vector<wgpu::BindGroupEntry>{e});
 		if (!cached.frameBindGroup)
 		{
 			spdlog::error("ClusterManager: failed to create frame bind group");
@@ -255,32 +234,25 @@ const ClusterManager::CachedComputeBindGroup *ClusterManager::getOrCreateCompute
 
 	// Scene-like @group(1): lights @0, cluster grid @1, cluster indices @2
 	{
-		std::array<wgpu::BindGroupEntry, 3> entries{};
+		std::vector<wgpu::BindGroupEntry> entries(3);
 
-		entries[0]         = {};
 		entries[0].binding = 0;
 		entries[0].buffer  = lightBuffer;
 		entries[0].offset  = 0;
 		entries[0].size    = WGPU_WHOLE_SIZE;
 
-		entries[1]         = {};
 		entries[1].binding = 1;
 		entries[1].buffer  = m_clusterGridBuffer->getBuffer();
 		entries[1].offset  = 0;
 		entries[1].size    = WGPU_WHOLE_SIZE;
 
-		entries[2]         = {};
 		entries[2].binding = 2;
 		entries[2].buffer  = m_clusterIndicesBuffer->getBuffer();
 		entries[2].offset  = 0;
 		entries[2].size    = WGPU_WHOLE_SIZE;
 
-		wgpu::BindGroupDescriptor desc{};
-		desc.label      = "ClusterCompute.Scene.BindGroup";
-		desc.layout     = m_computeBindGroupLayout;
-		desc.entryCount = static_cast<uint32_t>(entries.size());
-		desc.entries    = entries.data();
-		cached.sceneBindGroup = m_context.getDevice().createBindGroup(desc);
+		cached.sceneBindGroup = m_context.bindGroupFactory().createBindGroup(
+			m_computeBindGroupLayout, entries);
 		if (!cached.sceneBindGroup)
 		{
 			spdlog::error("ClusterManager: failed to create scene bind group");
@@ -294,7 +266,12 @@ const ClusterManager::CachedComputeBindGroup *ClusterManager::getOrCreateCompute
 	return &cached;
 }
 
-bool ClusterManager::assignLights(uint64_t cameraId, FrameCache &frameCache, uint32_t lightCount)
+bool ClusterManager::assignLights(
+	uint64_t          cameraId,
+	const glm::mat4  &viewProjection,
+	FrameCache       &frameCache,
+	uint32_t          lightCount
+)
 {
 	if (!m_clearPipeline || !m_assignPipeline)
 	{
@@ -334,6 +311,28 @@ bool ClusterManager::assignLights(uint64_t cameraId, FrameCache &frameCache, uin
 		return false;
 	}
 
+	// Dispatch-skip fingerprint. Cluster grid output is a pure function of
+	// (viewProjection, light hash, light count); when all three match the
+	// previous invocation for this camera, the GPU buffer already holds the
+	// correct result and we elide both dispatches. Light hash comes from
+	// SceneLightBuffer's upload-time fingerprint — same hash means the GPU
+	// light buffer's contents are byte-identical to last frame's.
+	auto       &fingerprint = m_dispatchFingerprints[cameraId];
+	const auto  currentHash = sceneLightBuffer->getLastUploadHash();
+	if (fingerprint.valid
+		&& fingerprint.lightCount    == lightCount
+		&& fingerprint.lightHash     == currentHash
+		&& fingerprint.viewProjection == viewProjection)
+	{
+		CacheStats::clusterDispatchesSkipped.fetch_add(1, std::memory_order_relaxed);
+		return true;
+	}
+	fingerprint.viewProjection = viewProjection;
+	fingerprint.lightHash      = currentHash;
+	fingerprint.lightCount     = lightCount;
+	fingerprint.valid          = true;
+	CacheStats::clusterDispatchesExecuted.fetch_add(1, std::memory_order_relaxed);
+
 	auto encoder = m_context.createCommandEncoder("ClusterCompute.Encoder");
 	if (auto *prof = m_context.frameProfiler())
 		prof->beginGpuScope("Pass.ClusterCompute", encoder);
@@ -367,14 +366,6 @@ bool ClusterManager::assignLights(uint64_t cameraId, FrameCache &frameCache, uin
 		prof->endGpuScope("Pass.ClusterCompute", encoder);
 	m_context.submitCommandEncoder(encoder, "ClusterCompute.Commands");
 
-	// bindGroup.release();
-	return true;
-}
-
-bool ClusterManager::clearClusters()
-{
-	// Clear is folded into assignLights' first dispatch - keep the entry for
-	// API compatibility but it's no longer the caller's responsibility.
 	return true;
 }
 

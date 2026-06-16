@@ -8,6 +8,7 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
+#include "engine/rendering/webgpu/WebGPUSampler.h"
 
 namespace engine::rendering::webgpu
 {
@@ -20,20 +21,24 @@ class WebGPUMaterial;
 
 /**
  * @brief Resource variant for bind group entries.
- * Can hold a texture, sampler, or buffer.
+ * Can hold a texture, sampler, or buffer. The sampler is held via
+ * `std::shared_ptr<WebGPUSampler>` (not raw `wgpu::Sampler`) so the bind
+ * group's reference to the sampler outlives the factory's cache —
+ * preventing the historical "Sampler[Id] does not exist" crash on
+ * Clear All when a pass had captured a value-typed `wgpu::Sampler` copy.
  */
 struct BindGroupResource
 {
 	std::variant<
 		std::shared_ptr<WebGPUTexture>, // Texture resource
-		wgpu::Sampler,					// Sampler resource
-		std::shared_ptr<WebGPUBuffer>	// Buffer resource
+		std::shared_ptr<WebGPUSampler>, // Sampler resource (RAII)
+		std::shared_ptr<WebGPUBuffer>   // Buffer resource
 		>
 		resource;
 
 	// Convenience constructors
 	BindGroupResource(const std::shared_ptr<WebGPUTexture> &tex) : resource(tex) {}
-	BindGroupResource(const wgpu::Sampler &sampler) : resource(sampler) {}
+	BindGroupResource(const std::shared_ptr<WebGPUSampler> &sampler) : resource(sampler) {}
 	BindGroupResource(const std::shared_ptr<WebGPUBuffer> &buffer) : resource(buffer) {}
 };
 
@@ -96,6 +101,19 @@ class WebGPUBindGroupFactory
 		std::vector<wgpu::BindGroupLayoutEntry> entries = {std::forward<Entries>(rawEntries)...};
 		return createBindGroupLayoutInfo(name, entries);
 	}
+
+	/**
+	 * @brief Create a raw bind group layout from explicit entries.
+	 *
+	 * For low-level / compute consumers that need a `wgpu::BindGroupLayout`
+	 * directly (to feed a pipeline layout) rather than the richer
+	 * `WebGPUBindGroupLayoutInfo`. Routes the device call through the factory
+	 * so no caller pokes `device.createBindGroupLayout` itself.
+	 */
+	wgpu::BindGroupLayout createBindGroupLayout(
+		const std::vector<wgpu::BindGroupLayoutEntry> &entries,
+		const char *label = nullptr
+	);
 
 	/**
 	 * @brief Generic bind group creation from entries.

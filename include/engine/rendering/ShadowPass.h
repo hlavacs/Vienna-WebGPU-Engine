@@ -8,6 +8,7 @@
 #include "engine/rendering/Mesh.h"
 #include "engine/rendering/RenderPass.h"
 #include "engine/rendering/cache/ResourceSlot.h"
+#include "engine/rendering/webgpu/WebGPUSampler.h"
 
 namespace engine::rendering
 {
@@ -72,6 +73,8 @@ class ShadowPass : public RenderPass
 	 * @brief Initialize shadow pass resources (shaders, bind groups, textures).
 	 * @return True if initialization succeeded
 	 */
+	[[nodiscard]] const char *name() const override { return "Shadow"; }
+
 	bool initialize() override;
 
 	/**
@@ -107,7 +110,7 @@ class ShadowPass : public RenderPass
 	 */
 	void setDebugMode(bool debugMode) { m_isDebugMode = debugMode; }
 
-	[[nodiscard]] wgpu::Sampler getShadowSampler() const { return m_shadowSampler; }
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUSampler> getShadowSampler() const { return m_shadowSampler; }
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUTexture> getShadow2DArray() const { return m_shadow2DArray; }
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUTexture> getShadowCubeArray() const { return m_shadowCubeArray; }
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBuffer> getShadowUniformBuffer() const { return m_shadowUniformBuffer; }
@@ -202,7 +205,7 @@ class ShadowPass : public RenderPass
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_shadow2DArray;		///< 2D shadow map texture array
 	std::shared_ptr<webgpu::WebGPUTexture> m_shadowCubeArray;	///< Cube shadow map texture array
-	wgpu::Sampler m_shadowSampler = nullptr;					///< Shadow comparison sampler
+	std::shared_ptr<webgpu::WebGPUSampler> m_shadowSampler;		///< Shadow comparison sampler (RAII; owns wgpu refcount)
 	std::shared_ptr<webgpu::WebGPUBuffer> m_shadowUniformBuffer; ///< Shadow uniforms storage (matrices, bias, etc.) — exposed for consolidated Scene bind group construction
 
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_shadowPass2DBindGroupLayout;	///< 2D shadow pass layout

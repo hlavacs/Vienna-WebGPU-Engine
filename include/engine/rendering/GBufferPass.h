@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -60,6 +61,8 @@ public:
 	 * @brief Creates the G-buffer and resolves the registered G-buffer shader.
 	 * @return true on success, false if any prerequisite is missing.
 	 */
+	[[nodiscard]] const char *name() const override { return "GBuffer"; }
+
 	bool initialize() override;
 
 	/**
@@ -110,14 +113,22 @@ private:
 	 * @brief Resolves the pipeline for the given cull mode via @ref WebGPUPipelineManager.
 	 *
 	 * Two variants exist in practice (Back for sealed opaque, None for double-sided
-	 * GLTF geometry). The manager keys its own cache by @c PipelineKey; returning
-	 * a Handle (not a raw shared_ptr) means a hot-reload swap inside the manager
-	 * propagates here too — pin the handle's lock() snapshot for the draw call.
+	 * GLTF geometry), so we cache a 2-entry slot indexed by the cull-mode enum
+	 * value (Back = 0, None = 1 — defined in webgpu.hpp) rather than walking
+	 * the PipelineManager's hashmap once per visible item. The cached Handle
+	 * still survives hot reload via SlotCache's Handle-version mechanism:
+	 * `pipelineManager.reloadAllPipelines()` swaps the resource inside the
+	 * slot, and the next `Handle::lock()` here picks it up.
 	 */
 	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> getPipelineFor(wgpu::CullMode cullMode);
 
 	std::unique_ptr<webgpu::GBuffer> m_gBuffer;
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shader;
+
+	// Local cache: [Back, None] → PipelineHandle. Index by cullMode's raw
+	// enum value. Lazy-filled on first use per draw; refreshed when the
+	// PipelineManager's slot bumps version (replace() during hot reload).
+	std::array<engine::rendering::cache::Handle<webgpu::WebGPUPipeline>, 2> m_pipelinePerCullMode{};
 
 	uint64_t m_cameraId = 0;
 	std::vector<size_t> m_visibleIndices;

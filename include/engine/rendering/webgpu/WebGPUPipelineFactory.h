@@ -28,6 +28,23 @@ class WebGPUPipelineFactory
 	// Helper to create a pipeline layout from bind group layouts
 	wgpu::PipelineLayout createPipelineLayout(const wgpu::BindGroupLayout *layouts, uint32_t layoutCount);
 
+	/// Build a compute pipeline from a pre-built pipeline layout + a shader
+	/// module entry point. The single factory chokepoint for compute pipelines
+	/// (the render path's getOrCreatePipeline is render-only), so consumers like
+	/// ClusterManager don't call device.createComputePipeline directly.
+	wgpu::ComputePipeline createComputePipeline(
+		wgpu::PipelineLayout layout,
+		wgpu::ShaderModule module,
+		const char *entryPoint,
+		const char *label = nullptr
+	);
+
+	/// Raw render-pipeline passthrough for one-off pipelines whose descriptor is
+	/// hand-built (e.g. the IBL one-shot bake) and doesn't fit the shaderInfo +
+	/// formats overload above. Keeps device.createRenderPipeline confined to the
+	/// factory layer.
+	wgpu::RenderPipeline createRenderPipeline(const wgpu::RenderPipelineDescriptor &desc);
+
 	/// Shared empty `wgpu::BindGroupLayout`, lazily created on first request.
 	/// Used to fill unused slots in a sparse pipeline layout (e.g. a shader
 	/// that only declares @group(4) still needs slots 0..3 in the pipeline

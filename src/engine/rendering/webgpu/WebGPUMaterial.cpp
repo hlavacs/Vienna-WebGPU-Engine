@@ -53,13 +53,19 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 {
 	// Determine shader type and custom shader
 	const std::string &shaderName = cpuMaterial.getShader();
-	// ToDo: bool shaderChanged = shaderName != m_shaderName;
+	const bool         shaderNameChanged = shaderName != m_shaderName;
 	m_shaderName = shaderName;
 
-	// Get shader info
-	std::shared_ptr<WebGPUShaderInfo> shaderInfo =
-		m_context.shaderRegistry().getShader(shaderName);
+	// Refresh the slot Handle when the shader-name changes (initial sync or
+	// material was edited to point at a different shader). Otherwise reuse
+	// the cached Handle — its version() is the channel that propagates
+	// in-place shader hot-reload through to the material bind-group cache.
+	if (shaderNameChanged || !m_shaderHandle.valid())
+	{
+		m_shaderHandle = m_context.shaderRegistry().getShaderHandle(shaderName);
+	}
 
+	auto shaderInfo = m_shaderHandle.lock();
 	if (!shaderInfo)
 	{
 		spdlog::warn("WebGPUMaterial: Shader not found (name='{}')", shaderName);
@@ -73,9 +79,18 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 		return;
 	}
 
-	if (!m_materialBindGroup || layout != m_materialBindGroup->getLayoutInfo())
+	// Cache invalidation: layout pointer covers the "shader-name swap"
+	// case; the Handle's version covers the "in-place reload via
+	// SlotCache::replace" case. Either change forces a rebuild — neither
+	// silently sneaks an out-of-date bind group through to a draw.
+	engine::rendering::cache::BindGroupSignature signature;
+	signature.add(layout);
+	signature.addVersioned(m_shaderHandle);
+
+	if (!m_materialBindGroup || m_bindGroupSignature != signature)
 	{
 		m_materialBindGroup = m_context.bindGroupFactory().createBindGroup(layout, {}, shared_from_this());
+		m_bindGroupSignature = std::move(signature);
 	}
 
 	auto materialBindGroupBindingIndex = layout->getBindingIndex(bindgroup::entry::defaults::MATERIAL_PROPERTIES);

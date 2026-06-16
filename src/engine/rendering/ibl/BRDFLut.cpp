@@ -23,7 +23,7 @@ bool BRDFLut::initialize(webgpu::WebGPUContext &context)
 		"BRDFLut",
 		LUT_SIZE, LUT_SIZE,
 		lutFormat,
-		webgpu::TextureUsage::RenderAttachment | webgpu::TextureUsage::TextureBinding);
+		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding);
 	if (!m_texture)
 	{
 		spdlog::error("BRDFLut: failed to allocate render target");

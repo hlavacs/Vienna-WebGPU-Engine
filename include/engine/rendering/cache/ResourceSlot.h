@@ -224,6 +224,14 @@ class Handle
 	bool valid() const { return static_cast<bool>(m_slot) && m_slot->isAlive(); }
 	explicit operator bool() const { return valid(); }
 
+	/// True iff this Handle is bound to a slot (even if the slot's resource
+	/// is currently evicted). Distinct from `valid()` / `operator bool()`,
+	/// which additionally require the slot's resource to be materialised.
+	/// Use this for "have I already fetched a handle for this key?" cache
+	/// fills — `valid()` would force a re-fetch every frame after a
+	/// soft-clear, since the slot is intact but the resource is null.
+	[[nodiscard]] bool isAttached() const { return static_cast<bool>(m_slot); }
+
 	/// Pin a snapshot of the current resource. Updates the slot's
 	/// last-access counter so the factory knows we're still using it.
 	/// If the resource was evicted and the slot has a build_fn, rebuilds

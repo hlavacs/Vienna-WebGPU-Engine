@@ -2,10 +2,10 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 #include <webgpu/webgpu.hpp>
 
+#include "engine/rendering/cache/SlotCache.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
 namespace engine::rendering::webgpu
@@ -97,6 +97,25 @@ class ShaderRegistry
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUShaderInfo> getShader(const std::string &name) const;
 
 	/**
+	 * @brief Get the slot Handle for @p name — versioned access.
+	 *
+	 * Consumers that need to invalidate downstream caches on shader hot
+	 * reload (material bind groups, custom pipelines, etc.) should call
+	 * this instead of `getShader`. The returned `Handle<WebGPUShaderInfo>`
+	 * exposes:
+	 *  - `lock()` for the current snapshot (same as `getShader` + version)
+	 *  - `version()` — bumps each time `registerShader(..., true)` or
+	 *    `WebGPUShaderFactory::reloadShader` swaps the slot's resource
+	 *    in place. Wire this into `BindGroupSignature::addVersioned` so a
+	 *    hot reload propagates even when the new shader's bind group
+	 *    layout happens to reuse the same allocation.
+	 *
+	 * Returns an empty Handle if @p name is not registered.
+	 */
+	[[nodiscard]] engine::rendering::cache::Handle<webgpu::WebGPUShaderInfo>
+	getShaderHandle(const std::string &name);
+
+	/**
 	 * @brief Register a shader with its name. Names must be unique.
 	 * @param shaderInfo The shader to register.
 	 * @param replaceIfExists If true, replaces existing shader with the same name.
@@ -123,11 +142,37 @@ class ShaderRegistry
 	 */
 	[[nodiscard]] bool hasShader(const std::string &name) const;
 
+	/// Drop every cached shader's resource pointer but keep the slot + name
+	/// alive. Future `getShader(name)` after a soft-clear returns nullptr
+	/// until `registerShader` repopulates the slot — used by the "Clear All"
+	/// UI flow that wants visible reload without breaking outstanding
+	/// `shared_ptr<WebGPUShaderInfo>` consumers (each pass holds its own
+	/// ref via shared_ptr, so the underlying shader stays valid until
+	/// they drop it).
+	void softClear() { m_shaders.clearResources(); }
+
+	// --- CacheRegistry surface ----------------------------------------------
+	void                       cleanup() { m_shaders.cleanup(); }
+	[[nodiscard]] std::size_t  cacheSize() const { return m_shaders.cacheSize(); }
+	[[nodiscard]] std::size_t  aliveCount() const { return m_shaders.aliveCount(); }
+	void                       notifyFrame() { m_shaders.notifyFrame(); }
+	std::size_t                evictStale() { return m_shaders.evictStale(); }
+	void                       setMaxIdleFrames(uint32_t frames) { m_shaders.setMaxIdleFrames(frames); }
+	[[nodiscard]] uint32_t     maxIdleFrames() const { return m_shaders.maxIdleFrames(); }
+
   private:
 	webgpu::WebGPUContext &m_context;
 
-	// Custom shaders indexed by name
-	std::unordered_map<std::string, std::shared_ptr<webgpu::WebGPUShaderInfo>> m_shaders;
+	// Shader storage. SlotCache slots own one shared_ptr<WebGPUShaderInfo>
+	// each; getShader() materialises a snapshot via Handle::lock().
+	// registerShader uses getOrCreate (initial) or replace (hot-reload via
+	// WebGPUShaderFactory::reloadShader). Slots have no auto-rebuild
+	// build_fn — shaders are not built from a key, they're built by
+	// hand-rolled createXxxShader() helpers during initialiseDefaultShaders
+	// and re-registered after hot-reload. Eviction therefore *removes*
+	// the entry rather than rebuilding it.
+	using SlotCacheT = engine::rendering::cache::SlotCache<std::string, webgpu::WebGPUShaderInfo>;
+	SlotCacheT m_shaders;
 
 	// Helper methods to create specific default shaders
 	std::shared_ptr<webgpu::WebGPUShaderInfo> createPBRShader();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -122,8 +123,20 @@ class BindGroupBinder
 	std::optional<uint64_t> m_lastObjectId;
 	std::optional<uint64_t> m_lastMaterialId;
 
-	// Currently bound bind groups (group index → bind group pointer)
-	std::unordered_map<uint32_t, const webgpu::WebGPUBindGroup *> m_boundBindGroups;
+	/// wgpu's spec maximum bind groups per pipeline. The engine convention
+	/// uses @group(0..3) for the canonical Frame/Scene/Material/Object set
+	/// plus @group(4..7) for pass-specific custom groups. Anything outside
+	/// 0..7 is invalid; the binder asserts on out-of-range slot indices.
+	static constexpr uint32_t kMaxBindGroups = 8;
+
+	/// Currently bound bind groups, keyed by @group index. Array (not
+	/// hashmap) because this is touched on every layout iteration of every
+	/// draw call — that's potentially N_layouts × N_draws hashmap lookups
+	/// per frame, vs. the same number of direct array indexes. nullptr =
+	/// nothing bound, the sentinel `reinterpret_cast<...>(uintptr_t(1))` =
+	/// the shared empty bind group (see bind() — that lets us still detect
+	/// a real bind-group later replacing it).
+	std::array<const webgpu::WebGPUBindGroup *, kMaxBindGroups> m_boundBindGroups{};
 };
 
 } // namespace engine::rendering

@@ -84,7 +84,14 @@ fn fs_main(in: VertexOut) -> @location(0) vec4f {
 		return vec4f(0.0, 0.0, 0.0, 1.0);
 	}
 
+	// Scale the visible sky by the same intensity the IBL terms apply
+	// (params.y). With raw HDR equirects the sun / sky values can spike
+	// 10–50× linear; without this multiplier the skybox blows out the
+	// framebuffer pre-tonemap and visually drowns out every lit surface,
+	// while the IBL contributions on those same surfaces stay dimmed. A
+	// single intensity knob keeps environment brightness coherent across
+	// the sky background and the materials it lights.
 	let uv = direction_to_equirect_uv(in.direction);
 	let color = textureSample(environment_texture, environment_sampler, uv).rgb;
-	return vec4f(color, 1.0);
+	return vec4f(color * u_environment.params.y, 1.0);
 }

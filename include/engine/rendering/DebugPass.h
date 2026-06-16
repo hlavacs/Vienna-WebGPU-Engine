@@ -2,6 +2,7 @@
 
 #include "engine/rendering/RenderPass.h"
 #include "engine/rendering/cache/ResourceSlot.h"
+#include "engine/rendering/webgpu/WebGPUSampler.h"
 
 #include <memory>
 
@@ -24,6 +25,8 @@ class DebugPass : public RenderPass
   public:
 	explicit DebugPass(std::shared_ptr<webgpu::WebGPUContext> context);
 	~DebugPass() override = default;
+
+	[[nodiscard]] const char *name() const override { return "Debug"; }
 
 	bool initialize() override;
 	void render(FrameCache &frameCache) override;
@@ -53,7 +56,7 @@ class DebugPass : public RenderPass
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_debugBindGroup;
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 
-	wgpu::Sampler m_sampler = nullptr;
+	std::shared_ptr<webgpu::WebGPUSampler> m_sampler;
 };
 
 } // namespace engine::rendering

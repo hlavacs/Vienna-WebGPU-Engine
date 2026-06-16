@@ -45,8 +45,7 @@ std::shared_ptr<webgpu::WebGPUTexture> allocateMipChainTarget(
 	texDesc.mipLevelCount           = mipLevels;
 	texDesc.sampleCount             = 1;
 	texDesc.format                  = format;
-	texDesc.usage                   = static_cast<WGPUTextureUsageFlags>(
-		webgpu::TextureUsage::RenderAttachment | webgpu::TextureUsage::TextureBinding);
+	texDesc.usage                   = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
 	texDesc.viewFormatCount         = 0;
 	texDesc.viewFormats             = nullptr;
 
@@ -211,8 +210,9 @@ bool PrefilteredEnv::bake(
 		return false;
 	}
 
-	wgpu::Sampler sampler = context.samplerFactory().getClampLinearSampler();
-	wgpu::Texture rawDst = m_texture->getTexture();
+	auto          samplerOwner = context.samplerFactory().getClampLinearSampler();
+	wgpu::Sampler sampler      = samplerOwner ? samplerOwner->raw() : wgpu::Sampler(nullptr);
+	wgpu::Texture rawDst       = m_texture->getTexture();
 
 	std::vector<MipResources> mips;
 	mips.reserve(MIP_LEVELS);

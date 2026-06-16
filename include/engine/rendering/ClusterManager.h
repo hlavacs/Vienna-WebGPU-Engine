@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <unordered_map>
+
+#include <glm/glm.hpp>
 #include <webgpu/webgpu.hpp>
 
 namespace engine::rendering::webgpu
@@ -46,8 +48,6 @@ class ClusterManager
 	static constexpr uint32_t CLUSTER_GRID_TOTAL = CLUSTER_GRID_DIM_X * CLUSTER_GRID_DIM_Y * CLUSTER_GRID_DIM_Z;
 	static constexpr uint32_t MAX_LIGHTS_PER_CLUSTER = 256;
 
-	uint32_t m_lightCount = 0; // Track the light count to know when to rebuild bind groups
-
 	/**
 	 * @brief Construct cluster manager.
 	 * @param context WebGPU context for GPU resource management.
@@ -64,17 +64,38 @@ class ClusterManager
 
 	/**
 	 * @brief Assign lights to clusters using compute shader.
+	 *
 	 * Must be called once per frame, per camera, before the composition pass.
 	 * Runs two compute dispatches: clear (per-cluster zero count) then assign
 	 * (per-light append into intersecting clusters).
+	 *
+	 * **Skip on unchanged inputs.** The cluster grid is a pure function of
+	 * (camera view-projection, light data, light count). When all three
+	 * match the previous invocation for this camera the dispatches are
+	 * elided — the GPU grid buffer is still populated from the previous
+	 * frame's work. `viewProjection` is the cheapest fingerprint for the
+	 * camera (mat4 equality, 16 floats); `SceneLightBuffer::
+	 * getLastUploadHash()` already gives a fingerprint of the light
+	 * payload that's computed once at upload time.
+	 *
 	 * @param cameraId Camera identifier - used to look up the per-camera frame
 	 *                 uniform buffer in @p frameCache so the compute shader
-	 *                 sees the active camera's view / projection matrices.
+	 *                 sees the active camera's view / projection matrices,
+	 *                 AND to key the per-camera dispatch-skip cache.
+	 * @param viewProjection This camera's current view-projection matrix.
+	 *                       Used purely for the dispatch-skip fingerprint;
+	 *                       the actual matrix the compute shader reads
+	 *                       comes from the GPU frame uniform buffer.
 	 * @param frameCache Per-frame cache (frame bind groups live here).
 	 * @param lightCount Number of valid entries in the scene light buffer.
-	 * @return True if both dispatches succeeded.
+	 * @return True if dispatches succeeded OR were skipped as redundant.
 	 */
-	bool assignLights(uint64_t cameraId, FrameCache &frameCache, uint32_t lightCount);
+	bool assignLights(
+		uint64_t          cameraId,
+		const glm::mat4  &viewProjection,
+		FrameCache       &frameCache,
+		uint32_t          lightCount
+	);
 
 	/**
 	 * @brief Get the cluster grid storage buffer.
@@ -85,13 +106,6 @@ class ClusterManager
 
 	/// Flat u32 index pool storing the per-cluster light lists.
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBuffer> getClusterIndicesBuffer() const { return m_clusterIndicesBuffer; }
-
-	/**
-	 * @brief Clear cluster assignments (resets count to 0 for all clusters).
-	 * Called before each frame's light assignment.
-	 * @return True if clear succeeded.
-	 */
-	bool clearClusters();
 
   private:
 	webgpu::WebGPUContext &m_context;
@@ -126,6 +140,22 @@ class ClusterManager
 		uint32_t lastLightCount = 0;
 	};
 	std::unordered_map<uint64_t, CachedComputeBindGroup> m_computeBindGroups;
+
+	// Per-camera dispatch-skip fingerprint. Skip the cs_clear + cs_assign
+	// dispatches when (camera matrix, light data, light count) all match
+	// the previous invocation — the cluster grid is a pure function of
+	// those inputs, so the previous frame's GPU buffer contents are still
+	// the correct result. Common cases this hits: static-camera frames,
+	// idle / paused state, multi-camera setups with one scripted view that
+	// doesn't move every frame.
+	struct DispatchFingerprint
+	{
+		glm::mat4 viewProjection{};
+		uint64_t  lightHash     = 0;
+		uint32_t  lightCount    = 0;
+		bool      valid         = false;
+	};
+	std::unordered_map<uint64_t, DispatchFingerprint> m_dispatchFingerprints;
 
 	/**
 	 * @brief Create the cluster grid storage buffer.

@@ -190,11 +190,29 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	void cleanup() override
 	{
 		m_whiteTexture.reset();
+		m_blackTexture.reset();
 		m_defaultNormalTexture.reset();
 		m_colorTextureCache.clear();
 		m_renderTargetCache.clear();
 
 		BaseWebGPUFactory::cleanup();
+	}
+
+	/// Soft-clear override: in addition to dropping the SlotCache's
+	/// resources, drop the extra caches this factory owns (default
+	/// textures, color-cache, render-target-cache). All five rebuild on
+	/// their respective next get / createFromColor / createRenderTarget
+	/// call. Consumer-held shared_ptrs from previous calls keep their
+	/// textures alive across this — that's why soft-clear is safe to
+	/// invoke mid-frame.
+	void softClear()
+	{
+		m_whiteTexture.reset();
+		m_blackTexture.reset();
+		m_defaultNormalTexture.reset();
+		m_colorTextureCache.clear();
+		m_renderTargetCache.clear();
+		BaseWebGPUFactory::softClear();
 	}
 
 	/**
@@ -217,19 +235,17 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	 */
 	std::shared_ptr<WebGPUTexture> createFromHandle(
 		const engine::rendering::Texture::Handle &handle,
-		const WebGPUTextureOptions &options
+		const WebGPUTextureOptions               &options
 	)
 	{
-		const uint32_t now = m_frameCounter.load(std::memory_order_relaxed);
-		auto it = m_cache.find(handle);
-		if (it != m_cache.end())
-		{
-			it->second.lastAccessFrame = now;
-			return it->second.resource;
-		}
-		auto product = createFromHandleUncached(handle, options);
-		m_cache.emplace(handle, Entry{product, now});
-		return product;
+		// SlotCache captures the build_fn by value; subsequent rebuild
+		// after eviction or softClear() will rerun the same lambda — same
+		// handle, same options. (If a future caller wants a different
+		// options-set for the same handle, the right answer is to fold
+		// options into the cache key, not to mutate the slot's build_fn.)
+		return m_cache.getOrCreate(handle, [this, handle, options]() {
+			return createFromHandleUncached(handle, options);
+		}).lock();
 	}
 
   protected:

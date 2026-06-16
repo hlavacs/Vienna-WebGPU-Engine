@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/BindGroupSignature.h"
 #include "engine/rendering/cache/ResourceSlot.h"
 
 namespace engine::rendering::webgpu
@@ -56,6 +57,8 @@ public:
 	 * @brief Resolves the composition shader from the registry.
 	 * @return true on success, false if the shader is missing or invalid.
 	 */
+	[[nodiscard]] const char *name() const override { return "Composition"; }
+
 	bool initialize() override;
 
 	/**
@@ -102,12 +105,13 @@ private:
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 	webgpu::GBuffer *m_gBuffer = nullptr;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_gBufferBindGroup;
-	// First-color-texture identity captured when m_gBufferBindGroup was built.
-	// GBuffer::resize replaces every color texture, so a mismatch here means the
-	// cached bind group is sampling destroyed views and must be rebuilt - even
-	// when the GBuffer pointer is unchanged (the common case for in-frame resizes
-	// like multi-camera with different viewports, where Renderer::onResize never fires).
-	const webgpu::WebGPUTexture *m_gBufferBindGroupFingerprint = nullptr;
+	// Identity signature of every texture baked into m_gBufferBindGroup.
+	// GBuffer::resize replaces every color texture, so a mismatch means the
+	// cached bind group is sampling destroyed views and must be rebuilt -
+	// even when the GBuffer pointer is unchanged (the common case for
+	// in-frame resizes like multi-camera with different viewports, where
+	// Renderer::onResize never fires).
+	engine::rendering::cache::BindGroupSignature m_gBufferBindGroupSignature;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_sceneBindGroup;
 
 	uint64_t m_cameraId = 0;

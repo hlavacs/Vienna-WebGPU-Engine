@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <type_traits>
 #include <vector>
 
 namespace engine::rendering::cache
@@ -32,6 +33,12 @@ struct CacheView
 	void (*notifyFrame)(void *)    = nullptr;
 	std::size_t (*clean)(void *)   = nullptr;
 	void (*clear)(void *)          = nullptr;
+	/// "Soft clear": drop resources but keep slots + build_fns. Optional;
+	/// nullptr means the cache only supports the hard `clear` semantic.
+	/// The Clear All UI flow prefers softClear when available — it's safe
+	/// mid-frame and lets outstanding handles auto-rebuild on next access
+	/// instead of going dead.
+	void        (*softClear)(void *) = nullptr;
 	std::size_t (*size)(void *)    = nullptr;
 	std::size_t (*alive)(void *)   = nullptr;
 	// Per-cache lifetime configuration. setMaxIdleFrames(N) configures how
@@ -80,6 +87,14 @@ class CacheRegistry
 	/// Clear every cache. External shared_ptrs continue to work; the caches
 	/// just forget about them. Use on resize, scene change, device loss.
 	void clearAll();
+
+	/// Soft-clear every cache that supports it (drops resources but keeps
+	/// slots + build_fns so outstanding Handles auto-rebuild on next
+	/// access). Caches that only support hard `clear` fall through to it.
+	/// This is the verb the Clear All UI flow calls — visible reload
+	/// without going dead on outstanding handles. Returns the number of
+	/// caches that were soft-cleared (the rest were hard-cleared).
+	std::size_t softClearAll();
 
 	/// Total entries across every registered cache (alive + tombstones).
 	std::size_t totalSize() const;
@@ -139,6 +154,19 @@ class CacheRegistry
 	std::vector<CacheView>  m_views;
 };
 
+namespace detail
+{
+// SFINAE: does `T::softClear()` compile? Used so registerXxxCache can wire
+// the soft-clear function pointer only for caches that actually expose it,
+// without forcing every cache to declare softClear.
+template <typename T, typename = void>
+struct HasSoftClear : std::false_type {};
+
+template <typename T>
+struct HasSoftClear<T, std::void_t<decltype(std::declval<T &>().softClear())>>
+    : std::true_type {};
+} // namespace detail
+
 template <typename CacheT>
 void CacheRegistry::registerTypedCache(CacheT &cache, const char *label)
 {
@@ -150,6 +178,10 @@ void CacheRegistry::registerTypedCache(CacheT &cache, const char *label)
 	v.clear       = [](void *p) { static_cast<CacheT *>(p)->clear(); };
 	v.size        = [](void *p) -> std::size_t { return static_cast<CacheT *>(p)->size(); };
 	v.alive       = [](void *p) -> std::size_t { return static_cast<CacheT *>(p)->aliveCount(); };
+	if constexpr (detail::HasSoftClear<CacheT>::value)
+	{
+		v.softClear = [](void *p) { static_cast<CacheT *>(p)->softClear(); };
+	}
 	registerCache(v);
 }
 
@@ -166,6 +198,10 @@ void CacheRegistry::registerFactoryCache(FactoryT &factory, const char *label)
 	v.alive             = [](void *p) -> std::size_t { return static_cast<FactoryT *>(p)->cacheSize(); };
 	v.setMaxIdleFrames  = [](void *p, uint32_t f) { static_cast<FactoryT *>(p)->setMaxIdleFrames(f); };
 	v.getMaxIdleFrames  = [](void *p) -> uint32_t { return static_cast<FactoryT *>(p)->maxIdleFrames(); };
+	if constexpr (detail::HasSoftClear<FactoryT>::value)
+	{
+		v.softClear = [](void *p) { static_cast<FactoryT *>(p)->softClear(); };
+	}
 	registerCache(v);
 }
 

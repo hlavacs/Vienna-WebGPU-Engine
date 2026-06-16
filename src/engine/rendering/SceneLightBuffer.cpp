@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/lighting/LightManager.h"
+#include "engine/rendering/CacheStats.h"
 #include "engine/rendering/LightUniforms.h"
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShaderRegistry.h"
@@ -57,6 +58,44 @@ void SceneLightBuffer::updateFromManager(const LightManager &lightManager)
 	updateFromLights(lightManager.getLightData());
 }
 
+namespace
+{
+/// 64-bit FNV-1a over 8-byte blocks of @p data plus the leading @p count.
+/// Cheap "did anything change?" fingerprint — false positives (rare hash
+/// collisions) cost an extra writeBuffer, false negatives (skipped writes
+/// when data did change) would be visible as stale lights, which the
+/// 64-bit hash space makes astronomically unlikely.
+uint64_t fingerprintLights(uint32_t count, const engine::rendering::LightStruct *data, size_t byteCount)
+{
+	constexpr uint64_t kOffset = 0xcbf29ce484222325ull;
+	constexpr uint64_t kPrime  = 0x100000001b3ull;
+
+	uint64_t h = kOffset;
+	h ^= static_cast<uint64_t>(count);
+	h *= kPrime;
+
+	if (count == 0 || byteCount == 0) return h;
+
+	const auto *blocks = reinterpret_cast<const uint64_t *>(data);
+	const size_t blockCount = byteCount / sizeof(uint64_t);
+	for (size_t i = 0; i < blockCount; ++i)
+	{
+		h ^= blocks[i];
+		h *= kPrime;
+	}
+	// Trailing bytes (LightStruct is 16-byte-aligned in practice, but be
+	// defensive in case the layout changes).
+	const auto *tail = reinterpret_cast<const uint8_t *>(data) + (blockCount * sizeof(uint64_t));
+	const size_t tailCount = byteCount - (blockCount * sizeof(uint64_t));
+	for (size_t i = 0; i < tailCount; ++i)
+	{
+		h ^= tail[i];
+		h *= kPrime;
+	}
+	return h;
+}
+} // namespace
+
 void SceneLightBuffer::updateFromLights(const std::vector<engine::rendering::LightStruct> &lightData)
 {
 	if (!m_bufferWrapped)
@@ -80,6 +119,20 @@ void SceneLightBuffer::updateFromLights(const std::vector<engine::rendering::Lig
 
 	uint32_t lightCount = static_cast<uint32_t>(lightCountToUpload);
 
+	// Fingerprint check: skip the upload when the payload is byte-identical
+	// to the previous frame's. Common case for static scenes; helps even on
+	// animated scenes where only some lights move (the cost is the hash
+	// itself — ~10 µs for 1000 lights, much less than the ~64 KB queue
+	// submission it replaces).
+	const size_t lightBytes = lightCountToUpload * sizeof(engine::rendering::LightStruct);
+	const uint64_t hash = fingerprintLights(lightCount, lightData.data(), lightBytes);
+	if (m_lastUploadValid && m_lastUploadHash == hash && m_lightCount == lightCount)
+	{
+		engine::rendering::CacheStats::sceneLightUploadsSkipped.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	engine::rendering::CacheStats::sceneLightUploadsExecuted.fetch_add(1, std::memory_order_relaxed);
+
 	auto &queue = m_context.getQueue();
 	engine::rendering::LightsBuffer header;
 	header.count = lightCount;
@@ -91,11 +144,13 @@ void SceneLightBuffer::updateFromLights(const std::vector<engine::rendering::Lig
 			m_storageBuffer,
 			sizeof(header),
 			lightData.data(),
-			lightCountToUpload * sizeof(engine::rendering::LightStruct)
+			lightBytes
 		);
 	}
 
-	m_lightCount = lightCount;
+	m_lightCount      = lightCount;
+	m_lastUploadHash  = hash;
+	m_lastUploadValid = true;
 	spdlog::debug("SceneLightBuffer updated with {} lights", lightCount);
 }
 

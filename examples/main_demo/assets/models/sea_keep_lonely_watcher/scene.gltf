@@ -751,6 +751,7 @@
       "doubleSided": true,
       "name": "material",
       "pbrMetallicRoughness": {
+        "baseColorFactor": [1.0, 1.0, 1.0, 0.5],
         "baseColorTexture": {
           "index": 4
         },

@@ -22,10 +22,6 @@
 // PBRProperties intentionally not declared — composition samples the
 // G-buffer (RGBA packed material data) rather than the per-material UBO.
 
-const PI: f32 = 3.141592653589793;
-const INV_PI: f32 = 0.31830988618;
-const INV_2PI: f32 = 0.15915494309;
-
 // Sample the cosine-weighted diffuse irradiance map at a world-space
 // direction (typically the surface normal). The map is baked once per env
 // change with the proper Lambertian convolution (PI / sampleCount), so the
@@ -34,26 +30,6 @@ const INV_2PI: f32 = 0.15915494309;
 fn sampleEnvironmentAtDirection(direction: vec3<f32>) -> vec3<f32> {
 	let uv = direction_to_equirect_uv(direction);
 	return textureSample(irradiance_map, environment_sampler, uv).rgb;
-}
-
-// Specular IBL: sample the env equirect at the reflection vector and select
-// a mip level based on roughness. Cheap split-sum approximation — no
-// pre-filtered cubemap, just rely on the existing mip chain to do the
-// pre-filtering for us. Mirror-smooth surfaces (roughness=0) hit mip 0;
-// fully-rough surfaces hit the smallest mip and look matte.
-//
-// HDR sample clamped to the same ceiling as the diffuse path (vec3(0.3)).
-// Without prefiltering, leaving this unclamped lets the sun (which can
-// spike to 10-50× in the HDR equirect) bleed through Fresnel into every
-// pixel — even at F0=0.04 dielectric, F * 50 = 2.0 of unwanted brightness.
-// Clamping kills the HDR highlight look but keeps the engine usable;
-// proper split-sum prefiltering will restore real specular highlights.
-fn sampleEnvironmentReflection(direction: vec3<f32>, roughness: f32) -> vec3<f32> {
-	let uv     = direction_to_equirect_uv(direction);
-	let maxMip = max(0.0, f32(textureNumLevels(environment_texture)) - 1.0);
-	let mip    = clamp(roughness, 0.0, 1.0) * maxMip;
-	let raw    = textureSampleLevel(environment_texture, environment_sampler, uv, mip).rgb;
-	return min(raw, vec3<f32>(0.3));
 }
 
 // Vertex shader pass-through
@@ -76,32 +52,17 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 	return output;
 }
 
-// Cluster math MUST match light_clustering.wgsl. depth is VIEW-SPACE depth in
-// world units (positionData.w from g_buffer), not NDC depth — log-Z over view
-// space distributes lights across the Z slabs. CLUSTER_GRID_DIM_*,
-// CLUSTER_Z_NEAR, CLUSTER_Z_FAR come from the codegen include below so the
-// values live in one place (C++ ClusterManager constants).
-#include "engine://core/constants_cluster.wgsl"
-
-fn getClusterIndex(uv: vec2<f32>, viewDepth: f32) -> u32 {
-	let gridDimX = CLUSTER_GRID_DIM_X;
-	let gridDimY = CLUSTER_GRID_DIM_Y;
-	let gridDimZ = CLUSTER_GRID_DIM_Z;
-
-	let x = u32(clamp(uv.x, 0.0, 0.999999) * f32(gridDimX));
-	let y = u32(clamp(uv.y, 0.0, 0.999999) * f32(gridDimY));
-
-	let clamped = clamp(viewDepth, CLUSTER_Z_NEAR, CLUSTER_Z_FAR);
-	let normalized = log(clamped / CLUSTER_Z_NEAR) / log(CLUSTER_Z_FAR / CLUSTER_Z_NEAR);
-	let z = u32(clamp(normalized, 0.0, 0.999999) * f32(gridDimZ));
-
-	return z * (gridDimX * gridDimY) + y * gridDimX + x;
-}
+// getClusterIndex + the CLUSTER_* constants are shared with the forward PBR
+// path via lib/clustering.wgsl, so opaque and transparent fragments map to the
+// same froxel. depth fed in is VIEW-SPACE depth in world units (positionData.w
+// from the g-buffer), not NDC depth.
+#include "engine://lib/clustering.wgsl"
 
 // Shared shadow + lighting math — single source for both PBR forward and
 // deferred composition.
 #include "engine://lib/lighting.wgsl"
 #include "engine://lib/shadow.wgsl"
+#include "engine://lib/direct_lighting.wgsl"
 
 fn toneMapACES(color: vec3<f32>) -> vec3<f32> {
     let a = 2.51;
@@ -184,12 +145,23 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 		// maxMip combined with the BRDF LUT's (scale, bias) Fresnel terms.
 		// textureNumLevels gives the actual baked mip count so this stays
 		// correct if PrefilteredEnv::MIP_LEVELS changes.
+		//
+		// IBL_SPEC_SCALE dampens specular relative to diffuse + skybox. The
+		// split-sum bias term keeps a non-zero specular floor even at
+		// roughness=1, so matte dielectrics in a bright HDR sky still read
+		// as "lightly shiny" — fine for plastic, wrong for stone / concrete.
+		// 0.15× brings the rough-material floor down to where stone reads
+		// as matte while smoother surfaces still pick up a recognisable
+		// reflection. Tuned against the SeaKeep demo's outdoor HDR; if a
+		// scene with a darker env loses too much specular punch, promote
+		// this to a per-camera uniform alongside irradianceIntensity.
+		let IBL_SPEC_SCALE: f32 = 0.15;
 		let reflectVec = reflect(-viewDir, worldNormal);
 		let prefilteredUV = direction_to_equirect_uv(reflectVec);
 		let maxMip = max(0.0, f32(textureNumLevels(prefiltered_env)) - 1.0);
 		let envSpec = textureSampleLevel(prefiltered_env, environment_sampler, prefilteredUV, roughness * maxMip).rgb;
 		let envBRDF = textureSample(brdf_lut, environment_sampler, vec2<f32>(NdotV, roughness)).rg;
-		finalColor += envSpec * (F * envBRDF.x + envBRDF.y) * u_environment.params.y * ao;
+		finalColor += envSpec * (F * envBRDF.x + envBRDF.y) * u_environment.params.y * ao * IBL_SPEC_SCALE;
 	}
 
 	// Iterate through lights affecting this pixel
@@ -198,65 +170,29 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 		if (lightIndexOffset >= arrayLength(&u_cluster_light_indices)) { break; }
 		let lightIdx = u_cluster_light_indices[lightIndexOffset];
 		if (lightIdx >= 5120u) { break; } // Safety check
-		
+
 		let light = u_lights.lights[lightIdx];
-		let lightType = light.light_type;
-		let lightColor = light.color;
-		let lightIntensity = light.intensity;
-		
+
 		var contribution = vec3<f32>(0.0);
-		
-		if (lightType == 0u) {
-			// Ambient light
-			contribution = lightColor * lightIntensity;
-		} else if (lightType == 1u) {
-			// Directional light
-			let lightDir = normalize(-light.transform[2].xyz);
-			let ndotL = max(0.0, dot(worldNormal, lightDir));
-			let halfVec = normalize(lightDir + viewDir);
-			let specPower = mix(64.0, 4.0, roughness);
-			let specular = pow(max(dot(worldNormal, halfVec), 0.0), specPower) * (1.0 - metallic);
-			contribution = lightColor * lightIntensity * (ndotL / PI + 0.15 * specular);
-		} else if (lightType == 2u) {
-			// Point light
-			let lightPos = light.transform[3].xyz;
-			let lightRadius = light.range;
-			let toLight = lightPos - worldPos;
-			let distance = length(toLight);
-			
-			if (distance < lightRadius) {
-				let lightDir = normalize(toLight);
-				let attenuation = 1.0 / max(distance * distance, 0.001);
-				let ndotL = max(0.0, dot(worldNormal, lightDir));
-				let halfVec = normalize(lightDir + viewDir);
-				let specPower = mix(64.0, 4.0, roughness);
-				let specular = pow(max(dot(worldNormal, halfVec), 0.0), specPower) * (1.0 - metallic);
-				contribution = lightColor * lightIntensity * attenuation * (ndotL / PI + 0.15 * specular);
-			}
+		if (light.light_type == 0u) {
+			// Ambient is an albedo-tinted flat fill. The G-buffer carries no
+			// per-material ambient term, so this stays inline rather than going
+			// through the shared evaluator (which only covers analytic
+			// directional / point / spot lights).
+			contribution = albedoLinear * light.color * light.intensity;
 		} else {
-			// Spot light
-			let lightPos = light.transform[3].xyz;
-			let toLight = lightPos - worldPos;
-			let distance = length(toLight);
-			if (distance < light.range) {
-				let lightDir = normalize(toLight);
-				let spotDir = normalize(-light.transform[2].xyz);
-				let cosTheta = dot(lightDir, spotDir);
-				let innerRatio = 1.0 - max(0.01, light.spot_softness);
-				let cosOuter = cos(light.spot_angle);
-				let cosInner = cos(light.spot_angle * innerRatio);
-				let spotEffect = smoothstep(cosOuter, cosInner, cosTheta);
-				let attenuation = (1.0 / max(distance * distance, 0.001)) * spotEffect;
-				let ndotL = max(0.0, dot(worldNormal, lightDir));
-				let halfVec = normalize(lightDir + viewDir);
-				let specPower = mix(64.0, 4.0, roughness);
-				let specular = pow(max(dot(worldNormal, halfVec), 0.0), specPower) * (1.0 - metallic);
-				contribution = lightColor * lightIntensity * attenuation * (ndotL / PI + 0.15 * specular);
-			}
+			// Same Cook-Torrance GGX path the forward transparent shader uses
+			// (lib/direct_lighting.wgsl) — opaque and transparent surfaces now
+			// light identically. transmission = 0: opaque keeps its full diffuse
+			// lobe. f0 = dielectric 0.04 baseline lerped toward albedo by metallic.
+			let F0 = mix(vec3<f32>(0.04), albedoLinear, metallic);
+			contribution = evaluate_direct_light_ggx(
+				light, worldNormal, viewDir, worldPos, albedoLinear, F0, roughness, metallic, 0.0
+			);
 		}
-		
+
 		contribution *= calculate_shadow(worldPos, worldNormal, light);
-		finalColor += albedoLinear * contribution;
+		finalColor += contribution;
 	}
 	
 	// Apply AO softly to reduce over-darkening from noisy AO textures.

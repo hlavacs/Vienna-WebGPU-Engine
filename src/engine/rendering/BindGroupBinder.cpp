@@ -34,7 +34,7 @@ bool BindGroupBinder::bind(
 	if (m_lastRenderPassHandle != currentHandle)
 	{
 		m_lastRenderPassHandle = currentHandle;
-		m_boundBindGroups.clear();
+		m_boundBindGroups.fill(nullptr);
 		spdlog::trace("BindGroupBinder: New render pass");
 	}
 
@@ -55,7 +55,9 @@ bool BindGroupBinder::bind(
 	if (!layoutVector.empty() && pipeline->getShaderInfo())
 	{
 		auto emptyBg = m_context ? m_context->pipelineManager().getOrCreateEmptyBindGroup() : nullptr;
-		for (uint32_t slot = 0; slot < layoutVector.size(); ++slot)
+		const uint32_t layoutCount = std::min<uint32_t>(
+			static_cast<uint32_t>(layoutVector.size()), kMaxBindGroups);
+		for (uint32_t slot = 0; slot < layoutCount; ++slot)
 		{
 			if (!layoutVector[slot] && emptyBg && m_boundBindGroups[slot] == nullptr)
 			{
@@ -77,6 +79,14 @@ bool BindGroupBinder::bind(
 		if (!indexOpt.has_value()) continue;
 		uint32_t groupIndex = static_cast<uint32_t>(indexOpt.value());
 
+		if (groupIndex >= kMaxBindGroups)
+		{
+			spdlog::error("BindGroupBinder: group index {} exceeds wgpu's max of {}",
+				groupIndex, kMaxBindGroups);
+			allBound = false;
+			continue;
+		}
+
 		// Check if we need to rebind based on reuse policy
 		bool needsRebind = false;
 		switch (layoutInfo->getReuse())
@@ -89,11 +99,11 @@ bool BindGroupBinder::bind(
 
 		// Find the bind group
 		std::shared_ptr<webgpu::WebGPUBindGroup> bindGroup = findBindGroup(
-			layoutInfo, 
+			layoutInfo,
 			shaderInfo->getName(),
-			bindGroups, 
-			cameraId, 
-			objectId, 
+			bindGroups,
+			cameraId,
+			objectId,
 			materialId
 		);
 
@@ -171,16 +181,20 @@ bool BindGroupBinder::bindGroupAtIndex(
 )
 {
 	if (!bindGroup) return false;
+	if (groupIndex >= kMaxBindGroups)
+	{
+		spdlog::error("BindGroupBinder: group index {} exceeds wgpu's max of {}",
+			groupIndex, kMaxBindGroups);
+		return false;
+	}
 
-	// Check if already bound
-	auto it = m_boundBindGroups.find(groupIndex);
-	if (it != m_boundBindGroups.end() && it->second == bindGroup.get())
+	// Already bound? Direct array access — no hashmap lookup per call.
+	if (m_boundBindGroups[groupIndex] == bindGroup.get())
 	{
 		spdlog::trace("BindGroupBinder: Group {} already bound", groupIndex);
 		return true;
 	}
 
-	// Bind it
 	renderPass.setBindGroup(groupIndex, bindGroup->getBindGroup(), 0, nullptr);
 	m_boundBindGroups[groupIndex] = bindGroup.get();
 

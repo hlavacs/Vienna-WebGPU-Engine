@@ -4,6 +4,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
 namespace engine::rendering
@@ -116,7 +117,7 @@ void FrameProfiler::initGpu(webgpu::WebGPUContext &context, uint32_t maxPasses)
 	resDesc.size = bufferSize;
 	resDesc.usage = wgpu::BufferUsage::QueryResolve | wgpu::BufferUsage::CopySrc;
 	resDesc.mappedAtCreation = false;
-	m_resolveBuffer = context.getDevice().createBuffer(resDesc);
+	m_resolveBuffer = context.bufferFactory().createBuffer(resDesc);
 
 	for (auto &f : m_frames)
 	{
@@ -125,7 +126,7 @@ void FrameProfiler::initGpu(webgpu::WebGPUContext &context, uint32_t maxPasses)
 		rbDesc.size = bufferSize;
 		rbDesc.usage = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopyDst;
 		rbDesc.mappedAtCreation = false;
-		f.readback = context.getDevice().createBuffer(rbDesc);
+		f.readback = context.bufferFactory().createBuffer(rbDesc);
 	}
 
 	m_gpuEnabled = true;

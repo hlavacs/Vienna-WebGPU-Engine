@@ -58,29 +58,48 @@ bool GBufferPass::resize(uint32_t width, uint32_t height)
 void GBufferPass::cleanup()
 {
 	// PipelineManager owns and invalidates the pipeline cache on hot reload.
+	// Drop our local per-cull-mode Handle cache so we don't hold dangling
+	// slot pointers past PipelineManager shutdown.
+	m_pipelinePerCullMode = {};
 }
 
 engine::rendering::cache::Handle<webgpu::WebGPUPipeline> GBufferPass::getPipelineFor(wgpu::CullMode cullMode)
 {
-	auto handle = m_context->pipelineManager().getOrCreatePipeline(
-		m_shader,
-		// Fallback color format; the shader's declared color-target list wins
-		// inside the pipeline factory for the actual MRT setup.
-		webgpu::GBuffer::FORMAT_POSITION,
-		webgpu::GBuffer::FORMAT_DEPTH,
-		engine::rendering::Topology::Type::Triangles,
-		cullMode,
-		false, // G-buffer outputs are opaque - blending is for the forward pass
-		1
-	);
+	// Index into the per-cull-mode local cache. The G-buffer pass only
+	// uses Back / None; anything else collapses to Back. The 2-slot array
+	// avoids the PipelineManager SlotCache hashmap + mutex on every visible
+	// item — a per-draw cost otherwise.
+	const size_t idx = (cullMode == wgpu::CullMode::None) ? 1 : 0;
+	auto        &cached = m_pipelinePerCullMode[idx];
 
-	if (auto snap = handle.lock(); !snap || !snap->isValid())
+	// `isAttached()` (not `valid()`) is the right test here: after a hot
+	// reload the slot persists but its resource is evicted. `valid()` would
+	// force a re-fetch every frame until lock() rebuilt the resource.
+	// `isAttached()` only fires the fetch once per cull mode for the
+	// lifetime of the pass — exactly the behavior we want.
+	if (!cached.isAttached())
 	{
-		spdlog::error("GBufferPass: failed to create pipeline for cullMode={}",
-			cullMode == wgpu::CullMode::Back ? "Back" : "None");
-		return {};
+		cached = m_context->pipelineManager().getOrCreatePipeline(
+			m_shader,
+			// Fallback color format; the shader's declared color-target list wins
+			// inside the pipeline factory for the actual MRT setup.
+			webgpu::GBuffer::FORMAT_POSITION,
+			webgpu::GBuffer::FORMAT_DEPTH,
+			engine::rendering::Topology::Type::Triangles,
+			cullMode,
+			false, // G-buffer outputs are opaque - blending is for the forward pass
+			1
+		);
+
+		if (auto snap = cached.lock(); !snap || !snap->isValid())
+		{
+			spdlog::error("GBufferPass: failed to create pipeline for cullMode={}",
+				cullMode == wgpu::CullMode::Back ? "Back" : "None");
+			cached = {};
+			return {};
+		}
 	}
-	return handle;
+	return cached;
 }
 
 void GBufferPass::render(FrameCache &frameCache)

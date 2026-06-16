@@ -50,3 +50,36 @@ fn fresnel_schlick_roughness(cosTheta: f32, F0: vec3<f32>, roughness: f32) -> ve
 	let invRough    = vec3<f32>(1.0 - roughness);
 	return F0 + (max(invRough, F0) - F0) * pow(oneMinusCos, 5.0);
 }
+
+// --- Cook-Torrance GGX microfacet terms -------------------------------------
+// Pure math (no light/scene types), so they're safe to live here in lib and be
+// pulled into every lighting shader. The full per-light evaluation that uses
+// them lives in lib/direct_lighting.wgsl (it needs LightStruct, which not every
+// includer of this file defines).
+
+// GGX/Trowbridge-Reitz normal distribution.
+fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
+	let a = roughness * roughness;
+	let a2 = a * a;
+	let n_dot_h = max(dot(n, h), 0.0);
+	let n_dot_h2 = n_dot_h * n_dot_h;
+
+	let denom = (n_dot_h2 * (a2 - 1.0) + 1.0);
+	return a2 / (LIGHTING_PI * denom * denom + 0.000001);
+}
+
+// Schlick-GGX geometry term for a single direction (uses the direct-light k).
+fn geometry_schlick_ggx(n_dot_v: f32, roughness: f32) -> f32 {
+	let r = roughness + 1.0;
+	let k = (r * r) / 8.0;
+	return n_dot_v / (n_dot_v * (1.0 - k) + k + 0.000001);
+}
+
+// Smith geometry term: masking + shadowing combined for view and light dirs.
+fn geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f32 {
+	let n_dot_v = max(dot(n, v), 0.0);
+	let n_dot_l = max(dot(n, l), 0.0);
+	let ggx1 = geometry_schlick_ggx(n_dot_v, roughness);
+	let ggx2 = geometry_schlick_ggx(n_dot_l, roughness);
+	return ggx1 * ggx2;
+}

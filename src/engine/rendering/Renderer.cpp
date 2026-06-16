@@ -7,6 +7,7 @@
 
 #include "engine/lighting/LightManager.h"
 #include "engine/rendering/BindGroupDataProvider.h"
+#include "engine/rendering/CacheStats.h"
 #include "engine/rendering/ClearFlags.h"
 #include "engine/rendering/ClusterManager.h"
 #include "engine/rendering/ColorSpace.h"
@@ -125,13 +126,10 @@ bool Renderer::initialize()
 		ColorSpace::Linear
 	);
 
-	// Build a representative render graph mirroring the per-camera frame
-	// flow and log its compiled order. This validates the dependency
-	// declarations match the hand-coded sequence we're orchestrating below.
-	// When the per-pass orchestration migrates to the graph for real, the
-	// execute lambdas just stop being no-ops and the rendering becomes
-	// graph-driven without changing the dependency declarations.
-	logFrameGraphLayout();
+	// Build the frame-level render graph (CameraViews -> Composite) that
+	// drives the once-per-frame stages. Compiled here so any dependency
+	// drift fails loud at startup; executed every frame from renderFrame.
+	buildFrameGraph();
 
 	// Bake the split-sum BRDF integration LUT once at startup. The texture
 	// is global (not per-scene); downstream IBL specular code samples it
@@ -171,85 +169,56 @@ void Renderer::prefilterEnvironment(const std::shared_ptr<webgpu::WebGPUTexture>
 	m_prefilteredEnvSource = rawHandle;
 }
 
+void Renderer::resetCachedBindings()
+{
+	// Per-camera Scene / Skybox bind groups capture wgpu Sampler IDs (the
+	// shadow sampler from ShadowPass, the environment sampler from
+	// SamplerFactory). When the cache registry's clearAll() drops those
+	// samplers, the IDs become dangling and the next setBindGroup() call
+	// hits a wgpu panic. Drop the bind groups + their backing env-uniform
+	// buffers so updateSceneBindGroup() rebuilds everything from fresh
+	// factory state next frame.
+	m_skyboxBindGroups.clear();
+	m_sceneBindGroups.clear();
+	// Drop signatures too, otherwise the cache-hit fast path in
+	// update{Scene,Skybox}BindGroup would compare against a stale signature
+	// and skip the rebuild that just dropped the cached bind group.
+	m_skyboxBindGroupSignatures.clear();
+	m_sceneBindGroupSignatures.clear();
+	m_sceneEnvironmentBuffers.clear();
+
+	// Re-arm prefilterEnvironment: the IBL textures stay alive (they're
+	// owned here, not by the factory), but we want the next env supply to
+	// re-bake them now that the sampler used during the original bake has
+	// been released. Without this the prior bake would be reused with a
+	// fresh sampler binding it — usually fine, but during the clear-all
+	// flow the user expects a true reset.
+	m_prefilteredEnvSource = nullptr;
+
+	// Depth buffers reference render-target identity from the texture
+	// factory's cache. After clearAll() the next frame would try to bind
+	// the old wgpu IDs. Dropping these forces renderToTexture's resize
+	// path to rebuild them.
+	m_depthBuffers.clear();
+
+	// Drop every cached per-object/per-material/per-custom bind group too.
+	// The factory soft-clear that just ran may have rebuilt the underlying
+	// resources (samplers, textures, materials); the cached bundles point
+	// at the stale pointers, so the next frame's fast-path in
+	// FrameCache::prepareGPUResources would happily reuse them and bind
+	// dead views. Full clear() invalidates the lot and forces the next
+	// frame to re-prepare from scratch — exactly the semantic Clear All
+	// wants.
+	m_frameCache.clear();
+
+	// Frustum-cull caches reference visible-indices that may now name
+	// items the FrameCache::clear() above just dropped. Invalidate so the
+	// next frame re-cuts from the fresh items list.
+	m_cullCaches.clear();
+}
+
 namespace
 {
-
-/// Logical resource handles the per-camera frame graph wires its passes
-/// against. Names are descriptive — they don't bind to wgpu objects yet;
-/// that's the next migration step.
-struct FrameGraphResources
-{
-	engine::rendergraph::ResourceHandle shadowMaps;
-	engine::rendergraph::ResourceHandle shadowUniform;
-	engine::rendergraph::ResourceHandle gbufferColor;
-	engine::rendergraph::ResourceHandle gbufferDepth;
-	engine::rendergraph::ResourceHandle clusterGrid;
-	engine::rendergraph::ResourceHandle clusterIdx;
-	engine::rendergraph::ResourceHandle litHdr;
-	engine::rendergraph::ResourceHandle backbuffer;
-};
-
-FrameGraphResources importFrameGraphResources(engine::rendergraph::RenderGraph &g)
-{
-	using namespace engine::rendergraph;
-	FrameGraphResources r{};
-	r.shadowMaps    = g.addImported("ShadowMaps",     ResourceType::DepthTexture);
-	r.shadowUniform = g.addImported("ShadowUniform",  ResourceType::Buffer);
-	r.gbufferColor  = g.addImported("GBuffer.Color",  ResourceType::ColorTexture);
-	r.gbufferDepth  = g.addImported("GBuffer.Depth",  ResourceType::DepthTexture);
-	r.clusterGrid   = g.addImported("ClusterGrid",    ResourceType::Buffer);
-	r.clusterIdx    = g.addImported("ClusterIndices", ResourceType::Buffer);
-	r.litHdr        = g.addImported("LitHDR",         ResourceType::ColorTexture);
-	r.backbuffer    = g.addImported("Backbuffer",     ResourceType::ColorTexture);
-	return r;
-}
-
-void registerFrameGraphPasses(
-	engine::rendergraph::RenderGraph &g,
-	const FrameGraphResources &r)
-{
-	using namespace engine::rendergraph;
-	// Execute lambdas are no-ops here — the integration step is replacing
-	// the renderFrame per-pass blocks with `graph.execute(ctx)` and letting
-	// these lambdas run the existing pass.render() calls. Skybox /
-	// ForwardTransparency / Debug all LOAD (not clear) litHdr — they sample
-	// the existing lit pixels and additively modify, so they must declare a
-	// read in addition to the write. Without the read the graph has no edge
-	// from Composition to them and would be free to reorder.
-	auto noop = [](RenderContext &) {};
-
-	g.addPass(std::make_unique<FunctionPass>("Shadow",
-		std::vector<ResourceHandle>{},
-		std::vector<ResourceHandle>{r.shadowMaps, r.shadowUniform}, noop));
-
-	g.addPass(std::make_unique<FunctionPass>("GBuffer",
-		std::vector<ResourceHandle>{},
-		std::vector<ResourceHandle>{r.gbufferColor, r.gbufferDepth}, noop));
-
-	g.addPass(std::make_unique<FunctionPass>("ClusterCompute",
-		std::vector<ResourceHandle>{},
-		std::vector<ResourceHandle>{r.clusterGrid, r.clusterIdx}, noop));
-
-	g.addPass(std::make_unique<FunctionPass>("Composition",
-		std::vector<ResourceHandle>{r.gbufferColor, r.gbufferDepth, r.shadowMaps, r.shadowUniform, r.clusterGrid, r.clusterIdx},
-		std::vector<ResourceHandle>{r.litHdr}, noop));
-
-	g.addPass(std::make_unique<FunctionPass>("Skybox",
-		std::vector<ResourceHandle>{r.gbufferDepth, r.litHdr},
-		std::vector<ResourceHandle>{r.litHdr}, noop));
-
-	g.addPass(std::make_unique<FunctionPass>("ForwardTransparency",
-		std::vector<ResourceHandle>{r.gbufferDepth, r.litHdr},
-		std::vector<ResourceHandle>{r.litHdr}, noop));
-
-	g.addPass(std::make_unique<FunctionPass>("Debug",
-		std::vector<ResourceHandle>{r.litHdr},
-		std::vector<ResourceHandle>{r.litHdr}, noop));
-
-	g.addPass(std::make_unique<FunctionPass>("Composite",
-		std::vector<ResourceHandle>{r.litHdr},
-		std::vector<ResourceHandle>{r.backbuffer}, noop));
-}
 
 std::string joinPassNames(const std::vector<std::string> &names)
 {
@@ -268,22 +237,280 @@ std::string joinPassNames(const std::vector<std::string> &names)
 
 } // namespace
 
-void Renderer::logFrameGraphLayout()
+void Renderer::buildFrameGraph()
 {
-	engine::rendergraph::RenderGraph g;
-	const auto resources = importFrameGraphResources(g);
-	registerFrameGraphPasses(g, resources);
+	using namespace engine::rendergraph;
 
-	auto result = g.compile();
+	// Frame-level graph for the two once-per-frame stages. CameraViews runs
+	// the per-camera graph (Shadow -> GBuffer -> ... -> Debug) for every
+	// camera; Composite then tonemaps + blits the camera targets into the
+	// surface and draws UI. Composite genuinely runs AFTER all cameras have
+	// rendered, so it can't live in the per-camera graph — this two-node
+	// graph is its home, and the cameraColor read/write makes the "cameras
+	// before composite" edge data-driven instead of hand-sequenced.
+	auto cameraColor = m_frameGraph.addImported("CameraColor", ResourceType::ColorTexture);
+	auto backbuffer  = m_frameGraph.addImported("Backbuffer",  ResourceType::ColorTexture);
+
+	m_frameGraph.addPass(std::make_unique<FunctionPass>(
+		"CameraViews",
+		std::vector<ResourceHandle>{},
+		std::vector<ResourceHandle>{cameraColor},
+		[this](RenderContext &) {
+			// The scene collector is the same for every camera, so hand it
+			// to the shadow pass once before the loop. Each camera then
+			// renders its own shadow maps + scene through the per-camera
+			// graph invoked inside renderToTexture.
+			m_shadowPass->setRenderCollector(m_currentFrame.collector);
+			for (auto &[cameraId, target] : m_frameCache.renderTargets)
+			{
+				renderToTexture(
+					*m_currentFrame.collector,
+					*m_currentFrame.debugCollector,
+					target,
+					*m_currentFrame.customProviders);
+			}
+		}));
+
+	m_frameGraph.addPass(std::make_unique<FunctionPass>(
+		"Composite",
+		std::vector<ResourceHandle>{cameraColor},
+		std::vector<ResourceHandle>{backbuffer},
+		[this](RenderContext &) {
+			FrameProfiler::Scope s(m_profiler, "Pass.Composite+UI");
+			compositeTexturesToSurface(m_currentFrame.uiCallback);
+		}));
+
+	auto result = m_frameGraph.compile();
 	if (!result.success)
 	{
 		spdlog::error("Frame render graph compile FAILED: {}", result.error);
 		return;
 	}
+	m_frameGraphReady = true;
+	spdlog::info("Frame render graph compiled: order = {}",
+		joinPassNames(m_frameGraph.compiledOrder()));
+}
 
-	spdlog::info("Frame render graph compiled: {} passes, {} resources",
-		g.passCount(), g.resourceCount());
-	spdlog::info("Order: {}", joinPassNames(g.compiledOrder()));
+void Renderer::buildPerCameraGraph()
+{
+	using namespace engine::rendergraph;
+
+	// Import the (logical) resources our deferred chain produces and consumes.
+	// The graph uses these only to compute execution order via reads/writes —
+	// actual GPU resources are owned by the passes themselves (GBuffer owns
+	// its attachments; ClusterManager owns its buffers; CompositionPass writes
+	// to whatever render target the per-camera context hands it).
+	auto shadowMaps   = m_perCameraGraph.addImported("ShadowMaps",     ResourceType::DepthTexture);
+	auto shadowUniform= m_perCameraGraph.addImported("ShadowUniform",  ResourceType::Buffer);
+	auto gbufferColor = m_perCameraGraph.addImported("GBuffer.Color",  ResourceType::ColorTexture);
+	auto gbufferDepth = m_perCameraGraph.addImported("GBuffer.Depth",  ResourceType::DepthTexture);
+	auto clusterGrid  = m_perCameraGraph.addImported("ClusterGrid",    ResourceType::Buffer);
+	auto clusterIdx   = m_perCameraGraph.addImported("ClusterIndices", ResourceType::Buffer);
+	auto litHdr       = m_perCameraGraph.addImported("LitHDR",         ResourceType::ColorTexture);
+
+	// Each FunctionPass lambda captures `this` and reads per-camera state
+	// from `m_currentCamera`, which `renderToTexture` populates before
+	// calling `m_perCameraGraph.execute(ctx)`. The lambda body is what used
+	// to be a hard-coded block in `renderToTexture` — moving it here makes
+	// pass ordering data-driven (the graph compiles edges from the
+	// reads/writes lists below) and lets the existing `isEnabled()` toggles
+	// gate the whole pass uniformly.
+
+	// Shadow runs first: it renders the light-POV depth maps that the
+	// Composition pass samples. It's self-contained w.r.t. GPU resource
+	// prep (it culls and prepares its own per-light visible item sets), so
+	// its only ordering constraint is "before Composition" — expressed by
+	// the shadowMaps / shadowUniform write here and the matching read on
+	// Composition below. Registered first so the topo-sort tie-break (FIFO
+	// on registration order) keeps it at the front.
+	m_perCameraGraph.addPass(std::make_unique<FunctionPass>(
+		"Shadow",
+		std::vector<ResourceHandle>{},
+		std::vector<ResourceHandle>{shadowMaps, shadowUniform},
+		[this](RenderContext &) {
+			auto &renderTarget = *m_currentCamera.renderTarget;
+			m_shadowPass->setCameraId(renderTarget.cameraId);
+			if (m_shadowPass->isEnabled())
+			{
+				FrameProfiler::Scope s(m_profiler, "Pass.Shadow");
+				m_shadowPass->render(m_frameCache);
+			}
+		}));
+
+	m_perCameraGraph.addPass(std::make_unique<FunctionPass>(
+		"GBuffer",
+		std::vector<ResourceHandle>{},
+		std::vector<ResourceHandle>{gbufferColor, gbufferDepth},
+		[this](RenderContext &) {
+			auto &renderTarget = *m_currentCamera.renderTarget;
+			auto  cameraId     = renderTarget.cameraId;
+			m_gBufferPass->resize(
+				m_currentCamera.renderTexture->getWidth(),
+				m_currentCamera.renderTexture->getHeight());
+			m_gBufferPass->setCameraId(cameraId);
+			m_gBufferPass->setVisibleIndices(m_currentCamera.visibleIndices);
+			if (m_gBufferPass->isEnabled())
+			{
+				FrameProfiler::Scope s(m_profiler, "Pass.GBuffer");
+				m_gBufferPass->render(m_frameCache);
+			}
+		}));
+
+	m_perCameraGraph.addPass(std::make_unique<FunctionPass>(
+		"ClusterCompute",
+		std::vector<ResourceHandle>{},
+		std::vector<ResourceHandle>{clusterGrid, clusterIdx},
+		[this](RenderContext &) {
+			auto &renderTarget    = *m_currentCamera.renderTarget;
+			auto  cameraId        = renderTarget.cameraId;
+			auto  sceneLightBuf   = m_context->sceneLightBuffer();
+			auto  clusterManager  = m_context->clusterManager();
+			if (sceneLightBuf && sceneLightBuf->getBufferWrapped() && clusterManager)
+			{
+				FrameProfiler::Scope s(m_profiler, "Pass.ClusterCompute");
+				if (!clusterManager->assignLights(
+						cameraId,
+						renderTarget.viewProjectionMatrix,
+						m_frameCache,
+						sceneLightBuf->getLightCount()))
+					spdlog::warn("Failed to assign lights to clusters");
+			}
+		}));
+
+	m_perCameraGraph.addPass(std::make_unique<FunctionPass>(
+		"Composition",
+		std::vector<ResourceHandle>{gbufferColor, gbufferDepth, shadowMaps, shadowUniform, clusterGrid, clusterIdx},
+		std::vector<ResourceHandle>{litHdr},
+		[this](RenderContext &) {
+			auto &renderTarget = *m_currentCamera.renderTarget;
+			auto  cameraId     = renderTarget.cameraId;
+
+			// Scene bind group binds the cluster output and the lit env;
+			// has to happen AFTER ClusterCompute (the read declaration on
+			// clusterGrid above is what the graph uses to enforce that).
+			{
+				FrameProfiler::Scope s(m_profiler, "Frame.SceneBindGroup");
+				updateSceneBindGroup(renderTarget);
+			}
+
+			auto sceneBindGroup = m_sceneBindGroups[cameraId];
+			if (!sceneBindGroup)
+			{
+				spdlog::warn("CompositionPass skipped: scene bind group failed to build");
+				return;
+			}
+
+			auto compositionPassContext = m_context->renderPassFactory().create(
+				m_currentCamera.renderTexture,
+				nullptr,
+				ClearFlags::SolidColor,
+				renderTarget.backgroundColor
+			);
+
+			m_compositePass->setHDREnabled(renderTarget.hdr);
+			m_compositionPass->setRenderPassContext(compositionPassContext);
+			m_compositionPass->setGBuffer(&m_gBufferPass->getGBuffer());
+			m_compositionPass->setSceneBindGroup(sceneBindGroup);
+			m_compositionPass->setCameraId(cameraId);
+			if (m_compositionPass->isEnabled())
+			{
+				FrameProfiler::Scope s(m_profiler, "Pass.Composition");
+				m_compositionPass->render(m_frameCache);
+			}
+		}));
+
+	m_perCameraGraph.addPass(std::make_unique<FunctionPass>(
+		"Skybox",
+		std::vector<ResourceHandle>{gbufferDepth, litHdr},
+		std::vector<ResourceHandle>{litHdr},
+		[this](RenderContext &) {
+			auto &renderTarget = *m_currentCamera.renderTarget;
+			auto  cameraId     = renderTarget.cameraId;
+			if (!renderTarget.skyboxEnabled) return;
+
+			updateSkyboxBindGroup(renderTarget);
+			auto skyboxBindGroup = m_skyboxBindGroups[cameraId];
+			if (!skyboxBindGroup) return;
+
+			auto &gBuffer = m_gBufferPass->getGBuffer();
+			auto  skyboxPassContext = m_context->renderPassFactory().create(
+				m_currentCamera.renderTexture,
+				gBuffer.getDepthTexture(),
+				ClearFlags::None,
+				renderTarget.backgroundColor
+			);
+			m_skyboxPass->setRenderPassContext(skyboxPassContext);
+			m_skyboxPass->setCameraId(cameraId);
+			m_skyboxPass->setEnvironmentBindGroup(skyboxBindGroup);
+			if (m_skyboxPass->isEnabled())
+			{
+				FrameProfiler::Scope s(m_profiler, "Pass.Skybox");
+				m_skyboxPass->render(m_frameCache);
+			}
+		}));
+
+	m_perCameraGraph.addPass(std::make_unique<FunctionPass>(
+		"ForwardTransparency",
+		std::vector<ResourceHandle>{gbufferDepth, litHdr},
+		std::vector<ResourceHandle>{litHdr},
+		[this](RenderContext &) {
+			if (!m_transparencyPass) return;
+			auto &renderTarget = *m_currentCamera.renderTarget;
+			auto  cameraId     = renderTarget.cameraId;
+			auto  sceneBindGroup = m_sceneBindGroups[cameraId];
+			if (!sceneBindGroup) return;
+
+			auto &gBuffer = m_gBufferPass->getGBuffer();
+			auto  transparencyPassContext = m_context->renderPassFactory().create(
+				m_currentCamera.renderTexture,
+				gBuffer.getDepthTexture(),
+				ClearFlags::None,
+				renderTarget.backgroundColor
+			);
+			m_transparencyPass->setRenderPassContext(transparencyPassContext);
+			m_transparencyPass->setCameraId(cameraId);
+			m_transparencyPass->setCameraPosition(renderTarget.cameraPosition);
+			m_transparencyPass->setVisibleIndices(m_currentCamera.visibleIndices);
+			m_transparencyPass->setSceneBindGroup(sceneBindGroup);
+			if (m_transparencyPass->isEnabled())
+			{
+				FrameProfiler::Scope s(m_profiler, "Pass.ForwardTransparency");
+				m_transparencyPass->render(m_frameCache);
+			}
+		}));
+
+	m_perCameraGraph.addPass(std::make_unique<FunctionPass>(
+		"Debug",
+		std::vector<ResourceHandle>{litHdr},
+		std::vector<ResourceHandle>{litHdr},
+		[this](RenderContext &) {
+			auto &renderTarget = *m_currentCamera.renderTarget;
+			auto  cameraId     = renderTarget.cameraId;
+			auto  debugPassContext = m_context->renderPassFactory().create(
+				m_currentCamera.renderTexture,
+				nullptr,
+				ClearFlags::None,
+				renderTarget.backgroundColor
+			);
+			m_debugPass->setRenderPassContext(debugPassContext);
+			m_debugPass->setCameraId(cameraId);
+			m_debugPass->setDebugCollector(m_currentCamera.debugCollector);
+			if (m_debugPass->isEnabled())
+			{
+				FrameProfiler::Scope s(m_profiler, "Pass.Debug");
+				m_debugPass->render(m_frameCache);
+			}
+		}));
+
+	auto result = m_perCameraGraph.compile();
+	if (!result.success)
+	{
+		spdlog::error("Per-camera render graph compile FAILED: {}", result.error);
+		return;
+	}
+	m_perCameraGraphReady = true;
+	spdlog::info("Per-camera render graph compiled: order = {}",
+		joinPassNames(m_perCameraGraph.compiledOrder()));
 }
 
 bool Renderer::renderFrame(
@@ -384,27 +611,25 @@ bool Renderer::renderFrame(
 		spdlog::warn("LightManager unavailable - deferred composition will render without lights");
 	}
 
-	// === PHASE 4: Render Each Camera View ===
-	// Multi-camera rendering: each camera gets its own shadow maps and scene render
-	m_shadowPass->setRenderCollector(&renderCollector);
-	for (auto &[cameraId, target] : m_frameCache.renderTargets)
+	// === PHASE 4 + 5: Render every camera view, then composite to surface ===
+	// Both stages are driven by the frame-level render graph (CameraViews ->
+	// Composite). CameraViews runs the per-camera graph for each camera
+	// (Shadow -> GBuffer -> ... -> Debug); Composite tonemaps + blits the
+	// results into the surface and draws UI. The graph lambdas read the
+	// frame-wide collectors / UI callback from m_currentFrame, so we publish
+	// them here for the duration of execute() (mirrors the m_currentCamera
+	// pattern the per-camera graph uses).
+	if (m_frameGraphReady)
 	{
-		// Render shadow maps from the perspective of lights visible to this camera
-		m_shadowPass->setCameraId(target.cameraId);
-		{
-			FrameProfiler::Scope s(m_profiler, "Pass.Shadow");
-			m_shadowPass->render(m_frameCache);
-		}
+		m_currentFrame.collector       = &renderCollector;
+		m_currentFrame.debugCollector  = &debugRenderCollector;
+		m_currentFrame.customProviders = &customBindGroupProviders;
+		m_currentFrame.uiCallback      = uiCallback;
 
-		// Render scene from camera's perspective (with shadows applied)
-		renderToTexture(renderCollector, debugRenderCollector, target, customBindGroupProviders);
-	}
+		engine::rendergraph::RenderContext ctx;
+		m_frameGraph.execute(ctx);
 
-	// === PHASE 5: Composite & Present ===
-	// Combine all camera render targets into final surface texture, then present to screen
-	{
-		FrameProfiler::Scope s(m_profiler, "Pass.Composite+UI");
-		compositeTexturesToSurface(uiCallback);
+		m_currentFrame = {};
 	}
 	// Resolve any pending GPU timestamps from this frame's passes. Must come
 	// AFTER every pass submission but BEFORE present so the queue still has
@@ -418,9 +643,14 @@ bool Renderer::renderFrame(
 	m_surfaceTexture.reset();
 
 	// === PHASE 6: Post-Frame Cleanup ===
-	// Hot-reload shaders if changed, clear frame cache for next frame.
-	m_context->pipelineManager().processPendingReloads();
-	m_frameCache.clear();
+	// Per-frame "soft" reset — drops only the truly per-frame data (lights,
+	// shadow requests, render targets, time). The GPU resource bundles
+	// (gpuRenderItems, customBindGroupCache, frame/objectBindGroupCache)
+	// persist across frames so prepareGPUResources / processBindGroupProviders
+	// can skip the factory+bind-group rebuild for objects that haven't
+	// changed since the last frame. The full clear() (drops every cache)
+	// is reserved for scene change / Clear All flows.
+	m_frameCache.endFrame();
 
 	// Cache lifecycle: notifyFrameAll() bumps the frame counter on every
 	// registered factory cache (drives age-based eviction). cleanAll() runs
@@ -453,7 +683,13 @@ void Renderer::startFrame()
 		return;
 	}
 
-	m_frameCache.gpuRenderItems.clear(); // Clear GPU render items at the start of each frame
+	// gpuRenderItems intentionally NOT cleared here — that defeats the
+	// "if (already_prepared) skip" short-circuit in prepareGPUResources
+	// and forced every visible item's GPU bundle (model/mesh/material
+	// factory lookups + object bind group + uniform writeBuffer) to be
+	// rebuilt every frame, even for static scenes. The fast path inside
+	// prepareGPUResources walks the objectID + transform delta to keep
+	// the buffer in sync without the rebuild.
 }
 
 void Renderer::updateFrameBindGroup(const RenderTarget &target, float time)
@@ -502,8 +738,12 @@ std::shared_ptr<webgpu::WebGPUBindGroup> Renderer::buildEnvironmentBindGroup(
 			environmentTexture = texture;
 	}
 
+	// IBL (irradianceEnabled) and the visible skybox are independent toggles:
+	// a scene can have IBL lighting with no visible sky (e.g. interior with
+	// captured env) or a visible sky without IBL contribution (debug view).
+	// Gating IBL on skyboxEnabled here used to force both on or both off,
+	// which made it impossible to A/B-test the env's contribution to lighting.
 	const bool irradianceEnabled =
-		target.skyboxEnabled &&
 		target.irradianceEnabled &&
 		environmentTexture != nullptr;
 
@@ -547,10 +787,9 @@ std::shared_ptr<webgpu::WebGPUBindGroup> Renderer::buildEnvironmentBindGroup(
 
 void Renderer::updateSceneBindGroup(const RenderTarget &target)
 {
-	auto pbrShader = m_context->shaderRegistry().getShader(shader::defaults::PBR);
-	if (!pbrShader) return;
-	auto sceneLayout = pbrShader->getBindGroupLayout(bindgroup::defaults::SCENE);
-	if (!sceneLayout) return;
+	// Shader / layout lookup is deferred to the cache-miss branch — on a
+	// cache hit the function returns without touching ShaderRegistry's
+	// mutex+hashmap. Per camera per frame saving.
 
 	auto sceneLightBuffer = m_context->sceneLightBuffer();
 	if (!sceneLightBuffer || !sceneLightBuffer->getBufferWrapped()) return;
@@ -578,8 +817,8 @@ void Renderer::updateSceneBindGroup(const RenderTarget &target)
 	// / cache eviction) but the handle is stable per backing GPU resource.
 	prefilterEnvironment(environmentTexture);
 
+	// Same skybox/IBL decoupling as buildEnvironmentBindGroup above.
 	const bool irradianceEnabled =
-		target.skyboxEnabled &&
 		target.irradianceEnabled &&
 		environmentTexture != nullptr;
 
@@ -621,18 +860,7 @@ void Renderer::updateSceneBindGroup(const RenderTarget &target)
 		return;
 	}
 
-	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> overrides;
-	overrides.emplace(std::make_tuple(1u, 0u), webgpu::BindGroupResource(lightsBuffer));
-	overrides.emplace(std::make_tuple(1u, 1u), webgpu::BindGroupResource(shadowSampler));
-	overrides.emplace(std::make_tuple(1u, 2u), webgpu::BindGroupResource(shadow2DArray));
-	overrides.emplace(std::make_tuple(1u, 3u), webgpu::BindGroupResource(shadowCubeArray));
-	overrides.emplace(std::make_tuple(1u, 4u), webgpu::BindGroupResource(shadowUniformBuf));
-	overrides.emplace(std::make_tuple(1u, 5u), webgpu::BindGroupResource(envBuffer));
-	overrides.emplace(std::make_tuple(1u, 6u),
-		webgpu::BindGroupResource(m_context->samplerFactory().getDefaultSampler()));
-	overrides.emplace(std::make_tuple(1u, 7u), webgpu::BindGroupResource(environmentTexture));
-	overrides.emplace(std::make_tuple(1u, 8u), webgpu::BindGroupResource(clusterGrid));
-	overrides.emplace(std::make_tuple(1u, 9u), webgpu::BindGroupResource(clusterIndices));
+	auto defaultSampler = m_context->samplerFactory().getDefaultSampler();
 
 	// IBL pair: BRDF integration LUT + GGX-prefiltered env mip chain.
 	// Falls back to a 1x1 black texture when either bake is unavailable
@@ -640,17 +868,69 @@ void Renderer::updateSceneBindGroup(const RenderTarget &target)
 	// the shader treats the missing data as a zero contribution.
 	auto brdfLutTex = m_brdfLut.getTexture();
 	if (!brdfLutTex) brdfLutTex = m_defaultEnvironmentTexture;
-	overrides.emplace(std::make_tuple(1u, 10u), webgpu::BindGroupResource(brdfLutTex));
 
 	auto prefilteredEnvTex = m_prefilteredEnv.getTexture();
 	if (!prefilteredEnvTex) prefilteredEnvTex = environmentTexture; // fall back to raw env
-	overrides.emplace(std::make_tuple(1u, 11u), webgpu::BindGroupResource(prefilteredEnvTex));
 
 	// Diffuse irradiance map (cosine-weighted Lambertian convolution).
 	// Falls back to the raw env texture when the bake hasn't finished —
 	// shaders sample it the same way; the raw env just looks less correct.
 	auto irradianceTex = m_irradianceMap.getTexture();
 	if (!irradianceTex) irradianceTex = environmentTexture;
+
+	// Identity signature of every resource we're about to bind. Order MUST
+	// match the override-insertion order below so the cached signature
+	// compares byte-for-byte across frames. If anything moves (lights
+	// buffer reallocates, env texture swaps, shadow atlas resizes, IBL
+	// bakes finish), the signature changes and we rebuild; otherwise we
+	// reuse last frame's bind group — no `device.createBindGroup` call
+	// at all on the steady-state per-frame path.
+	engine::rendering::cache::BindGroupSignature signature;
+	signature.add(lightsBuffer);
+	signature.add(shadowSampler);
+	signature.add(shadow2DArray);
+	signature.add(shadowCubeArray);
+	signature.add(shadowUniformBuf);
+	signature.add(envBuffer);
+	signature.add(defaultSampler);
+	signature.add(environmentTexture);
+	signature.add(clusterGrid);
+	signature.add(clusterIndices);
+	signature.add(brdfLutTex);
+	signature.add(prefilteredEnvTex);
+	signature.add(irradianceTex);
+
+	auto &cachedSig = m_sceneBindGroupSignatures[target.cameraId];
+	auto  existing  = m_sceneBindGroups.find(target.cameraId);
+	if (existing != m_sceneBindGroups.end() && existing->second && cachedSig == signature)
+	{
+		// Cache hit: every constituent has the same identity as last
+		// time, so the bind group is still valid. Skip the rebuild.
+		CacheStats::sceneBindGroupHits.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	CacheStats::sceneBindGroupRebuilds.fetch_add(1, std::memory_order_relaxed);
+
+	// Cache miss: shader lookup happens here, not at the top, so the fast
+	// path can skip it entirely.
+	auto pbrShader = m_context->shaderRegistry().getShader(shader::defaults::PBR);
+	if (!pbrShader) return;
+	auto sceneLayout = pbrShader->getBindGroupLayout(bindgroup::defaults::SCENE);
+	if (!sceneLayout) return;
+
+	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> overrides;
+	overrides.emplace(std::make_tuple(1u, 0u), webgpu::BindGroupResource(lightsBuffer));
+	overrides.emplace(std::make_tuple(1u, 1u), webgpu::BindGroupResource(shadowSampler));
+	overrides.emplace(std::make_tuple(1u, 2u), webgpu::BindGroupResource(shadow2DArray));
+	overrides.emplace(std::make_tuple(1u, 3u), webgpu::BindGroupResource(shadowCubeArray));
+	overrides.emplace(std::make_tuple(1u, 4u), webgpu::BindGroupResource(shadowUniformBuf));
+	overrides.emplace(std::make_tuple(1u, 5u), webgpu::BindGroupResource(envBuffer));
+	overrides.emplace(std::make_tuple(1u, 6u), webgpu::BindGroupResource(defaultSampler));
+	overrides.emplace(std::make_tuple(1u, 7u), webgpu::BindGroupResource(environmentTexture));
+	overrides.emplace(std::make_tuple(1u, 8u), webgpu::BindGroupResource(clusterGrid));
+	overrides.emplace(std::make_tuple(1u, 9u), webgpu::BindGroupResource(clusterIndices));
+	overrides.emplace(std::make_tuple(1u, 10u), webgpu::BindGroupResource(brdfLutTex));
+	overrides.emplace(std::make_tuple(1u, 11u), webgpu::BindGroupResource(prefilteredEnvTex));
 	overrides.emplace(std::make_tuple(1u, 12u), webgpu::BindGroupResource(irradianceTex));
 
 	auto sceneBindGroup = m_context->bindGroupFactory().createBindGroup(
@@ -662,18 +942,60 @@ void Renderer::updateSceneBindGroup(const RenderTarget &target)
 		return;
 	}
 
-	m_sceneBindGroups[target.cameraId] = std::move(sceneBindGroup);
+	m_sceneBindGroups[target.cameraId]           = std::move(sceneBindGroup);
+	m_sceneBindGroupSignatures[target.cameraId]  = std::move(signature);
 }
 
 void Renderer::updateSkyboxBindGroup(const RenderTarget &target)
 {
+	// Resolve constituents up front so we can fingerprint them before
+	// deciding whether to rebuild. Mirrors the resolution logic inside
+	// buildEnvironmentBindGroup. The shader lookup is deferred until the
+	// signature-mismatch branch — on cache hit (the common case) we never
+	// touch ShaderRegistry's mutex+hashmap.
+	std::shared_ptr<webgpu::WebGPUTexture> environmentTexture = m_defaultEnvironmentTexture;
+	if (target.environmentTexture.has_value() && target.environmentTexture->valid())
+	{
+		webgpu::WebGPUTextureOptions options{};
+		options.colorSpace = ColorSpace::Linear;
+		auto texture = m_context->textureFactory().createFromHandle(target.environmentTexture.value(), options);
+		if (texture) environmentTexture = texture;
+	}
+	auto sampler = m_context->samplerFactory().getDefaultSampler();
+
+	engine::rendering::cache::BindGroupSignature signature;
+	signature.add(sampler);
+	signature.add(environmentTexture);
+
+	auto &cachedSig = m_skyboxBindGroupSignatures[target.cameraId];
+	auto  existing  = m_skyboxBindGroups.find(target.cameraId);
+	if (existing != m_skyboxBindGroups.end() && existing->second && cachedSig == signature)
+	{
+		// Constituents unchanged — refresh env-params (cheap vec4 write,
+		// captures user IBL-intensity / skybox-toggle changes) on the
+		// cached bind group and skip the rebuild.
+		const glm::vec4 environmentParams(
+			(target.irradianceEnabled && environmentTexture) ? 1.0f : 0.0f,
+			target.irradianceIntensity,
+			target.skyboxEnabled ? 1.0f : 0.0f,
+			0.0f
+		);
+		existing->second->updateBuffer(0, &environmentParams, sizeof(glm::vec4), 0, m_context->getQueue());
+		CacheStats::skyboxBindGroupHits.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	CacheStats::skyboxBindGroupRebuilds.fetch_add(1, std::memory_order_relaxed);
+
+	// Cache miss: shader lookup is only paid here, not on the fast path.
 	auto skyboxShader = m_context->shaderRegistry().getShader(shader::defaults::SKYBOX);
 	if (!skyboxShader) return;
+
 	m_skyboxBindGroups[target.cameraId] = buildEnvironmentBindGroup(
 		skyboxShader->getBindGroupLayout(bindgroup::defaults::SKYBOX),
 		target,
 		"Skybox.BindGroup"
 	);
+	m_skyboxBindGroupSignatures[target.cameraId] = std::move(signature);
 }
 
 std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
@@ -823,13 +1145,38 @@ void Renderer::renderToTexture(
 	// ========================================
 	// STEP 3: Frustum Culling
 	// ========================================
-	// Build camera frustum from view-projection matrix and cull objects outside view.
-	// Frustum culling optimization: don't render objects the camera can't see.
-	auto cameraFrustum = engine::math::Frustum::fromViewProjection(renderTarget.viewProjectionMatrix);
+	// Fingerprint the inputs that determine the visibility set: the
+	// view-projection matrix (camera moves) and the collector's item count
+	// (objects added / removed). When both match the last frame's
+	// fingerprint, the visibility set is unchanged and we reuse the cached
+	// indices — skipping the O(N items) cull and the 6 plane-extraction
+	// from the matrix. For typical orbit-camera demos the matrix changes
+	// every frame and we always miss, but idle / paused / scripted-view
+	// frames pay zero CPU here. Edge: object-moves-while-camera-static-
+	// and-count-stable reuses last frame's set for one frame; for typical
+	// scene velocities the visibility slip is invisible.
 	std::vector<size_t> visibleIndices;
+	auto                &cullCache    = m_cullCaches[renderTargetId];
+	const std::size_t    currentCount = collector.getRenderItems().size();
+	if (cullCache.valid
+		&& cullCache.lastItemsCount == currentCount
+		&& cullCache.lastViewProjection == renderTarget.viewProjectionMatrix)
 	{
-		FrameProfiler::Scope s(m_profiler, "Frame.FrustumCull");
-		visibleIndices = collector.extractVisible(cameraFrustum);
+		visibleIndices = cullCache.visibleIndices;
+		CacheStats::frustumCullsSkipped.fetch_add(1, std::memory_order_relaxed);
+	}
+	else
+	{
+		auto cameraFrustum = engine::math::Frustum::fromViewProjection(renderTarget.viewProjectionMatrix);
+		{
+			FrameProfiler::Scope s(m_profiler, "Frame.FrustumCull");
+			visibleIndices = collector.extractVisible(cameraFrustum);
+		}
+		cullCache.lastViewProjection = renderTarget.viewProjectionMatrix;
+		cullCache.lastItemsCount     = currentCount;
+		cullCache.visibleIndices     = visibleIndices;
+		cullCache.valid              = true;
+		CacheStats::frustumCullsExecuted.fetch_add(1, std::memory_order_relaxed);
 	}
 
 	spdlog::debug("Frustum culling: {} visible of {} total items", visibleIndices.size(), collector.getRenderItems().size());
@@ -856,144 +1203,30 @@ void Renderer::renderToTexture(
 	}
 
 	// ========================================
-	// STEP 5: Deferred Geometry + Composition
+	// STEP 5: Deferred passes via per-camera RenderGraph
 	// ========================================
-	// GBufferPass owns its attachments and exposes a typed RenderPassContext;
-	// the renderer's only job is to (re)size it to match this camera and then
-	// hand off the visible items. BLEND materials stay in the gbuffer (handled
-	// via alpha-test discard in the g_buffer shader); a separate forward
-	// transparency pass for truly translucent geometry is a follow-up.
-	auto &gBuffer = m_gBufferPass->getGBuffer();
-	m_gBufferPass->resize(renderFromTexture->getWidth(), renderFromTexture->getHeight());
-	m_gBufferPass->setCameraId(renderTargetId);
-	m_gBufferPass->setVisibleIndices(visibleIndices);
+	// The graph drives GBuffer → ClusterCompute → Composition → Skybox →
+	// ForwardTransparency → Debug in dependency order. Each pass's lambda
+	// (defined in buildPerCameraGraph) reads m_currentCamera for its
+	// per-camera state — we set those fields HERE, before execute().
+	// Built lazily on first frame because initialize() runs before some
+	// of the pass plumbing (shader resolution, etc.) is ready.
+	if (!m_perCameraGraphReady)
 	{
-		FrameProfiler::Scope s(m_profiler, "Pass.GBuffer");
-		m_gBufferPass->render(m_frameCache);
+		buildPerCameraGraph();
 	}
 
-	// Run the compute clustering pass for this camera. Has to come AFTER the
-	// frame bind group + scene light buffer are populated (both happen earlier
-	// in renderToTexture's setup) and BEFORE the composition pass reads from
-	// the cluster buffers.
-	auto sceneLightBuffer = m_context->sceneLightBuffer();
-	auto clusterManager = m_context->clusterManager();
-	if (sceneLightBuffer && sceneLightBuffer->getBufferWrapped() && clusterManager)
+	if (m_perCameraGraphReady)
 	{
-		FrameProfiler::Scope s(m_profiler, "Pass.ClusterCompute");
-		if (!clusterManager->assignLights(renderTargetId, m_frameCache, sceneLightBuffer->getLightCount()))
-			spdlog::warn("Failed to assign lights to clusters");
-	}
+		m_currentCamera.renderTarget   = &renderTarget;
+		m_currentCamera.renderTexture  = renderToTexture;
+		m_currentCamera.visibleIndices = visibleIndices;
+		m_currentCamera.debugCollector = &debugCollector;
 
-	// Build the consolidated Scene bind group for this camera. Composition
-	// and ForwardTransparency share it: same layout, same instance.
-	{
-		FrameProfiler::Scope s(m_profiler, "Frame.SceneBindGroup");
-		updateSceneBindGroup(renderTarget);
-	}
-	auto sceneBindGroup = m_sceneBindGroups[renderTargetId];
+		engine::rendergraph::RenderContext ctx;
+		m_perCameraGraph.execute(ctx);
 
-	if (!sceneBindGroup)
-	{
-		spdlog::warn("CompositionPass skipped: scene bind group failed to build");
-	}
-	else
-	{
-		// HDR intermediate is the camera's render target texture - cleared once
-		// here so the composition pass overwrites every pixel with the lit result.
-		auto compositionPassContext = m_context->renderPassFactory().create(
-			renderToTexture,
-			nullptr,
-			ClearFlags::SolidColor,
-			renderTarget.backgroundColor
-		);
-
-		m_compositePass->setHDREnabled(renderTarget.hdr);
-		m_compositionPass->setRenderPassContext(compositionPassContext);
-		m_compositionPass->setGBuffer(&gBuffer);
-		m_compositionPass->setSceneBindGroup(sceneBindGroup);
-		m_compositionPass->setCameraId(renderTargetId);
-		{
-			FrameProfiler::Scope s(m_profiler, "Pass.Composition");
-			m_compositionPass->render(m_frameCache);
-		}
-	}
-
-	// ========================================
-	// STEP 5b: Skybox (background fill)
-	// ========================================
-	// Drawn AFTER composition so it only fills pixels where the geometry pass
-	// left the cleared depth value (1.0). The skybox shader writes clip.xyww
-	// (so every fragment lands at depth = 1.0), the pipeline is configured
-	// LessEqual + depth-write-off, and the pass loads (not clears) the HDR
-	// color target plus the gbuffer depth.
-	if (renderTarget.skyboxEnabled)
-	{
-		updateSkyboxBindGroup(renderTarget);
-		auto skyboxBindGroup = m_skyboxBindGroups[renderTargetId];
-		if (skyboxBindGroup)
-		{
-			auto skyboxPassContext = m_context->renderPassFactory().create(
-				renderToTexture,
-				gBuffer.getDepthTexture(),
-				ClearFlags::None, // LoadOp::Load for both color and depth
-				renderTarget.backgroundColor
-			);
-			m_skyboxPass->setRenderPassContext(skyboxPassContext);
-			m_skyboxPass->setCameraId(renderTargetId);
-			m_skyboxPass->setEnvironmentBindGroup(skyboxBindGroup);
-			{
-				FrameProfiler::Scope s(m_profiler, "Pass.Skybox");
-				m_skyboxPass->render(m_frameCache);
-			}
-		}
-	}
-
-	// ========================================
-	// STEP 5c: Forward Transparency
-	// ========================================
-	// Runs after lit-HDR composition + skybox so the blend destination is final
-	// opaque colour. Reads gbuffer depth read-only - transparent surfaces must
-	// not stamp depth, or later transparent draws behind them get occluded.
-	//
-	// Scene bind group already built above for composition; reuse it here.
-	if (m_transparencyPass && sceneBindGroup)
-	{
-		auto transparencyPassContext = m_context->renderPassFactory().create(
-			renderToTexture,
-			gBuffer.getDepthTexture(),
-			ClearFlags::None,
-			renderTarget.backgroundColor
-		);
-		m_transparencyPass->setRenderPassContext(transparencyPassContext);
-		m_transparencyPass->setCameraId(renderTargetId);
-		m_transparencyPass->setCameraPosition(renderTarget.cameraPosition);
-		m_transparencyPass->setVisibleIndices(visibleIndices);
-		m_transparencyPass->setSceneBindGroup(sceneBindGroup);
-		{
-			FrameProfiler::Scope s(m_profiler, "Pass.ForwardTransparency");
-			m_transparencyPass->render(m_frameCache);
-		}
-	}
-
-	// ========================================
-	// STEP 6: Debug Rendering Pass
-	// ========================================
-	// Render debug visualization (wireframes, bounding boxes, gizmos) on top.
-	// No depth clearing - renders over the scene.
-	auto debugPassContext = m_context->renderPassFactory().create(
-		renderToTexture,  // Color attachment (same as main render pass)
-		nullptr,		  // No depth attachment (use existing depth)
-		ClearFlags::None, // Don't clear anything
-		renderTarget.backgroundColor
-	);
-
-	m_debugPass->setRenderPassContext(debugPassContext);
-	m_debugPass->setCameraId(renderTargetId);
-	m_debugPass->setDebugCollector(&debugCollector);
-	{
-		FrameProfiler::Scope s(m_profiler, "Pass.Debug");
-		m_debugPass->render(m_frameCache);
+		m_currentCamera = {};
 	}
 
 	// ========================================
@@ -1046,7 +1279,10 @@ void Renderer::compositeTexturesToSurface(
 	// For multiple cameras: arrange viewports (split-screen, picture-in-picture)
 	auto compositePassContext = m_context->renderPassFactory().create(m_surfaceTexture);
 	m_compositePass->setRenderPassContext(compositePassContext);
-	m_compositePass->render(m_frameCache);
+	if (m_compositePass->isEnabled())
+	{
+		m_compositePass->render(m_frameCache);
+	}
 
 	// ========================================
 	// UI Rendering Phase (Optional)
@@ -1070,6 +1306,24 @@ void Renderer::compositeTexturesToSurface(
 
 		m_context->submitCommandEncoder(uiEncoder, "UI Commands");
 	}
+}
+
+std::vector<RenderPass *> Renderer::getAllPasses()
+{
+	// Order matches the actual render-time invocation order. Adding a new
+	// pass? Insert it where it runs so the UI's vertical list mirrors the
+	// pipeline.
+	std::vector<RenderPass *> out;
+	out.reserve(8);
+	if (m_shadowPass)       out.push_back(m_shadowPass.get());
+	if (m_gBufferPass)      out.push_back(m_gBufferPass.get());
+	if (m_compositionPass)  out.push_back(m_compositionPass.get());
+	if (m_skyboxPass)       out.push_back(m_skyboxPass.get());
+	if (m_transparencyPass) out.push_back(m_transparencyPass.get());
+	if (m_debugPass)        out.push_back(m_debugPass.get());
+	if (m_meshPass)         out.push_back(m_meshPass.get());
+	if (m_compositePass)    out.push_back(m_compositePass.get());
+	return out;
 }
 
 void Renderer::onResize(uint32_t width, uint32_t height)

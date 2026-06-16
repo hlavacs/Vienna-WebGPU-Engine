@@ -4,9 +4,12 @@
 #include <limits>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 #include <webgpu/webgpu.hpp>
 
+#include "engine/rendergraph/RenderGraph.h"
 #include "engine/rendering/ClearFlags.h"
+#include "engine/rendering/cache/BindGroupSignature.h"
 #include "engine/rendering/CompositePass.h"
 #include "engine/rendering/CompositionPass.h"
 #include "engine/rendering/DebugPass.h"
@@ -118,6 +121,18 @@ class Renderer
 	 */
 	CompositePass &getCompositePass() { return *m_compositePass; }
 
+	/**
+	 * @brief Snapshot of every owned pass, in canonical render order.
+	 *
+	 * Returns raw pointers (non-owning) — the Renderer keeps the unique_ptrs.
+	 * Used by the debug UI to drive per-pass enable/disable toggles without
+	 * needing a getter per concrete pass type. The order matches the order
+	 * passes execute in `renderToTexture` / `compositeTexturesToSurface`,
+	 * so the UI can render them top-to-bottom and have it match the
+	 * pipeline.
+	 */
+	std::vector<RenderPass *> getAllPasses();
+
   private:
 	// ========================================
 	// Frame Orchestration (High-Level Flow)
@@ -228,6 +243,60 @@ class Renderer
 	std::unique_ptr<ForwardTransparencyPass> m_transparencyPass;
 	std::unique_ptr<CompositePass> m_compositePass;
 
+	/// Per-camera RenderGraph that drives the deferred pass order
+	/// (Shadow → GBuffer → ClusterCompute → Composition → Skybox →
+	/// ForwardTransparency → Debug). Built lazily on the first
+	/// `renderToTexture` from declared resource dependencies; each pass's
+	/// `execute()` lambda captures `this` and reads per-camera state from
+	/// @ref m_currentCamera. Shadow is the graph's first pass (it writes the
+	/// shadow maps the Composition pass samples). Composite is NOT here — it
+	/// runs once per frame after every camera and lives in @ref m_frameGraph.
+	engine::rendergraph::RenderGraph                          m_perCameraGraph;
+	bool                                                       m_perCameraGraphReady = false;
+
+	/// Per-camera state the graph's pass lambdas read. Populated by
+	/// `renderToTexture` *before* calling `m_perCameraGraph.execute(ctx)`,
+	/// so the lambdas only need to capture `this` to reach everything
+	/// the legacy hand-coded sequence had in scope.
+	struct PerCameraContext
+	{
+		RenderTarget                                       *renderTarget   = nullptr;
+		std::shared_ptr<webgpu::WebGPUTexture>              renderTexture;
+		std::vector<size_t>                                 visibleIndices;
+		const DebugRenderCollector                         *debugCollector = nullptr;
+	};
+	PerCameraContext m_currentCamera;
+
+	/// Build the per-camera graph. Called once on first `renderToTexture`
+	/// invocation (initialize() runs before m_passes have their shaders
+	/// resolved; deferring to first frame keeps construction simple).
+	void buildPerCameraGraph();
+
+	/// Frame-level RenderGraph for the two once-per-frame stages: CameraViews
+	/// (runs the per-camera graph for every camera) → Composite (tonemaps +
+	/// blits the camera targets into the surface and draws UI). Composite
+	/// genuinely runs after ALL cameras, so it can't live in the per-camera
+	/// graph; this graph is its home. Built once in `initialize()`; its
+	/// lambdas read frame-wide state from @ref m_currentFrame.
+	engine::rendergraph::RenderGraph                                 m_frameGraph;
+	bool                                                             m_frameGraphReady = false;
+
+	/// Frame-wide state the frame graph's pass lambdas read. Populated by
+	/// `renderFrame` *before* calling `m_frameGraph.execute(ctx)`, so the
+	/// lambdas only need to capture `this`. Mirrors @ref m_currentCamera.
+	struct FrameContext
+	{
+		const RenderCollector                       *collector       = nullptr;
+		const DebugRenderCollector                  *debugCollector  = nullptr;
+		const std::vector<BindGroupDataProvider>    *customProviders = nullptr;
+		std::function<void(wgpu::RenderPassEncoder)> uiCallback;
+	};
+	FrameContext m_currentFrame;
+
+	/// Build the frame-level graph (CameraViews → Composite). Called once
+	/// from `initialize()`.
+	void buildFrameGraph();
+
 	FrameProfiler m_profiler;
 
 public:
@@ -256,16 +325,21 @@ public:
 	/// hand-rolled hemisphere convolution at the shader call site.
 	[[nodiscard]] const engine::rendering::ibl::IrradianceMap &getIrradianceMap() const { return m_irradianceMap; }
 
-private:
-	/// Build a representative render graph mirroring the per-camera frame
-	/// flow, compile it, and log the resolved execution order. Called once
-	/// at initialize() time so any dependency drift between the hand-coded
-	/// orchestration and the graph's declared edges fails loud on startup.
-	/// The graph itself is throwaway today — the integration step that
-	/// makes it drive rendering replaces the manual sequence in renderFrame
-	/// with graph.execute(ctx).
-	void logFrameGraphLayout();
+	/// Drop every Renderer-side resource that references a factory-cached
+	/// object. Use this together with `cacheRegistry().clearAll()`: when
+	/// caches are dropped, the wgpu IDs they handed out get released, but
+	/// our cached scene / skybox bind groups still hold those dead IDs
+	/// inside their internal descriptors — the very next draw crashes with
+	/// "Sampler[Id] does not exist" or similar. This drops the bind groups
+	/// + env-source markers so the next frame rebuilds them from the
+	/// re-baked factory state.
+	///
+	/// Does NOT touch the IBL textures themselves (they're owned here, not
+	/// in the factory cache), but clearing the env-source marker forces
+	/// prefilterEnvironment() to re-bake on next call.
+	void resetCachedBindings();
 
+private:
 	FrameCache m_frameCache{};
 
 	// Counts frames since last CacheRegistry::cleanAll() — the renderer
@@ -293,11 +367,40 @@ private:
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_depthBuffers;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_skyboxBindGroups;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_sceneBindGroups;
+	/// Per-camera identity-signature of the resources baked into the cached
+	/// Scene / Skybox bind groups. Each frame, `updateSceneBindGroup` /
+	/// `updateSkyboxBindGroup` recomputes the current signature from the
+	/// live constituents (lights buffer, shadow textures, env texture, etc.)
+	/// and rebuilds the bind group only if it differs. Replaces the
+	/// historical "rebuild every frame for every camera" leak — wgpu
+	/// internally refcounts every bind group's resources, so freshly
+	/// allocating one per frame held the entire previous frame's GPU state
+	/// alive until the GC eventually ran.
+	std::unordered_map<uint64_t, engine::rendering::cache::BindGroupSignature> m_sceneBindGroupSignatures;
+	std::unordered_map<uint64_t, engine::rendering::cache::BindGroupSignature> m_skyboxBindGroupSignatures;
 	/// Per-camera environment-uniforms buffer (vec4 params) injected into the
 	/// Scene bind group at @binding(5). Cached so its identity is stable
 	/// across frames — the bind group keeps it valid and we can write env
 	/// params directly via the wgpu queue.
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBuffer>> m_sceneEnvironmentBuffers;
+
+	/// Per-camera cached frustum-cull result. Skip the O(N items) cull when
+	/// the camera matrix AND the collector's item count both match the
+	/// previous frame's. Idle / paused / scripted-view frames pay zero
+	/// CPU for visibility determination. The fingerprint deliberately does
+	/// NOT include per-item transforms — that would scale with item count
+	/// just like the cull itself does — so the rare case of "object moves
+	/// while camera is locked and item count is stable" reuses last frame's
+	/// visibility set for one frame. For typical scene-motion velocities
+	/// the slip is invisible.
+	struct CullCache
+	{
+		glm::mat4           lastViewProjection{};
+		std::size_t         lastItemsCount = 0;
+		std::vector<size_t> visibleIndices;
+		bool                valid          = false;
+	};
+	std::unordered_map<uint64_t, CullCache> m_cullCaches;
 
 	// Cross-frame cache of the last frame's render targets. Distinct from
 	// m_frameCache.renderTargets (which is cleared between frames) because

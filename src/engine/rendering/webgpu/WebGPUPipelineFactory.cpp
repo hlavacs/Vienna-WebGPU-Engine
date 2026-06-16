@@ -196,6 +196,28 @@ wgpu::PipelineLayout WebGPUPipelineFactory::createPipelineLayout(const wgpu::Bin
 	return m_context.getDevice().createPipelineLayout(layoutDesc);
 }
 
+wgpu::ComputePipeline WebGPUPipelineFactory::createComputePipeline(
+	wgpu::PipelineLayout layout,
+	wgpu::ShaderModule module,
+	const char *entryPoint,
+	const char *label
+)
+{
+	wgpu::ComputePipelineDescriptor desc{};
+	desc.label                 = label;
+	desc.layout                = layout;
+	desc.compute.module        = module;
+	desc.compute.entryPoint    = entryPoint;
+	desc.compute.constantCount = 0;
+	desc.compute.constants     = nullptr;
+	return m_context.getDevice().createComputePipeline(desc);
+}
+
+wgpu::RenderPipeline WebGPUPipelineFactory::createRenderPipeline(const wgpu::RenderPipelineDescriptor &desc)
+{
+	return m_context.getDevice().createRenderPipeline(desc);
+}
+
 wgpu::BindGroupLayout WebGPUPipelineFactory::getOrCreateEmptyBindGroupLayout()
 {
 	// Single device-wide empty layout reused as a placeholder for every

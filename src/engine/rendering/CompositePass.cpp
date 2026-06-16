@@ -264,7 +264,7 @@ std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
 		if (layoutEntry.texture.sampleType != wgpu::TextureSampleType::Undefined)
 			entry.textureView = texture->getTextureView(layerIndex);
 		else if (layoutEntry.sampler.type != wgpu::SamplerBindingType::Undefined)
-			entry.sampler = m_sampler;
+			entry.sampler = m_sampler ? m_sampler->raw() : wgpu::Sampler(nullptr);
 
 		entries.push_back(entry);
 	}

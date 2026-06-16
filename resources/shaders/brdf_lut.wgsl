@@ -118,6 +118,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec2<f32> {
     // V at NdotV=0 sits in the surface plane and the half-vector path
     // produces NaNs.
     let NdotV     = max(in.uv.x, 0.001);
-    let roughness = in.uv.y;
+    // V-axis flip: in WebGPU the vertex shader's uv.y=0 maps to NDC.y=-1
+    // (bottom of viewport) which rasterizes to texel row H-1, while a
+    // runtime textureSample at uv.y=0 reads texel row 0 (top). Without
+    // this inversion, roughness=R at sample time would return the bake
+    // result computed at roughness=(1-R) — matte surfaces would get the
+    // glossy BRDF integral and look uniformly shiny.
+    let roughness = 1.0 - in.uv.y;
     return integrateBRDF(NdotV, roughness);
 }

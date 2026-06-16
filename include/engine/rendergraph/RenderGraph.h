@@ -232,8 +232,34 @@ class RenderGraph
 	CompileResult compile();
 
 	/// Iterate the compiled order, calling each pass's execute(@p ctx).
-	/// No-op if compile() hasn't succeeded yet.
+	/// No-op if compile() hasn't succeeded yet. Passes whose enabled flag
+	/// is false (see setPassEnabled) are skipped — the dependency graph
+	/// still treats them as if they ran, so downstream readers may see
+	/// stale data in the target texture from the previous frame.
 	void execute(RenderContext &ctx);
+
+	/// Toggle a pass on or off. Cheap — flips a flag, no recompile needed.
+	/// Disabling does NOT remove the pass from the scheduled order; later
+	/// passes that read its outputs will see whatever was in those
+	/// resources before the disable (stale data from prior frames). Use
+	/// for debug toggles and "compare with/without" workflows. Imported
+	/// resources don't get cleared between frames so disabling a producer
+	/// just freezes its output until you re-enable it.
+	void setPassEnabled(PassHandle pass, bool enabled);
+	[[nodiscard]] bool isPassEnabled(PassHandle pass) const;
+
+	/// Look up the resources a registered pass writes — used by debug
+	/// previews that want to blit "the GBuffer normal" or "the lit HDR
+	/// before composite" to the screen. Returns an empty span when the
+	/// pass id is unknown.
+	[[nodiscard]] std::vector<ResourceHandle> getPassWrites(PassHandle pass) const;
+
+	/// Look up a pass by its declared name. Returns an invalid PassHandle
+	/// when no match is found. Names are matched verbatim — the same string
+	/// the Pass's name() method returned during setup. First match wins
+	/// when two passes share a name (the registry doesn't enforce
+	/// uniqueness, but the convention is "one pass per name").
+	[[nodiscard]] PassHandle findPassByName(const std::string &name) const;
 
 	/// Reset compile state before re-running compile(): clears the cached
 	/// execution order, drops the read/write declarations on every
@@ -268,6 +294,7 @@ class RenderGraph
 		std::unique_ptr<Pass>         pass;
 		std::vector<ResourceHandle>   reads;
 		std::vector<ResourceHandle>   writes;
+		bool                          enabled = true;
 	};
 
 	struct StoredResource

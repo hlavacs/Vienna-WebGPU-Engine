@@ -34,16 +34,10 @@ OneShotPipeline createOneShotPipeline(
 		return out;
 	}
 
-	// Pipeline layout — wgpu's C++ wrappers don't expose a typed createPipelineLayout
-	// accessor on the factory layer beyond what the device provides, so this is
-	// the one bit we still build directly. Wrapping it in a factory method would
-	// be a one-liner forwarding to getDevice().createPipelineLayout(desc); not
-	// worth a new public API for now.
-	wgpu::PipelineLayoutDescriptor plDesc{};
-	plDesc.label                = label;
-	plDesc.bindGroupLayoutCount = bindGroupLayoutCount;
-	plDesc.bindGroupLayouts     = reinterpret_cast<const WGPUBindGroupLayout *>(bindGroupLayouts);
-	out.pipelineLayout          = context.getDevice().createPipelineLayout(plDesc);
+	// Pipeline layout via the factory chokepoint — keeps device.create* out of
+	// the bake path like the rest of the engine.
+	out.pipelineLayout = context.pipelineFactory().createPipelineLayout(
+		bindGroupLayouts, bindGroupLayoutCount);
 
 	wgpu::ColorTargetState colorTarget{};
 	colorTarget.format    = targetFormat;
@@ -73,7 +67,7 @@ OneShotPipeline createOneShotPipeline(
 	pipeDesc.multisample.mask     = ~0u;
 	pipeDesc.fragment             = &fragState;
 
-	out.pipeline = context.getDevice().createRenderPipeline(pipeDesc);
+	out.pipeline = context.pipelineFactory().createRenderPipeline(pipeDesc);
 	if (!out.pipeline)
 	{
 		spdlog::error("OneShotPipeline: failed to create render pipeline '{}'", label);

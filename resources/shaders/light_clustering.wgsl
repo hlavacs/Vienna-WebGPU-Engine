@@ -85,16 +85,40 @@ fn ndcXyToClusterXY(ndcXy: vec2<f32>) -> vec2<u32> {
     return vec2<u32>(x, y);
 }
 
-// Phase 1: zero-out each cluster's count and seed its fixed offset slot.
-// One thread per cluster cell.
+// Phase 1: per-cluster reset + screen-wide light append. One thread per cluster
+// cell. Seeds the fixed offset, then appends every ambient / directional light
+// (which affect ALL clusters) into THIS cluster's own slots.
+//
+// Doing the global append here — one thread per cluster, each owning its own
+// cluster — replaces the old path where one thread per ambient/directional
+// light looped all 10,752 clusters issuing contended atomicAdds. That serialized
+// a handful of threads across the entire grid and dominated the compute cost
+// (~75% of frame GPU time at high point-light counts). Now it's fully parallel
+// with no cross-thread contention: each cluster thread writes only its own
+// count + slots. Point / spot lights are appended afterwards in cs_assign.
 @compute @workgroup_size(64)
 fn cs_clear(@builtin(global_invocation_id) gid: vec3<u32>) {
     let cidx = gid.x;
     if (cidx >= CLUSTER_GRID_TOTAL) {
         return;
     }
-    uClusterGrid[cidx].offset = cidx * MAX_LIGHTS_PER_CLUSTER;
-    atomicStore(&uClusterGrid[cidx].count, 0u);
+    let base = cidx * MAX_LIGHTS_PER_CLUSTER;
+    uClusterGrid[cidx].offset = base;
+
+    var count: u32 = 0u;
+    let lightTotal = min(u_lights.count, MAX_LIGHTS);
+    for (var i: u32 = 0u; i < lightTotal; i = i + 1u) {
+        let t = u_lights.lights[i].light_type;
+        if (t == LIGHT_TYPE_AMBIENT || t == LIGHT_TYPE_DIRECTIONAL) {
+            if (count < MAX_LIGHTS_PER_CLUSTER) {
+                uClusterIndices[base + count] = i;
+                count = count + 1u;
+            }
+        }
+    }
+    // Non-atomic store is safe: this thread is the sole writer of this cluster's
+    // count until cs_assign's atomicAdds run in the next (separate) dispatch.
+    atomicStore(&uClusterGrid[cidx].count, count);
 }
 
 // Phase 2: per-light, append the light's index to every cluster it overlaps.
@@ -109,16 +133,9 @@ fn cs_assign(@builtin(global_invocation_id) gid: vec3<u32>) {
     let light = u_lights.lights[lightIdx];
     let lightType = light.light_type;
 
-    // Ambient + directional are screen-wide: append to every cluster so the
-    // composition shader (which no longer has a scan-all fallback) still sees
-    // them.
+    // Ambient + directional are screen-wide and were already appended to every
+    // cluster in cs_clear (per-cluster, no contention). Nothing to do here.
     if (lightType == LIGHT_TYPE_AMBIENT || lightType == LIGHT_TYPE_DIRECTIONAL) {
-        for (var i: u32 = 0u; i < CLUSTER_GRID_TOTAL; i = i + 1u) {
-            let slot = atomicAdd(&uClusterGrid[i].count, 1u);
-            if (slot < MAX_LIGHTS_PER_CLUSTER) {
-                uClusterIndices[i * MAX_LIGHTS_PER_CLUSTER + slot] = lightIdx;
-            }
-        }
         return;
     }
 

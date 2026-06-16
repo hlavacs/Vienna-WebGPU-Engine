@@ -71,6 +71,14 @@ class SceneLightBuffer
 	 */
 	uint32_t getLightCount() const { return m_lightCount; }
 
+	/**
+	 * @brief 64-bit fingerprint of the last upload's payload (count + light
+	 *        struct bytes). Returns 0 when no upload has occurred yet.
+	 *        Consumers (e.g. ClusterManager) use this to short-circuit
+	 *        re-computation when the light data hasn't changed.
+	 */
+	uint64_t getLastUploadHash() const { return m_lastUploadValid ? m_lastUploadHash : 0; }
+
   private:
 	engine::rendering::webgpu::WebGPUContext &m_context;
 	wgpu::Buffer m_storageBuffer = nullptr;
@@ -78,6 +86,15 @@ class SceneLightBuffer
 	std::shared_ptr<engine::rendering::webgpu::WebGPUBindGroup> m_bindGroup; ///< Retained nullptr after Scene consolidation; getBindGroup kept as a transition shim.
 	uint32_t m_lightCount{0};
 	size_t m_bufferCapacity{0};
+
+	/// Fingerprint of the last upload's (count + LightStruct bytes). Used by
+	/// updateFromLights to skip the queue.writeBuffer when the payload is
+	/// identical to the previous frame's — common in static scenes and any
+	/// time the camera moves but the lights don't. The hash is a 64-bit
+	/// FNV-1a over 8-byte blocks, cheap (~10 µs for 1000 lights) compared
+	/// to the queue submission it replaces (64 KB of host → GPU traffic).
+	uint64_t m_lastUploadHash{0};
+	bool     m_lastUploadValid{false};
 };
 
 } // namespace engine::lighting

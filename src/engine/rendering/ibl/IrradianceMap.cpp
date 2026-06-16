@@ -84,7 +84,7 @@ std::shared_ptr<webgpu::WebGPUTexture> wrapDestination(
 		"IrradianceMap",
 		width, height,
 		format,
-		webgpu::TextureUsage::RenderAttachment | webgpu::TextureUsage::TextureBinding);
+		WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding);
 }
 
 } // namespace
@@ -126,8 +126,9 @@ bool IrradianceMap::bake(
 		return false;
 	}
 
-	wgpu::Sampler sampler = context.samplerFactory().getClampLinearSampler();
-	wgpu::BindGroup bindGroup = buildBindGroup(context, bgl, sourceEquirect, sampler);
+	auto            samplerOwner = context.samplerFactory().getClampLinearSampler();
+	wgpu::Sampler   sampler      = samplerOwner ? samplerOwner->raw() : wgpu::Sampler(nullptr);
+	wgpu::BindGroup bindGroup    = buildBindGroup(context, bgl, sourceEquirect, sampler);
 
 	wgpu::CommandEncoder encoder = context.createCommandEncoder("IrradianceMap.Encoder");
 	internal::recordOneShotPass(encoder, m_texture->getTextureView(), oneShot.pipeline, bindGroup, "IrradianceMap.RenderPass");

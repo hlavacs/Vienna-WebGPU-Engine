@@ -3,11 +3,11 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/Mesh.h"
 #include "engine/rendering/cache/ResourceSlot.h"
+#include "engine/rendering/cache/SlotCache.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
@@ -73,20 +73,23 @@ struct PipelineKeyHasher
  *
  * **Handle pattern.** getOrCreatePipeline returns an opaque
  * `PipelineHandle` (Handle<WebGPUPipeline>) instead of a raw shared_ptr.
- * Internally the manager keeps a ResourceSlot per cached pipeline that
- * holds the strong reference. On hot reload, processPendingReloads()
- * builds the new pipeline and `slot->replace()`s the resource — every
- * outstanding handle (every render pass that stashed one) automatically
- * sees the new pipeline on its next `handle.lock()`. No call-site
+ * Internally the manager keeps a `SlotCache<PipelineKey, WebGPUPipeline>`
+ * — one slot per cached pipeline, each carrying a `build_fn` lambda that
+ * knows how to rebuild from the shader registry. Every outstanding handle
+ * (every render pass that stashed one) automatically picks up the new
+ * pipeline on its next `handle.lock()` after a reload. No call-site
  * refetch needed.
  *
  * **Reload semantics.**
- * - reloadAllPipelines() marks every cached key for rebuild.
- * - processPendingReloads() rebuilds + swaps inside each slot. Old
- *   pipelines stay alive as long as someone holds a `lock()` snapshot,
- *   which keeps in-flight GPU work safe.
+ * - `reloadAllPipelines()` reloads every shader source synchronously via
+ *   `WebGPUShaderFactory::reloadShader`, then calls `m_pipelines
+ *   .clearResources()` to drop every slot's pipeline pointer. The next
+ *   `handle.lock()` triggers the slot's captured `build_fn`, which looks
+ *   up the freshly-reloaded shader from the registry and rebuilds the
+ *   pipeline transparently. Safe mid-frame: the previous pipeline stays
+ *   alive as long as any pinned `lock()` snapshot holds it.
  * - Per-pipeline reload was removed — the only public reload path is
- *   reloadAllPipelines(), which is what the only caller (ImGui debug
+ *   `reloadAllPipelines()`, which is what the only caller (ImGui debug
  *   panel) actually wants.
  */
 class WebGPUPipelineManager
@@ -129,18 +132,17 @@ class WebGPUPipelineManager
 	);
 
 	/**
-	 * @brief Mark all pipelines for reload after current frame finishes.
-	 * @return Number of pipelines marked for reload.
+	 * @brief Reload every shader source and soft-clear every pipeline slot.
+	 *
+	 * Outstanding `PipelineHandle`s keep working — their next `lock()`
+	 * triggers the slot's captured `build_fn`, which fetches the
+	 * freshly-reloaded shader info from the registry and recreates the
+	 * pipeline transparently. Old pipelines stay alive in any pinned
+	 * `lock()` snapshot, so this is safe to call mid-frame.
+	 *
+	 * @return Number of pipeline slots soft-cleared.
 	 */
 	size_t reloadAllPipelines();
-
-	/**
-	 * @brief Process pending pipeline reloads (call after frame finishes and
-	 *        is presented). Each reloaded pipeline is swapped INSIDE its
-	 *        existing slot, so outstanding handles update automatically.
-	 * @return Number of successfully reloaded pipelines.
-	 */
-	size_t processPendingReloads();
 
 	/**
 	 * @brief Clears all cached pipelines.
@@ -155,28 +157,28 @@ class WebGPUPipelineManager
 	/// Total cached entries. Used by CacheRegistry/debug overlays. Includes
 	/// evicted-but-not-yet-cleared slots (resource is gone, slot survives so
 	/// outstanding handles can auto-rebuild).
-	[[nodiscard]] std::size_t cacheSize() const { return m_pipelines.size(); }
+	[[nodiscard]] std::size_t cacheSize() const { return m_pipelines.cacheSize(); }
 
 	/// Slots whose resource pointer is currently populated. Walks the map
 	/// under the cache mutex — debug overlays only.
-	[[nodiscard]] std::size_t aliveCount() const;
+	[[nodiscard]] std::size_t aliveCount() const { return m_pipelines.aliveCount(); }
 
 	/// Configure the age-based eviction window. After @p frames of no
 	/// `Handle::lock()` access, a slot's pipeline is released; the slot
 	/// itself stays alive so outstanding handles can auto-rebuild on next
 	/// access. Default 0 = never evict by age (legacy behaviour). Common
 	/// values: 60 for "drop after 1 second @ 60fps", 0 for "keep forever".
-	void setMaxIdleFrames(uint32_t frames) { m_maxIdleFrames = frames; }
-	[[nodiscard]] uint32_t maxIdleFrames() const { return m_maxIdleFrames; }
+	void                   setMaxIdleFrames(uint32_t frames) { m_pipelines.setMaxIdleFrames(frames); }
+	[[nodiscard]] uint32_t maxIdleFrames() const { return m_pipelines.maxIdleFrames(); }
 
 	/// Increment the internal frame counter. Hooked into CacheRegistry's
 	/// notifyFrameAll() so the renderer pumps every cache once per frame.
-	void notifyFrame() { m_frameCounter.fetch_add(1, std::memory_order_relaxed); }
+	void notifyFrame() { m_pipelines.notifyFrame(); }
 
 	/// Walk slots, evict any whose lastAccessFrame is more than
 	/// maxIdleFrames behind the current frame. Returns count evicted.
 	/// Hooked into CacheRegistry's cleanAll(). No-op if maxIdleFrames == 0.
-	std::size_t evictStale();
+	std::size_t evictStale() { return m_pipelines.evictStale(); }
 
 	/// Pass-through to the underlying factory's shared empty bind group used
 	/// to fill unused pipeline-layout slots (engine convention reserves
@@ -184,44 +186,35 @@ class WebGPUPipelineManager
 	/// bind something at the empty slots).
 	wgpu::BindGroup getOrCreateEmptyBindGroup();
 
+	/// Direct access to the underlying pipeline factory for low-level,
+	/// uncached pipeline creation the cached getOrCreatePipeline path doesn't
+	/// cover — compute pipelines, one-shot bakes. Most callers want
+	/// getOrCreatePipeline instead.
+	WebGPUPipelineFactory &factory();
+
   private:
-	WebGPUContext &m_context;
+	WebGPUContext                         &m_context;
 	std::unique_ptr<WebGPUPipelineFactory> m_pipelineFactory;
 
-	// Pipeline cache: key -> slot. Slot is the strong owner of the resource;
-	// callers hold Handles backed by the same slot. processPendingReloads()
-	// calls slot->replace(...) which silently updates every outstanding handle.
-	// Slots carry a build_fn that knows how to rebuild on age-eviction, so
-	// callers' handles keep working even after evictStale() drops the
-	// resource pointer.
-	std::unordered_map<PipelineKey, std::shared_ptr<PipelineSlot>, PipelineKeyHasher> m_pipelines;
-
-	// Keys marked for rebuild after current frame finishes. Key-based (not
-	// slot-based) so the reload doesn't accidentally retain old resources
-	// past their useful life.
-	std::unordered_set<PipelineKey, PipelineKeyHasher> m_pendingReloads;
-
-	// Frame counter for age-eviction. Slots hold a non-owning pointer to
-	// this; the renderer ticks it once per frame via notifyFrame() through
-	// CacheRegistry. Reaches the slot via the pointer passed at slot
-	// construction; eviction compares slot.lastAccessFrame() against this.
-	std::atomic<uint32_t> m_frameCounter{0};
-
-	// Age-eviction window. 0 = never evict by age (keep forever until
-	// reload or explicit cleanup). Use setMaxIdleFrames() to configure.
-	uint32_t m_maxIdleFrames = 0;
+	// Pipeline cache: key -> slot. SlotCache is the strong owner of the
+	// resource via per-key slots; callers hold Handles backed by the same
+	// slot. Each slot's build_fn looks up the current shader info from the
+	// registry and recreates the pipeline — used for both the initial build
+	// on cache miss, transparent rebuild after age-eviction, and the
+	// soft-clear path inside reloadAllPipelines().
+	engine::rendering::cache::SlotCache<PipelineKey, WebGPUPipeline, PipelineKeyHasher> m_pipelines;
 
 	/**
 	 * @brief Internal: build a pipeline object directly (no slot/cache).
 	 *
-	 * Called by getOrCreatePipeline (initial build) and processPendingReloads
-	 * (rebuild for hot reload). Caller wraps the result in a Slot or replaces
-	 * an existing Slot's resource.
+	 * Called by the slot's build_fn lambda — both for the initial build
+	 * on cache miss and for transparent rebuild after eviction or
+	 * soft-clear. The SlotCache wraps the returned pipeline in a slot.
 	 */
 	bool createPipelineInternal(
-		const PipelineKey &key,
+		const PipelineKey                       &key,
 		const std::shared_ptr<WebGPUShaderInfo> &shaderInfo,
-		std::shared_ptr<WebGPUPipeline> &outPipeline
+		std::shared_ptr<WebGPUPipeline>         &outPipeline
 	);
 };
 

@@ -229,8 +229,42 @@ void RenderGraph::execute(RenderContext &ctx)
 	{
 		auto it = m_passes.find(ph.id);
 		if (it == m_passes.end()) continue;
+		if (!it->second.enabled) continue; // toggled off — leave outputs stale
 		it->second.pass->execute(ctx);
 	}
+}
+
+void RenderGraph::setPassEnabled(PassHandle pass, bool enabled)
+{
+	auto it = m_passes.find(pass.id);
+	if (it == m_passes.end()) return;
+	it->second.enabled = enabled;
+}
+
+bool RenderGraph::isPassEnabled(PassHandle pass) const
+{
+	auto it = m_passes.find(pass.id);
+	if (it == m_passes.end()) return false;
+	return it->second.enabled;
+}
+
+std::vector<ResourceHandle> RenderGraph::getPassWrites(PassHandle pass) const
+{
+	auto it = m_passes.find(pass.id);
+	if (it == m_passes.end()) return {};
+	return it->second.writes;
+}
+
+PassHandle RenderGraph::findPassByName(const std::string &name) const
+{
+	for (const auto &kv : m_passes)
+	{
+		if (kv.second.pass && kv.second.pass->name() && name == kv.second.pass->name())
+		{
+			return PassHandle{kv.first};
+		}
+	}
+	return PassHandle{};
 }
 
 std::vector<std::string> RenderGraph::compiledOrder() const

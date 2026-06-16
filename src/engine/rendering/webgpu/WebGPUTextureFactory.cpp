@@ -653,7 +653,7 @@ void WebGPUTextureFactory::generateMipmaps(
 		entries[0].binding = 0;
 		entries[0].textureView = srcView;
 		entries[1].binding = 1;
-		entries[1].sampler = mipmapSampler;
+		entries[1].sampler = mipmapSampler ? mipmapSampler->raw() : wgpu::Sampler(nullptr);
 
 		wgpu::BindGroupDescriptor bindGroupDesc{};
 		bindGroupDesc.layout = mipmapBindGroupLayout->getLayout();
