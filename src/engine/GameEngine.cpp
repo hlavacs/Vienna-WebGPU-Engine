@@ -1,13 +1,20 @@
+// SDL3: we provide our own main() and call SDL_SetMainReady(), so SDL_main must
+// not hijack main. Must be defined before <SDL3/SDL_main.h>.
+#ifndef SDL_MAIN_HANDLED
+#define SDL_MAIN_HANDLED
+#endif
+
 #include "engine/GameEngine.h"
 
 #include <spdlog/spdlog.h>
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
 #include <algorithm>
-#include <backends/imgui_impl_sdl2.h>
+#include <backends/imgui_impl_sdl3.h>
 #include <chrono>
 #include <iostream>
-#include <sdl2webgpu.h>
+#include <sdl3webgpu.h>
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
@@ -129,7 +136,7 @@ void GameEngine::setOptions(const GameEngineOptions &opts)
 		// Update fullscreen mode
 		if (fullscreenChanged)
 		{
-			SDL_SetWindowFullscreen(m_window, options.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
+			SDL_SetWindowFullscreen(m_window, options.fullscreen);
 		}
 
 		// Update window size (only if not in fullscreen)
@@ -144,7 +151,7 @@ void GameEngine::setOptions(const GameEngineOptions &opts)
 		// Update resizable state
 		if (resizableChanged)
 		{
-			SDL_SetWindowResizable(m_window, options.resizableWindow ? SDL_TRUE : SDL_FALSE);
+			SDL_SetWindowResizable(m_window, options.resizableWindow);
 		}
 	}
 
@@ -174,24 +181,27 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 	SDL_SetMainReady();
 
 	// Create SDL window
-	auto sdlFlags = SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS;
+	// SDL3 dropped SDL_INIT_TIMER (timers always available) and SDL_INIT_EVENTS
+	// (implied). SDL_Init now returns bool (true on success).
+	auto sdlFlags = SDL_INIT_VIDEO;
 	sdlFlags |= (options.enableAudio) ? SDL_INIT_AUDIO : 0;
-	if (SDL_Init(sdlFlags) < 0)
+	if (!SDL_Init(sdlFlags))
 	{
-		spdlog::error("Could not initialize SDL2: {}", SDL_GetError());
+		spdlog::error("Could not initialize SDL3: {}", SDL_GetError());
 		return false;
 	}
 
-	Uint32 windowFlags = SDL_WINDOW_SHOWN;
+	// SDL3 has no SDL_WINDOW_SHOWN (windows are shown by default).
+	SDL_WindowFlags windowFlags = 0;
 	if (options.resizableWindow)
 		windowFlags |= SDL_WINDOW_RESIZABLE;
 	if (options.fullscreen)
 		windowFlags |= SDL_WINDOW_FULLSCREEN;
 
+	// SDL3 SDL_CreateWindow takes (title, w, h, flags) — no position arguments;
+	// we center the window explicitly after creation.
 	m_window = SDL_CreateWindow(
 		"Vienna WebGPU Engine",
-		SDL_WINDOWPOS_CENTERED,
-		SDL_WINDOWPOS_CENTERED,
 		options.windowWidth,
 		options.windowHeight,
 		windowFlags
@@ -202,6 +212,8 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 		spdlog::error("Could not create window!");
 		return false;
 	}
+
+	SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
 	m_context->initialize(m_window, options.enableVSync, options.overrideDeviceLimits);
 	options.appliedDeviceLimits = m_context->limitsConfig();
@@ -350,7 +362,7 @@ void GameEngine::processEvents()
 	while (SDL_PollEvent(&event))
 	{
 		if (m_imguiManager)
-			ImGui_ImplSDL2_ProcessEvent(&event);
+			ImGui_ImplSDL3_ProcessEvent(&event);
 
 		ImGuiIO &io = ImGui::GetIO();
 		const bool imguiWantsInput = io.WantCaptureMouse || io.WantCaptureKeyboard;
@@ -358,11 +370,11 @@ void GameEngine::processEvents()
 		if (!imguiWantsInput)
 			m_inputManager.processEvent(event);
 
-		if (event.type == SDL_QUIT)
+		if (event.type == SDL_EVENT_QUIT)
 		{
 			running = false;
 		}
-		else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED)
+		else if (event.type == SDL_EVENT_WINDOW_RESIZED)
 		{
 			onWindowResize(event.window.data1, event.window.data2);
 		}
@@ -434,7 +446,7 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 	scene->collectDebugData();
 	auto debugCollector = scene->getDebugCollector();
 
-	float time = static_cast<float>(SDL_GetTicks64()) * 0.001f;
+	float time = static_cast<float>(SDL_GetTicks()) * 0.001f;
 
 	std::vector<engine::rendering::RenderTarget> renderTargets;
 	renderTargets.reserve(cameras.size());

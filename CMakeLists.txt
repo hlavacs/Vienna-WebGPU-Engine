@@ -17,41 +17,42 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# SDL2 setup (Web or Native)
+# SDL3 setup (Web or Native)
 if(EMSCRIPTEN)
-    add_library(SDL2_SDL2 INTERFACE)
-    target_compile_options(SDL2_SDL2 INTERFACE -sUSE_SDL=2)
-    target_link_options(SDL2_SDL2 INTERFACE -sUSE_SDL=2)
-    add_library(SDL2::SDL2 ALIAS SDL2_SDL2)
+    # Best-effort web build: SDL3 comes from Emscripten's sdl3 port.
+    add_library(SDL3_SDL3 INTERFACE)
+    target_compile_options(SDL3_SDL3 INTERFACE --use-port=sdl3)
+    target_link_options(SDL3_SDL3 INTERFACE --use-port=sdl3)
+    add_library(SDL3::SDL3 ALIAS SDL3_SDL3)
 else()
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/SDL")
     
     if(APPLE)
-        foreach(SDL_TARGET SDL2 SDL2-static SDL2main SDL2_test)
+        foreach(SDL_TARGET SDL3-shared SDL3-static SDL3_test)
             if(TARGET ${SDL_TARGET})
                 target_compile_options(${SDL_TARGET} PRIVATE -w)
             endif()
         endforeach()
     endif()
 
-    # Mark SDL2 headers as system headers to suppress warnings in consumer code
-    # SDL2::SDL2 may be an ALIAS target, so we resolve the real target first
-    if(TARGET SDL2::SDL2)
-        get_target_property(SDL2_REAL_TARGET SDL2::SDL2 ALIASED_TARGET)
-        if(NOT SDL2_REAL_TARGET)
-            set(SDL2_REAL_TARGET SDL2)
+    # Mark SDL3 headers as system headers to suppress warnings in consumer code
+    # SDL3::SDL3 may be an ALIAS target, so we resolve the real target first
+    if(TARGET SDL3::SDL3)
+        get_target_property(SDL3_REAL_TARGET SDL3::SDL3 ALIASED_TARGET)
+        if(NOT SDL3_REAL_TARGET)
+            set(SDL3_REAL_TARGET SDL3-shared)
         endif()
-        get_target_property(SDL2_INCLUDE_DIRS ${SDL2_REAL_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
-        if(SDL2_INCLUDE_DIRS)
-            set_target_properties(${SDL2_REAL_TARGET} PROPERTIES
-                INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${SDL2_INCLUDE_DIRS}"
+        get_target_property(SDL3_INCLUDE_DIRS ${SDL3_REAL_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+        if(SDL3_INCLUDE_DIRS)
+            set_target_properties(${SDL3_REAL_TARGET} PROPERTIES
+                INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${SDL3_INCLUDE_DIRS}"
             )
         endif()
     endif()
 endif()
 
 # External dependencies
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/sdl2webgpu")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/sdl3webgpu")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/webgpu")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/spdlog")
@@ -82,27 +83,23 @@ target_include_directories(WebGPU_Engine_Lib SYSTEM PUBLIC "${CMAKE_CURRENT_SOUR
 
 # Link libraries publicly so examples can use them
 target_link_libraries(WebGPU_Engine_Lib PUBLIC
-    SDL2::SDL2
+    SDL3::SDL3
     imgui
-    sdl2webgpu
+    sdl3webgpu
     webgpu
     spdlog
 )
 
-# Propagate SDL2 system include directories to consumers so X11/Wayland
-# headers included transitively via SDL2 do not generate warnings in engine code
-if(NOT EMSCRIPTEN AND TARGET SDL2::SDL2)
+# Propagate SDL3 system include directories to consumers so X11/Wayland
+# headers included transitively via SDL3 do not generate warnings in engine code
+if(NOT EMSCRIPTEN AND TARGET SDL3::SDL3)
     target_include_directories(WebGPU_Engine_Lib SYSTEM PUBLIC
-        $<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>
+        $<TARGET_PROPERTY:SDL3::SDL3,INTERFACE_INCLUDE_DIRECTORIES>
     )
 endif()
 
-# Link SDL2main for Windows (required for proper WinMain entry point)
-if(WIN32 AND NOT EMSCRIPTEN)
-    if(TARGET SDL2::SDL2main)
-        target_link_libraries(WebGPU_Engine_Lib PUBLIC SDL2::SDL2main)
-    endif()
-endif()
+# SDL3 needs no separate "main" shim here: the engine calls SDL_SetMainReady()
+# (GameEngine.cpp) and provides its own main(), so there is no SDL_main to link.
 
 # imgui compiler warnings
 if(MSVC)
@@ -260,30 +257,30 @@ function(add_engine_executable TARGET_NAME)
         # Copy WebGPU binaries
         target_copy_webgpu_binaries(${TARGET_NAME})
 
-        # Copy SDL2 DLL (if it exists as a shared library)
-        if(TARGET SDL2::SDL2)
-            # Get the actual SDL2 library file
-            get_target_property(SDL2_DLL_LOCATION SDL2::SDL2 IMPORTED_LOCATION)
-            if(NOT SDL2_DLL_LOCATION)
+        # Copy SDL3 DLL (if it exists as a shared library)
+        if(TARGET SDL3::SDL3)
+            # Get the actual SDL3 library file
+            get_target_property(SDL3_DLL_LOCATION SDL3::SDL3 IMPORTED_LOCATION)
+            if(NOT SDL3_DLL_LOCATION)
                 # For multi-config generators, try to get the debug location
-                get_target_property(SDL2_DLL_LOCATION SDL2::SDL2 IMPORTED_LOCATION_DEBUG)
+                get_target_property(SDL3_DLL_LOCATION SDL3::SDL3 IMPORTED_LOCATION_DEBUG)
             endif()
-            if(NOT SDL2_DLL_LOCATION)
-                # Try to find SDL2.dll in the build tree
-                if(TARGET SDL2)
+            if(NOT SDL3_DLL_LOCATION)
+                # Try to find SDL3.dll in the build tree
+                if(TARGET SDL3-shared)
                     add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
                         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        $<TARGET_FILE:SDL2>
+                        $<TARGET_FILE:SDL3-shared>
                         $<TARGET_FILE_DIR:${TARGET_NAME}>
-                        COMMENT "Copying SDL2 DLL to output directory"
+                        COMMENT "Copying SDL3 DLL to output directory"
                     )
                 endif()
-            elseif(EXISTS "${SDL2_DLL_LOCATION}")
+            elseif(EXISTS "${SDL3_DLL_LOCATION}")
                 add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${SDL2_DLL_LOCATION}"
+                    "${SDL3_DLL_LOCATION}"
                     $<TARGET_FILE_DIR:${TARGET_NAME}>
-                    COMMENT "Copying SDL2 DLL to output directory"
+                    COMMENT "Copying SDL3 DLL to output directory"
                 )
             endif()
         endif()

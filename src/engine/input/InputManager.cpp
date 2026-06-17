@@ -8,15 +8,15 @@ void InputManager::startFrame()
 	// Save previous position before polling new one
 	m_mousePositionPrevious = m_mousePosition;
 
-	// Poll absolute mouse position
-	int mouseX, mouseY;
+	// Poll absolute mouse position (SDL3 reports mouse coordinates as float)
+	float mouseX, mouseY;
 	SDL_GetMouseState(&mouseX, &mouseY);
-	m_mousePosition = glm::vec2(static_cast<float>(mouseX), static_cast<float>(mouseY));
+	m_mousePosition = glm::vec2(mouseX, mouseY);
 
 	// Poll relative mouse delta (once per frame)
-	int deltaX, deltaY;
+	float deltaX, deltaY;
 	SDL_GetRelativeMouseState(&deltaX, &deltaY);
-	m_mouseDelta = glm::vec2(static_cast<float>(deltaX), static_cast<float>(deltaY));
+	m_mouseDelta = glm::vec2(deltaX, deltaY);
 }
 
 bool InputManager::isKey(SDL_Scancode key) const
@@ -65,19 +65,19 @@ void InputManager::processEvent(const SDL_Event &event)
 {
 	switch (event.type)
 	{
-	case SDL_KEYDOWN:
-		m_keyStates[event.key.keysym.scancode] = true;
+	case SDL_EVENT_KEY_DOWN:
+		m_keyStates[event.key.scancode] = true;
 		break;
-	case SDL_KEYUP:
-		m_keyStates[event.key.keysym.scancode] = false;
+	case SDL_EVENT_KEY_UP:
+		m_keyStates[event.key.scancode] = false;
 		break;
-	case SDL_MOUSEBUTTONDOWN:
+	case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		m_mouseButtonStates[event.button.button] = true;
 		break;
-	case SDL_MOUSEBUTTONUP:
+	case SDL_EVENT_MOUSE_BUTTON_UP:
 		m_mouseButtonStates[event.button.button] = false;
 		break;
-	case SDL_MOUSEWHEEL:
+	case SDL_EVENT_MOUSE_WHEEL:
 		// Accumulate wheel input (can receive multiple events per frame)
 		m_mouseWheel.x += static_cast<float>(event.wheel.x);
 		m_mouseWheel.y += static_cast<float>(event.wheel.y);

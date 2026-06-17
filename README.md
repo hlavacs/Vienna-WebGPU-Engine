@@ -1,8 +1,10 @@
 # Vienna-WebGPU-Engine
 
-> **Version:** v0.4-alpha | **Status:** Active Development
+> **Version:** v0.5-alpha | **Status:** Active Development
 
 A **cross-platform, WebGPU-based game engine** designed for educational purposes. Built with modern graphics APIs, it provides hands-on learning in game engine development using the WebGPU standard.
+
+> **What's new in v0.5-alpha:** windowing, input, and Dear ImGui integration were migrated from **SDL2 to SDL3** (3.4.x). Surface creation now uses the vendored `sdl3webgpu` helper (SDL3 dropped `SDL_GetWindowWMInfo` in favour of the window-properties API), and Dear ImGui was updated to 1.91.9.
 
 ## Platform Support
 

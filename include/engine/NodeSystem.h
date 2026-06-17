@@ -29,7 +29,7 @@
 #include <glm/gtx/quaternion.hpp>
 
 // SDL for input constants (SDL_SCANCODE_*, SDL_BUTTON_*)
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 // Logging
 #include <spdlog/spdlog.h>
