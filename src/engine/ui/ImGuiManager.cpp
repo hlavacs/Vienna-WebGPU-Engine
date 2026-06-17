@@ -1,8 +1,8 @@
 #include "engine/ui/ImGuiManager.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
-#include <SDL.h>
-#include <backends/imgui_impl_sdl2.h>
+#include <SDL3/SDL.h>
+#include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_wgpu.h>
 #include <imgui.h>
 #include <spdlog/spdlog.h>
@@ -42,7 +42,9 @@ bool ImGuiManager::initialize(SDL_Window *window, std::shared_ptr<engine::render
 	(void)io;
 
 	// Setup Platform/Renderer backends
-	ImGui_ImplSDL2_InitForSDLRenderer(window, nullptr);
+	// We render via imgui_impl_wgpu (not an SDL renderer), so init the SDL3
+	// platform layer with the generic InitForOther entry point.
+	ImGui_ImplSDL3_InitForOther(window);
 
 	// Setup WebGPU backend
 	wgpu::Device device = context->getDevice();
@@ -67,7 +69,7 @@ void ImGuiManager::shutdown()
 
 	// Shutdown backends
 	ImGui_ImplWGPU_Shutdown();
-	ImGui_ImplSDL2_Shutdown();
+	ImGui_ImplSDL3_Shutdown();
 	ImGui::DestroyContext();
 
 	m_initialized = false;
@@ -94,7 +96,7 @@ void ImGuiManager::render(wgpu::RenderPassEncoder renderPass)
 
 	// Start new ImGui frame
 	ImGui_ImplWGPU_NewFrame();
-	ImGui_ImplSDL2_NewFrame();
+	ImGui_ImplSDL3_NewFrame();
 	ImGui::NewFrame();
 
 	// Execute all frame callbacks

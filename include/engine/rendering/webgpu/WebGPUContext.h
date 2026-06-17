@@ -21,9 +21,8 @@
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 
 #define SDL_MAIN_HANDLED
-#include <SDL.h>
-#include <SDL_syswm.h>
-#include <sdl2webgpu.h>
+#include <SDL3/SDL.h>
+#include <sdl3webgpu.h>
 
 namespace engine::rendering::webgpu
 {

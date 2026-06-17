@@ -3,7 +3,7 @@
 #include <array>
 #include <unordered_map>
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 
 namespace engine::input
@@ -135,10 +135,10 @@ class InputManager
 	void endFrame();
 
   private:
-	std::array<bool, SDL_NUM_SCANCODES> m_keyStates{false};	 ///< Keyboard key states (scancode -> pressed)
+	std::array<bool, SDL_SCANCODE_COUNT> m_keyStates{false};	 ///< Keyboard key states (scancode -> pressed)
 	std::array<bool, 8> m_mouseButtonStates{false};			 ///< Mouse button states (button -> pressed)
 
-	std::array<bool, SDL_NUM_SCANCODES> m_keyStatesPrevious{false};	 ///< Previous frame's keyboard key states (scancode -> pressed)
+	std::array<bool, SDL_SCANCODE_COUNT> m_keyStatesPrevious{false};	 ///< Previous frame's keyboard key states (scancode -> pressed)
 	std::array<bool, 8> m_mouseButtonStatesPrevious{false};			 ///< Previous frame's mouse button states (button -> pressed)
 	glm::vec2 m_mousePosition{0.0f, 0.0f};		   ///< Absolute mouse position (window coordinates)
 	glm::vec2 m_mousePositionPrevious{0.0f, 0.0f}; ///< Previous frame's mouse position

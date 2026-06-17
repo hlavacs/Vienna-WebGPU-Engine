@@ -81,7 +81,7 @@ void MainDemoImGuiUI::renderShadowDebugWindow()
 					for (int faceIndex = 0; faceIndex < 6; ++faceIndex)
 					{
 						int layerIndex = cubeIndex * 6 + faceIndex;
-						ImTextureID faceImguiId = m_debugShadowCubeArray->getTextureView(layerIndex);
+						ImTextureID faceImguiId = (ImTextureID)m_debugShadowCubeArray->getTextureView(layerIndex);
 
 						ImGui::Text("Face %d", faceIndex);
 						ImGui::Image(faceImguiId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
@@ -109,7 +109,7 @@ void MainDemoImGuiUI::renderShadowDebugWindow()
 
 			for (int layerIndex = 0; layerIndex < totalLayers; ++layerIndex)
 			{
-				ImTextureID texId = m_debugShadow2DArray->getTextureView(layerIndex);
+				ImTextureID texId = (ImTextureID)m_debugShadow2DArray->getTextureView(layerIndex);
 
 				ImGui::Text("Layer %d", layerIndex);
 				ImGui::Image(texId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
@@ -452,7 +452,7 @@ ImTextureID MainDemoImGuiUI::getOrCreateImGuiTexture(engine::rendering::TextureH
 
 	auto textureOpt = textureHandle.get();
 	if (!textureOpt.has_value())
-		return nullptr;
+		return 0; // ImTextureID is an integral type (ImU64) since ImGui 1.91.4, not void*
 
 	auto gpuTexture = m_engine.getContext()->textureFactory().createFromHandle(textureHandle);
 	auto textureView = gpuTexture->getTextureView();

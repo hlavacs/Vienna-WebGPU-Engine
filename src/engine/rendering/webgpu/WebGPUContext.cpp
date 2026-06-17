@@ -67,7 +67,7 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 	// ToDo: Move this to the surface manager
 	auto *sdlWindow = static_cast<SDL_Window *>(windowHandle);
 	int width = 0, height = 0;
-	SDL_GL_GetDrawableSize(sdlWindow, &width, &height);
+	SDL_GetWindowSizeInPixels(sdlWindow, &width, &height);
 
 	WebGPUSurfaceManager::Config config;
 	config.format = getSwapChainFormat();
@@ -86,51 +86,11 @@ void WebGPUContext::initSurface(void *windowHandle)
 
 	auto *sdlWindow = static_cast<SDL_Window *>(windowHandle);
 
-	SDL_SysWMinfo wmInfo;
-	SDL_VERSION(&wmInfo.version);
-	if (!SDL_GetWindowWMInfo(sdlWindow, &wmInfo))
-	{
-		spdlog::critical("[WebGPU] SDL_GetWindowWMInfo failed: {}", SDL_GetError());
-		assert(false);
-	}
-
-	WGPUSurface rawSurface = nullptr;
-
-#if defined(SDL_VIDEO_DRIVER_WAYLAND)
-	if (wmInfo.subsystem == SDL_SYSWM_WAYLAND)
-	{
-		spdlog::info("[WebGPU] Creating Wayland surface.");
-		WGPUSurfaceDescriptorFromWaylandSurface waylandDesc{};
-		waylandDesc.chain.sType = WGPUSType_SurfaceDescriptorFromWaylandSurface;
-		waylandDesc.chain.next = nullptr;
-		waylandDesc.display = wmInfo.info.wl.display;
-		waylandDesc.surface = wmInfo.info.wl.surface;
-
-		WGPUSurfaceDescriptor surfaceDesc{};
-		surfaceDesc.nextInChain = &waylandDesc.chain;
-		rawSurface = wgpuInstanceCreateSurface(m_instance, &surfaceDesc);
-	}
-#endif
-
-#if defined(SDL_VIDEO_DRIVER_X11)
-	if (!rawSurface && wmInfo.subsystem == SDL_SYSWM_X11)
-	{
-		spdlog::info("[WebGPU] Creating X11 surface.");
-		WGPUSurfaceDescriptorFromXlibWindow xlibDesc{};
-		xlibDesc.chain.sType = WGPUSType_SurfaceDescriptorFromXlibWindow;
-		xlibDesc.chain.next = nullptr;
-		xlibDesc.display = wmInfo.info.x11.display;
-		xlibDesc.window = wmInfo.info.x11.window;
-
-		WGPUSurfaceDescriptor surfaceDesc{};
-		surfaceDesc.nextInChain = &xlibDesc.chain;
-		rawSurface = wgpuInstanceCreateSurface(m_instance, &surfaceDesc);
-	}
-#endif
-	if (!rawSurface)
-	{
-		rawSurface = SDL_GetWGPUSurface(m_instance, sdlWindow);
-	}
+	// sdl3webgpu does the per-platform native-handle extraction (Win32 / X11 /
+	// Wayland / Cocoa). SDL3 removed SDL_GetWindowWMInfo in favour of the
+	// window-properties API, which sdl3webgpu reads internally — so the old
+	// manual per-driver surface descriptors are gone.
+	WGPUSurface rawSurface = SDL_GetWGPUSurface(m_instance, sdlWindow);
 
 	if (!rawSurface)
 	{
