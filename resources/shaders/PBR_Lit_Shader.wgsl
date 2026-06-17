@@ -164,7 +164,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let light_index_offset = cluster_lights.offset + i;
         if (light_index_offset >= arrayLength(&u_cluster_light_indices)) { break; }
         let light_idx = u_cluster_light_indices[light_index_offset];
-        if (light_idx >= 5120u) { break; }
+        if (light_idx >= MAX_LIGHTS) { break; }
         let light = u_lights.lights[light_idx];
 
         if (light.light_type == 0u) {
@@ -201,10 +201,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let ibl_irrad   = sample_environment_irradiance(normal);
         ibl_diffuse     = ibl_kD * ibl_irrad * base_color * ao;
 
-        // IBL_SPEC_SCALE matches deferred_composition.wgsl — see the note
-        // there (split-sum bias term keeps a non-zero specular floor at
-        // high roughness, this brings stone/concrete back down).
-        let IBL_SPEC_SCALE: f32 = 0.15;
+        // IBL_SPEC_SCALE lives in lib/lighting.wgsl (matches deferred path).
         let reflect_dir = reflect(-v, normal);
         let prefiltered_uv = direction_to_equirect_uv(reflect_dir);
         let max_mip = max(0.0, f32(textureNumLevels(prefiltered_env)) - 1.0);

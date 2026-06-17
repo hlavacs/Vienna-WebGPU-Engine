@@ -24,6 +24,14 @@ fn get_position_from_transform(transform: mat4x4<f32>) -> vec3<f32> {
 const LIGHTING_PI:    f32 = 3.141592653589793;
 const LIGHTING_INV_PI: f32 = 0.31830988618;
 
+// Dampens IBL specular relative to diffuse + skybox. The split-sum bias
+// term leaves a non-zero specular floor at roughness=1, which makes matte
+// dielectrics (stone/concrete) read as too shiny under a bright HDR sky;
+// scaling by 0.15 brings that floor down while smoother surfaces keep a
+// visible reflection. Tuned against the SeaKeep outdoor HDR — promote to
+// a per-camera uniform if a darker-env scene needs more specular punch.
+const IBL_SPEC_SCALE: f32 = 0.15;
+
 fn direction_to_equirect_uv(direction: vec3<f32>) -> vec2<f32> {
 	let dir = normalize(direction);
 	let u = atan2(dir.z, dir.x) * (0.5 * LIGHTING_INV_PI) + 0.5;

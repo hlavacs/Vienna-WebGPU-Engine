@@ -144,18 +144,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 		// Specular IBL via split-sum: prefiltered env sample at roughness *
 		// maxMip combined with the BRDF LUT's (scale, bias) Fresnel terms.
 		// textureNumLevels gives the actual baked mip count so this stays
-		// correct if PrefilteredEnv::MIP_LEVELS changes.
-		//
-		// IBL_SPEC_SCALE dampens specular relative to diffuse + skybox. The
-		// split-sum bias term keeps a non-zero specular floor even at
-		// roughness=1, so matte dielectrics in a bright HDR sky still read
-		// as "lightly shiny" — fine for plastic, wrong for stone / concrete.
-		// 0.15× brings the rough-material floor down to where stone reads
-		// as matte while smoother surfaces still pick up a recognisable
-		// reflection. Tuned against the SeaKeep demo's outdoor HDR; if a
-		// scene with a darker env loses too much specular punch, promote
-		// this to a per-camera uniform alongside irradianceIntensity.
-		let IBL_SPEC_SCALE: f32 = 0.15;
+		// correct if PrefilteredEnv::MIP_LEVELS changes. IBL_SPEC_SCALE
+		// (lib/lighting.wgsl) dampens the rough-material specular floor.
 		let reflectVec = reflect(-viewDir, worldNormal);
 		let prefilteredUV = direction_to_equirect_uv(reflectVec);
 		let maxMip = max(0.0, f32(textureNumLevels(prefiltered_env)) - 1.0);
@@ -169,7 +159,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 		let lightIndexOffset = clusterLights.offset + i;
 		if (lightIndexOffset >= arrayLength(&u_cluster_light_indices)) { break; }
 		let lightIdx = u_cluster_light_indices[lightIndexOffset];
-		if (lightIdx >= 5120u) { break; } // Safety check
+		if (lightIdx >= MAX_LIGHTS) { break; } // Safety check
 
 		let light = u_lights.lights[lightIdx];
 

@@ -11,6 +11,11 @@
 
 #include "engine://core/constants_cluster.wgsl"
 
+// Upper bound on the global light count — guards the per-cluster light
+// loop against a corrupt/overflowed index. Mirrors light_clustering.wgsl's
+// own MAX_LIGHTS on the compute side (kept in sync by hand).
+const MAX_LIGHTS: u32 = 5120u;
+
 fn getClusterIndex(uv: vec2<f32>, viewDepth: f32) -> u32 {
 	let gridDimX = CLUSTER_GRID_DIM_X;
 	let gridDimY = CLUSTER_GRID_DIM_Y;
