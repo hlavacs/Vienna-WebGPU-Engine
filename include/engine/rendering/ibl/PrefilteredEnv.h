@@ -63,11 +63,15 @@ class PrefilteredEnv
 	/// bake has succeeded yet.
 	[[nodiscard]] uint32_t maxMipLevel() const
 	{
-		return m_texture ? (MIP_LEVELS - 1) : 0;
+		return (m_texture && m_mipLevels > 0) ? (m_mipLevels - 1) : 0;
 	}
 
   private:
 	std::shared_ptr<webgpu::WebGPUTexture> m_texture;
+	/// Actual mip count of the last successful bake — clamped to the source
+	/// resolution, so it can be < MIP_LEVELS for tiny sources (e.g. the 1x1
+	/// default env used when a scene has no skybox).
+	uint32_t m_mipLevels = 0;
 };
 
 } // namespace engine::rendering::ibl

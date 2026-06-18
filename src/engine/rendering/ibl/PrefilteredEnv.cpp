@@ -183,8 +183,18 @@ bool PrefilteredEnv::bake(
 		return false;
 	}
 
+	// Clamp the mip count to what the source resolution supports. A scene with
+	// no skybox prefilters the 1x1 default env (createFromColor); a 1x1 texture
+	// allows only one mip, so requesting MIP_LEVELS=6 trips a device validation
+	// error ("mip level count 6 is invalid, maximum allowed is 1").
+	const uint32_t srcMaxDim = srcWidth > srcHeight ? srcWidth : srcHeight;
+	uint32_t       maxMips   = 1;
+	for (uint32_t d = srcMaxDim; d > 1; d >>= 1) ++maxMips;
+	const uint32_t mipLevels = maxMips < MIP_LEVELS ? maxMips : MIP_LEVELS;
+	m_mipLevels              = mipLevels;
+
 	const wgpu::TextureFormat dstFormat = wgpu::TextureFormat::RGBA16Float;
-	m_texture = allocateMipChainTarget(context, srcWidth, srcHeight, MIP_LEVELS, dstFormat);
+	m_texture = allocateMipChainTarget(context, srcWidth, srcHeight, mipLevels, dstFormat);
 	if (!m_texture)
 	{
 		spdlog::error("PrefilteredEnv: failed to allocate destination texture");
@@ -215,11 +225,11 @@ bool PrefilteredEnv::bake(
 	wgpu::Texture rawDst       = m_texture->getTexture();
 
 	std::vector<MipResources> mips;
-	mips.reserve(MIP_LEVELS);
-	for (uint32_t mip = 0; mip < MIP_LEVELS; ++mip)
+	mips.reserve(mipLevels);
+	for (uint32_t mip = 0; mip < mipLevels; ++mip)
 	{
 		mips.push_back(makeMipResources(
-			context, mip, MIP_LEVELS,
+			context, mip, mipLevels,
 			sourceEquirect, sampler, bgl,
 			rawDst, dstFormat));
 	}
@@ -241,7 +251,7 @@ bool PrefilteredEnv::bake(
 	oneShot.release();
 
 	spdlog::info("PrefilteredEnv baked: {}x{} RGBA16Float, {} mips",
-		srcWidth, srcHeight, MIP_LEVELS);
+		srcWidth, srcHeight, mipLevels);
 	return true;
 }
 
