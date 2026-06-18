@@ -99,8 +99,7 @@ void DebugPass::render(FrameCache &frameCache)
 		0, // binding 0
 		primitives.data(),
 		primitiveCount * sizeof(DebugPrimitive),
-		0,
-		m_context->getQueue()
+		0
 	);
 
 	// Create command encoder

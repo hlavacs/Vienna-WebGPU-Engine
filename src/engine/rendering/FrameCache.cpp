@@ -43,13 +43,7 @@ bool FrameCache::processBindGroupProviders(
 		{
 			// Bind group found in cache - just update the data
 			auto &bindGroup = it->second;
-			bindGroup->updateBuffer(
-				0,							// binding index
-				provider.data.data(),		// data pointer
-				provider.dataSize,			// data size
-				0,							// offset
-				context->getQueue()
-			);
+			bindGroup->updateBuffer(0, provider.data.data(), provider.dataSize, 0);
 			continue; // Skip to next provider
 		}
 
@@ -136,13 +130,7 @@ bool FrameCache::processBindGroupProviders(
 		}
 
 		// Update buffer with initial data
-		bindGroup->updateBuffer(
-			0,							// binding index
-			provider.data.data(),		// data pointer
-			provider.dataSize,			// data size
-			0,							// offset
-			context->getQueue()
-		);
+		bindGroup->updateBuffer(0, provider.data.data(), provider.dataSize, 0);
 
 		// Cache bind group for future use
 		customBindGroupCache[cacheKey] = bindGroup;
@@ -174,7 +162,6 @@ bool FrameCache::prepareGPUResources(
 		return false;
 	}
 
-	auto &queue = context->getQueue();
 
 	const auto &cpuItems = collector.getRenderItems();
 	for (size_t idx : indicesToPrepare)
@@ -223,7 +210,7 @@ bool FrameCache::prepareGPUResources(
 					glm::inverseTranspose(cpuItem.worldTransform)
 				};
 				gpuItem.objectBindGroup->updateBuffer(
-					0, &objectUniforms, sizeof(ObjectUniforms), 0, queue
+					0, &objectUniforms, sizeof(ObjectUniforms), 0
 				);
 				CacheStats::objectTransformWrites.fetch_add(1, std::memory_order_relaxed);
 			}
@@ -289,7 +276,7 @@ bool FrameCache::prepareGPUResources(
 
 		auto objectUniforms = ObjectUniforms{cpuItem.worldTransform, glm::inverseTranspose(cpuItem.worldTransform)};
 		objectBindGroup->updateBuffer(
-			0, &objectUniforms, sizeof(ObjectUniforms), 0, queue
+			0, &objectUniforms, sizeof(ObjectUniforms), 0
 		);
 
 		// Fill GPU render item

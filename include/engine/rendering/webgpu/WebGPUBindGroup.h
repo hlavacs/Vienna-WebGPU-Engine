@@ -132,10 +132,9 @@ class WebGPUBindGroup
 	 * @param data Pointer to the data to write.
 	 * @param size Size of the data in bytes.
 	 * @param offset Offset within the buffer to start writing.
-	 * @param queue The WebGPU queue to use for the write operation.
 	 * @return True if the buffer was found and updated successfully, false otherwise.
 	 */
-	bool updateBuffer(uint32_t binding, const void *data, size_t size, size_t offset, wgpu::Queue queue) const
+	bool updateBuffer(uint32_t binding, const void *data, size_t size, size_t offset = 0) const
 	{
 		auto buffer = findBufferByBinding(binding);
 		if (!buffer || !buffer->isValid())
@@ -143,7 +142,7 @@ class WebGPUBindGroup
 			return false;
 		}
 
-		queue.writeBuffer(buffer->getBuffer(), offset, data, size);
+		buffer->write(data, size, offset);
 		return true;
 	}
 

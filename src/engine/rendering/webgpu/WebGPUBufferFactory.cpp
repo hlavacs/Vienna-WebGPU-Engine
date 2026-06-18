@@ -53,8 +53,8 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBuffer(
 	desc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
 	desc.label = name.c_str();
 
-	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
-	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage));
+	wgpu::Buffer buffer = createBuffer(desc);
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage), m_context.getQueue());
 }
 
 std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBuffer(
@@ -68,8 +68,8 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBuffer(
 	desc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
 	desc.label = name.c_str();
 
-	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
-	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage));
+	wgpu::Buffer buffer = createBuffer(desc);
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage), m_context.getQueue());
 }
 
 std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
@@ -104,14 +104,14 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
 		desc.usage = wgpu::BufferUsage::CopyDst;
 	}
 
-	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
-	return std::make_shared<WebGPUBuffer>(buffer, name, binding, bufferSize, static_cast<WGPUBufferUsageFlags>(desc.usage));
+	wgpu::Buffer buffer = createBuffer(desc);
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, bufferSize, static_cast<WGPUBufferUsageFlags>(desc.usage), m_context.getQueue());
 }
 
 void WebGPUBufferFactory::writeToBuffer(const std::shared_ptr<WebGPUBuffer> &buffer, const void *data, size_t size)
 {
 	if (!buffer || !data || size == 0) return;
-	m_context.getQueue().writeBuffer(buffer->getBuffer(), 0, data, size);
+	buffer->write(data, size);
 }
 
 } // namespace engine::rendering::webgpu

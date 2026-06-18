@@ -709,13 +709,7 @@ void Renderer::updateFrameBindGroup(const RenderTarget &target, float time)
 	FrameUniforms frameUniforms = target.getFrameUniforms(time);
 	// Update GPU buffer with new uniform data for this frame
 	// Binding 0 in the frame bind group = uniform buffer with camera data
-	m_frameCache.frameBindGroupCache[target.cameraId]->updateBuffer(
-		0,					   // binding index
-		&frameUniforms,		   // source data
-		sizeof(FrameUniforms), // data size
-		0,					   // buffer offset
-		m_context->getQueue()  // GPU queue for transfer
-	);
+	m_frameCache.frameBindGroupCache[target.cameraId]->updateBuffer(0, &frameUniforms, sizeof(FrameUniforms), 0);
 }
 
 std::shared_ptr<webgpu::WebGPUBindGroup> Renderer::buildEnvironmentBindGroup(
@@ -780,7 +774,7 @@ std::shared_ptr<webgpu::WebGPUBindGroup> Renderer::buildEnvironmentBindGroup(
 		target.skyboxEnabled ? 1.0f : 0.0f,
 		0.0f
 	);
-	bindGroup->updateBuffer(0, &environmentParams, sizeof(glm::vec4), 0, m_context->getQueue());
+	bindGroup->updateBuffer(0, &environmentParams, sizeof(glm::vec4), 0);
 
 	return bindGroup;
 }
@@ -844,7 +838,7 @@ void Renderer::updateSceneBindGroup(const RenderTarget &target)
 		target.skyboxEnabled ? 1.0f : 0.0f,
 		0.0f
 	);
-	m_context->getQueue().writeBuffer(envBuffer->getBuffer(), 0, &environment, sizeof(environment));
+	envBuffer->write(&environment, sizeof(environment));
 
 	auto clusterManager = m_context->clusterManager();
 	std::shared_ptr<webgpu::WebGPUBuffer> clusterGrid;
@@ -980,7 +974,7 @@ void Renderer::updateSkyboxBindGroup(const RenderTarget &target)
 			target.skyboxEnabled ? 1.0f : 0.0f,
 			0.0f
 		);
-		existing->second->updateBuffer(0, &environmentParams, sizeof(glm::vec4), 0, m_context->getQueue());
+		existing->second->updateBuffer(0, &environmentParams, sizeof(glm::vec4), 0);
 		CacheStats::skyboxBindGroupHits.fetch_add(1, std::memory_order_relaxed);
 		return;
 	}

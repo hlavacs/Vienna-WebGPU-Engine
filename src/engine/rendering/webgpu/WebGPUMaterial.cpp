@@ -105,8 +105,7 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 		static_cast<uint32_t>(materialBindGroupBindingIndex.value()),
 		reinterpret_cast<const uint8_t *>(cpuMaterial.getPropertiesData()),
 		cpuMaterial.getPropertiesSize(),
-		0,
-		m_context.getQueue()
+		0
 	);
 
 	// Update cached texture versions

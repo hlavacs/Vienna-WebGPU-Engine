@@ -133,19 +133,13 @@ void SceneLightBuffer::updateFromLights(const std::vector<engine::rendering::Lig
 	}
 	engine::rendering::CacheStats::sceneLightUploadsExecuted.fetch_add(1, std::memory_order_relaxed);
 
-	auto &queue = m_context.getQueue();
 	engine::rendering::LightsBuffer header;
 	header.count = lightCount;
-	queue.writeBuffer(m_storageBuffer, 0, &header, sizeof(header));
+	m_bufferWrapped->write(&header, sizeof(header));
 
 	if (!lightData.empty())
 	{
-		queue.writeBuffer(
-			m_storageBuffer,
-			sizeof(header),
-			lightData.data(),
-			lightBytes
-		);
+		m_bufferWrapped->write(lightData.data(), lightBytes, sizeof(header));
 	}
 
 	m_lightCount      = lightCount;

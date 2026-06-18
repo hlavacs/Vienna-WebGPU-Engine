@@ -132,12 +132,7 @@ void CompositePass::flushPostProcessUniformsIfDirty()
 		0.0f,
 		0.0f
 	};
-	m_context->getQueue().writeBuffer(
-		m_postUniformBuffer->getBuffer(),
-		0,
-		params.data(),
-		sizeof(params)
-	);
+	m_postUniformBuffer->write(params.data(), sizeof(params));
 	m_postDirty = false;
 }
 

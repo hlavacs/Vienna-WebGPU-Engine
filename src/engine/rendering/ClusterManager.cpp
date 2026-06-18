@@ -78,7 +78,6 @@ bool ClusterManager::createClusterGridBuffer()
 	);
 
 	auto &bufferFactory = m_context.bufferFactory();
-	auto queue = m_context.getQueue();
 
 	// Wrapped buffers: factory owns the wgpu::Buffer lifetime via WebGPUBuffer,
 	// which destroys+releases on shared_ptr expiry. No manual cleanup needed here.
@@ -101,7 +100,7 @@ bool ClusterManager::createClusterGridBuffer()
 	// Zero-init so the composition pass's "no lights in cluster" branch reads
 	// well-defined zero counts even before any compute dispatch has run.
 	const std::vector<uint32_t> zeroGrid(CLUSTER_GRID_TOTAL * 2, 0);
-	queue.writeBuffer(m_clusterGridBuffer->getBuffer(), 0, zeroGrid.data(), clusterGridBytes);
+	m_clusterGridBuffer->write(zeroGrid.data(), clusterGridBytes);
 
 	// Renderer::updateSceneBindGroup reads cluster buffers directly via the
 	// getClusterGridBuffer / getClusterIndicesBuffer accessors and binds them

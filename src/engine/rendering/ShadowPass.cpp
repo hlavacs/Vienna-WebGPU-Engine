@@ -305,12 +305,7 @@ void ShadowPass::render(FrameCache &frameCache)
 	{
 		// The buffer is referenced by Scene_BindGroup at @binding(4), which
 		// rebuilds per camera and always picks up the latest data.
-		m_context->getQueue().writeBuffer(
-			m_shadowUniformBuffer->getBuffer(),
-			0,
-			frameCache.shadowUniforms.data(),
-			frameCache.shadowUniforms.size() * sizeof(ShadowUniform)
-		);
+		m_shadowUniformBuffer->write(frameCache.shadowUniforms.data(), frameCache.shadowUniforms.size() * sizeof(ShadowUniform));
 	}
 }
 
@@ -322,7 +317,7 @@ void ShadowPass::renderShadow2D(
 )
 {
 	ShadowPass2DUniforms uniforms{shadowUniform.viewProj, shadowUniform.lightPos, shadowUniform.far};
-	m_shadowPass2DBindGroup->updateBuffer(0, &uniforms, sizeof(uniforms), 0, m_context->getQueue());
+	m_shadowPass2DBindGroup->updateBuffer(0, &uniforms, sizeof(uniforms), 0);
 
 	uint32_t size = m_shadow2DArray->getWidth();
 	auto ctx = m_isDebugMode
@@ -365,7 +360,7 @@ void ShadowPass::renderShadowCube(
 			shadowUniform.far
 		};
 
-		m_shadowPassCubeBindGroup[face.faceIndex]->updateBuffer(0, &uniforms, sizeof(uniforms), 0, m_context->getQueue());
+		m_shadowPassCubeBindGroup[face.faceIndex]->updateBuffer(0, &uniforms, sizeof(uniforms), 0);
 
 		uint32_t layer = cubeIndex * 6 + face.faceIndex;
 		auto ctx = m_isDebugMode
