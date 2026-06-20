@@ -262,9 +262,9 @@ bool WebGPUTexture::beginReadback(WebGPUContext &context)
 	wgpu::BufferDescriptor bufferDesc{};
 	bufferDesc.size = bufferSize;
 	bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
-	m_readbackStagingBuffer = context.getDevice().createBuffer(bufferDesc);
+	m_readbackStagingBuffer = context.bufferFactory().createBuffer(bufferDesc);
 
-	wgpu::CommandEncoder encoder = context.getDevice().createCommandEncoder();
+	wgpu::CommandEncoder encoder = context.createCommandEncoder("WebGPUTexture.Readback");
 
 	wgpu::ImageCopyTexture src{};
 	src.texture = m_texture;
@@ -277,8 +277,7 @@ bool WebGPUTexture::beginReadback(WebGPUContext &context)
 	dst.layout.rowsPerImage = m_readbackHeight;
 	dst.layout.offset = 0;
 	encoder.copyTextureToBuffer(src, dst, {m_readbackWidth, m_readbackHeight, 1});
-	wgpu::CommandBuffer commands = encoder.finish();
-	context.getQueue().submit(1, &commands);
+	context.submitCommandEncoder(encoder, "WebGPUTexture.Readback");
 
 	m_readbackMapped = false;
 	m_readbackSuccess = false;

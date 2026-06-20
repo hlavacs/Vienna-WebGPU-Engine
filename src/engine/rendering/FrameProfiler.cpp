@@ -110,7 +110,7 @@ void FrameProfiler::initGpu(webgpu::WebGPUContext &context, uint32_t maxPasses)
 	qsDesc.label = "FrameProfiler.QuerySet";
 	qsDesc.type = wgpu::QueryType::Timestamp;
 	qsDesc.count = m_maxTimestamps;
-	m_querySet = context.getDevice().createQuerySet(qsDesc);
+	m_querySet = context.createQuerySet(qsDesc);
 
 	wgpu::BufferDescriptor resDesc{};
 	resDesc.label = "FrameProfiler.Resolve";

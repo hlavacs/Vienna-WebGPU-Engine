@@ -159,6 +159,19 @@ class WebGPUContext
 	}
 
 	/**
+	 * @brief Create a query set (e.g. GPU timestamp queries for profiling).
+	 *
+	 * A query set has no cached identity, so it lives as a context helper
+	 * alongside createCommandEncoder rather than getting its own factory.
+	 * @param desc Query set descriptor.
+	 * @return Created query set.
+	 */
+	wgpu::QuerySet createQuerySet(const wgpu::QuerySetDescriptor &desc)
+	{
+		return getDevice().createQuerySet(desc);
+	}
+
+	/**
 	 * @brief Submit a command encoder to the queue and release it.
 	 * @param encoder Command encoder to submit.
 	 * @param label Optional label for the command buffer.

@@ -626,7 +626,7 @@ void WebGPUTextureFactory::generateMipmaps(
 	// Get mipmap sampler from factory
 	auto mipmapSampler = m_context.samplerFactory().getMipmapSampler();
 
-	wgpu::CommandEncoder encoder = m_context.getDevice().createCommandEncoder();
+	wgpu::CommandEncoder encoder = m_context.createCommandEncoder("WebGPUTextureFactory.Mipmaps");
 
 	// Generate mipmaps by repeatedly blitting with linear filtering
 	for (uint32_t mipLevel = 1; mipLevel < mipLevelCount; ++mipLevel)
@@ -690,10 +690,7 @@ void WebGPUTextureFactory::generateMipmaps(
 		dstView.release();
 	}
 
-	wgpu::CommandBuffer commands = encoder.finish();
-	m_context.getQueue().submit(commands);
-	commands.release();
-	encoder.release();
+	m_context.submitCommandEncoder(encoder, "WebGPUTextureFactory.Mipmaps");
 
 	spdlog::debug("Generated {} mipmap levels for texture", mipLevelCount - 1);
 }
