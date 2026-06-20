@@ -28,6 +28,13 @@ bool WebGPUMaterial::needsSync(const Material &cpuMaterial) const
 	if (cpuMaterial.getVersion() > m_lastSyncedVersion)
 		return true;
 
+	// Check if the bound shader hot-reloaded. A shader reload bumps the shader
+	// slot version (SlotCache::replace) but leaves the CPU material version
+	// untouched, so without this the material bind group keeps the OLD shader's
+	// layout — the scene renders flat / untextured until a scene switch.
+	if (m_shaderHandle.valid() && m_shaderHandle.version() != m_lastSyncedShaderVersion)
+		return true;
+
 	// Check if any texture versions changed
 	for (const auto &[slotName, textureSlot] : cpuMaterial.getTextureSlots())
 	{
@@ -71,6 +78,10 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 		spdlog::warn("WebGPUMaterial: Shader not found (name='{}')", shaderName);
 		return;
 	}
+
+	// Remember the shader version we're syncing against so needsSync() detects
+	// a later in-place shader hot-reload.
+	m_lastSyncedShaderVersion = m_shaderHandle.version();
 
 	auto layout = shaderInfo->getBindGroupLayout(bindgroup::defaults::MATERIAL); // ToDo: Handle Custom Material Bind Groups
 	if (!layout)

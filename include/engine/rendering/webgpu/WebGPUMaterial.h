@@ -161,6 +161,13 @@ class WebGPUMaterial : public WebGPUSyncObject<engine::rendering::Material>, pub
 	 * shader's current version() without re-querying ShaderRegistry.
 	 */
 	engine::rendering::cache::Handle<WebGPUShaderInfo> m_shaderHandle;
+
+	/// Shader slot version captured at the last syncFromCPU(). needsSync()
+	/// compares the live shader version against this so an in-place shader
+	/// hot-reload — which bumps the shader slot version via SlotCache::replace
+	/// but leaves the CPU material version untouched — still triggers a re-sync
+	/// and material bind-group rebuild.
+	uint32_t m_lastSyncedShaderVersion = 0;
 };
 
 } // namespace engine::rendering::webgpu
