@@ -404,6 +404,33 @@ void ImGui_ImplWGPU_RenderDrawData(ImDrawData* draw_data, WGPURenderPassEncoder 
     // Setup desired render state
     ImGui_ImplWGPU_SetupRenderState(draw_data, pass_encoder, fr);
 
+    // [engine patch] Invalidate stale per-image bind groups before rebuilding.
+    // ImageBindGroups is keyed by the texture-view pointer and is never
+    // invalidated upstream, so a dynamic texture (G-buffer / depth-preview /
+    // shadow-map view) that is destroyed and reallocated at the same address
+    // on a resize / scene-change leaves a cached bind group pointing at a dead
+    // view — wgpu then crashes with an access violation when it is reused.
+    // Releasing the image bind groups each frame is cheap (a handful, only for
+    // debug overlays) and the loop below rebuilds them from live views. The
+    // font bind group is owned by renderResources.ImageBindGroup, so we keep
+    // it to avoid churning a bind group on every text-heavy frame.
+    {
+        ImGuiStorage& imageBindGroups = bd->renderResources.ImageBindGroups;
+        WGPUBindGroup fontBindGroup   = bd->renderResources.ImageBindGroup;
+        for (int i = 0; i < imageBindGroups.Data.Size; i++)
+        {
+            WGPUBindGroup bg = (WGPUBindGroup)imageBindGroups.Data[i].val_p;
+            if (bg && bg != fontBindGroup)
+                wgpuBindGroupRelease(bg);
+        }
+        imageBindGroups.Clear();
+        if (fontBindGroup && bd->renderResources.FontTextureView)
+        {
+            ImGuiID fontHash = ImHashData(&bd->renderResources.FontTextureView, sizeof(ImTextureID));
+            imageBindGroups.SetVoidPtr(fontHash, (void*)fontBindGroup);
+        }
+    }
+
     // Render command lists
     // (Because we merged all buffers into a single one, we maintain our own offset into them)
     int global_vtx_offset = 0;
