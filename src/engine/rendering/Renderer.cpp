@@ -217,6 +217,19 @@ void Renderer::resetCachedBindings()
 	m_cullCaches.clear();
 }
 
+void Renderer::reloadShaders()
+{
+	// Reload shader sources + rebuild pipelines, THEN drop cached bind groups.
+	// reloadAllPipelines() only soft-clears the pipeline cache; the renderer's
+	// cached scene/skybox/object/material bind groups still point at the old
+	// shader layouts, so deferred-rendered meshes (e.g. the SeaKeep building)
+	// render wrong until a scene change calls resetCachedBindings(). Doing the
+	// reset here makes a plain shader reload behave like that scene switch.
+	m_context->shaderRegistry().reloadAllShaders();
+	m_context->pipelineManager().reloadAllPipelines();
+	resetCachedBindings();
+}
+
 namespace
 {
 

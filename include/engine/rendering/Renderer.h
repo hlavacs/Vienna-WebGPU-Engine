@@ -339,6 +339,15 @@ public:
 	/// prefilterEnvironment() to re-bake on next call.
 	void resetCachedBindings();
 
+	/// Full shader hot-reload entry point: reload every shader source, rebuild
+	/// pipelines, AND reset cached bind groups. The bind-group reset is the
+	/// critical part — a pipeline-only reload leaves the renderer's cached
+	/// scene/skybox/object/material bind groups bound to the previous shader
+	/// layouts, so deferred-rendered meshes (e.g. the SeaKeep building) render
+	/// wrong until a scene change resets them. Prefer this over poking
+	/// pipelineManager().reloadAllPipelines() directly.
+	void reloadShaders();
+
 private:
 	FrameCache m_frameCache{};
 

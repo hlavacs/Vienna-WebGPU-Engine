@@ -172,8 +172,8 @@ void MainDemoImGuiUI::renderMainMenuBar(const std::shared_ptr<engine::scene::Sce
 		ImGui::Separator();
 		if (ImGui::MenuItem("Reload Shaders"))
 		{
-			if (auto ctx = m_engine.getContext())
-				ctx->pipelineManager().reloadAllPipelines();
+			if (auto renderer = m_engine.getRenderer().lock())
+				renderer->reloadShaders();
 		}
 		ImGui::EndMenu();
 	}
@@ -1006,8 +1006,8 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 	// Shader reload button
 	if (ImGui::Button("Reload Shaders (F5)"))
 	{
-		m_engine.getContext()->shaderRegistry().reloadAllShaders();
-		m_engine.getContext()->pipelineManager().reloadAllPipelines();
+		if (auto renderer = m_engine.getRenderer().lock())
+			renderer->reloadShaders();
 	}
 	ImGui::SameLine();
 	// Debug rendering toggle
