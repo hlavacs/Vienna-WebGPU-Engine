@@ -219,25 +219,15 @@ void Renderer::resetCachedBindings()
 
 void Renderer::reloadShaders()
 {
-	// Reload shader sources + rebuild pipelines, THEN drop cached bind groups.
-	// reloadAllPipelines() only soft-clears the pipeline cache; the renderer's
-	// cached scene/skybox/object/material bind groups still point at the old
-	// shader layouts, so deferred-rendered meshes (e.g. the SeaKeep building)
-	// render wrong until a scene change calls resetCachedBindings(). Doing the
-	// reset here makes a plain shader reload behave like that scene switch.
+	// Reload sources + rebuild pipelines, then drop renderer-cached bind groups
+	// (scene/skybox/object) that still reference the old shader layouts.
 	m_context->shaderRegistry().reloadAllShaders();
 	m_context->pipelineManager().reloadAllPipelines();
 	resetCachedBindings();
 
-	// Each render pass ALSO caches its own pipeline + bind groups keyed by
-	// resource identity, not the shader version — e.g. CompositionPass's
-	// G-buffer bind group. After a reload the shader's bind-group layout changes
-	// but those per-pass caches don't notice, so the pass binds an old-layout
-	// group to the new pipeline and the draw produces nothing (the deferred
-	// opaque geometry vanishes, while the forward transparency pass — which
-	// re-syncs via the material path — still draws). cleanup() resets each pass
-	// so it rebuilds against the reloaded shaders next frame; this is exactly
-	// what the resize path already does.
+	// Passes also cache pipelines + bind groups keyed by resource identity, not
+	// shader version, so a reload leaves them stale — cleanup() rebuilds them
+	// next frame (same as the resize path), else deferred draws silently drop.
 	for (auto *pass : getAllPasses())
 		if (pass) pass->cleanup();
 	if (m_compositePass) m_compositePass->cleanup();
