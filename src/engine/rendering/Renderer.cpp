@@ -228,6 +228,19 @@ void Renderer::reloadShaders()
 	m_context->shaderRegistry().reloadAllShaders();
 	m_context->pipelineManager().reloadAllPipelines();
 	resetCachedBindings();
+
+	// Each render pass ALSO caches its own pipeline + bind groups keyed by
+	// resource identity, not the shader version — e.g. CompositionPass's
+	// G-buffer bind group. After a reload the shader's bind-group layout changes
+	// but those per-pass caches don't notice, so the pass binds an old-layout
+	// group to the new pipeline and the draw produces nothing (the deferred
+	// opaque geometry vanishes, while the forward transparency pass — which
+	// re-syncs via the material path — still draws). cleanup() resets each pass
+	// so it rebuilds against the reloaded shaders next frame; this is exactly
+	// what the resize path already does.
+	for (auto *pass : getAllPasses())
+		if (pass) pass->cleanup();
+	if (m_compositePass) m_compositePass->cleanup();
 }
 
 namespace
