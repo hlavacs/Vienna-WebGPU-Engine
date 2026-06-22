@@ -30,6 +30,24 @@
 namespace demo
 {
 
+namespace
+{
+// Convert a webgpu.hpp TextureView wrapper into an ImGui texture id.
+//
+// Do NOT cast a wgpu::TextureView straight to ImTextureID. The HANDLE() wrapper
+// in webgpu.hpp exposes both `operator WGPUTextureView&()` and `operator bool()`.
+// ImTextureID is an integer (ImU64) and only bool is *implicitly* convertible to
+// an integer (pointer->integer is not), so a direct cast silently resolves to
+// operator bool() — every valid view collapses to the value 1, and wgpu then
+// faults dereferencing handle 0x1 inside wgpuDeviceCreateBindGroup (access
+// violation reading 0x9 = 0x1 + struct field offset). Force the pointer
+// conversion first, then reinterpret the pointer bits.
+inline ImTextureID toImTextureID(const wgpu::TextureView &view)
+{
+	return reinterpret_cast<ImTextureID>(static_cast<WGPUTextureView>(view));
+}
+} // namespace
+
 MainDemoImGuiUI::MainDemoImGuiUI(
 	engine::GameEngine &engine,
 	std::shared_ptr<DayNightCycle> dayNightCycle
@@ -625,7 +643,7 @@ void MainDemoImGuiUI::renderShadowDebugWindow()
 					for (int faceIndex = 0; faceIndex < 6; ++faceIndex)
 					{
 						int layerIndex = cubeIndex * 6 + faceIndex;
-						ImTextureID faceImguiId = (ImTextureID)m_debugShadowCubeArray->getTextureView(layerIndex);
+						ImTextureID faceImguiId = toImTextureID(m_debugShadowCubeArray->getTextureView(layerIndex));
 
 						ImGui::Text("Face %d", faceIndex);
 						ImGui::Image(faceImguiId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
@@ -653,7 +671,7 @@ void MainDemoImGuiUI::renderShadowDebugWindow()
 
 			for (int layerIndex = 0; layerIndex < totalLayers; ++layerIndex)
 			{
-				ImTextureID texId = (ImTextureID)m_debugShadow2DArray->getTextureView(layerIndex);
+				ImTextureID texId = toImTextureID(m_debugShadow2DArray->getTextureView(layerIndex));
 
 				ImGui::Text("Layer %d", layerIndex);
 				ImGui::Image(texId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
@@ -955,9 +973,10 @@ void MainDemoImGuiUI::renderPassControlsWindow()
 				const char *label = i < std::size(slotLabels) ? slotLabels[i] : "(unnamed)";
 				ImGui::Text("RT%zu: %s", i, label);
 				drawBlackBackdrop(thumbSize);
-				// Same pattern the shadow debug uses: wgpu::TextureView is
-				// constructible-to-ImTextureID via the imgui-wgpu shim.
-				ImTextureID texId = colors[i]->getTextureView();
+				// wgpu::TextureView -> ImTextureID must go through the raw
+				// WGPUTextureView pointer (see toImTextureID); a direct cast
+				// hits operator bool() and passes 1 as the view to wgpu.
+				ImTextureID texId = toImTextureID(colors[i]->getTextureView());
 				ImGui::Image(
 					texId,
 					thumbSize, ImVec2(0, 0), ImVec2(1, 1),
@@ -979,7 +998,7 @@ void MainDemoImGuiUI::renderPassControlsWindow()
 				if (renderDepthPreviewBlit(depth) && m_depthPreviewTarget)
 				{
 					ImGui::Text("Depth (near = white)");
-					ImTextureID depthPreviewId = m_depthPreviewTarget->getTextureView();
+					ImTextureID depthPreviewId = toImTextureID(m_depthPreviewTarget->getTextureView());
 					ImGui::Image(
 						depthPreviewId,
 						thumbSize, ImVec2(0, 0), ImVec2(1, 1),
@@ -1538,8 +1557,7 @@ ImTextureID MainDemoImGuiUI::getOrCreateImGuiTexture(engine::rendering::TextureH
 		return 0; // ImTextureID is an integral type (ImU64) since ImGui 1.91.4, not void*
 
 	auto gpuTexture = m_engine.getContext()->textureFactory().createFromHandle(textureHandle);
-	auto textureView = gpuTexture->getTextureView();
-	ImTextureID imguiId = (ImTextureID)textureView;
+	ImTextureID imguiId = toImTextureID(gpuTexture->getTextureView());
 
 	m_imguiTextureCache[textureHandle] = imguiId;
 	return imguiId;
