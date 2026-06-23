@@ -31,13 +31,9 @@ ForwardTransparencyPass::ForwardTransparencyPass(std::shared_ptr<webgpu::WebGPUC
 
 bool ForwardTransparencyPass::initialize()
 {
-	m_shaderInfo = m_context->shaderRegistry().getShader(shader::defaults::PBR);
-	if (!m_shaderInfo || !m_shaderInfo->isValid())
-	{
-		spdlog::error("ForwardTransparencyPass: PBR shader '{}' is missing or invalid",
-			shader::defaults::PBR);
+	m_shaderInfo = getValidatedShader(shader::defaults::PBR);
+	if (!m_shaderInfo)
 		return false;
-	}
 	spdlog::info("ForwardTransparencyPass initialized");
 	return true;
 }

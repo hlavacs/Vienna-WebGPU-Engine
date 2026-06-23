@@ -51,10 +51,6 @@ constexpr const char *VISUALIZE_DEPTH = "Visualize_Depth_BindGroup";
 constexpr const char *DEBUG = "Debug_BindGroup";
 constexpr const char *VIGNETTE = "Vignette_BindGroup";
 } // namespace bindgroup::defaults
-namespace bindgroup::entry::defaults
-{
-constexpr const char *MATERIAL_PROPERTIES = "materialProperties";
-} // namespace bindgroup::entry::defaults
 
 /**
  * @class ShaderRegistry

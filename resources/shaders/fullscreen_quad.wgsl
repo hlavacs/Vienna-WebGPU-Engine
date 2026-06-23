@@ -19,7 +19,6 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     return output;
 }
 
-//@bind_group(name="FullscreenQuad_BindGroup", reuse=Global, role=Custom)
 @group(4) @binding(0) var cameraTexture: texture_2d<f32>;
 @group(4) @binding(1) var cameraSampler: sampler;
 
@@ -28,7 +27,6 @@ struct PostProcessUniforms {
     params: vec4f,
 }
 
-//@bind_group(name="PostProcess_BindGroup", reuse=Global, role=Custom)
 @group(5) @binding(0) var<uniform> uPost: PostProcessUniforms;
 
 // ACES Filmic approximation (Krzysztof Narkowicz). Rolls bright HDR values

@@ -7,7 +7,8 @@
 Welcome to your first shader tutorial! In this guide, you'll learn how to write a custom WGSL shader from scratch for the Vienna WebGPU Engine. We'll create a simple unlit shader that displays textured geometry.
 
 **What you'll learn:**
-- Engine bind group requirements (Frame, Object, Material)
+- Engine bind group requirements (Frame, Scene, Material, Object)
+- Pulling engine-generated structs into a shader with `#include` (the codegen pipeline)
 - WGSL vertex and fragment shader structure
 - Matrix transformations (model → world → view → clip space)
 - Texture sampling in shaders
@@ -42,7 +43,8 @@ Without a complete shader file, the engine can't create a **render pipeline** (t
 **Currently empty** - you'll write this! The engine expects:
 - Vertex shader: `vs_main`
 - Fragment shader: `fs_main`
-- Three bind groups (Frame, Object, Material)
+- The Frame and Object bind groups, pulled in via `#include` (the engine generates these structs from C++)
+- A Material bind group, which you declare yourself for this unlit shader
 
 ### Building the Project
 
@@ -140,21 +142,38 @@ Now let's understand the external data shaders receive via bind groups.
 **What are bind groups?**
 Bind groups are "data packages" from CPU to GPU containing uniforms, textures, and samplers.
 
-**Why three separate groups?**
-Each has different update frequency:
-- **Group 0 (Frame)** - Once per frame (camera, time)
-- **Group 1 (Object)** - Per object (transform)
-- **Group 2 (Material)** - Per material (textures, properties)
+**Why separate groups?**
+Each has a different update frequency, and the engine pins each role to a fixed `@group` index:
 
-This separation enables efficient reuse. When rendering 100 objects with the same material, only Group 1 changes.
+| `@group` | Role         | Changes        | Contents                                  |
+| -------- | ------------ | -------------- | ----------------------------------------- |
+| 0        | **Frame**    | Once per frame | Camera matrices, time                     |
+| 1        | **Scene**    | Once per frame | Lights, shadows, environment, clusters    |
+| 2        | **Material** | Per material   | Textures, colors, properties              |
+| 3        | **Object**   | Per object     | Transform (model + normal matrix)         |
 
-**⚠️ CRITICAL: FrameUniforms MUST be at @group(0)**
+This separation enables efficient reuse. When rendering 100 objects with the same material, only Group 3 (Object) changes between draws.
 
-The engine **requires** `FrameUniforms` at bind group 0. This is not optional - the rendering system expects camera data there. However, if your shader doesn't use any frame uniforms (rare cases like post-processing or utility shaders), you can omit the bind group entirely. Most gameplay shaders need camera transforms, so you'll typically declare this in every shader you write.
+> **📝 Heads up - the layout moved.** Object data now lives at **`@group(3)`**, not `@group(1)`. `@group(1)` is reserved for the engine's Scene bind group (lights, shadows, environment). The unlit shader doesn't use lighting, so it simply leaves Group 1 unused - groups don't have to be contiguous.
+
+**Engine structs come from `#include`, not by hand.**
+
+The Frame and Object structs are **generated from the C++ source of truth** by the engine's codegen pipeline and live under `resources/shaders/core/`. Instead of re-typing them (and risking drift from what the engine actually binds), you pull them in by URI:
+
+```wgsl
+#include "engine://core/frame_uniforms.wgsl"
+#include "engine://core/object_uniforms.wgsl"
+```
+
+The include resolver textually expands these before compilation, so the symbols `u_frame` and `u_object` simply *exist* in your shader afterwards. The Material group is different - for this unlit shader you declare it yourself (Step 6), because it carries a custom `UnlitMaterialUniforms` struct rather than the engine's PBR material.
+
+**⚠️ CRITICAL: Frame MUST be at @group(0)**
+
+The engine **requires** the Frame group at bind group 0 - the `#include` above pins it there for you. If your shader doesn't use any frame uniforms (rare cases like post-processing or utility shaders), you can omit the include entirely. Most gameplay shaders need camera transforms, so you'll typically include this in every shader you write.
 
 ---
 
-## Step 4: Declare Bind Group 0 - Frame Uniforms
+## Step 4: Include Bind Group 0 - Frame Uniforms
 
 **Required at @group(0)** - This must always be bind group 0 in all engine shaders.
 
@@ -162,55 +181,72 @@ The engine **requires** `FrameUniforms` at bind group 0. This is not optional - 
 
 In `unlit.wgsl`, find the comment: `// Tutorial 01 - Step 4`
 
-Add this code:
+Add this `#include`:
+
+```wgsl
+#include "engine://core/frame_uniforms.wgsl"
+```
+
+That's it - no struct to type out. The engine generates the struct from C++ and the include brings it in. For reference, here's what it expands to:
 
 ```wgsl
 struct FrameUniforms {
     viewMatrix: mat4x4<f32>,
     projectionMatrix: mat4x4<f32>,
     viewProjectionMatrix: mat4x4<f32>,
-    cameraPosition: vec3<f32>,
+    cameraWorldPosition: vec3<f32>,
     time: f32,
 }
 
 @group(0) @binding(0)
-var<uniform> frameUniforms: FrameUniforms;
+var<uniform> u_frame: FrameUniforms;
 ```
 
 **What it contains:**
 - `viewMatrix` - Camera's view matrix (transforms world space to camera space)
 - `projectionMatrix` - Projection matrix (applies perspective/orthographic)
-- `cameraPosition` - Camera world position (useful for effects like reflections, fog)
+- `viewProjectionMatrix` - The two combined (handy when you don't need them separately)
+- `cameraWorldPosition` - Camera world position (useful for effects like reflections, fog)
 - `time` - Time since engine start in seconds (useful for animations)
 
-**Why it's needed:**
-Every vertex needs to be transformed from world space to screen space. The Frame bind group provides the camera matrices to do this. Without it, the GPU wouldn't know where to draw objects on screen.
+**Note the variable name:** the include declares the uniform as **`u_frame`** (not `frameUniforms`). That's the name you'll use in the shader body.
+
+**Why an include instead of hand-writing it?**
+The struct is generated from the C++ `FrameUniforms` - the single source of truth for what the engine actually binds. Pulling it in by URI keeps your shader in lockstep with the engine; the inline struct can't drift out of sync. Every vertex still needs these camera matrices to be transformed from world space to screen space.
 
 ---
 
 <div style="page-break-after: always;"></div>
 
-## Step 5: Declare Bind Group 1 - Object Uniforms
+## Step 5: Include Bind Group 3 - Object Uniforms
 
 **Your Task:**
 
 In `unlit.wgsl`, find the comment: `// Tutorial 01 - Step 5`
 
-Add this code:
+Add this `#include`:
+
+```wgsl
+#include "engine://core/object_uniforms.wgsl"
+```
+
+Like Frame, the Object struct is engine-generated. For reference, it expands to:
 
 ```wgsl
 struct ObjectUniforms {
-    modelMatrix: mat4x4f,
-    normalMatrix: mat4x4f,
+    modelMatrix: mat4x4<f32>,
+    normalMatrix: mat4x4<f32>,
 }
 
-@group(1) @binding(0)
-var<uniform> objectUniforms: ObjectUniforms;
+@group(3) @binding(0)
+var<uniform> u_object: ObjectUniforms;
 ```
 
 **What it contains:**
 - `modelMatrix` - Transforms vertices from model space to world space (position, rotation, scale)
 - `normalMatrix` - Correctly transforms normals (handles non-uniform scaling)
+
+**Note the group and the name:** Object lives at **`@group(3)`** (Group 1 is reserved for the Scene/lights group), and the variable is **`u_object`**.
 
 **Why it's needed:**
 Each object has a different position, rotation, and scale in the scene. This bind group provides the object's transform so vertices can be placed correctly in the world.
@@ -218,6 +254,8 @@ Each object has a different position, rotation, and scale in the scene. This bin
 ---
 
 ## Step 6: Declare Bind Group 2 - Material Uniforms
+
+Unlike Frame and Object, you declare the Material group **by hand** here. There's no include for it because this unlit shader uses its own `UnlitMaterialUniforms` struct - not the engine's generated PBR material. You still place it at the canonical Material slot, **`@group(2)`**.
 
 **Your Task:**
 
@@ -263,16 +301,16 @@ Add this code:
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     
-    let worldPos = objectUniforms.modelMatrix * vec4f(input.position, 1.0);
-    let viewPos = frameUniforms.viewMatrix * worldPos;
-    output.position = frameUniforms.projectionMatrix * viewPos;
+    let worldPos = u_object.modelMatrix * vec4f(input.position, 1.0);
+    let viewPos = u_frame.viewMatrix * worldPos;
+    output.position = u_frame.projectionMatrix * viewPos;
     output.texCoord = input.texCoord;
     
     return output;
 }
 ```
 
-This transforms the vertex position through three matrices (model, view, projection) to get screen coordinates. The `1.0` in `vec4f(input.position, 1.0)` indicates this is a position (not a direction).
+This transforms the vertex position through three matrices (model, view, projection) to get screen coordinates. Note the `u_object` / `u_frame` names - those come from the includes you added in Steps 4 and 5. The `1.0` in `vec4f(input.position, 1.0)` indicates this is a position (not a direction).
 
 **What happens when this shader runs:**
 
@@ -371,9 +409,9 @@ WebGPU doesn't execute commands immediately. Instead:
    
    // Step 3: Record drawing commands using RenderPassEncoder
    renderPass.setPipeline(yourShaderPipeline);
-   renderPass.setBindGroup(0, frameBindGroup);  // Camera data
-   renderPass.setBindGroup(1, objectBindGroup);  // Transform
+   renderPass.setBindGroup(0, frameBindGroup);    // Camera data
    renderPass.setBindGroup(2, materialBindGroup); // Textures
+   renderPass.setBindGroup(3, objectBindGroup);   // Transform
    renderPass.draw(vertexCount);                  // "Draw this mesh!"
    
    // Step 4: End render pass
@@ -417,14 +455,15 @@ You created a complete WebGPU rendering shader with three main components:
 **1. Data Structures**
 - `VertexInput` - Maps to vertex buffer attributes via `@location` decorators. WebGPU uses these to know which buffer data goes where (location 0 = position from buffer slot 0, etc.)
 - `VertexOutput` - Data passed from vertex to fragment stage. `@builtin(position)` is WebGPU's required clip-space output, `@location` attributes are interpolated by the rasterizer
-- Uniform structs - Declared as `var<uniform>` to indicate read-only GPU memory. WebGPU enforces memory alignment rules (vec3f followed by f32 requires padding)
+- Uniform structs - The Frame and Object structs came from `#include`d, engine-generated files (`u_frame`, `u_object`); the Material struct you wrote by hand. All are `var<uniform>` read-only GPU memory. WebGPU enforces alignment rules (vec3f followed by f32 requires padding), which is exactly why the engine generates these structs from C++ rather than letting them drift
 
 **2. Bind Groups (WebGPU's Resource Binding Model)**
 - `@group(0)` - Frame data: WebGPU lets you update bind groups independently. Group 0 changes once per frame
-- `@group(1)` - Object data: Rebound for each object, but Groups 0 stays bound
 - `@group(2)` - Material data: Contains uniform buffer (`@binding(0)`), sampler (`@binding(1)`), texture (`@binding(2)`)
+- `@group(3)` - Object data: Rebound for each object, while Group 0 stays bound
+- (`@group(1)`, the Scene/lights group, is reserved by the engine but unused by this unlit shader)
 
-This is WebGPU's optimization strategy: group resources by update frequency. When you change an object, only Group 1 rebinds—the others stay cached in GPU state.
+This is WebGPU's optimization strategy: group resources by update frequency. When you change an object, only Group 3 rebinds—the others stay cached in GPU state.
 
 **3. Shader Pipeline Stages**
 - `@vertex fn vs_main()` - Vertex stage: Transforms positions to clip-space. WebGPU's render pipeline invokes this once per vertex
@@ -488,7 +527,7 @@ Will result in smaller stone tiles.
 
 **3. Animate with time** - In `unlit.wgsl` fragment shader:
 ```wgsl
-let scrolledUV = input.texCoord + vec2f(frameUniforms.time * 0.1, 0.0);
+let scrolledUV = input.texCoord + vec2f(u_frame.time * 0.1, 0.0);
 let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 ```
 
@@ -496,7 +535,8 @@ let textureColor = textureSample(baseColorTexture, textureSampler, scrolledUV);
 
 ## Key Takeaways
 
-- ✅ **Bind Groups** - Engine provides Frame (0), Object (1), Material (2)  
+- ✅ **Bind Groups** - Engine roles: Frame (0), Scene (1), Material (2), Object (3)  
+- ✅ **Codegen Includes** - `#include "engine://core/..."` pulls in engine-generated structs (`u_frame`, `u_object`)  
 - ✅ **Vertex Shader** - Transforms vertices through matrix pipeline  
 - ✅ **Fragment Shader** - Samples textures and outputs color  
 - ✅ **Material Assignment** - Connect materials to model submeshes  
@@ -541,7 +581,9 @@ In **Tutorial 02**, you'll learn:
 **Common build issues:**
 - **Missing semicolons** - WGSL requires `;` at end of statements
 - **Type mismatches** - `vec4f` vs `vec4<f32>` - use exact types
-- **Bind group mismatch** - Shader declares `@group(0)` but C++ registers differently
+- **Include not found** - Check the URI exactly: `engine://core/frame_uniforms.wgsl` / `engine://core/object_uniforms.wgsl`
+- **Redeclared engine struct** - Don't hand-write `FrameUniforms`/`ObjectUniforms`; the `#include` already provides them, and redeclaring one is an error
+- **Bind group mismatch** - Shader declares a different `@group` than the engine expects (Frame 0, Material 2, Object 3)
 - **Entry point names** - Must be exactly `vs_main` and `fs_main`
 - **CMake issues** - Run `rm -r build` (or delete `build/` folder) then rebuild clean
 
@@ -549,7 +591,8 @@ In **Tutorial 02**, you'll learn:
 
 **Shader compilation failed**
 - Check semicolons, struct syntax, and WGSL types
-- Verify bind group numbers are 0, 1, 2
+- Verify the engine structs come from the `#include`s and you reference them as `u_frame` / `u_object`
+- Verify the Material group is at `@group(2)` and Object resolves to `@group(3)`
 - Check entry point names match `vs_main` and `fs_main`
 - Look in terminal output for specific line/column of error
 

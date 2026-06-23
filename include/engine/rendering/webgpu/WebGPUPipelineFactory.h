@@ -3,6 +3,7 @@
 #include "engine/rendering/Mesh.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include <filesystem>
 #include <memory>
 
 namespace engine::rendering::webgpu
@@ -40,10 +41,40 @@ class WebGPUPipelineFactory
 	);
 
 	/// Raw render-pipeline passthrough for one-off pipelines whose descriptor is
-	/// hand-built (e.g. the IBL one-shot bake) and doesn't fit the shaderInfo +
-	/// formats overload above. Keeps device.createRenderPipeline confined to the
-	/// factory layer.
+	/// hand-built and doesn't fit the shaderInfo + formats overload above. Keeps
+	/// device.createRenderPipeline confined to the factory layer.
 	wgpu::RenderPipeline createRenderPipeline(const wgpu::RenderPipelineDescriptor &desc);
+
+	/**
+	 * @brief Build a fullscreen-triangle pipeline for a one-shot bake (IBL).
+	 *
+	 * Loads @p shaderPath via the shader factory, builds the pipeline layout
+	 * from @p bindGroupLayouts (may be empty), and assembles a minimal
+	 * vertex-buffer-less pipeline with one color target. Returns a
+	 * @ref WebGPUPipeline that owns its shader module; null on failure. These
+	 * shaders bake once and never hot-reload, so they sit outside the registry
+	 * and the per-frame pipeline cache.
+	 */
+	[[nodiscard]] std::shared_ptr<WebGPUPipeline> createFullscreenPipeline(
+		const std::filesystem::path &shaderPath,
+		const wgpu::BindGroupLayout *bindGroupLayouts,
+		uint32_t                     bindGroupLayoutCount,
+		wgpu::TextureFormat          targetFormat,
+		const char                  *label
+	);
+
+	/**
+	 * @brief Encode one fullscreen-triangle pass (@p pipeline + optional
+	 * @p bindGroup at @group(0)) targeting @p targetView. Companion to
+	 * @ref createFullscreenPipeline; the caller owns the encoder + submit.
+	 */
+	void recordFullscreenPass(
+		wgpu::CommandEncoder &encoder,
+		wgpu::TextureView     targetView,
+		wgpu::RenderPipeline  pipeline,
+		wgpu::BindGroup       bindGroup,
+		const char           *label
+	);
 
 	/// Shared empty `wgpu::BindGroupLayout`, lazily created on first request.
 	/// Used to fill unused slots in a sparse pipeline layout (e.g. a shader

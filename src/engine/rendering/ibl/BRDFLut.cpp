@@ -3,8 +3,8 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
-#include "engine/rendering/ibl/internal/OneShotPipeline.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 #include "engine/rendering/webgpu/WebGPUTextureFactory.h"
 
@@ -15,8 +15,9 @@ bool BRDFLut::initialize(webgpu::WebGPUContext &context)
 {
 	if (m_initialized) return true;
 
-	// One-shot bake — see OneShotPipeline.h for why the IBL bakers don't go
-	// through PipelineManager. Texture/shader still flow through the
+	// One-shot bake: these shaders run once at init, never hot-reload, and use
+	// non-canonical @group(0) bindings, so they sit outside the registry / the
+	// per-frame pipeline cache. Texture/shader/pipeline still flow through the
 	// engine factories.
 	const wgpu::TextureFormat lutFormat = wgpu::TextureFormat::RG16Float;
 	m_texture = context.textureFactory().createColorRenderTarget(
@@ -31,22 +32,20 @@ bool BRDFLut::initialize(webgpu::WebGPUContext &context)
 	}
 
 	const auto shaderPath = engine::core::PathProvider::getResource("shaders/brdf_lut.wgsl");
-	auto oneShot = internal::createOneShotPipeline(
-		context, shaderPath,
+	auto oneShot = context.pipelineFactory().createFullscreenPipeline(
+		shaderPath,
 		nullptr, 0,           // no bind groups: shader builds result from vertex_index + math
 		lutFormat,
 		"BRDFLut");
-	if (!oneShot.pipeline)
+	if (!oneShot)
 	{
-		// Diagnostics already logged inside the helper.
+		// Diagnostics already logged inside the factory.
 		return false;
 	}
 
 	wgpu::CommandEncoder encoder = context.createCommandEncoder("BRDFLut.Encoder");
-	internal::recordOneShotPass(encoder, m_texture->getTextureView(), oneShot.pipeline, nullptr, "BRDFLut.RenderPass");
+	context.pipelineFactory().recordFullscreenPass(encoder, m_texture->getTextureView(), oneShot->getPipeline(), nullptr, "BRDFLut.RenderPass");
 	context.submitCommandEncoder(encoder, "BRDFLut.Commands");
-
-	oneShot.release();
 
 	m_initialized = true;
 	spdlog::info("BRDFLut baked: {}x{} RG16Float", LUT_SIZE, LUT_SIZE);

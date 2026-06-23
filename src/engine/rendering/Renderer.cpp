@@ -30,7 +30,6 @@ namespace engine::rendering
 
 Renderer::Renderer(std::shared_ptr<webgpu::WebGPUContext> context) :
 	m_context(context)
-// m_renderPassManager(std::make_unique<RenderPassManager>(*context))
 {
 }
 
@@ -51,13 +50,6 @@ bool Renderer::initialize()
 	if (!m_shadowPass->initialize())
 	{
 		spdlog::error("Failed to initialize ShadowPass");
-		return false;
-	}
-
-	m_meshPass = std::make_unique<MeshPass>(m_context);
-	if (!m_meshPass->initialize())
-	{
-		spdlog::error("Failed to initialize MeshPass");
 		return false;
 	}
 
@@ -1331,7 +1323,6 @@ std::vector<RenderPass *> Renderer::getAllPasses()
 	if (m_skyboxPass)       out.push_back(m_skyboxPass.get());
 	if (m_transparencyPass) out.push_back(m_transparencyPass.get());
 	if (m_debugPass)        out.push_back(m_debugPass.get());
-	if (m_meshPass)         out.push_back(m_meshPass.get());
 	if (m_compositePass)    out.push_back(m_compositePass.get());
 	return out;
 }
@@ -1351,9 +1342,6 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 		// Tutorial 04 - Step 12: Handle window resize
 		// When the window resizes, we need to resize all render targets and depth buffers accordingly
 	}
-
-	if (m_meshPass)
-		m_meshPass->cleanup();
 
 	if (m_compositePass)
 		m_compositePass->cleanup();

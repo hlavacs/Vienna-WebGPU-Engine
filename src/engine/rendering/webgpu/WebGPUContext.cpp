@@ -11,6 +11,21 @@
 namespace engine::rendering::webgpu
 {
 
+namespace
+{
+const char *presentModeName(wgpu::PresentMode mode)
+{
+	switch (mode)
+	{
+	case wgpu::PresentMode::Fifo:        return "Fifo (vsync)";
+	case wgpu::PresentMode::FifoRelaxed: return "FifoRelaxed";
+	case wgpu::PresentMode::Immediate:   return "Immediate (uncapped)";
+	case wgpu::PresentMode::Mailbox:     return "Mailbox";
+	default:                             return "unknown";
+	}
+}
+} // namespace
+
 template <typename T>
 T WebGPUContext::clampLimit(const char *name, T requested, T supported)
 {
@@ -36,7 +51,6 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 	m_materialFactory = std::make_unique<WebGPUMaterialFactory>(*this);
 	m_bindGroupFactory = std::make_unique<WebGPUBindGroupFactory>(*this);
 	m_samplerFactory = std::make_unique<WebGPUSamplerFactory>(*this);
-	// m_swapChainFactory = std::make_unique<WebGPUSwapChainFactory>(*this);
 	m_depthTextureFactory = std::make_unique<WebGPUDepthTextureFactory>(*this);
 	m_modelFactory = std::make_unique<WebGPUModelFactory>(*this);
 	m_depthStencilStateFactory = std::make_unique<WebGPUDepthStencilStateFactory>();
@@ -135,7 +149,8 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 	config.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
 	m_surfaceManager->reconfigure(config);
 
-	spdlog::info("[WebGPU] Initialized. Surface {}x{}, vsync: {}.", width, height, enableVSync);
+	spdlog::info("[WebGPU] Initialized. Surface {}x{}, vsync: {}, present mode: {}.",
+	             width, height, enableVSync, presentModeName(config.presentMode));
 }
 
 void WebGPUContext::initSurface(void *windowHandle)
@@ -280,6 +295,8 @@ void WebGPUContext::updatePresentMode(bool enableVSync)
 	auto currentConfig = m_surfaceManager->currentConfig();
 	currentConfig.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
 	m_surfaceManager->reconfigure(currentConfig);
+	spdlog::info("[WebGPU] Present mode updated: vsync: {}, present mode: {}.",
+	             enableVSync, presentModeName(currentConfig.presentMode));
 }
 
 void WebGPUContext::terminateSurface()
@@ -368,16 +385,6 @@ WebGPUPipelineFactory &WebGPUContext::pipelineFactory()
 {
 	return pipelineManager().factory();
 }
-
-/* Todo: Implement WebGPUSwapChainFactory
-WebGPUSwapChainFactory &WebGPUContext::swapChainFactory()
-{
-	if (!m_swapChainFactory)
-	{
-		throw std::runtime_error("WebGPUSwapChainFactory not initialized!");
-	}
-	return *m_swapChainFactory;
-}*/
 
 WebGPUModelFactory &WebGPUContext::modelFactory()
 {

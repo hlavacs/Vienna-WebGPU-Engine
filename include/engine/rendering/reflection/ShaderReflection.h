@@ -60,26 +60,6 @@ enum class TextureViewDim
 	Unknown, D1, D2, D2Array, D3, Cube, CubeArray,
 };
 
-/// Defaults: PerFrame + Custom. Annotations override via //@bind_group(...).
-enum class BindGroupReuse
-{
-	Global, PerFrame, PerCamera, PerObject, PerMaterial,
-};
-
-/// Engine role for a bind group. The canonical layout (see SKILL.md) reserves
-/// indices 0..19 for the four engine groups + future growth; custom groups
-/// (post-process inputs, pass-specific resources) start at 20.
-///
-/// Frame  -> @group(0), PerCamera. Camera matrices, time, frame index.
-/// Scene  -> @group(1), PerCamera. Lights, shadow maps, environment, cluster.
-/// Material -> @group(2), PerMaterial. Per-material uniforms + textures.
-/// Object -> @group(3), PerObject. World transform / instance index lookup.
-/// Custom -> @group(4)..@group(7), varies (wgpu-native cap: 8 bind groups/pipeline).
-enum class BindGroupRole
-{
-	Custom, Frame, Scene, Material, Object,
-};
-
 constexpr uint32_t CANONICAL_GROUP_FRAME    = 0;
 constexpr uint32_t CANONICAL_GROUP_SCENE    = 1;
 constexpr uint32_t CANONICAL_GROUP_MATERIAL = 2;
@@ -100,10 +80,11 @@ struct StructField
 struct StructLayout
 {
 	std::string              name;       ///< WGSL struct name (e.g. "PBRProperties")
-	uint32_t                 sizeBytes   = 0; ///< total size incl. tail padding
+	uint32_t                 sizeBytes   = 0; ///< total size incl. tail padding (header only when hasRuntimeArray)
 	uint32_t                 alignBytes  = 1;
 	std::vector<StructField> fields;
-	bool                     hasRuntimeArray = false; ///< trailing runtime-sized array
+	bool                     hasRuntimeArray   = false; ///< trailing runtime-sized array
+	uint32_t                 runtimeArrayStride = 0;     ///< element stride of the trailing runtime array, 0 if none
 };
 
 struct TextureBinding
@@ -127,62 +108,13 @@ struct Binding
 struct BindGroupLayout
 {
 	uint32_t              groupIndex = 0;
-	std::string           name = "Group" ;                 ///< logical name, may default to "GroupN"
-	BindGroupReuse        reuse = BindGroupReuse::PerFrame;
-	BindGroupRole         role  = BindGroupRole::Custom;
 	std::vector<Binding>  bindings;
-};
-
-struct VertexAttribute
-{
-	uint32_t    location = 0;
-	std::string name;
-	WgslType    type;
-};
-
-struct VertexLayout
-{
-	std::vector<VertexAttribute> attributes;
-};
-
-struct EntryPoint
-{
-	ShaderStage              stage = ShaderStage::Vertex;
-	std::string              name;
-	std::array<uint32_t, 3>  workgroupSize{1, 1, 1};      ///< compute only
-};
-
-/// Component class WGSL can express for a fragment write. Bit depth, sRGB
-/// encoding and normalization stay engine-side - those facts live with whoever
-/// creates the target texture (GBuffer.h, surface manager, render-target
-/// allocator). The pipeline factory uses this to validate that a caller-supplied
-/// format is at least in the right family for what the shader emits.
-enum class ComponentKind { Float, Sint, Uint };
-
-struct FragmentOutputDesc
-{
-	uint32_t       location       = 0;
-	ComponentKind  componentKind  = ComponentKind::Float;
-	uint32_t       componentCount = 4;     ///< 1..4 (R / RG / RGB / RGBA)
-};
-
-/// Pipeline state hints carried in WGSL comments. Engine-side defaults apply
-/// when unset.
-struct PipelineHints
-{
-	std::optional<std::string> depthCompare;   ///< e.g. "LessEqual"
-	std::optional<bool>        depthWrite;
-	std::optional<std::string> cullMode;       ///< "None", "Front", "Back"
 };
 
 struct ShaderReflection
 {
 	std::string                       path;
-	std::vector<EntryPoint>           entryPoints;
 	std::vector<BindGroupLayout>      bindGroups;       ///< sorted by groupIndex
-	VertexLayout                      vertexInput;
-	std::vector<FragmentOutputDesc>   fragmentOutputs;  ///< derived from fragment entry return type
-	PipelineHints                     hints;
 	std::vector<StructLayout>         structs;
 };
 

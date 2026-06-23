@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace engine::rendering::reflection
 {
@@ -65,161 +66,6 @@ uint32_t alignUp(uint32_t value, uint32_t alignment)
 	return (value + alignment - 1) & ~(alignment - 1);
 }
 
-// ---------------------------------------------------------------------------
-// Annotation decoder
-// ---------------------------------------------------------------------------
-// Annotations look like:   bind_group(name="Material", reuse=PerObject)
-//                          color_target(0, format="RGBA16Float")
-//                          depth(compare="LessEqual", write=false)
-//                          cull(mode="None")
-// We do shallow argument parsing - good enough for our purposes.
-struct AnnotationArgs
-{
-	std::string                                  name;          // function name (e.g. "bind_group")
-	std::vector<std::string>                     positional;
-	std::unordered_map<std::string, std::string> named;
-};
-
-std::optional<AnnotationArgs> parseAnnotation(const std::string &raw)
-{
-	AnnotationArgs args;
-	size_t i = 0;
-	auto skipWs = [&]() { while (i < raw.size() && std::isspace((unsigned char)raw[i])) ++i; };
-
-	skipWs();
-	while (i < raw.size() && (std::isalnum((unsigned char)raw[i]) || raw[i] == '_'))
-		args.name.push_back(raw[i++]);
-	if (args.name.empty())
-		return std::nullopt;
-	skipWs();
-	if (i >= raw.size() || raw[i] != '(')
-		return args;            // no arg list - that's allowed
-	++i;                        // consume '('
-
-	while (i < raw.size())
-	{
-		skipWs();
-		if (raw[i] == ')')
-		{
-			++i;
-			break;
-		}
-
-		// peek for "key="
-		size_t save = i;
-		std::string key;
-		while (i < raw.size() && (std::isalnum((unsigned char)raw[i]) || raw[i] == '_'))
-			key.push_back(raw[i++]);
-		skipWs();
-
-		std::string value;
-		bool isNamed = (!key.empty() && i < raw.size() && raw[i] == '=');
-		if (isNamed)
-		{
-			++i;                // consume '='
-			skipWs();
-		}
-		else
-		{
-			// Positional - rewind and re-read into `value`.
-			i = save;
-			key.clear();
-		}
-
-		// Read value: quoted string, identifier, number, or bool.
-		if (i < raw.size() && raw[i] == '"')
-		{
-			++i;
-			while (i < raw.size() && raw[i] != '"')
-				value.push_back(raw[i++]);
-			if (i < raw.size()) ++i; // consume closing quote
-		}
-		else
-		{
-			while (i < raw.size() && raw[i] != ',' && raw[i] != ')')
-				value.push_back(raw[i++]);
-			// trim trailing whitespace
-			while (!value.empty() && std::isspace((unsigned char)value.back()))
-				value.pop_back();
-		}
-
-		if (isNamed)
-			args.named.emplace(std::move(key), std::move(value));
-		else
-			args.positional.push_back(std::move(value));
-
-		skipWs();
-		if (i < raw.size() && raw[i] == ',')
-			++i;                // consume ','
-	}
-	return args;
-}
-
-BindGroupReuse parseReuse(const std::string &s)
-{
-	if (s == "Global")      return BindGroupReuse::Global;
-	if (s == "PerFrame")    return BindGroupReuse::PerFrame;
-	if (s == "PerCamera")   return BindGroupReuse::PerCamera;
-	if (s == "PerObject")   return BindGroupReuse::PerObject;
-	if (s == "PerMaterial") return BindGroupReuse::PerMaterial;
-	return BindGroupReuse::PerFrame;
-}
-
-BindGroupRole parseRole(const std::string &s)
-{
-	if (s == "Frame")    return BindGroupRole::Frame;
-	if (s == "Scene")    return BindGroupRole::Scene;
-	if (s == "Material") return BindGroupRole::Material;
-	if (s == "Object")   return BindGroupRole::Object;
-	// Old role names collapsed into Scene under the canonical layout.
-	if (s == "Light" || s == "Shadow" || s == "Environment" || s == "Cluster")
-		return BindGroupRole::Scene;
-	return BindGroupRole::Custom;
-}
-
-// ---------------------------------------------------------------------------
-// Known-struct fallback
-// ---------------------------------------------------------------------------
-struct KnownStructMeta
-{
-	const char     *structName;
-	const char     *groupName;
-	BindGroupReuse  reuse;
-	BindGroupRole   role;
-};
-
-// Canonical layout (see SKILL.md "Bind group convention"):
-//   group 0 Frame    (PerCamera) - FrameUniforms
-//   group 1 Scene    (PerCamera) - LightsBuffer / ShadowUniform / EnvironmentUniforms / ClusterCell
-//   group 2 Material (PerMaterial) - MaterialUniforms / PBRProperties
-//   group 3 Object   (PerObject) - ObjectUniforms (single) or an `array<ObjectInstance>` for GPU-driven
-// Custom shader bindings start at @group(20).
-constexpr KnownStructMeta kKnownStructs[] = {
-	{"FrameUniforms",       "Frame_BindGroup",    BindGroupReuse::PerCamera,   BindGroupRole::Frame},
-	{"ObjectUniforms",      "Object_BindGroup",   BindGroupReuse::PerObject,   BindGroupRole::Object},
-	{"MaterialUniforms",    "Material_BindGroup", BindGroupReuse::PerMaterial, BindGroupRole::Material},
-	{"PBRProperties",       "Material_BindGroup", BindGroupReuse::PerMaterial, BindGroupRole::Material},
-	// Everything scene-wide collapses into one bind group. Any of the listed
-	// structs (or shadow textures with the matching names below) anchor the
-	// group as Scene at @group(1).
-	{"LightsBuffer",        "Scene_BindGroup",    BindGroupReuse::PerCamera,   BindGroupRole::Scene},
-	{"LightBuffer",         "Scene_BindGroup",    BindGroupReuse::PerCamera,   BindGroupRole::Scene},
-	{"ShadowUniform",       "Scene_BindGroup",    BindGroupReuse::PerCamera,   BindGroupRole::Scene},
-	{"EnvironmentUniforms", "Scene_BindGroup",    BindGroupReuse::PerCamera,   BindGroupRole::Scene},
-	{"ClusterCell",         "Scene_BindGroup",    BindGroupReuse::PerCamera,   BindGroupRole::Scene},
-	{"ClusterCellAtomic",   "Scene_BindGroup",    BindGroupReuse::PerCamera,   BindGroupRole::Scene},
-	{"ClusterLightList",    "Scene_BindGroup",    BindGroupReuse::PerCamera,   BindGroupRole::Scene},
-};
-
-const KnownStructMeta *findKnownStruct(const std::string &structName)
-{
-	for (const auto &k : kKnownStructs)
-	{
-		if (structName == k.structName)
-			return &k;
-	}
-	return nullptr;
-}
 
 // ---------------------------------------------------------------------------
 // Parser
@@ -238,9 +84,6 @@ private:
 	const std::vector<Token> &m_tokens;
 	ReflectResult            &m_result;
 	size_t                    m_pos = 0;
-
-	/// Pending annotations attach to the NEXT top-level declaration.
-	std::vector<AnnotationArgs> m_pendingAnnotations;
 
 	const Token &cur() const { return m_tokens[m_pos]; }
 	const Token &peek(size_t ahead = 0) const
@@ -274,10 +117,15 @@ private:
 
 	void parseTopLevel();
 	void parseStruct();
-	void parseVarDecl(std::vector<AnnotationArgs> attrs, const std::vector<Token> &wgslAttrs);
-	void parseFn(std::vector<AnnotationArgs> annotations);
-	void skipFunctionBody();
+	void parseVariableDeclaration();
+	void parseFn();
+	void skipFunctionBody(std::vector<std::string> *outIdentifiers = nullptr);
 	void skipToSemicolonOrBrace();
+
+	/// After parsing, fill each binding's `visibility` from the entry-point call
+	/// graph: a binding is visible in a stage when that stage's entry function,
+	/// or any function it transitively calls, names the binding's variable.
+	void computeBindingVisibility();
 
 	WgslType parseType();
 	uint32_t consumeUint();
@@ -289,6 +137,12 @@ private:
 	uint32_t typeAlign(const WgslType &t);
 
 	std::unordered_map<std::string, size_t> m_structIndex; // name -> index into m_result.reflection.structs
+
+	/// Identifiers referenced in each function body (globals + callee names),
+	/// and the stage of every entry-point function. Used by
+	/// computeBindingVisibility() to resolve which stages touch which binding.
+	std::unordered_map<std::string, std::vector<std::string>> m_fnIdentifiers;
+	std::vector<std::pair<std::string, ShaderStage>>          m_entryStages;
 
 	struct WgslAttr
 	{
@@ -338,7 +192,8 @@ uint32_t Parser::computeStructLayout(StructLayout &s)
 {
 	uint32_t offset = 0;
 	uint32_t maxAlign = 1;
-	s.hasRuntimeArray = false;
+	s.hasRuntimeArray   = false;
+	s.runtimeArrayStride = 0;
 	for (auto &f : s.fields)
 	{
 		uint32_t a = typeAlign(f.type);
@@ -350,7 +205,8 @@ uint32_t Parser::computeStructLayout(StructLayout &s)
 		{
 			if (f.type.arrayLength == UINT32_MAX)
 			{
-				s.hasRuntimeArray = true;
+				s.hasRuntimeArray    = true;
+				s.runtimeArrayStride = alignUp(fsize, a); // element stride
 				fsize = 0;          // contributes no size for tail array
 			}
 			else
@@ -389,7 +245,9 @@ void Parser::finalizeStructLayouts()
 			if (it == m_structIndex.end())
 				continue;
 			b.structLayout         = m_result.reflection.structs[it->second];
-			b.minBindingSize       = b.structLayout.sizeBytes;
+			// For a runtime-sized array the min binding size wgpu enforces is the
+			// header plus one element; sizeBytes alone (header) is too small.
+			b.minBindingSize       = b.structLayout.sizeBytes + b.structLayout.runtimeArrayStride;
 		}
 	}
 }
@@ -401,17 +259,8 @@ void Parser::run()
 {
 	while (cur().kind != TokenKind::EndOfFile)
 	{
-		// Collect engine-side `//@...` annotations: they attach to the next decl.
-		if (cur().kind == TokenKind::Annotation)
-		{
-			if (auto a = parseAnnotation(cur().text))
-				m_pendingAnnotations.push_back(std::move(*a));
-			advance();
-			continue;
-		}
-
 		// Collect WGSL attributes (`@group(0)`, `@binding(1)`, `@vertex`, ...)
-		// also attach to the next decl.
+		// they attach to the next decl.
 		if (cur().kind == TokenKind::Attribute)
 		{
 			WgslAttr a;
@@ -460,6 +309,7 @@ void Parser::run()
 	}
 
 	finalizeStructLayouts();
+	computeBindingVisibility();
 }
 
 void Parser::parseTopLevel()
@@ -467,27 +317,20 @@ void Parser::parseTopLevel()
 	if (check(TokenKind::Keyword, "struct"))
 	{
 		parseStruct();
-		m_pendingAnnotations.clear();
 		m_pendingWgslAttrs.clear();
 	}
 	else if (check(TokenKind::Keyword, "var"))
 	{
-		auto ann   = std::move(m_pendingAnnotations);
-		auto wattr = std::vector<Token>{};                  // unused now - attrs are in m_pendingWgslAttrs
-		m_pendingAnnotations.clear();
-		parseVarDecl(std::move(ann), wattr);
+		parseVariableDeclaration();
 	}
 	else if (check(TokenKind::Keyword, "fn"))
 	{
-		auto ann = std::move(m_pendingAnnotations);
-		m_pendingAnnotations.clear();
-		parseFn(std::move(ann));
+		parseFn();
 	}
 	else if (check(TokenKind::Keyword, "const") || check(TokenKind::Keyword, "let"))
 	{
 		// Top-level const/let we don't care about; skip to ';'.
 		skipToSemicolonOrBrace();
-		m_pendingAnnotations.clear();
 		m_pendingWgslAttrs.clear();
 	}
 	else
@@ -521,7 +364,7 @@ void Parser::skipToSemicolonOrBrace()
 	}
 }
 
-void Parser::skipFunctionBody()
+void Parser::skipFunctionBody(std::vector<std::string> *outIdentifiers)
 {
 	// Expects to be sitting on '{'.
 	if (!check(TokenKind::Punct, "{")) return;
@@ -535,6 +378,10 @@ void Parser::skipFunctionBody()
 			advance();
 			if (depth == 0) return;
 			continue;
+		}
+		else if (outIdentifiers && cur().kind == TokenKind::Identifier)
+		{
+			outIdentifiers->push_back(cur().text);
 		}
 		advance();
 	}
@@ -746,7 +593,7 @@ void Parser::parseStruct()
 	m_result.reflection.structs.push_back(std::move(s));
 }
 
-void Parser::parseVarDecl(std::vector<AnnotationArgs> annotations, const std::vector<Token> & /*unused*/)
+void Parser::parseVariableDeclaration()
 {
 	// Extract @group / @binding from WGSL attributes already collected.
 	std::optional<uint32_t> group;
@@ -880,58 +727,24 @@ void Parser::parseVarDecl(std::vector<AnnotationArgs> annotations, const std::ve
 	{
 		BindGroupLayout newBg;
 		newBg.groupIndex = *group;
-		newBg.name       = "Group" + std::to_string(*group);
 		bgs.push_back(newBg);
 		bg = &bgs.back();
-	}
-
-	// Apply pending bind_group annotation (covers all bindings in this group).
-	for (const auto &ann : annotations)
-	{
-		if (ann.name != "bind_group") continue;
-		auto it = ann.named.find("name");
-		if (it != ann.named.end()) bg->name = it->second;
-		it = ann.named.find("reuse");
-		if (it != ann.named.end()) bg->reuse = parseReuse(it->second);
-		it = ann.named.find("role");
-		if (it != ann.named.end()) bg->role = parseRole(it->second);
-	}
-
-	// Known-struct fallback if the group still has the default name.
-	if (bg->name.rfind("Group", 0) == 0 && !b.structLayout.name.empty())
-	{
-		if (auto *ks = findKnownStruct(b.structLayout.name))
-		{
-			bg->name  = ks->groupName;
-			bg->reuse = ks->reuse;
-			bg->role  = ks->role;
-		}
 	}
 
 	bg->bindings.push_back(std::move(b));
 }
 
-void Parser::parseFn(std::vector<AnnotationArgs> annotations)
+void Parser::parseFn()
 {
 	// Determine stage from the collected WGSL attributes.
-	ShaderStage             stage    = ShaderStage::Vertex;
-	bool                    isEntry  = false;
-	std::array<uint32_t, 3> workgrp  = {1, 1, 1};
+	ShaderStage stage   = ShaderStage::Vertex;
+	bool        isEntry = false;
 
 	for (const auto &wa : m_pendingWgslAttrs)
 	{
-		if (wa.name == "vertex")    { stage = ShaderStage::Vertex;   isEntry = true; }
+		if (wa.name == "vertex")        { stage = ShaderStage::Vertex;   isEntry = true; }
 		else if (wa.name == "fragment") { stage = ShaderStage::Fragment; isEntry = true; }
 		else if (wa.name == "compute")  { stage = ShaderStage::Compute;  isEntry = true; }
-		else if (wa.name == "workgroup_size")
-		{
-			for (size_t i = 0; i < wa.args.size() && i < 3; ++i)
-			{
-				uint32_t v = 0;
-				std::from_chars(wa.args[i].data(), wa.args[i].data() + wa.args[i].size(), v);
-				workgrp[i] = v;
-			}
-		}
 	}
 	m_pendingWgslAttrs.clear();
 
@@ -958,158 +771,64 @@ void Parser::parseFn(std::vector<AnnotationArgs> annotations)
 		}
 	}
 
-	// Parse the optional return type. Two shapes for fragment entries:
-	//   fn fs_main(...) -> @location(0) vec4f { ... }      single-output
-	//   fn fs_main(...) -> FragmentOutput { ... }           struct-output
-	std::optional<uint32_t> directReturnLocation;
-	WgslType                directReturnType;
-	std::string             structReturnTypeName;
-	if (check(TokenKind::Punct, "-"))
-	{
-		advance();
-		if (check(TokenKind::Punct, ">")) advance();
-
-		// Optional @location(N) on direct return.
-		while (check(TokenKind::Attribute))
-		{
-			std::string attrName = cur().text;
-			advance();
-			std::vector<std::string> args;
-			std::string buf;
-			if (check(TokenKind::Punct, "("))
-			{
-				advance();
-				int depth = 1;
-				while (cur().kind != TokenKind::EndOfFile && depth > 0)
-				{
-					if (check(TokenKind::Punct, "("))
-					{
-						++depth;
-						buf += cur().text;
-					}
-					else if (check(TokenKind::Punct, ")"))
-					{
-						--depth;
-						if (depth > 0) buf += cur().text;
-					}
-					else if (check(TokenKind::Punct, ",") && depth == 1)
-					{
-						args.push_back(buf);
-						buf.clear();
-					}
-					else
-					{
-						buf += cur().text;
-					}
-					advance();
-				}
-				if (!buf.empty()) args.push_back(buf);
-			}
-			if (attrName == "location" && !args.empty())
-			{
-				uint32_t loc = 0;
-				std::from_chars(args[0].data(), args[0].data() + args[0].size(), loc);
-				directReturnLocation = loc;
-			}
-		}
-
-		// Return type token. Could be a primitive (vec4f, vec4<f32>, …) or a
-		// struct name. parseType handles both - if it returns a userTypeName we
-		// look that up later in the struct table.
-		if (cur().kind == TokenKind::Identifier || cur().kind == TokenKind::Keyword)
-		{
-			directReturnType = parseType();
-			if (directReturnType.primitive == WgslPrimitive::Unknown
-				&& !directReturnType.userTypeName.empty())
-			{
-				structReturnTypeName = directReturnType.userTypeName;
-			}
-		}
-	}
-
-	// Skip anything between the return type and the function body.
+	// Skip anything between the return type and the function body, capturing the
+	// identifiers the body references so binding visibility can be resolved from
+	// the call graph after parsing.
 	while (cur().kind != TokenKind::EndOfFile && !check(TokenKind::Punct, "{"))
 		advance();
-	skipFunctionBody();
+	std::vector<std::string> bodyIdentifiers;
+	skipFunctionBody(&bodyIdentifiers);
+	m_fnIdentifiers[fnName] = std::move(bodyIdentifiers);
 
 	if (!isEntry)
 		return;
 
-	EntryPoint ep;
-	ep.stage = stage;
-	ep.name  = std::move(fnName);
-	ep.workgroupSize = workgrp;
-	m_result.reflection.entryPoints.push_back(std::move(ep));
+	m_entryStages.emplace_back(fnName, stage);
+}
 
-	// Fragment outputs: derive ComponentKind + count from the return type.
-	// Bit depth / sRGB / normalization aren't WGSL-expressible and stay engine-side.
-	auto deriveFragmentOutput = [](const WgslType &t, std::optional<uint32_t> loc) -> std::optional<FragmentOutputDesc>
-	{
-		if (t.primitive == WgslPrimitive::Unknown) return std::nullopt;
-		FragmentOutputDesc d;
-		d.location = loc.value_or(0);
-		switch (t.primitive)
-		{
-			case WgslPrimitive::F32:   d.componentKind = ComponentKind::Float; d.componentCount = 1; break;
-			case WgslPrimitive::Vec2F: d.componentKind = ComponentKind::Float; d.componentCount = 2; break;
-			case WgslPrimitive::Vec3F: d.componentKind = ComponentKind::Float; d.componentCount = 3; break;
-			case WgslPrimitive::Vec4F: d.componentKind = ComponentKind::Float; d.componentCount = 4; break;
-			case WgslPrimitive::I32:   d.componentKind = ComponentKind::Sint;  d.componentCount = 1; break;
-			case WgslPrimitive::Vec2I: d.componentKind = ComponentKind::Sint;  d.componentCount = 2; break;
-			case WgslPrimitive::Vec3I: d.componentKind = ComponentKind::Sint;  d.componentCount = 3; break;
-			case WgslPrimitive::Vec4I: d.componentKind = ComponentKind::Sint;  d.componentCount = 4; break;
-			case WgslPrimitive::U32:   d.componentKind = ComponentKind::Uint;  d.componentCount = 1; break;
-			case WgslPrimitive::Vec2U: d.componentKind = ComponentKind::Uint;  d.componentCount = 2; break;
-			case WgslPrimitive::Vec3U: d.componentKind = ComponentKind::Uint;  d.componentCount = 3; break;
-			case WgslPrimitive::Vec4U: d.componentKind = ComponentKind::Uint;  d.componentCount = 4; break;
-			default: return std::nullopt;
-		}
-		return d;
-	};
+void Parser::computeBindingVisibility()
+{
+	if (m_result.reflection.bindGroups.empty() || m_entryStages.empty())
+		return;
 
-	if (stage == ShaderStage::Fragment)
+	// Identifiers reachable from one entry function, following calls into other
+	// user-defined functions (callee names appear as identifiers in the body).
+	auto closureFor = [&](const std::string &entryFn)
 	{
-		if (!structReturnTypeName.empty())
+		std::unordered_set<std::string> visitedFns;
+		std::unordered_set<std::string> referenced;
+		std::vector<std::string>        stack{entryFn};
+		while (!stack.empty())
 		{
-			// Struct return - one FragmentOutputDesc per @location field.
-			auto it = m_structIndex.find(structReturnTypeName);
-			if (it != m_structIndex.end())
+			std::string fn = stack.back();
+			stack.pop_back();
+			if (!visitedFns.insert(fn).second) continue;
+			auto it = m_fnIdentifiers.find(fn);
+			if (it == m_fnIdentifiers.end()) continue;
+			for (const auto &id : it->second)
 			{
-				const auto &s = m_result.reflection.structs[it->second];
-				for (const auto &f : s.fields)
-				{
-					if (!f.location) continue;
-					if (auto d = deriveFragmentOutput(f.type, f.location))
-						m_result.reflection.fragmentOutputs.push_back(*d);
-				}
+				referenced.insert(id);
+				if (m_fnIdentifiers.count(id)) stack.push_back(id);
 			}
 		}
-		else if (directReturnType.primitive != WgslPrimitive::Unknown)
-		{
-			if (auto d = deriveFragmentOutput(directReturnType, directReturnLocation))
-				m_result.reflection.fragmentOutputs.push_back(*d);
-		}
+		return referenced;
+	};
+
+	std::unordered_map<uint32_t, std::unordered_set<std::string>> stageRefs;
+	for (const auto &[fn, stage] : m_entryStages)
+	{
+		auto refs = closureFor(fn);
+		stageRefs[static_cast<uint32_t>(stage)].insert(refs.begin(), refs.end());
 	}
 
-	// Pipeline hints carried in WGSL comments (depth/cull). color_target is
-	// intentionally dropped - target formats live with whoever creates the
-	// target texture, not the shader author.
-	for (const auto &ann : annotations)
-	{
-		if (ann.name == "depth")
+	for (auto &bg : m_result.reflection.bindGroups)
+		for (auto &b : bg.bindings)
 		{
-			auto it = ann.named.find("compare");
-			if (it != ann.named.end()) m_result.reflection.hints.depthCompare = it->second;
-			it = ann.named.find("write");
-			if (it != ann.named.end())
-				m_result.reflection.hints.depthWrite = (it->second == "true");
+			ShaderStageFlags vis = 0;
+			for (const auto &[stageBit, refs] : stageRefs)
+				if (refs.count(b.wgslName)) vis |= stageBit;
+			b.visibility = vis;
 		}
-		else if (ann.name == "cull")
-		{
-			auto it = ann.named.find("mode");
-			if (it != ann.named.end()) m_result.reflection.hints.cullMode = it->second;
-		}
-	}
 }
 
 } // namespace
@@ -1139,75 +858,6 @@ ReflectResult reflectWgsl(std::string_view source, std::string path)
 			[](const Binding &a, const Binding &b) { return a.bindingIndex < b.bindingIndex; }
 		);
 	}
-	std::sort(
-		result.reflection.fragmentOutputs.begin(),
-		result.reflection.fragmentOutputs.end(),
-		[](const FragmentOutputDesc &a, const FragmentOutputDesc &b) { return a.location < b.location; }
-	);
-
-	// Canonical-layout validation applies only to render pipelines. Compute
-	// pipelines own their own bind-group layouts (no Frame/Scene/Material/Object
-	// roles), so a compute shader putting LightsBuffer at @group(0) is not a
-	// convention violation. Detect by looking for a Compute entry point.
-	bool isComputeOnly = !result.reflection.entryPoints.empty();
-	for (const auto &ep : result.reflection.entryPoints)
-	{
-		if (ep.stage != ShaderStage::Compute) { isComputeOnly = false; break; }
-	}
-	if (isComputeOnly) return result;
-
-	// Standalone-shader opt-out. Shaders marked with a `// @standalone-shader`
-	// comment anywhere in the source are exempt from canonical-layout
-	// validation: they build their own pipeline layout (no engine roles),
-	// never get bound through the Frame/Scene/Material/Object convention,
-	// and don't participate in the per-frame orchestration. Used for
-	// one-shot baker shaders (IBL prefilter, irradiance convolution, BRDF
-	// LUT) that legitimately put their inputs at @group(0).
-	if (source.find("@standalone-shader") != std::string_view::npos) return result;
-
-	// Canonical-layout validation. SKILL.md fixes the four engine roles at known
-	// indices and reserves the [0..ENGINE_GROUPS_END) range; custom groups must
-	// start at ENGINE_GROUPS_END. Misplacements are surfaced as diagnostics so
-	// the offending shader can be migrated without papering over the drift.
-	auto expectedIndex = [](BindGroupRole r) -> std::optional<uint32_t> {
-		switch (r) {
-			case BindGroupRole::Frame:    return CANONICAL_GROUP_FRAME;
-			case BindGroupRole::Scene:    return CANONICAL_GROUP_SCENE;
-			case BindGroupRole::Material: return CANONICAL_GROUP_MATERIAL;
-			case BindGroupRole::Object:   return CANONICAL_GROUP_OBJECT;
-			default:                      return std::nullopt;
-		}
-	};
-	for (const auto &bg : result.reflection.bindGroups)
-	{
-		if (auto want = expectedIndex(bg.role); want && *want != bg.groupIndex)
-		{
-			// Only flag misplacement when the group lives inside the engine
-			// range [0..ENGINE_GROUPS_END). A bind group at a custom index
-			// (>= ENGINE_GROUPS_END) whose role was inferred from a struct
-			// name (e.g. skybox declares its own `EnvironmentUniforms` at
-			// @group(4)) is a known-struct false positive — the shader
-			// intentionally repurposes a familiar struct for a custom binding.
-			if (bg.groupIndex < ENGINE_GROUPS_END)
-			{
-				Diagnostic d;
-				d.message = "bind group '" + bg.name + "' should be at @group("
-					+ std::to_string(*want) + ") per the engine convention but is at @group("
-					+ std::to_string(bg.groupIndex) + ")";
-				result.diagnostics.push_back(std::move(d));
-			}
-		}
-		if (bg.role == BindGroupRole::Custom && bg.groupIndex < ENGINE_GROUPS_END)
-		{
-			Diagnostic d;
-			d.message = "custom bind group '" + bg.name + "' at @group("
-				+ std::to_string(bg.groupIndex) + ") collides with the engine-reserved range [0.."
-				+ std::to_string(ENGINE_GROUPS_END - 1) + "]; start custom groups at @group("
-				+ std::to_string(ENGINE_GROUPS_END) + ")";
-			result.diagnostics.push_back(std::move(d));
-		}
-	}
-
 	return result;
 }
 

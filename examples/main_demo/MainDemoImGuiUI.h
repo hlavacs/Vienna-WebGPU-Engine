@@ -19,6 +19,7 @@
 #include "engine/scene/nodes/ModelRenderNode.h"
 
 #include "DayNightCycle.h"
+#include "OrbitCamera.h"
 
 namespace demo
 {
@@ -28,7 +29,8 @@ class MainDemoImGuiUI
   public:
 	MainDemoImGuiUI(
 		engine::GameEngine &engine,
-		std::shared_ptr<DayNightCycle> dayNightCycle = nullptr
+		std::shared_ptr<DayNightCycle> dayNightCycle = nullptr,
+		std::shared_ptr<demo::OrbitCameraController> orbitController = nullptr
 	);
 	~MainDemoImGuiUI();
 
@@ -82,6 +84,8 @@ class MainDemoImGuiUI
 	// when set.
 	std::shared_ptr<DayNightCycle> m_dayNightCycle;
 
+	std::shared_ptr<demo::OrbitCameraController> m_orbitController;
+
 	// Per-panel visibility, toggled from the menu bar (and each window's own
 	// close button). Defaults: everyday panels on, debug-heavy ones off.
 	bool m_showCameraLighting = true;
@@ -90,6 +94,7 @@ class MainDemoImGuiUI
 	bool m_showFlock          = false;
 	bool m_showDayNight       = false; // scene-specific (SeaKeep); off by default
 	bool m_showPerformance    = true;
+	bool m_screenshotRequested = false;
 	bool m_showPassControls   = false;
 	bool m_showShadowDebug    = false;
 

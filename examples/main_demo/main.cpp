@@ -309,7 +309,7 @@ int main(int argc, char **argv)
 	// Load demo scene first (async) and wait for it to complete
 	auto load = sceneManager->loadScene("SeaKeep");
 
-	auto mainDemoUI = std::make_shared<demo::MainDemoImGuiUI>(engine, dayNightCycle);
+	auto mainDemoUI = std::make_shared<demo::MainDemoImGuiUI>(engine, dayNightCycle, getOrbitController());
 	setupImGui(imguiManager, mainDemoUI);
 
 	// Run engine

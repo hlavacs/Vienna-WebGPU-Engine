@@ -7,7 +7,7 @@
 
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/Texture.h"
-#include "engine/rendering/ibl/internal/OneShotPipeline.h"
+#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
 #include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -210,12 +210,12 @@ bool PrefilteredEnv::bake(
 
 	const wgpu::BindGroupLayout &bgl = bglInfo->getLayout();
 	const auto shaderPath = engine::core::PathProvider::getResource("shaders/env_prefilter.wgsl");
-	auto oneShot = internal::createOneShotPipeline(
-		context, shaderPath,
+	auto oneShot = context.pipelineFactory().createFullscreenPipeline(
+		shaderPath,
 		&bgl, 1,
 		dstFormat,
 		"PrefilteredEnv");
-	if (!oneShot.pipeline)
+	if (!oneShot)
 	{
 		return false;
 	}
@@ -237,8 +237,8 @@ bool PrefilteredEnv::bake(
 	wgpu::CommandEncoder encoder = context.createCommandEncoder("PrefilteredEnv.Encoder");
 	for (const auto &m : mips)
 	{
-		internal::recordOneShotPass(
-			encoder, m.destinationView, oneShot.pipeline, m.bindGroup, "PrefilteredEnv.RenderPass");
+		context.pipelineFactory().recordFullscreenPass(
+			encoder, m.destinationView, oneShot->getPipeline(), m.bindGroup, "PrefilteredEnv.RenderPass");
 	}
 	context.submitCommandEncoder(encoder, "PrefilteredEnv.Commands");
 
@@ -248,7 +248,6 @@ bool PrefilteredEnv::bake(
 		if (m.bindGroup)       m.bindGroup.release();
 		// roughnessUniform is a WebGPUBuffer shared_ptr — destruction handles release.
 	}
-	oneShot.release();
 
 	spdlog::info("PrefilteredEnv baked: {}x{} RGBA16Float, {} mips",
 		srcWidth, srcHeight, mipLevels);

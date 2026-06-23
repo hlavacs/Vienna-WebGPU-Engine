@@ -7,7 +7,7 @@
 
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/Texture.h"
-#include "engine/rendering/ibl/internal/OneShotPipeline.h"
+#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
 #include "engine/rendering/BindGroupEnums.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
@@ -116,12 +116,12 @@ bool IrradianceMap::bake(
 
 	const wgpu::BindGroupLayout &bgl = bglInfo->getLayout();
 	const auto shaderPath = engine::core::PathProvider::getResource("shaders/env_irradiance.wgsl");
-	auto oneShot = internal::createOneShotPipeline(
-		context, shaderPath,
+	auto oneShot = context.pipelineFactory().createFullscreenPipeline(
+		shaderPath,
 		&bgl, 1,
 		dstFormat,
 		"IrradianceMap");
-	if (!oneShot.pipeline)
+	if (!oneShot)
 	{
 		return false;
 	}
@@ -131,11 +131,10 @@ bool IrradianceMap::bake(
 	wgpu::BindGroup bindGroup    = buildBindGroup(context, bgl, sourceEquirect, sampler);
 
 	wgpu::CommandEncoder encoder = context.createCommandEncoder("IrradianceMap.Encoder");
-	internal::recordOneShotPass(encoder, m_texture->getTextureView(), oneShot.pipeline, bindGroup, "IrradianceMap.RenderPass");
+	context.pipelineFactory().recordFullscreenPass(encoder, m_texture->getTextureView(), oneShot->getPipeline(), bindGroup, "IrradianceMap.RenderPass");
 	context.submitCommandEncoder(encoder, "IrradianceMap.Commands");
 
 	bindGroup.release();
-	oneShot.release();
 
 	spdlog::info("IrradianceMap baked: {}x{} RGBA16Float", WIDTH, HEIGHT);
 	return true;

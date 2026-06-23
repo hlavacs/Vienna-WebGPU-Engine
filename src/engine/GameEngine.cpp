@@ -213,6 +213,7 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 		return false;
 	}
 
+	m_isFullscreen = options.fullscreen;
 	SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
 	m_context->initialize(m_window, options.enableVSync, options.overrideDeviceLimits);
@@ -378,7 +379,35 @@ void GameEngine::processEvents()
 		{
 			onWindowResize(event.window.data1, event.window.data2);
 		}
+		else if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F11)
+		{
+			toggleFullscreen();
+		}
 	}
+}
+
+void GameEngine::toggleFullscreen()
+{
+	if (!m_window)
+		return;
+
+	m_isFullscreen = !m_isFullscreen;
+	if (m_isFullscreen)
+	{
+		// Pin a real display mode (non-null = exclusive fullscreen in SDL3, as
+		// opposed to borderless desktop) so the present path can bypass the
+		// windowed compositor and a vsync-off Immediate swapchain can run
+		// uncapped. The follow-up SDL resize event reconfigures the surface.
+		SDL_DisplayID display = SDL_GetDisplayForWindow(m_window);
+		if (const SDL_DisplayMode *mode = SDL_GetDesktopDisplayMode(display))
+			SDL_SetWindowFullscreenMode(m_window, mode);
+		SDL_SetWindowFullscreen(m_window, true);
+	}
+	else
+	{
+		SDL_SetWindowFullscreen(m_window, false);
+	}
+	spdlog::info("F11: exclusive fullscreen {}", m_isFullscreen ? "ON" : "OFF");
 }
 
 void GameEngine::onWindowResize(int width, int height)

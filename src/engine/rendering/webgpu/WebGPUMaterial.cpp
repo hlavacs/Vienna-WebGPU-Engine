@@ -104,16 +104,27 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 		m_bindGroupSignature = std::move(signature);
 	}
 
-	auto materialBindGroupBindingIndex = layout->getBindingIndex(bindgroup::entry::defaults::MATERIAL_PROPERTIES);
-	if(!materialBindGroupBindingIndex.has_value())
+	// The material properties uniform is the Material group's uniform-buffer
+	// binding (binding 0 by convention). Located by kind rather than by WGSL
+	// variable name, which varies per shader (u_material, unlitMaterialUniforms).
+	std::optional<uint32_t> materialUniformBinding;
+	for (const auto &b : layout->getBindings())
 	{
-		spdlog::warn("WebGPUMaterial: Material bind group layout missing MATERIAL binding");
+		if (b.type == BindingType::UniformBuffer)
+		{
+			materialUniformBinding = b.bindingIndex;
+			break;
+		}
+	}
+	if (!materialUniformBinding.has_value())
+	{
+		spdlog::warn("WebGPUMaterial: Material bind group layout has no uniform-buffer binding");
 		return;
 	}
 
 	// Update material properties buffer
 	m_materialBindGroup->updateBuffer(
-		static_cast<uint32_t>(materialBindGroupBindingIndex.value()),
+		materialUniformBinding.value(),
 		reinterpret_cast<const uint8_t *>(cpuMaterial.getPropertiesData()),
 		cpuMaterial.getPropertiesSize(),
 		0

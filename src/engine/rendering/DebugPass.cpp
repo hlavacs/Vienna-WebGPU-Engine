@@ -29,13 +29,9 @@ bool DebugPass::initialize()
 {
 	spdlog::info("Initializing DebugPass");
 
-	// Get debug line shader from registry (assume a default exists, e.g., DEBUG_PRIMITIVE)
-	m_shaderInfo = m_context->shaderRegistry().getShader(shader::defaults::DEBUG);
-	if (!m_shaderInfo || !m_shaderInfo->isValid())
-	{
-		spdlog::error("Debug primitive shader not found in registry");
+	m_shaderInfo = getValidatedShader(shader::defaults::DEBUG);
+	if (!m_shaderInfo)
 		return false;
-	}
 
 	m_debugBindGroup = m_context->bindGroupFactory().createBindGroup(
 		m_shaderInfo->getBindGroupLayout(bindgroup::defaults::DEBUG)

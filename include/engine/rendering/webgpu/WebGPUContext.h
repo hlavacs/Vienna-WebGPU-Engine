@@ -116,7 +116,6 @@ class WebGPUContext
 	[[nodiscard]] WebGPUBufferFactory &bufferFactory();
 	/** @brief Returns the bind group factory. */
 	[[nodiscard]] WebGPUBindGroupFactory &bindGroupFactory();
-	// [[nodiscard]] WebGPUSwapChainFactory &swapChainFactory();
 	/** @brief Returns the depth texture factory. */
 	[[nodiscard]] WebGPUDepthTextureFactory &depthTextureFactory();
 	/** @brief Returns the depth-stencil state factory. */
@@ -225,7 +224,6 @@ class WebGPUContext
 	std::unique_ptr<WebGPUSamplerFactory> m_samplerFactory;
 	std::unique_ptr<WebGPUBufferFactory> m_bufferFactory;
 	std::unique_ptr<WebGPUBindGroupFactory> m_bindGroupFactory;
-	// std::unique_ptr<WebGPUSwapChainFactory> m_swapChainFactory;
 	std::unique_ptr<WebGPUDepthTextureFactory> m_depthTextureFactory;
 	std::unique_ptr<WebGPUDepthStencilStateFactory> m_depthStencilStateFactory;
 	std::unique_ptr<WebGPURenderPassFactory> m_renderPassFactory;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include <webgpu/webgpu.hpp>
@@ -97,6 +98,15 @@ class RenderPass
 		m_context(std::move(context))
 	{
 	}
+
+	/**
+	 * @brief Fetch a registered shader by name and verify it compiled.
+	 *
+	 * Centralises the lookup + validity check + error log every pass runs in
+	 * initialize(). Returns null on failure so the caller can simply
+	 * `if (!getValidatedShader(name)) return false;`.
+	 */
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUShaderInfo> getValidatedShader(std::string_view shaderName) const;
 
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
 	bool                                   m_enabled = true;

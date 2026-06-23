@@ -32,7 +32,7 @@ char WgslLexer::advance()
 	return c;
 }
 
-void WgslLexer::skipWhitespaceAndComments(std::vector<Token> &out)
+void WgslLexer::skipWhitespaceAndComments()
 {
 	while (!isAtEnd())
 	{
@@ -44,30 +44,9 @@ void WgslLexer::skipWhitespaceAndComments(std::vector<Token> &out)
 		}
 		if (c == '/' && peek(1) == '/')
 		{
-			// Line comment. Could be a regular comment or an engine annotation
-			// `//@...`. Preserve annotations as their own token because the
-			// reflector decodes them for bind-group metadata, color targets, etc.
-			advance(); advance();                       // consume "//"
-			if (!isAtEnd() && peek() == '@')
-			{
-				advance();                              // consume the '@'
-				const uint32_t lineStart   = m_line;
-				const uint32_t columnStart = m_column;
-				std::string raw;
-				while (!isAtEnd() && peek() != '\n')
-					raw.push_back(advance());
-				Token t;
-				t.kind   = TokenKind::Annotation;
-				t.text   = std::move(raw);
-				t.line   = lineStart;
-				t.column = columnStart;
-				out.push_back(std::move(t));
-			}
-			else
-			{
-				while (!isAtEnd() && peek() != '\n')
-					advance();
-			}
+			// Line comment - skip to end of line.
+			while (!isAtEnd() && peek() != '\n')
+				advance();
 			continue;
 		}
 		if (c == '/' && peek(1) == '*')
@@ -180,26 +159,12 @@ Token WgslLexer::readPunct()
 	return t;
 }
 
-Token WgslLexer::readStringLiteral()
-{
-	Token t;
-	t.kind   = TokenKind::StringLiteral;
-	t.line   = m_line;
-	t.column = m_column;
-	advance(); // opening "
-	while (!isAtEnd() && peek() != '"')
-		t.text.push_back(advance());
-	if (!isAtEnd())
-		advance(); // closing "
-	return t;
-}
-
 std::vector<Token> WgslLexer::tokenize()
 {
 	std::vector<Token> out;
 	while (!isAtEnd())
 	{
-		skipWhitespaceAndComments(out);
+		skipWhitespaceAndComments();
 		if (isAtEnd())
 			break;
 
@@ -215,10 +180,6 @@ std::vector<Token> WgslLexer::tokenize()
 		else if (c == '@')
 		{
 			out.push_back(readAttribute());
-		}
-		else if (c == '"')
-		{
-			out.push_back(readStringLiteral());
 		}
 		else
 		{

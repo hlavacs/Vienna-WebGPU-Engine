@@ -4,7 +4,6 @@
 #include <string>
 #include <string_view>
 
-#include "engine/rendering/cache/ResourceCache.h"
 #include "engine/rendering/cache/ResourceSlot.h"
 
 namespace engine::rendering::cache
@@ -12,32 +11,15 @@ namespace engine::rendering::cache
 
 namespace
 {
-// Compile-time exercise of every public ResourceCache / ResourceSlot /
-// Handle surface. No runtime effect — purely there so a syntax slip in
-// the headers is caught by the engine library build instead of leaking
-// into the first downstream factory that tries to instantiate the
-// templates.
+// Compile-time exercise of the ResourceSlot / Handle surface. No runtime
+// effect — purely there so a syntax slip in the headers is caught by the
+// engine library build instead of leaking into the first downstream factory
+// that tries to instantiate the templates.
 struct CacheCompileProbe
 {
 	struct R {};
 	[[maybe_unused]] static void run()
 	{
-		// Weak-ref cache — for memory-pressure-sensitive use cases like
-		// material instances.
-		ResourceCache<int, R> c;
-		c.setConfig({1, 16});
-		(void)c.config();
-		auto r = c.getOrCreate(1, []() { return std::make_shared<R>(); });
-		(void)r;
-		c.notifyFrame();
-		(void)c.clean();
-		(void)c.size();
-		(void)c.aliveCount();
-		(void)c.stats();
-		c.invalidate(1);
-		c.invalidateIf([](const int &) { return false; });
-		c.clear();
-
 		// Slot + Handle — for hot-reloadable resources where the factory
 		// keeps strong refs and callers hold opaque handles. Exercise the
 		// full surface: build_fn auto-rebuild, frame-counter tracking,

@@ -18,9 +18,7 @@ enum class TokenKind
 	Identifier,
 	IntegerLiteral,
 	FloatLiteral,
-	StringLiteral,             ///< quoted string inside an //@ annotation
 	Attribute,                 ///< an @ident token (e.g. @group, @binding, @vertex)
-	Annotation,                ///< an //@ engine-side annotation comment, stored raw
 	Keyword,                   ///< struct, var, fn, const, let, return, if, for, while...
 	Punct,                     ///< (, ), {, }, <, >, ,, ;, :, =, etc.
 };
@@ -33,9 +31,8 @@ struct Token
 	uint32_t    column = 0;
 };
 
-/// Tokenises WGSL source. Strips whitespace and ordinary comments; preserves
-/// `//@...` annotation comments as `Annotation` tokens carrying the raw text
-/// (everything after the `//@`, untrimmed) so the parser can decode them.
+/// Tokenises WGSL source. Strips whitespace and comments (including the former
+/// `//@` engine annotations, which are no longer a thing).
 class WgslLexer
 {
 public:
@@ -53,13 +50,12 @@ private:
 	[[nodiscard]] bool isAtEnd() const { return m_pos >= m_source.size(); }
 	[[nodiscard]] char peek(size_t ahead = 0) const;
 	char advance();
-	void skipWhitespaceAndComments(std::vector<Token> &out);
+	void skipWhitespaceAndComments();
 
 	Token readIdentifierOrKeyword();
 	Token readNumber();
 	Token readAttribute();              ///< @ident
 	Token readPunct();
-	Token readStringLiteral();
 };
 
 } // namespace engine::rendering::reflection

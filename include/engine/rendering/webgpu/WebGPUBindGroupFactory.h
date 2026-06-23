@@ -80,7 +80,7 @@ class WebGPUBindGroupFactory
 	 * @return WebGPUBindGroupLayoutInfo containing the layout and descriptor.
 	 */
 	std::shared_ptr<WebGPUBindGroupLayoutInfo> createBindGroupLayoutInfo(
-		std::string name, 
+		std::string name,
 		BindGroupType type,
 		BindGroupReuse reuse,
 		std::vector<wgpu::BindGroupLayoutEntry> entries,
@@ -150,6 +150,21 @@ class WebGPUBindGroupFactory
 		const std::map<BindGroupBindingKey, BindGroupResource> &resourceOverrides = {},
 		const std::shared_ptr<WebGPUMaterial> &material = nullptr,
 		const char *label = nullptr
+	);
+
+	/**
+	 * @brief Create a wrapped bind group from a layout info + explicit wgpu
+	 *        entries the caller has already assembled.
+	 *
+	 * For passes that build their own @c wgpu::BindGroupEntry list (custom
+	 * resource layouts) yet already hold the @ref WebGPUBindGroupLayoutInfo.
+	 * Returns the @ref WebGPUBindGroup wrapper directly so callers no longer
+	 * hand-construct it. @p buffers are kept alive by the returned wrapper.
+	 */
+	std::shared_ptr<WebGPUBindGroup> createBindGroup(
+		const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo,
+		const std::vector<wgpu::BindGroupEntry> &entries,
+		std::vector<std::shared_ptr<WebGPUBuffer>> buffers = {}
 	);
 
 	/**

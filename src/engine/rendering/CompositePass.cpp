@@ -35,13 +35,9 @@ bool CompositePass::initialize()
 {
 	spdlog::info("Initializing CompositePass");
 
-	// Get fullscreen quad shader from registry
-	m_shaderInfo = m_context->shaderRegistry().getShader(shader::defaults ::FULLSCREEN_QUAD);
-	if (!m_shaderInfo || !m_shaderInfo->isValid())
-	{
-		spdlog::error("Fullscreen quad shader not found in registry");
+	m_shaderInfo = getValidatedShader(shader::defaults::FULLSCREEN_QUAD);
+	if (!m_shaderInfo)
 		return false;
-	}
 
 	// Create pipeline using the pipeline manager
 	m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
@@ -88,14 +84,9 @@ bool CompositePass::initialize()
 		postEntries.push_back(e);
 	}
 
-	wgpu::BindGroup rawPostBindGroup = m_context->bindGroupFactory().createBindGroup(
-		postLayout->getLayout(),
-		postEntries
-	);
-
-	m_postBindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
-		rawPostBindGroup,
+	m_postBindGroup = m_context->bindGroupFactory().createBindGroup(
 		postLayout,
+		postEntries,
 		std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{m_postUniformBuffer}
 	);
 
@@ -264,15 +255,9 @@ std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
 		entries.push_back(entry);
 	}
 
-	wgpu::BindGroup rawBindGroup = m_context->bindGroupFactory().createBindGroup(
-		bindGroupLayout->getLayout(),
-		entries
-	);
-
-	auto bindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
-		rawBindGroup,
+	auto bindGroup = m_context->bindGroupFactory().createBindGroup(
 		bindGroupLayout,
-		std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{}
+		entries
 	);
 
 	m_bindGroupCache[cacheKey] = bindGroup;

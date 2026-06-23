@@ -18,11 +18,9 @@
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/GBufferPass.h"
-#include "engine/rendering/MeshPass.h"
 #include "engine/rendering/ibl/BRDFLut.h"
 #include "engine/rendering/ibl/IrradianceMap.h"
 #include "engine/rendering/ibl/PrefilteredEnv.h"
-// #include "engine/rendering/RenderPassManager.h" ToDo: future use
 #include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/SkyboxPass.h"
 #include "engine/rendering/Texture.h"
@@ -102,12 +100,6 @@ class Renderer
 	 * @return Reference to ShadowPass.
 	 */
 	ShadowPass &getShadowPass() { return *m_shadowPass; }
-
-	/**
-	 * @brief Get the MeshPass instance.
-	 * @return Reference to MeshPass.
-	 */
-	MeshPass &getMeshPass() { return *m_meshPass; }
 
 	/**
 	 * @brief Get the GBufferPass instance (deferred rendering).
@@ -233,10 +225,8 @@ class Renderer
 	);
 
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
-	// std::unique_ptr<RenderPassManager> m_renderPassManager; // ToDo: future use
 	std::unique_ptr<ShadowPass> m_shadowPass;
 	std::unique_ptr<SkyboxPass> m_skyboxPass;
-	std::unique_ptr<MeshPass> m_meshPass;
 	std::unique_ptr<GBufferPass> m_gBufferPass;
 	std::unique_ptr<DebugPass> m_debugPass;
 	std::unique_ptr<CompositionPass> m_compositionPass;

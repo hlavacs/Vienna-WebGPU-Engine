@@ -112,6 +112,11 @@ class GameEngine
 	void gameLoop();
 	void processEvents();
 	void onWindowResize(int width, int height);
+
+	/// Toggle exclusive fullscreen at the desktop display mode. Bypasses the
+	/// windowed compositor (DWM) so a vsync-off / Immediate present mode can run
+	/// uncapped. Bound to F11. Surface resize is handled by the normal resize path.
+	void toggleFullscreen();
 	void updateScene(float deltaTime);
 	void renderFrame(float deltaTime);
 	void updateFrameStats(float frameDelta);
@@ -122,6 +127,7 @@ class GameEngine
   private:
 	// Core subsystems
 	SDL_Window *m_window = nullptr;
+	bool m_isFullscreen = false;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUContext> m_context;
 	std::shared_ptr<engine::resources::ResourceManager> m_resourceManager;
 	std::shared_ptr<engine::scene::SceneManager> m_sceneManager;

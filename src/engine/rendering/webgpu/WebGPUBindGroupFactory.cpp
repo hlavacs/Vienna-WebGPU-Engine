@@ -300,4 +300,15 @@ wgpu::BindGroup WebGPUBindGroupFactory::createBindGroup(
 	return group;
 }
 
+std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
+	const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo,
+	const std::vector<wgpu::BindGroupEntry> &entries,
+	std::vector<std::shared_ptr<WebGPUBuffer>> buffers
+)
+{
+	wgpu::BindGroupDescriptor desc = createBindGroupDescriptor(layoutInfo->getLayout(), entries);
+	wgpu::BindGroup group = m_context.getDevice().createBindGroup(desc);
+	return std::make_shared<WebGPUBindGroup>(group, layoutInfo, std::move(buffers));
+}
+
 } // namespace engine::rendering::webgpu

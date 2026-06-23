@@ -21,12 +21,9 @@ SkyboxPass::SkyboxPass(std::shared_ptr<webgpu::WebGPUContext> context) :
 
 bool SkyboxPass::initialize()
 {
-	m_shaderInfo = m_context->shaderRegistry().getShader(shader::defaults::SKYBOX);
-	if (!m_shaderInfo || !m_shaderInfo->isValid())
-	{
-		spdlog::error("Skybox shader not found in registry");
+	m_shaderInfo = getValidatedShader(shader::defaults::SKYBOX);
+	if (!m_shaderInfo)
 		return false;
-	}
 
 	return true;
 }

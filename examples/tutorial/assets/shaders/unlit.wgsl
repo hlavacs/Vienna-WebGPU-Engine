@@ -7,13 +7,13 @@
 // Tutorial 01 - Step 3: Define vertex output structure
 
 
-// Tutorial 01 - Step 4: Declare bind group 0 - Frame uniforms
+// Tutorial 01 - Step 4: Include bind group 0 - Frame uniforms (engine://core/frame_uniforms.wgsl)
 
 
-// Tutorial 01 - Step 5: Declare bind group 1 - Object uniforms
+// Tutorial 01 - Step 5: Include bind group 3 - Object uniforms (engine://core/object_uniforms.wgsl)
 
 
-// Tutorial 01 - Step 6: Declare bind group 2 - Material uniforms
+// Tutorial 01 - Step 6: Declare bind group 2 - Material uniforms (hand-written for this unlit shader)
 
 
 // Tutorial 01 - Step 7: Write vertex shader

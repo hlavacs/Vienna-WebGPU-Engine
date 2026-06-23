@@ -36,12 +36,9 @@ CompositionPass::CompositionPass(std::shared_ptr<webgpu::WebGPUContext> context)
 
 bool CompositionPass::initialize()
 {
-	m_shader = m_context->shaderRegistry().getShader(shader::defaults::COMPOSITION_DEFERRED);
-	if (!m_shader || !m_shader->isValid())
-	{
-		spdlog::error("CompositionPass: '{}' shader is missing or invalid", shader::defaults::COMPOSITION_DEFERRED);
+	m_shader = getValidatedShader(shader::defaults::COMPOSITION_DEFERRED);
+	if (!m_shader)
 		return false;
-	}
 	spdlog::info("CompositionPass initialized");
 	return true;
 }

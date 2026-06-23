@@ -1,7 +1,29 @@
 # Shader System v1 — codegen-driven, C++ structs as source of truth
 
-**Status:** drafting · **Tracking:** Task #3 (replaces the reflection-first
-direction; supersedes `doc/SpecShaderReflection.md`)
+> **As-built note (supersedes the contradicting parts of the draft below).**
+> The implemented system is a hybrid of this doc and the older reflection
+> direction:
+> - **Engine structs (Frame/Scene/Material/Object) are codegen + `#include`** as
+>   described here. The C++ `StructDescriptor`s emit `resources/shaders/core/*.wgsl`;
+>   shaders pull them in by `engine://core/...`.
+> - **Bind-group layouts are built by reflecting the include-expanded WGSL**
+>   (`WgslReflector`), not from a hand-written builder and not from a separate
+>   C++ layout table. So runtime reflection *is* on the shader-load path - the
+>   "no runtime reflection" rule below applies only to struct *layout* (which
+>   still comes from the descriptors via the validator), not to bind-group
+>   discovery.
+> - **Shaders are registered with a declarative `ShaderDescriptor`**
+>   (`WebGPUShaderFactory::buildFromDescriptor`) that carries only what WGSL
+>   cannot: pipeline state (depth/cull/color formats), custom-group name/reuse,
+>   and material texture slot/fallback overlays. There is no `EngineBindGroup`
+>   builder chain anymore.
+> - **Custom groups** live at `@group(4..7)` (wgpu-native's 8-group cap), not the
+>   "20+" mentioned later in this doc.
+> - **The validator** (`ShaderValidator`) runs on the expanded WGSL and is
+>   **fatal in Debug/CI, compiled out in Release** (gated by
+>   `ENGINE_SHADER_VALIDATION`).
+
+**Status:** implemented (hybrid - see note above) · supersedes `doc/SpecShaderReflection.md`
 
 This doc is the single authoritative reference for how shaders, bind groups,
 includes, and hot reload work in this engine going forward. The previous

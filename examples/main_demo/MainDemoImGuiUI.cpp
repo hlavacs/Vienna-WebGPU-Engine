@@ -50,8 +50,9 @@ inline ImTextureID toImTextureID(const wgpu::TextureView &view)
 
 MainDemoImGuiUI::MainDemoImGuiUI(
 	engine::GameEngine &engine,
-	std::shared_ptr<DayNightCycle> dayNightCycle
-) : m_engine(engine), m_dayNightCycle(std::move(dayNightCycle))
+	std::shared_ptr<DayNightCycle> dayNightCycle,
+	std::shared_ptr<demo::OrbitCameraController> orbitController
+) : m_engine(engine), m_dayNightCycle(std::move(dayNightCycle)), m_orbitController(std::move(orbitController))
 {
 	m_rootNode = engine.getSceneManager()->getActiveScene()->getRoot();
 	for (const auto &child : m_rootNode->getChildrenOfType<engine::scene::nodes::LightNode>())
@@ -142,6 +143,12 @@ void MainDemoImGuiUI::render(const std::shared_ptr<engine::scene::SceneManager> 
 		renderDayNightWindow();
 	}
 
+	if (m_screenshotRequested && m_orbitController)
+	{
+		m_orbitController->screenShot();
+	}
+		m_screenshotRequested = false;
+
 	if (m_showPerformance)  renderPerformanceWindow();
 	if (m_showPassControls) renderPassControlsWindow();
 	if (m_showShadowDebug)  renderShadowDebugWindow();
@@ -184,6 +191,7 @@ void MainDemoImGuiUI::renderMainMenuBar(const std::shared_ptr<engine::scene::Sce
 
 	if (ImGui::BeginMenu("Debug"))
 	{
+		ImGui::MenuItem("Screenshot (U)",   nullptr, &m_screenshotRequested);
 		ImGui::MenuItem("Performance",   nullptr, &m_showPerformance);
 		ImGui::MenuItem("Pass Controls", nullptr, &m_showPassControls);
 		ImGui::MenuItem("Shadow Maps",   nullptr, &m_showShadowDebug);

@@ -44,3 +44,6 @@ private
 # ImGui state — window positions / sizes / collapsed-flags, rewritten by
 # the runtime every session. Committing it just creates spurious diffs.
 imgui.ini
+
+# Local History extension snapshots (editor-generated, not source).
+.history/

@@ -77,7 +77,6 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
 	return out;
 }
 
-//@depth(compare="LessEqual", write=false)
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4f {
 	if (u_environment.params.z < 0.5) {

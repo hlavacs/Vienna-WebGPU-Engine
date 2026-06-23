@@ -5,8 +5,11 @@
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
+#include <spdlog/spdlog.h>
+
 #include "engine/rendering/Vertex.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUShaderFactory.h"
 
 #ifdef None
 #undef None
@@ -64,10 +67,9 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	// Fragment state.
 	//
 	// Two sources of truth for color attachment formats:
-	//   1. shaderInfo->getColorTargetFormats() - declared via
-	//      WebGPUShaderBuilder::addColorTarget() for shaders that write to
-	//      multiple targets or need a fixed format (e.g. G-buffer geometry).
-	//      Wins when non-empty.
+	//   1. shaderInfo->getColorTargetFormats() - from ShaderDescriptor::colorTargetFormats
+	//      for shaders that write to multiple targets or need a fixed format
+	//      (e.g. G-buffer geometry). Wins when non-empty.
 	//   2. colorFormat parameter - the single-target fallback used by every
 	//      plain forward / post-process pipeline.
 	wgpu::ColorTargetState colorTarget{};
@@ -306,4 +308,89 @@ wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engin
 	vertexLayout.attributes = attributes.data();
 	return vertexLayout;
 }
+
+std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createFullscreenPipeline(
+	const std::filesystem::path &shaderPath,
+	const wgpu::BindGroupLayout *bindGroupLayouts,
+	uint32_t                     bindGroupLayoutCount,
+	wgpu::TextureFormat          targetFormat,
+	const char                  *label
+)
+{
+	wgpu::ShaderModule module = m_context.shaderFactory().loadShaderModule(shaderPath);
+	if (!module)
+	{
+		spdlog::error("createFullscreenPipeline: failed to load shader '{}'", shaderPath.string());
+		return nullptr;
+	}
+
+	wgpu::PipelineLayout layout = createPipelineLayout(bindGroupLayouts, bindGroupLayoutCount);
+
+	wgpu::ColorTargetState colorTarget{};
+	colorTarget.format    = targetFormat;
+	colorTarget.writeMask = wgpu::ColorWriteMask::All;
+	colorTarget.blend     = nullptr;
+
+	wgpu::FragmentState fragState{};
+	fragState.module        = module;
+	fragState.entryPoint    = "fs_main";
+	fragState.constantCount = 0;
+	fragState.constants     = nullptr;
+	fragState.targetCount   = 1;
+	fragState.targets       = &colorTarget;
+
+	wgpu::RenderPipelineDescriptor pipeDesc{};
+	pipeDesc.label               = label;
+	pipeDesc.layout              = layout;
+	pipeDesc.vertex.module       = module;
+	pipeDesc.vertex.entryPoint   = "vs_main";
+	pipeDesc.vertex.bufferCount  = 0;
+	pipeDesc.vertex.buffers      = nullptr;
+	pipeDesc.primitive.topology  = wgpu::PrimitiveTopology::TriangleList;
+	pipeDesc.primitive.frontFace = wgpu::FrontFace::CCW;
+	pipeDesc.primitive.cullMode  = wgpu::CullMode::None;
+	pipeDesc.depthStencil        = nullptr;
+	pipeDesc.multisample.count   = 1;
+	pipeDesc.multisample.mask    = ~0u;
+	pipeDesc.fragment            = &fragState;
+
+	wgpu::RenderPipeline pipeline = createRenderPipeline(pipeDesc);
+	if (!pipeline)
+	{
+		spdlog::error("createFullscreenPipeline: failed to create pipeline '{}'", label);
+		if (layout) layout.release();
+		module.release();
+		return nullptr;
+	}
+
+	return std::make_shared<WebGPUPipeline>(pipeline, layout, module);
+}
+
+void WebGPUPipelineFactory::recordFullscreenPass(
+	wgpu::CommandEncoder &encoder,
+	wgpu::TextureView     targetView,
+	wgpu::RenderPipeline  pipeline,
+	wgpu::BindGroup       bindGroup,
+	const char           *label
+)
+{
+	wgpu::RenderPassColorAttachment colorAttach{};
+	colorAttach.view       = targetView;
+	colorAttach.loadOp     = wgpu::LoadOp::Clear;
+	colorAttach.storeOp    = wgpu::StoreOp::Store;
+	colorAttach.clearValue = wgpu::Color{0.0, 0.0, 0.0, 0.0};
+
+	wgpu::RenderPassDescriptor rpDesc{};
+	rpDesc.label                  = label;
+	rpDesc.colorAttachmentCount   = 1;
+	rpDesc.colorAttachments       = &colorAttach;
+	rpDesc.depthStencilAttachment = nullptr;
+
+	wgpu::RenderPassEncoder pass = encoder.beginRenderPass(rpDesc);
+	pass.setPipeline(pipeline);
+	if (bindGroup) pass.setBindGroup(0, bindGroup, 0, nullptr);
+	pass.draw(3, 1, 0, 0); // fullscreen triangle from vertex_index
+	pass.end();
+}
+
 } // namespace engine::rendering::webgpu

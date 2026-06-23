@@ -64,45 +64,24 @@ int main(int argc, char **argv)
 	}
 
 #pragma region Tutorial Shader Registering
-	auto shaderInfo =
-		shaderFactory
-			.begin(
-				"unlit",
-				engine::rendering::ShaderType::Unlit,
-				PathProvider::getShaders("unlit.wgsl"), // Adjust based on tutorial
-				"vs_main",
-				"fs_main",
-				engine::rendering::VertexLayout::PositionNormalUV,
-				true,  // enableDepth
-				true   // cullBackFaces
-			)
-			.addFrameBindGroup()
-			.addObjectBindGroup()
-			.addBindGroup(
-				engine::rendering::bindgroup::defaults::MATERIAL,
-				engine::rendering::BindGroupReuse::PerObject,
-				engine::rendering::BindGroupType::Material
-			)
-			.addUniform(
-				engine::rendering::bindgroup::entry::defaults::MATERIAL_PROPERTIES,
-				sizeof(engine::rendering::UnlitProperties),
-				WGPUShaderStage_Fragment
-			)
-			.addSampler(
-				"textureSampler",
-				wgpu::SamplerBindingType::Filtering,
-				WGPUShaderStage_Fragment
-			)
-			.addMaterialTexture(
-				"baseColorTexture",
-				engine::rendering::MaterialTextureSlots::DIFFUSE, // material slot name
-				wgpu::TextureSampleType::Float,
-				wgpu::TextureViewDimension::_2D,
-				WGPUShaderStage_Fragment
-			) // Tutorial 02 - Step 6: Add custom bind group registration here
-			.build();
+	// The bind groups are read straight from unlit.wgsl by reflection: Frame@0
+	// and Object@3 come from the engine `#include`s, Material@2 from the structs
+	// the shader declares. The descriptor only adds what WGSL cannot say - here,
+	// that the base color texture at @group(2) @binding(2) is the material's
+	// DIFFUSE slot with a white fallback.
+	engine::rendering::webgpu::ShaderDescriptor unlitShader;
+	unlitShader.name         = "unlit";
+	unlitShader.type         = engine::rendering::ShaderType::Unlit;
+	unlitShader.path         = PathProvider::getShaders("unlit.wgsl");
+	unlitShader.vertexLayout = engine::rendering::VertexLayout::PositionNormalUV;
 
-	shaderRegistry.registerShader(shaderInfo);
+	engine::rendering::webgpu::BindGroupMeta material;
+	material.bindings[2] = {engine::rendering::MaterialTextureSlots::DIFFUSE, glm::vec3(1.0f, 1.0f, 1.0f)};
+	unlitShader.groups[2] = material;
+	// Tutorial 02 - Step 6: add a custom @group(4) entry here, e.g.
+	//   unlitShader.groups[4] = {"TileUniforms", BindGroupType::Custom, BindGroupReuse::PerObject, {}};
+
+	shaderRegistry.registerShader(shaderFactory.buildFromDescriptor(unlitShader));
 #pragma endregion
 
 #pragma region Tutorial Material Creation and Setup

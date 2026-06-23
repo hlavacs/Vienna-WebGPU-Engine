@@ -34,12 +34,9 @@ GBufferPass::GBufferPass(
 
 bool GBufferPass::initialize()
 {
-	m_shader = m_context->shaderRegistry().getShader(shader::defaults::GBUFFER);
-	if (!m_shader || !m_shader->isValid())
-	{
-		spdlog::error("GBufferPass: '{}' shader is missing or invalid", shader::defaults::GBUFFER);
+	m_shader = getValidatedShader(shader::defaults::GBUFFER);
+	if (!m_shader)
 		return false;
-	}
 	spdlog::info("GBufferPass initialized ({}x{})", m_gBuffer->getWidth(), m_gBuffer->getHeight());
 	return true;
 }
