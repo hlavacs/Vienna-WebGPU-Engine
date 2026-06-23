@@ -168,12 +168,16 @@ fn cs_assign(@builtin(global_invocation_id) gid: vec3<u32>) {
     let zMinCluster = viewDepthToClusterZ(nearViewZ);
     let zMaxCluster = viewDepthToClusterZ(farViewZ);
 
-    // Screen-space radius in NDC: range / |z| * focal_length. The focal-length
-    // proxy is projectionMatrix[0][0] (2 * near / (right - left)) for a
-    // standard perspective. Conservative on the high side.
-    let ndcRadius = light.range / max(abs(viewPos.z), 0.001) * u_frame.projectionMatrix[0][0];
-    let cellsX = max(1u, u32(ceil(ndcRadius * 0.5 * f32(CLUSTER_GRID_DIM_X))));
-    let cellsY = max(1u, u32(ceil(ndcRadius * 0.5 * f32(CLUSTER_GRID_DIM_Y))));
+    // Screen-space radius of the light sphere in NDC half-units: range / |z| *
+    // focal_length. X and Y need their own focal length - projectionMatrix[0][0]
+    // is 1 / (aspect * tan(fovY/2)) while [1][1] is 1 / tan(fovY/2), so they
+    // differ by the aspect ratio. Using one axis for both under-covers the taller
+    // axis and clips the light's vertical reach (the cut-off flocks).
+    let invViewZ = 1.0 / max(abs(viewPos.z), 0.001);
+    let ndcRadiusX = light.range * invViewZ * u_frame.projectionMatrix[0][0];
+    let ndcRadiusY = light.range * invViewZ * u_frame.projectionMatrix[1][1];
+    let cellsX = max(1u, u32(ceil(ndcRadiusX * 0.5 * f32(CLUSTER_GRID_DIM_X))));
+    let cellsY = max(1u, u32(ceil(ndcRadiusY * 0.5 * f32(CLUSTER_GRID_DIM_Y))));
 
     let xMin = u32(max(0, i32(centerXY.x) - i32(cellsX)));
     let xMax = min(CLUSTER_GRID_DIM_X - 1u, centerXY.x + cellsX);
