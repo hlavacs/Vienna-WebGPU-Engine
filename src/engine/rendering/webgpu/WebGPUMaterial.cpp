@@ -3,6 +3,7 @@
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 #include <spdlog/spdlog.h>
 
 namespace engine::rendering::webgpu
@@ -90,18 +91,51 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 		return;
 	}
 
+	// Refresh the GPU texture dictionary from the CPU material. A texture slot can
+	// change after creation (the editor assigns or clears a slot), and a WebGPU bind
+	// group is immutable - a new texture view only takes effect once the bind group
+	// is rebuilt. createFromHandle is cached, so an unchanged slot resolves to the
+	// same WebGPUTexture and texturesChanged stays false.
+	bool texturesChanged = false;
+	{
+		auto &textureFactory = m_context.textureFactory();
+		std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> refreshed;
+		for (const auto &[slotName, textureSlot] : cpuMaterial.getTextureSlots())
+		{
+			std::shared_ptr<WebGPUTexture> gpuTexture;
+			if (textureSlot.handle.valid() && textureSlot.handle.get().has_value())
+			{
+				WebGPUTextureOptions textureOptions{};
+				textureOptions.colorSpace = textureSlot.colorSpace;
+				gpuTexture = textureFactory.createFromHandle(textureSlot.handle, textureOptions);
+			}
+			else
+			{
+				gpuTexture = textureFactory.getWhiteTexture();
+			}
+			refreshed[slotName] = gpuTexture;
+			auto existing = m_textures.find(slotName);
+			if (existing == m_textures.end() || existing->second != gpuTexture)
+				texturesChanged = true;
+		}
+		if (refreshed.size() != m_textures.size())
+			texturesChanged = true;
+		m_textures = std::move(refreshed);
+	}
+
 	// Cache invalidation: layout pointer covers the "shader-name swap"
 	// case; the Handle's version covers the "in-place reload via
-	// SlotCache::replace" case. Either change forces a rebuild — neither
-	// silently sneaks an out-of-date bind group through to a draw.
+	// SlotCache::replace" case; texturesChanged covers an edited texture slot.
+	// Any of them forces a rebuild — none silently sneaks an out-of-date bind
+	// group through to a draw.
 	engine::rendering::cache::BindGroupSignature signature;
 	signature.add(layout);
 	signature.addVersioned(m_shaderHandle);
 
-	if (!m_materialBindGroup || m_bindGroupSignature != signature)
+	if (!m_materialBindGroup || m_bindGroupSignature != signature || texturesChanged)
 	{
 		m_materialBindGroup = m_context.bindGroupFactory().createBindGroup(layout, {}, shared_from_this());
-		m_bindGroupSignature = std::move(signature);
+		m_bindGroupSignature = signature;
 	}
 
 	// The material properties uniform is the Material group's uniform-buffer

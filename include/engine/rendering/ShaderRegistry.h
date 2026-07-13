@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <webgpu/webgpu.hpp>
 
@@ -137,6 +138,10 @@ class ShaderRegistry
 	 * @return True if shader exists.
 	 */
 	[[nodiscard]] bool hasShader(const std::string &name) const;
+
+	/// Names of all registered shaders (built-in + custom), in cache order.
+	/// Used by tooling such as the editor's material shader picker.
+	[[nodiscard]] std::vector<std::string> getShaderNames() const { return m_shaders.keys(); }
 
 	/// Drop every cached shader's resource pointer but keep the slot + name
 	/// alive. Future `getShader(name)` after a soft-clear returns nullptr

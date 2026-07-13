@@ -127,6 +127,10 @@ Select example scheme, press `⌘+R` to run.
 - **[Bind Group System](doc/BindGroupSystem.md)** - Rendering pipeline details
 - **[Core Principles](doc/CorePrinciples.md)** - Design philosophy and best practices
 
+### Tools
+- **[Scene Editor](doc/SceneEditor.md)** - Dockable editor: scenes, projects, settings, and compiling a project into a standalone game
+- **[Node Type System](doc/NodeTypeSystem.md)** - Custom node types and graceful missing-type handling
+
 ## Path Management
 
 The engine uses `PathProvider` for cross-platform path resolution:

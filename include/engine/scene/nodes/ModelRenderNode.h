@@ -92,6 +92,29 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 	const std::filesystem::path &getModelPath() const { return m_modelPath; }
 
 	/**
+	 * @brief Set a model file path to (lazily) load from. Invalidates any current
+	 * model handle so needsLoading() reports true until the scene loads it.
+	 * Used by the scene loader and editor to assign a model by path at runtime.
+	 * @param modelPath Path to the model file.
+	 */
+	void setModelPath(const std::filesystem::path &modelPath)
+	{
+		m_modelPath = modelPath;
+		m_loadFromPath = true;
+		m_modelHandle = engine::core::Handle<engine::rendering::Model>();
+	}
+
+	/**
+	 * @brief Name of the project-library material to assign to this model's
+	 * submeshes once it loads. Resolved by SceneManager against the MaterialManager
+	 * after the mesh is ready; empty keeps the model's own (OBJ/glTF) materials.
+	 */
+	void setMaterialRef(const std::string &materialName) { m_materialRef = materialName; }
+
+	/** @brief The pending project-material reference (empty = none). */
+	const std::string &getMaterialRef() const { return m_materialRef; }
+
+	/**
 	 * @brief Set the loaded model handle (called by SceneManager after loading).
 	 * @param handle The loaded model handle
 	 */
@@ -179,6 +202,7 @@ class ModelRenderNode : public RenderNode, public SpatialNode
 	engine::core::Handle<engine::rendering::Model> m_modelHandle;
 	uint32_t m_renderLayer = 0;
 	std::filesystem::path m_modelPath; // Path for lazy loading
+	std::string m_materialRef;         // project material to assign after load (by name)
 	bool m_loadFromPath = false;	   // Flag to indicate loading from path
 };
 

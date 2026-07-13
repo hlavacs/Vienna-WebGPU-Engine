@@ -60,6 +60,26 @@
             "cppStandard": "c++17",
             "intelliSenseMode": "windows-msvc-x64",
             "compileCommands": "${workspaceFolder}/examples/build/tutorial/Windows/Debug/compile_commands.json" 
+        },        
+        {
+            "name": "Win64 MSVC - Scene Editor (Debug)",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/external/glm",
+                "${workspaceFolder}/external/SDL/include",
+                "${workspaceFolder}/external/webgpu/include",
+                "${workspaceFolder}/external/imgui",
+                "${workspaceFolder}/external/spdlog/include",
+                "${workspaceFolder}/external/tinygltf",
+                "${workspaceFolder}/external/sdl3webgpu",
+                "${workspaceFolder}/examples/scene_editor",
+                "${workspaceFolder}/examples/build/scene_editor/Windows/Debug/engine/external/SDL/include-config-debug/build_config",
+                "${workspaceFolder}/examples/build/scene_editor/Windows/Debug/engine/external/SDL/include-revision"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64",
+            "compileCommands": "${workspaceFolder}/examples/build/scene_editor/Windows/Debug/compile_commands.json" 
         },
         
         /* {

@@ -142,23 +142,41 @@ void Renderer::prefilterEnvironment(const std::shared_ptr<webgpu::WebGPUTexture>
 
 	// Identity by raw wgpu handle: shared_ptr wrappers swap when the factory
 	// hot-reloads but the underlying texture stays the same. If the same
-	// source comes through twice in a row, the prior bake is still valid.
+	// source is already active, the prior bake is still valid.
 	WGPUTexture rawHandle = static_cast<WGPUTexture>(sourceEquirect->getTexture());
 	if (rawHandle == m_prefilteredEnvSource && m_prefilteredEnv.getTexture()) return;
 
+	// Reuse a previously-baked set for this environment. Two cameras (e.g. the
+	// editor camera with the default env and the scene's main camera with a
+	// skybox) can alternate every frame; without this memo the expensive
+	// prefilter/irradiance maps would re-bake on every camera, every frame.
+	if (auto it = m_iblCache.find(rawHandle); it != m_iblCache.end() && it->second.prefiltered.getTexture())
+	{
+		m_prefilteredEnv = it->second.prefiltered;
+		m_irradianceMap = it->second.irradiance;
+		m_prefilteredEnvSource = rawHandle;
+		return;
+	}
+
 	if (!m_prefilteredEnv.bake(*m_context, sourceEquirect))
 	{
-		spdlog::warn("Renderer: env prefilter bake failed — IBL specular falls back to flat env");
+		spdlog::warn("Renderer: env prefilter bake failed - IBL specular falls back to flat env");
 		return;
 	}
 	// Same env source produces both prefilter (specular) and irradiance map
-	// (diffuse), so bake them together — if one fails the other still has a
+	// (diffuse), so bake them together - if one fails the other still has a
 	// chance to produce a valid texture.
 	if (!m_irradianceMap.bake(*m_context, sourceEquirect))
 	{
-		spdlog::warn("Renderer: env irradiance bake failed — IBL diffuse falls back to raw env sample");
+		spdlog::warn("Renderer: env irradiance bake failed - IBL diffuse falls back to raw env sample");
 	}
 	m_prefilteredEnvSource = rawHandle;
+
+	// Cache the baked set. Bounded: if many distinct environments are tried, drop
+	// the cache (keeping only this newest entry) so memory cannot grow unbounded.
+	if (m_iblCache.size() >= 8)
+		m_iblCache.clear();
+	m_iblCache[rawHandle] = IblSet{m_prefilteredEnv, m_irradianceMap};
 }
 
 void Renderer::resetCachedBindings()
@@ -186,6 +204,7 @@ void Renderer::resetCachedBindings()
 	// fresh sampler binding it — usually fine, but during the clear-all
 	// flow the user expects a true reset.
 	m_prefilteredEnvSource = nullptr;
+	m_iblCache.clear(); // force a fresh bake on the next env supply
 
 	// Depth buffers reference render-target identity from the texture
 	// factory's cache. After clearAll() the next frame would try to bind
@@ -538,11 +557,10 @@ bool Renderer::renderFrame(
 		FrameProfiler::Scope s(m_profiler, "Frame.StartFrame");
 		startFrame();
 	}
-	if (renderTargets.empty())
-	{
-		spdlog::warn("renderFrame called with no render targets");
-		return false;
-	}
+	// No render targets (e.g. every camera disabled) is a valid state: skip the
+	// per-camera work below but still run the composite + UI pass and present, so
+	// the acquired surface is released and the editor stays responsive instead of
+	// deadlocking on the next surface acquire.
 
 	// === PHASE 2: Prepare Render Targets ===
 	std::unordered_map<uint64_t, RenderTarget> uniqueRenderTargets;
@@ -1006,7 +1024,8 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 	const std::optional<Texture::Handle> &cpuTarget,
 	const math::Rect &viewport,
 	wgpu::TextureFormat format,
-	wgpu::TextureUsage /* usageFlags */
+	wgpu::TextureUsage /* usageFlags */,
+	const std::optional<glm::uvec2> &renderSize
 )
 {
 	// Render targets are textures we render to (instead of directly to screen).
@@ -1052,10 +1071,15 @@ std::shared_ptr<webgpu::WebGPUTexture> Renderer::updateRenderTexture(
 		}
 	}
 
-	// OPTION 2: Use viewport-relative dimensions (for split-screen, picture-in-picture)
-	// Calculate texture size based on viewport percentage of surface
-	uint32_t targetWidth = static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.width());
-	uint32_t targetHeight = static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.height());
+	// OPTION 2: Use an explicit render size (editor viewport panel) when given,
+	// otherwise viewport-relative dimensions (split-screen, picture-in-picture)
+	// derived from the surface.
+	uint32_t targetWidth = renderSize.has_value()
+		? std::max(1u, renderSize->x)
+		: static_cast<uint32_t>(m_surfaceTexture->getWidth() * viewport.width());
+	uint32_t targetHeight = renderSize.has_value()
+		? std::max(1u, renderSize->y)
+		: static_cast<uint32_t>(m_surfaceTexture->getHeight() * viewport.height());
 
 	if (targetWidth == 0 || targetHeight == 0)
 	{
@@ -1108,7 +1132,8 @@ void Renderer::renderToTexture(
 				wgpu::TextureUsage::RenderAttachment | // Can render to it
 				wgpu::TextureUsage::TextureBinding |   // Can sample from it in shaders
 				wgpu::TextureUsage::CopySrc			   // Can copy data from it (for readback)
-			)
+			),
+			renderTarget.renderSize
 		);
 	}
 
@@ -1325,6 +1350,12 @@ std::vector<RenderPass *> Renderer::getAllPasses()
 	if (m_debugPass)        out.push_back(m_debugPass.get());
 	if (m_compositePass)    out.push_back(m_compositePass.get());
 	return out;
+}
+
+std::shared_ptr<webgpu::WebGPUTexture> Renderer::getCameraOutputTexture(uint64_t cameraId) const
+{
+	auto it = m_frameCache.finalTextures.find(cameraId);
+	return it != m_frameCache.finalTextures.end() ? it->second : nullptr;
 }
 
 void Renderer::onResize(uint32_t width, uint32_t height)

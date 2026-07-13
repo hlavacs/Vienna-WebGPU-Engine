@@ -98,8 +98,22 @@ bool Node::isEnabled() const { return enabled; }
 
 void Node::addChild(Ptr child, bool keepWorldTransform)
 {
-	if (!child)
+	if (!child || child.get() == this)
 		return;
+
+	// Reject cycles: a node cannot be reparented under one of its own
+	// descendants (that would orphan a loop from the scene root).
+	for (Node *ancestor = this; ancestor; ancestor = ancestor->parent)
+	{
+		if (ancestor == child.get())
+			return;
+	}
+
+	// Detach from any previous parent first so it is not owned by two parents
+	// at once. The by-value `child` argument keeps it alive across the erase.
+	if (child->parent && child->parent != this)
+		child->parent->removeChild(child);
+
 	child->parent = this;
 	child->setEngineContext(m_engineContext); // This will propagate to all descendants
 	children.push_back(child);

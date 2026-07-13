@@ -46,7 +46,7 @@ graph LR
     Start([Frame Start]) --> Loop{For each camera}
     
     Loop --> Shadow["[1] Shadow Pass"]
-    Shadow --> Mesh["[2] Mesh Pass"]
+    Shadow --> Mesh["[2] Scene Passes<br/>(GBuffer → Composition)"]
     Mesh --> Debug["[3] Debug Pass"]
     Debug --> Post["[4] Post-Processing ⭐<br/>← THIS TUTORIAL"]
     
@@ -100,15 +100,15 @@ This method performs one-time setup: loading the shader and creating the sampler
 
 1. **Sampler Reuse** - We get a pre-made sampler (`getClampLinearSampler()`) instead of creating one. This is more efficient and reuses GPU resources.
    
-2. **Shader Registry Pattern** - Instead of loading shaders directly, we use `shaderRegistry().getShader()`. This allows:
+2. **Validated Shader Fetch** - `RenderPass::getValidatedShader()` looks the shader up in the registry and confirms it compiled. This allows:
    - Centralized shader management
    - Hot-reloading support (shaders can be updated without recompiling)
-   - Bind group layout information already parsed from shader
+   - Bind group layouts already reflected from the WGSL (the vignette's group lives at `@group(4)`)
 
 3. **Lazy Pipeline Creation** - The pipeline is created in `getOrCreatePipeline()`, not `initialize()`. This allows:
    - Different output formats for different render targets
    - Pipeline recreation if shader reloads
-   - Pattern used by `MeshPass` and `CompositePass`
+   - Pattern used by `CompositePass`
 
 **Your Task:**
 
@@ -117,18 +117,14 @@ Open `src/engine/rendering/PostProcessingPass.cpp` and implement the `initialize
 bool PostProcessingPass::initialize()
 {
 	spdlog::info("Initializing PostProcessingPass");
-	// Tutorial 04 - Step 1: Get vignette shader from registry
+	// Tutorial 04 - Step 1: Fetch and validate the vignette shader.
 	// The shader contains:
 	// - Vertex shader (vs_main): Generates fullscreen triangle
 	// - Fragment shader (fs_main): Applies vignette darkening
-	// - Bind Group 0: Sampler + input texture
-	auto& registry = m_context->shaderRegistry();
-	m_shaderInfo = registry.getShader(shader::defaults::VIGNETTE);
-	if (!m_shaderInfo || !m_shaderInfo->isValid())
-	{
-		spdlog::error("Vignette shader not found in registry");
+	// - Bind Group 4: Sampler + input texture
+	m_shaderInfo = getValidatedShader(shader::defaults::VIGNETTE);
+	if (!m_shaderInfo)
 		return false;
-	}
 
 	// Get a sampler for texture filtering (linear interpolation, clamp-to-edge)
 	// This is a pre-made sampler shared across the engine
@@ -141,8 +137,9 @@ bool PostProcessingPass::initialize()
 
 **Key Points:**
 
-- `shader::defaults::VIGNETTE` is a constant defined in `ShaderRegistry.h` with value `"Vignette_Shader"`
-- `m_shaderInfo` contains the shader module AND the bind group layout (parsed from `@group(0)` in WGSL)
+- `getValidatedShader(...)` is provided by the `RenderPass` base class - it fetches from the registry and logs + returns null if the shader is missing or failed validation, so there is no separate `isValid()` check to write
+- `shader::defaults::VIGNETTE` is a constant defined in `ShaderRegistry.h`
+- `m_shaderInfo` contains the shader module AND the reflected bind group layout (the vignette declares its resources at `@group(4)`)
 - `m_sampler` is used in `getOrCreateBindGroup()` later
 - The actual pipeline is created in `getOrCreatePipeline()` method (lazy initialization)
 
@@ -161,7 +158,7 @@ In `PostProcessingPass.cpp`, find the comment: `// Tutorial 04 - Step 2` and add
 void PostProcessingPass::setInputTexture(const std::shared_ptr<webgpu::WebGPUTexture> &texture)
 {
 	// Tutorial 04 - Step 2: Store the texture to post-process
-	// This is the output of MeshPass/DebugPass (the rendered scene)
+	// This is the output of the scene + debug passes (the rendered scene)
 	m_inputTexture = texture;
 }
 ```
@@ -212,41 +209,28 @@ Think of it as compiling your shader code into a GPU-executable program with all
 
 **Your Task:** In `PostProcessingPass.cpp`, find the comment: `// Tutorial 04 - Step 4`
 ```cpp
-std::shared_ptr<webgpu::WebGPUPipeline> PostProcessingPass::getOrCreatePipeline()
+engine::rendering::cache::Handle<webgpu::WebGPUPipeline> PostProcessingPass::getOrCreatePipeline()
 {
-	// Tutorial 04 - Step 4: Get or create pipeline
-	// Try to get existing pipeline (weak_ptr pattern for cache-friendly design)
-	auto pipeline = m_pipeline.lock();
-	if (pipeline && pipeline->isValid())
-	{
-		return pipeline;  // Reuse existing pipeline
-	}
-	// Create new pipeline
-	// This compiles the shader and packages all render state together
-	m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
-		m_shaderInfo,  // Shader loaded in initialize()
+	// Tutorial 04 - Step 4: Get or create pipeline. The pipeline manager caches
+	// by key, so calling this every frame is cheap - it rebuilds only when the
+	// shader reloads or the output format changes.
+	return m_context->pipelineManager().getOrCreatePipeline(
+		m_shaderInfo,  // Shader fetched in initialize()
 		m_renderPassContext->getColorTexture(0)->getFormat(), // Output format
 		wgpu::TextureFormat::Undefined, // No depth needed for fullscreen effect
 		Topology::Triangles,  // Drawing triangles
 		wgpu::CullMode::None, // Don't cull backfaces (fullscreen triangle)
-		1 // Single sample (no MSAA)
+		false,                // No blending - the effect overwrites the target
+		1                     // Single sample (no MSAA)
 	);
-
-	pipeline = m_pipeline.lock();
-	if (!pipeline || !pipeline->isValid())
-	{
-		spdlog::error("PostProcessingPass: Failed to create pipeline");
-		return nullptr;
-	}
-	return pipeline;
 }
 ```
 
-**Why weak_ptr?**
+**Why a Handle instead of a raw pointer?**
 
-- Pipeline might be recreated (shader reload, format change)
-- `weak_ptr` lets us check if it's still valid without preventing cleanup
-- Pattern used throughout the engine for cache management
+- `getOrCreatePipeline()` returns a `cache::Handle<WebGPUPipeline>` - a lightweight token into the pipeline manager's cache, not the pipeline itself
+- You call `.lock()` on the handle to pin a `shared_ptr` snapshot for the duration you use it (Step 6); if a hot reload swaps the pipeline mid-frame, your in-flight work keeps the snapshot it started with
+- The manager owns the lifetime, so there is nothing to release here
 
 ---
 
@@ -271,38 +255,37 @@ void PostProcessingPass::recordAndSubmitCommands(
 	// CommandEncoder records GPU commands into a command buffer
 	auto encoder = m_context->createCommandEncoder("PostProcessing");
 
-	// This creates a RenderPassEncoder for recording drawing commands
-	wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(
-		m_renderPassContext->getRenderPassDescriptor()
-	);
+	// The render pass context builds the RenderPassEncoder from the target it
+	// was given in setRenderPassContext().
+	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 	// This tells the GPU which vertex/fragment shaders to run
 	renderPass.setPipeline(pipeline->getPipeline());
-	// Step 5B: Bind resources (textures, samplers) to shader
-	// This connects our input texture to @group(0) in the shader
-	renderPass.setBindGroup(0, bindGroup->getBindGroup(), 0, nullptr);
+
+	// Step 5B: Bind resources. The vignette only uses @group(4), but the pipeline
+	// layout still reserves the engine slots 0..3. Bind a shared empty group to
+	// each so wgpu's "every pipeline slot must have a bound bind group" rule holds,
+	// then bind our sampler + input texture at @group(4).
+	auto emptyBg = m_context->pipelineManager().getOrCreateEmptyBindGroup();
+	for (uint32_t slot = 0; slot < 4; ++slot)
+		renderPass.setBindGroup(slot, emptyBg, 0, nullptr);
+	renderPass.setBindGroup(4, bindGroup->getBindGroup(), 0, nullptr);
+
 	// Step 5C: Draw 3 vertices to create fullscreen triangle
 	// The vertex shader generates positions procedurally from vertex_index
 	renderPass.draw(3, 1, 0, 0);
 
-	// End render pass and submit to GPU
+	// End render pass and submit to GPU. submitCommandEncoder finishes the
+	// encoder, submits the command buffer to the queue, and releases both.
 	renderPass.end();
 	renderPass.release();
-
-	// Finish encoding
-	wgpu::CommandBufferDescriptor commandBufferDesc{};
-	commandBufferDesc.label = "PostProcessing Commands";
-	wgpu::CommandBuffer commandBuffer = encoder.finish(commandBufferDesc);
-	encoder.release();
-	// Submit to GPU queue
-	m_context->getQueue().submit(commandBuffer);
-	commandBuffer.release();
+	m_context->submitCommandEncoder(encoder, "PostProcessing Commands");
 }
 ```
 
 **What Each Command Does:**
 
 - **setPipeline** → "Use this shader program and render settings"
-- **setBindGroup** → "Here are the textures/samplers the shader needs"
+- **setBindGroup** → "Here are the textures/samplers the shader needs" (empty placeholders for slots 0..3, the real one at slot 4)
 - **draw** → "Process these vertices through the pipeline"
 
 The GPU will:
@@ -346,9 +329,9 @@ void PostProcessingPass::render(FrameCache &frameCache)
 		return;
 	}
 
-	// Step 6B: Get pipeline (creates if needed)
-	auto pipeline = getOrCreatePipeline();
-	if (!pipeline)
+	// Step 6B: Get pipeline (creates if needed) and pin a snapshot via lock()
+	auto pipeline = getOrCreatePipeline().lock();
+	if (!pipeline || !pipeline->isValid())
 		return;
 
 	// Step 6C: Get bind group for input texture (creates if needed)
@@ -382,7 +365,7 @@ This separation keeps `render()` focused on **what** to do (validation and setup
 Simplified bind group creation using the engine's factory.
 
 A **bind group** packages GPU resources (textures, samplers, buffers) that shaders can access. Think of it as:
-- **Shader side:** `@group(0) @binding(1) var myTexture: texture_2d<f32>`
+- **Shader side:** `@group(4) @binding(1) var inputTexture: texture_2d<f32>`
 - **CPU side:** Bind group that says "binding 1 = this specific texture"
 
 **Your Task:** In `PostProcessingPass.cpp`, find the comment: `// Tutorial 04 - Step 7` and add this code:
@@ -402,28 +385,34 @@ std::shared_ptr<webgpu::WebGPUBindGroup> PostProcessingPass::getOrCreateBindGrou
 	if (it != m_bindGroupCache.end())
 		return it->second;
 
-	// Step 7B: Get layout from shader╬
-	// The shader defines what bindings Group 0 expects
-	auto bindGroupLayout = m_shaderInfo->getBindGroupLayout(0);
-	if (!bindGroupLayout)
+	// Step 7B: Get the reflected layout for the vignette's custom group.
+	// The shader declares its sampler + texture at @group(4).
+	auto layout = m_shaderInfo->getBindGroupLayout(4);
+	if (!layout)
 		return nullptr;
 
-	// Step 7C: Create bind group using engine factory
-	// This maps our texture + sampler to the shader's bindings
-	auto bindGroup = m_context->bindGroupFactory().createBindGroup(
-		bindGroupLayout,
-		{
-			{{0, 0}, webgpu::BindGroupResource(m_sampler)}, // @binding(0) = sampler
-			{{0, 1}, webgpu::BindGroupResource(texture)}	// @binding(1) = texture
-		},
-		nullptr,
-		"PostProcess BindGroup"
-	);
+	// Step 7C: Describe the two entries (sampler at binding 0, texture at binding 1)
+	std::vector<wgpu::BindGroupEntry> entries;
+	entries.reserve(2);
+	{
+		wgpu::BindGroupEntry e{};
+		e.binding = 0; // @group(4) @binding(0) - sampler
+		e.sampler = m_sampler->raw();
+		entries.push_back(e);
+	}
+	{
+		wgpu::BindGroupEntry e{};
+		e.binding = 1; // @group(4) @binding(1) - input texture
+		e.textureView = texture->getTextureView();
+		entries.push_back(e);
+	}
 
+	// Step 7D: Create the bind group through the factory (no buffers to keep alive)
+	auto bindGroup = m_context->bindGroupFactory().createBindGroup(layout, entries, {});
 	if (!bindGroup || !bindGroup->isValid())
 		return nullptr;
 
-	// Step 7D: Cache for next frame
+	// Step 7E: Cache for next frame
 	m_bindGroupCache[cacheKey] = bindGroup;
 	return bindGroup;
 }
@@ -432,15 +421,15 @@ std::shared_ptr<webgpu::WebGPUBindGroup> PostProcessingPass::getOrCreateBindGrou
 **Binding Layout:**
 ```wgsl
 // In shader (postprocess_vignette.wgsl):
-@group(0) @binding(0) var inputSampler: sampler;
-@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(4) @binding(0) var inputSampler: sampler;
+@group(4) @binding(1) var inputTexture: texture_2d<f32>;
 
-// In C++ (this method):
-{{0, 0}, BindGroupResource(m_sampler)}     // Group 0, Binding 0 = sampler
-{{0, 1}, BindGroupResource(texture)}       // Group 0, Binding 1 = texture
+// In C++ (this method): one wgpu::BindGroupEntry per binding
+e.binding = 0; e.sampler     = m_sampler->raw();          // binding 0 = sampler
+e.binding = 1; e.textureView = texture->getTextureView(); // binding 1 = texture
 ```
 
-The factory handles the low-level WebGPU API calls for us.
+The factory wraps the result in a `WebGPUBindGroup` and handles the low-level WebGPU API calls for us.
 
 ---
 
@@ -542,7 +531,7 @@ In `Renderer.cpp`, find the comment: `// Tutorial 04 - Step 11`
 Add this code after the Debug Pass section:
 ```cpp
 	// Tutorial 04 - Step 11: Apply vignette effect
-	// Texture swapping: MeshPass/DebugPass output → input for post-processing
+	// Texture swapping: scene + debug pass output → input for post-processing
 	// Output: Post-processed image (stored in m_postProcessTextures for Composite)
 	renderFromTexture = renderToTexture; // Reads from the main render target
 	renderToTexture = m_postProcessTextures[renderTargetId];
@@ -572,7 +561,7 @@ Add this code after the Debug Pass section:
    - `render()` - Execute the vignette shader
 
 3. **Result:**
-   - Input: Scene + debug overlays (from MeshPass + DebugPass)
+   - Input: Scene + debug overlays (from the scene passes + DebugPass)
    - Processing: Vignette shader darkens the edges
    - Output: Post-processed image in `m_postProcessTextures[renderTargetId]`
    - Next step: CompositePass will use this post-processed texture
@@ -714,7 +703,7 @@ Here's what happens each frame:
 // Frame setup (Renderer::renderFrame)
   └─ For each camera:
        └─ Renderer::renderToTexture(camera)
-            ├─ MeshPass::render()           // Renders 3D scene
+            ├─ Scene passes (GBuffer → Composition) // Renders 3D scene
             │   └─ Output: renderTarget.gpuTexture with lit scene
             │
             ├─ DebugPass::render()          // Renders wireframes, gizmos
@@ -744,9 +733,10 @@ The vignette effect happens in `resources/postprocess_vignette.wgsl`:
 
 **Shader Structure:**
 ```wgsl
-// Bind Group 0: Input texture from previous render pass
-@group(0) @binding(0) var inputSampler: sampler;
-@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+// Bind Group 4: Input texture from previous render pass (custom group; engine
+// roles occupy @group(0..3), so post-process resources live at @group(4)).
+@group(4) @binding(0) var inputSampler: sampler;
+@group(4) @binding(1) var inputTexture: texture_2d<f32>;
 
 // Vertex shader output / Fragment shader input
 struct VertexOutput {
@@ -856,7 +846,7 @@ Future tutorials could cover these advanced topics!
 - Pass implementation: `src/engine/rendering/PostProcessingPass.cpp`
 - Renderer integration: `src/engine/rendering/Renderer.cpp`
 - Shader registration: `src/engine/rendering/ShaderRegistry.cpp`
-- Similar passes: `CompositePass.cpp`, `MeshPass.cpp`, `ShadowPass.cpp`
+- Similar passes: `CompositePass.cpp`, `CompositionPass.cpp`, `ShadowPass.cpp`
 
 ---
 

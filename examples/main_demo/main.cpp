@@ -30,7 +30,7 @@ std::shared_ptr<demo::OrbitCameraController> setupCamera(std::shared_ptr<engine:
 
 		// Configure HDR environment map for skybox + diffuse irradiance.
 		auto environmentTexture = resourceManager->m_textureManager->createTextureFromFile(
-			PathProvider::getResource("skybox.hdr")
+			PathProvider::getAssets("skybox.hdr")
 		);
 		if (environmentTexture.has_value())
 		{
@@ -171,20 +171,20 @@ bool setupScene1(std::shared_ptr<engine::scene::Scene> scene)
 
 	// Use lazy loading constructor - models will load during scene initialization
 	auto modelNode1 = std::make_shared<engine::scene::nodes::ModelRenderNode>(
-		PathProvider::getResource("fourareen.obj")
+		PathProvider::getAssets("fourareen.obj")
 	);
 	modelNode1->getTransform().setLocalPosition(glm::vec3(0.0f, 1.0f, 0.0f));
 	scene->getRoot()->addChild(modelNode1);
 
 	auto modelNode2 = std::make_shared<engine::scene::nodes::ModelRenderNode>(
-		PathProvider::getResource("fourareen.obj")
+		PathProvider::getAssets("fourareen.obj")
 	);
 	modelNode2->getTransform().setLocalPosition(glm::vec3(0.0f, 3.0f, 0.4f));
 	scene->getRoot()->addChild(modelNode2);
 
 	// Create floor plane with custom PBR material (use immediate loading)
 	auto maybeModelPlane = resourceManager->m_modelManager->createModel(
-		PathProvider::getResource("plane.obj"),
+		PathProvider::getAssets("plane.obj"),
 		"Floor_Plane"
 	);
 	if (!maybeModelPlane.has_value())
@@ -200,10 +200,10 @@ bool setupScene1(std::shared_ptr<engine::scene::Scene> scene)
 	// Load textures for PBR material
 	auto floorPBRProperties = engine::rendering::PBRProperties();
 	auto diffuseTexture = resourceManager->m_textureManager->createTextureFromFile(
-		PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg")
+		PathProvider::getAssets("cobblestone_floor_08_diff_2k.jpg")
 	);
 	auto normalTexture = resourceManager->m_textureManager->createTextureFromFile(
-		PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png")
+		PathProvider::getAssets("cobblestone_floor_08_nor_gl_2k.png")
 	);
 
 	// Create material with both diffuse and normal maps

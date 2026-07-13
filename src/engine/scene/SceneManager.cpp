@@ -1,6 +1,12 @@
 #include "engine/scene/SceneManager.h"
 #include "engine/EngineContext.h"
+#include "engine/rendering/Material.h"
+#include "engine/rendering/Model.h"
+#include "engine/rendering/Texture.h"
+#include "engine/resources/MaterialManager.h"
 #include "engine/resources/ResourceManager.h"
+#include "engine/resources/TextureManager.h"
+#include "engine/scene/nodes/CameraNode.h"
 #include "engine/scene/nodes/ModelRenderNode.h"
 #include <spdlog/spdlog.h>
 
@@ -208,12 +214,47 @@ void SceneManager::initializeNodeTree(std::shared_ptr<engine::scene::nodes::Node
 				if (modelOpt && *modelOpt)
 				{
 					modelRenderNode->setLoadedModel((*modelOpt)->getHandle());
+
+					// Resolve a serialized project-material reference (by name) and
+					// assign it to every submesh, so a loaded scene shows the
+					// editor-assigned material rather than the model's own default.
+					const std::string &materialRef = modelRenderNode->getMaterialRef();
+					auto materialManager = m_engineContext->resources()->m_materialManager;
+					if (!materialRef.empty() && materialManager)
+					{
+						if (auto mat = materialManager->getByName(materialRef); mat && *mat)
+						{
+							for (auto &submesh : (*modelOpt)->getSubmeshes())
+								submesh.material = (*mat)->getHandle();
+						}
+						else
+						{
+							spdlog::warn("SceneManager: material '{}' not found for model '{}'",
+										 materialRef, modelRenderNode->getModelPath().string());
+						}
+					}
 				}
 				else
 				{
 					spdlog::error("Failed to load model: {}", modelRenderNode->getModelPath().string());
 				}
 			}
+		}
+	}
+
+	// Resolve a camera's serialized environment map (stored by path) now that the
+	// TextureManager is available, then assign it for skybox + IBL.
+	if (auto cameraNode = std::dynamic_pointer_cast<engine::scene::nodes::CameraNode>(node);
+		cameraNode && !cameraNode->getPendingEnvironmentPath().empty())
+	{
+		if (m_engineContext && m_engineContext->resources() && m_engineContext->resources()->m_textureManager)
+		{
+			const std::string envPath = cameraNode->getPendingEnvironmentPath();
+			if (auto tex = m_engineContext->resources()->m_textureManager->createTextureFromFile(envPath))
+				cameraNode->setEnvironmentTexture((*tex)->getHandle());
+			else
+				spdlog::warn("SceneManager: failed to load camera environment '{}'", envPath);
+			cameraNode->setPendingEnvironmentPath("");
 		}
 	}
 

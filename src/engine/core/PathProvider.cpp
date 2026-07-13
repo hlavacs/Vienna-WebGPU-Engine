@@ -15,6 +15,7 @@ namespace engine::core
 std::filesystem::path PathProvider::basePath;
 std::filesystem::path PathProvider::resourceRoot;
 std::filesystem::path PathProvider::libraryRoot;
+std::filesystem::path PathProvider::assetRootOverride;
 std::unordered_map<std::string, std::filesystem::path> PathProvider::overrides;
 
 void PathProvider::initialize(const std::string &path, const std::string &libPath)
@@ -44,33 +45,138 @@ void PathProvider::overridePath(const std::string &key, const std::filesystem::p
 	overrides[key] = path;
 }
 
+std::filesystem::path PathProvider::assetsBase()
+{
+	return assetRootOverride.empty() ? basePath / "assets" : assetRootOverride;
+}
+
+void PathProvider::setAssetRoot(const std::filesystem::path &assetsDir)
+{
+	assetRootOverride = assetsDir.empty() ? std::filesystem::path{} : std::filesystem::absolute(assetsDir);
+}
+
+void PathProvider::clearAssetRoot()
+{
+	assetRootOverride.clear();
+}
+
 std::filesystem::path PathProvider::resolve(const std::string &key)
 {
 	if (overrides.find(key) != overrides.end())
 		return overrides[key];
 
+	// Project assets (repointable via setAssetRoot); configs/logs stay next to the
+	// executable so editor-global state (recent lists) is not per-project.
 	if (key == "assets")
-		return basePath / "assets";
+		return assetsBase();
 	if (key == "textures")
-		return basePath / "assets" / "textures";
+		return assetsBase() / "textures";
 	if (key == "shaders")
-		return basePath / "assets" / "shaders";
+		return assetsBase() / "shaders";
 	if (key == "models")
-		return basePath / "assets" / "models";
+		return assetsBase() / "models";
 	if (key == "scenes")
-		return basePath / "assets" / "scenes";
+		return assetsBase() / "scenes";
 	if (key == "prefabs")
-		return basePath / "assets" / "prefabs";
+		return assetsBase() / "prefabs";
 	if (key == "materials")
-		return basePath / "assets" / "materials";
+		return assetsBase() / "materials";
 	if (key == "audio")
-		return basePath / "assets" / "audio";
+		return assetsBase() / "audio";
 	if (key == "configs")
 		return basePath / "configs";
 	if (key == "logs")
 		return basePath / "logs";
 
 	return basePath;
+}
+
+namespace
+{
+// Lexically test whether `p` (made absolute) lies inside `root`, returning the
+// relative remainder. Pure path math; no filesystem access beyond cwd.
+bool computeRelative(const std::filesystem::path &p, const std::filesystem::path &root, std::filesystem::path &relOut)
+{
+	// weakly_canonical normalizes separators and (on Windows) the on-disk case of
+	// the existing path components, so a browsed file path and the configured root
+	// compare correctly even when they differ in case or slash direction. Falls
+	// back to a plain absolute path if canonicalization fails.
+	std::error_code ec;
+	std::filesystem::path absolutePath = std::filesystem::weakly_canonical(std::filesystem::absolute(p, ec), ec);
+	if (ec || absolutePath.empty())
+	{
+		ec.clear();
+		absolutePath = std::filesystem::absolute(p, ec);
+		if (ec)
+			absolutePath = p;
+	}
+	ec.clear();
+	std::filesystem::path canonicalRoot = std::filesystem::weakly_canonical(root, ec);
+	if (ec || canonicalRoot.empty())
+		canonicalRoot = root;
+
+	const std::filesystem::path rel = absolutePath.lexically_relative(canonicalRoot);
+	if (rel.empty())
+		return false;
+	const std::string s = rel.generic_string();
+	if (s == "." || s.rfind("..", 0) == 0)
+		return false;
+	relOut = rel;
+	return true;
+}
+} // namespace
+
+std::filesystem::path PathProvider::getAssetRoot()
+{
+	return resolve("assets");
+}
+
+bool PathProvider::isUnderResources(const std::filesystem::path &p)
+{
+	std::filesystem::path rel;
+	return computeRelative(p, resourceRoot, rel);
+}
+
+bool PathProvider::isUnderAssets(const std::filesystem::path &p)
+{
+	std::filesystem::path rel;
+	return computeRelative(p, getAssetRoot(), rel);
+}
+
+std::optional<std::string> PathProvider::toResourceRelative(const std::filesystem::path &abs)
+{
+	std::filesystem::path rel;
+	if (computeRelative(abs, resourceRoot, rel))
+		return rel.generic_string();
+	return std::nullopt;
+}
+
+std::optional<std::string> PathProvider::toAssetRelative(const std::filesystem::path &abs)
+{
+	std::filesystem::path rel;
+	if (computeRelative(abs, getAssetRoot(), rel))
+		return rel.generic_string();
+	return std::nullopt;
+}
+
+std::string PathProvider::toEnginePath(const std::filesystem::path &abs)
+{
+	if (auto asset = toAssetRelative(abs))
+		return std::string(kAssetScheme) + *asset;
+	if (auto resource = toResourceRelative(abs))
+		return std::string(kResourceScheme) + *resource;
+	return abs.generic_string();
+}
+
+std::filesystem::path PathProvider::resolveEnginePath(const std::string &token)
+{
+	const std::string assetScheme = kAssetScheme;
+	const std::string resourceScheme = kResourceScheme;
+	if (token.rfind(assetScheme, 0) == 0)
+		return getAssetRoot() / token.substr(assetScheme.size());
+	if (token.rfind(resourceScheme, 0) == 0)
+		return resourceRoot / token.substr(resourceScheme.size());
+	return std::filesystem::path(token);
 }
 
 std::filesystem::path PathProvider::getEnginePath()

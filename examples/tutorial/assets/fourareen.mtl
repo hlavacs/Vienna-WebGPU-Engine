@@ -1,0 +1,19 @@
+newmtl Material_#25
+Kd 1.0 1.0 1.0
+Ka 1.000000 1.000000 1.000000
+Ks 0.04 0.04 0.04
+Pr 1.0     # roughness
+Pm 0.22    # metallic
+Ns 0
+Ni 1.450000
+d 1.000000
+illum 1
+
+# Diffuse (albedo) map
+map_Kd fourareen2K_albedo.jpg
+
+# Normal map (modern spec, preferred if supported)
+norm fourareen2K_normals.png
+
+# OR if using map_Bump, clarify it's a normal map and keep scale
+map_Bump -bm 0.300000 fourareen2K_normals.png

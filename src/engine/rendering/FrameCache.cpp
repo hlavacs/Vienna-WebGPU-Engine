@@ -188,6 +188,18 @@ bool FrameCache::prepareGPUResources(
 		{
 			auto &gpuItem = slot.value();
 
+			// A material swap (the editor reassigns submesh.material to a
+			// different Material, or loads a model that resolves a new one)
+			// changes the handle without moving the objectID, so the fast path
+			// must re-fetch the GPU material - otherwise the draw keeps binding
+			// the previous material. createFromHandle is cached, so unchanged
+			// handles are a cheap lookup.
+			if (gpuItem.submesh.material.id() != cpuItem.submesh.material.id())
+			{
+				if (auto gpuMaterial = context->materialFactory().createFromHandle(cpuItem.submesh.material))
+					gpuItem.gpuMaterial = gpuMaterial;
+			}
+
 			// syncIfNeeded calls are version-checked internally — they're
 			// no-ops when the CPU side hasn't moved since the last sync.
 			// Calling them every frame is cheap; they're the path the

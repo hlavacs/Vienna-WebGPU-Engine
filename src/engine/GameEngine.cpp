@@ -18,6 +18,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/core/PathProvider.h"
+#include "engine/scene/NodeTypeRegistry.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/Renderer.h"
@@ -176,6 +177,10 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 	{
 		options = opts.value();
 	}
+
+	// Register built-in node types so scenes can (de)serialize them. Idempotent
+	// re-registration is harmless; projects add their custom types after this.
+	engine::scene::registerBuiltinNodeTypes();
 
 	// Tell SDL we're handling main ourselves
 	SDL_SetMainReady();
@@ -365,10 +370,14 @@ void GameEngine::processEvents()
 		if (m_imguiManager)
 			ImGui_ImplSDL3_ProcessEvent(&event);
 
+		// Forward input to the game/editor InputManager unless ImGui is capturing
+		// TEXT input (an active text field). Gating on WantCaptureKeyboard/Mouse was
+		// too aggressive: hovering or focusing any ImGui window (e.g. an editor's
+		// render-to-texture viewport panel) set those flags and starved viewport
+		// navigation (WASD / right-mouse look) of input. WantTextInput is true only
+		// while editing a text field, so keystrokes still never leak while typing.
 		ImGuiIO &io = ImGui::GetIO();
-		const bool imguiWantsInput = io.WantCaptureMouse || io.WantCaptureKeyboard;
-
-		if (!imguiWantsInput)
+		if (!io.WantTextInput)
 			m_inputManager.processEvent(event);
 
 		if (event.type == SDL_EVENT_QUIT)
@@ -456,9 +465,11 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 
 	scene->preRender();
 
+	// An empty camera set is NOT an early-out: the renderer must still run its
+	// composite + UI pass and present, otherwise the surface acquired in
+	// startFrame() is never presented and the next acquireNextTexture()
+	// deadlocks - which froze the editor whenever the active camera was disabled.
 	auto cameras = scene->getActiveCameras();
-	if (cameras.empty())
-		return;
 
 	// Sort cameras by depth (lower depth renders first)
 	std::sort(cameras.begin(), cameras.end(), [](const auto &a, const auto &b)
@@ -502,6 +513,8 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 		target.skyboxEnabled = camera->isSkyboxEnabled();
 		target.irradianceEnabled = camera->isIrradianceEnabled();
 		target.irradianceIntensity = camera->getIrradianceIntensity();
+		target.offscreenOnly = camera->isOffscreenOnly();
+		target.renderSize = camera->getRenderSize();
 		target.gpuTexture = nullptr; // Will be set by renderer
 
 		renderTargets.push_back(target);

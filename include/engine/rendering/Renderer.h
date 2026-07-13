@@ -125,6 +125,17 @@ class Renderer
 	 */
 	std::vector<RenderPass *> getAllPasses();
 
+	/**
+	 * @brief Get the final rendered color texture for a camera this frame.
+	 *
+	 * Returns the offscreen texture the camera's view was composited into
+	 * (post tone-map), or nullptr if that camera has not rendered. Intended for
+	 * an editor that displays a camera marked offscreenOnly inside a UI viewport
+	 * via ImGui::Image. Valid from the UI callback through end of frame.
+	 * @param cameraId The camera whose output to fetch.
+	 */
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUTexture> getCameraOutputTexture(uint64_t cameraId) const;
+
   private:
 	// ========================================
 	// Frame Orchestration (High-Level Flow)
@@ -221,7 +232,8 @@ class Renderer
 		const std::optional<Texture::Handle> &cpuTarget,
 		const math::Rect &viewport,
 		wgpu::TextureFormat format,
-		wgpu::TextureUsage usageFlags
+		wgpu::TextureUsage usageFlags,
+		const std::optional<glm::uvec2> &renderSize = std::nullopt
 	);
 
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
@@ -361,6 +373,19 @@ private:
 	// PrefilteredEnv — we bake both off the same source whenever the env
 	// changes, and share the "did the source change" check.
 	engine::rendering::ibl::IrradianceMap m_irradianceMap;
+
+	// A baked IBL set (specular prefilter + diffuse irradiance) for one source
+	// environment. Both are cheap value wrappers around a shared_ptr texture.
+	struct IblSet
+	{
+		engine::rendering::ibl::PrefilteredEnv prefiltered;
+		engine::rendering::ibl::IrradianceMap irradiance;
+	};
+	// Memoized bakes keyed by source-texture handle. Multiple cameras (editor +
+	// scene) can supply different environments on alternating calls within a
+	// frame; caching keeps each environment's expensive bake to once, not per
+	// frame. Bounded so trying many skyboxes cannot grow it without limit.
+	std::unordered_map<WGPUTexture, IblSet> m_iblCache;
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_depthBuffers;

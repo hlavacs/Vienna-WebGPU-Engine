@@ -96,6 +96,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let albedo = textureLoad(gBufferAlbedoTexture, pixelCoord, 0);
 	let emissionData = textureLoad(gBufferEmissionTexture, pixelCoord, 0);
 
+	// Empty texel: nothing was rasterized here (the G-buffer normal is cleared to
+	// zero; geometry always writes a unit normal). Discard so this full-screen
+	// fragment does not overwrite the composition target's clear value - which the
+	// Renderer sets to the camera's background colour. Without this, every empty
+	// pixel is painted black and the camera background is never visible (a skybox,
+	// if enabled, draws over it in the following pass).
+	if (dot(normalData.xyz, normalData.xyz) < 0.5) {
+		discard;
+	}
+
 	// G-buffer albedo is RGBA8UnormSrgb: textureLoad already decodes sRGB ->
 	// linear. Do NOT apply pow(2.2) here - that double-decodes and crushes
 	// midtones (this was the cause of the "flat" cobblestone look).

@@ -63,6 +63,9 @@ class GameEngine
 	// Can also be called at runtime to update options (VSync, window size, etc.)
 	void setOptions(const GameEngineOptions &options);
 
+	// Read the current engine options (e.g. for an editor settings panel).
+	const GameEngineOptions &getOptions() const { return options; }
+
 	// Initialize the engine (creates window, WebGPU context, renderer, ImGui)
 	// Call this before run() if you need to access ImGuiManager or other subsystems
 	// @param opts Optional engine options. If not provided, uses previously set options via setOptions()

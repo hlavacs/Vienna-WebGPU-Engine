@@ -4,13 +4,13 @@
 
 > **⚠️ Build issues?** See [Troubleshooting](#troubleshooting) at the end of this tutorial for help reading build errors from the terminal.
 
-In Tutorial 01, you learned the three standard bind groups (Frame, Object, Material) that the engine provides. Now you'll learn how to add your own custom bind groups to pass additional data to shaders.
+In Tutorial 01, you learned the engine bind groups (Frame, Scene, Material, Object) that occupy `@group(0..3)`. Now you'll learn how to add your own custom bind group at `@group(4)` to pass additional data to a shader - and that the engine discovers it for you by **reflecting the WGSL**, so you only name it on the C++ side.
 
 **What you'll learn:**
-- Creating custom bind groups beyond Frame/Object/Material
-- Registering custom bind groups in shader reflection
-- Implementing `preRender()` to provide per-frame data
-- Using `BindGroupDataProvider` to send data to GPU
+- Adding a custom bind group at `@group(4)` (slots 0..3 are reserved for engine roles)
+- How the engine reflects a custom group out of your WGSL - no hand-written binding layout
+- Naming the group on the `ShaderDescriptor` so per-object data can target it
+- Implementing `preRender()` to provide per-object data via `BindGroupDataProvider`
 - Texture tiling and offset manipulation in shaders
 
 **What you'll build:**
@@ -27,17 +27,18 @@ A tiled floor with controllable tiling and offset, perfect for scrolling texture
 
 **Why add custom bind groups?**
 
-The engine's standard bind groups cover common cases:
-- Group 0: Camera data (same for all objects)
-- Group 1: Transform data (unique per object)
-- Group 2: Material data (shared by objects with same material)
+The engine reserves `@group(0..3)` for its own roles:
+- Group 0: **Frame** - camera matrices, time (once per frame)
+- Group 1: **Scene** - lights, shadows, environment, clusters (once per frame)
+- Group 2: **Material** - textures, colors, properties (per material)
+- Group 3: **Object** - transform (per object)
 
 But what if you want per-object data that's NOT a transform or material? Examples:
 - Scrolling water at different speeds
 - Individual object animations
 - Per-object effects or parameters
 
-**Custom bind groups solve this:** They let you add Group 3, 4, 5... with your own data structures.
+**Custom bind groups solve this:** you add your own data at **`@group(4)`** or higher (the first four slots are taken by the engine roles above). You declare the group in WGSL and the engine reflects it - it reads the bindings, types and sizes straight out of your shader. On the C++ side you only give the group a name and a reuse policy.
 
 ---
 
@@ -72,7 +73,7 @@ This file already contains the complete unlit shader from Tutorial 01:
 - Frame, Object, and Material bind groups (Groups 0-2)
 - Vertex shader (vs_main) and fragment shader (fs_main)
 
-You'll extend this by adding a custom bind group (Group 3) for tiling parameters.
+You'll extend this by adding a custom bind group at `@group(4)` for tiling parameters.
 
 ---
 
@@ -112,17 +113,17 @@ In `unlit_custom.wgsl`, find the comment: `// Tutorial 02 - Step 4`
 Add this code:
 
 ```wgsl
-@group(3) @binding(0)
+@group(4) @binding(0)
 var<uniform> tileUniforms: TileUniforms;
 ```
 
 
-**Important:** Group numbers don't have to be sequential - the engine finds bind groups by name, not by order. The only hard requirement is **Group 0 must be FrameUniforms** if used. You could use `@group(5)` or `@group(10)` for custom bind groups; the number just needs to match between shader and registration.
+**Important:** Custom bind groups live at **`@group(4)`** or higher. Slots `@group(0..3)` are reserved for the engine roles (Frame, Scene, Material, Object), so a custom group at `@group(3)` would collide with Object. You can use `@group(4)`, `@group(5)`, up to `@group(7)` (wgpu-native allows 8 bind groups total). The engine reflects whatever you declare here.
 
-**WebGPU bind group slots:**
-- Group 0: **Must** be FrameUniforms (if your shader needs camera data)
-- Groups 1-2: Typically Object, Light, Material, something like this 
-- Groups 3+: Custom bind groups (any index you choose)
+**Bind group slots:**
+- Group 0: **Frame** (reserved) - pulled in via `#include` when your shader needs camera data
+- Groups 1-3: **Scene / Material / Object** (reserved engine roles)
+- Groups 4-7: **Custom** - your own data, discovered by reflection
 
 Each group can have multiple bindings (0, 1, 2...) for different resources within that group.
 
@@ -167,57 +168,55 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
 Open `examples/tutorial/main.cpp` and find the comment: `// Tutorial 02 - Step 6`
 
-**⚠️ Important:** You don't need to copy the entire registration code. Just:
-1. Change the shader **file path** to use the new shader
-2. Add the custom bind group code at the very end
+The shader is registered with a `ShaderDescriptor` - a small declaration the engine fills out by reflecting the WGSL. You don't list bindings or sizes; reflection recovers them from the `@group(4)` block you wrote. You only have to do two things:
 
-### Change the Shader Path Only:
+1. Point the descriptor at the new shader file
+2. Name the custom group so per-object data can target it
 
-In the `.begin()` call, change ONE line:
+### Point the Descriptor at the New Shader:
+
+In the descriptor, change the path line to the tiling shader:
 
 ```cpp
-PathProvider::getShaders("unlit_custom.wgsl"),  // Change "unlit.wgsl" → "unlit_custom.wgsl"
+unlitShader.path = PathProvider::getShaders("unlit_custom.wgsl"); // was "unlit.wgsl"
 ```
 
-Everything else in the `.begin()` call stays the same (frame, object bind groups, material, sampler, texture remain).
+The Frame, Material and Object groups are still discovered automatically (Frame/Object from the `#include`s, Material from the structs the shader declares), so nothing else about those changes.
 
-### Add Custom Bind Group at the End:
+### Name the Custom Group:
 
-After the `.addMaterialTexture()` call and **before** `.build()`, add:
+Right after the `material` group is assigned, add the custom group entry:
 
 ```cpp
-        .addBindGroup(
-            "TileUniforms",                                    // Bind group name
-            engine::rendering::BindGroupReuse::PerObject,      // Cache per object
-            engine::rendering::BindGroupType::Custom           // Mark as custom
-        )
-        .addCustomUniform(
-            "tileUniforms",                                    // Variable name in shader
-            sizeof(demo::CustomRenderNode::TileUniforms),      // 16 bytes (2 × vec2f)
-            WGPUShaderStage_Fragment                           // Used in fragment shader
-        )
-        .build();
+unlitShader.groups[4] = {
+    "TileUniforms",                                 // Group name (targeted from preRender)
+    engine::rendering::BindGroupType::Custom,       // Mark as a custom group
+    engine::rendering::BindGroupReuse::PerObject,   // Cache one per object
+    {}                                              // No per-binding overrides - reflection fills these
+};
+```
 
-shaderRegistry.registerShader(shaderInfo);
+The registration call below it is already in place and stays the same:
+
+```cpp
+shaderRegistry.registerShader(shaderFactory.buildFromDescriptor(unlitShader));
 ```
 
 **What you're telling the engine:**
-- Group name: `"TileUniforms"` (matches `@group(3)` in shader)
-- Uniform struct size: 16 bytes
-- Used in fragment shader stage
+- The group at `@group(4)` is called `"TileUniforms"` (your `preRender()` will target this name)
+- It's a custom group, cached per object
+- The empty `{}` means "no overrides" - the binding, its type and its size all come from reflecting the shader
 
-**How the Binding Happens:**
+**How the binding happens:**
 
-> **📝 Note:** The complex binding logic happens in the `build()` method. When you call `.addBindGroup()` and `.addCustomUniform()`, you're specifying exactly how bind groups should be created. The engine then uses this specification to create bind group layouts, allocate GPU buffers, and manage resource binding.
+> **📝 Note:** `buildFromDescriptor()` expands the `#include`s, reflects the resulting WGSL, and builds the bind group layouts from what it finds. For `@group(4)` it reads your `TileUniforms` declaration directly - the binding index, the fact that it's a uniform, and its 16-byte size all come from the shader. The descriptor only supplies the things WGSL can't express: the engine-facing name and the reuse policy.
 >
-> **Advanced Readers:** Check out [WebGPUBindGroupFactory.cpp](#file:WebGPUBindGroupFactory.cpp) to see how the factories handle bind group creation and resource allocation. The `WebGPUShaderFactory::build()` method orchestrates the whole process.
+> **Advanced Readers:** See [WgslReflector.cpp](../../src/engine/rendering/reflection/WgslReflector.cpp) for the reflection pass and [WebGPUShaderFactory.cpp](../../src/engine/rendering/webgpu/WebGPUShaderFactory.cpp) (`buildFromDescriptor`) for how the reflected groups become bind group layouts.
 
-**Why explicit registration?**
-- **No WGSL Reflection**: WebGPU doesn't provide official shader reflection APIs, and there are no mature third-party tools for WGSL parsing
-- **Practical Necessity**: Without automatic reflection, you must explicitly tell the engine what bind groups and uniforms exist
-- **Educational**: You see exactly what bind groups exist and their purposes
-- **Control**: Fine-grained control over resource allocation and caching
-- **Debugging**: Easy to see which bind groups are used by which shaders
+**Why reflection instead of hand-listing bindings?**
+- **The shader is the source of truth**: you declared `TileUniforms` once in WGSL; reflection reuses that rather than making you restate the size and bindings in C++ (which could drift)
+- **Less to get wrong**: no manual byte counts or stage flags for the custom group
+- **Still explicit where it matters**: you choose the group name and reuse policy, which are engine concepts the shader can't express
 
 ---
 
@@ -246,7 +245,7 @@ virtual void preRender(std::vector<engine::rendering::BindGroupDataProvider> &ou
 {
     auto dataProvider = engine::rendering::BindGroupDataProvider::create(
         "unlit",      // Shader name (must match registration)
-        "TileUniforms",      // Bind group name (must match shader .addBindGroup())
+        "TileUniforms",      // Bind group name (must match groups[4] in registration)
         tileUniforms,        // Uniform data (struct instance)
         engine::rendering::BindGroupReuse::PerObject,  // Cache per object
         getId()              // Instance ID (node's unique ID)
@@ -261,7 +260,7 @@ This method is called by the scene graph before rendering each frame. It's your 
 
 **BindGroupDataProvider::create() parameters:**
 1. **Shader name** - Which shader needs this data
-2. **Bind group name** - Which bind group in that shader (from `.addBindGroup()`)
+2. **Bind group name** - Which bind group in that shader (the name you gave `groups[4]`)
 3. **Data** - Actual uniform data (will be copied to GPU)
 4. **Reuse policy** - When to rebind (PerObject means cache per unique object)
 5. **Instance ID** - Unique identifier for caching (use node ID for per-object)
@@ -365,7 +364,7 @@ You should see:
 5. During rendering:
    ├─ BindGroupBinder::bind() checks cache
    ├─ Finds cached bind group by instanceId
-   └─ Binds to correct (in this case @group(3)) in shader
+   └─ Binds to correct (in this case @group(4)) in shader
 
 6. Shader execution:
    └─ Fragment shader reads tileUniforms.tileOffset and tileSize
@@ -523,7 +522,7 @@ When you call `BindGroupDataProvider::create()`, the engine internally:
 
 ## Key Takeaways
 
-✅ **Custom Bind Groups** - Extend shader capabilities with Group 3+ for custom data  
+✅ **Custom Bind Groups** - Extend shader capabilities with `@group(4)`+ for custom data, discovered by reflection  
 ✅ **BindGroupDataProvider** - Simple API to pass CPU data to GPU shaders  
 ✅ **preRender() Lifecycle** - Called before rendering, perfect for per-frame updates  
 ✅ **Reuse Policies** - Control caching behavior (PerFrame, PerObject, PerMaterial)  
@@ -572,15 +571,15 @@ In **Tutorial 03**, you'll learn:
 **Common build issues:**
 - **Missing semicolons** - WGSL requires `;` at end of statements
 - **Struct size mismatch** - `tileUniforms` size must be 16 bytes (2 × vec2f)
-- **Bind group naming** - `"TileUniforms"` in registration must match shader `@group(3)`
+- **Bind group naming** - the `"TileUniforms"` name in `groups[4]` must match the group your `preRender()` targets; the `@group(4)` index in the shader must be 4 or higher (not 0..3)
 - **CMake cache** - Run `rm -r build` (or delete `build/` folder) then rebuild clean
 
 ### Bind Group Issues
 
 **"Unable to find bind group 'TileUniforms'"**
 - Check shader name matches in `preRender()` ("unlit") and registration as well as material assignment
-- Ensure bind group name matches exactly (case-sensitive)
-- Verify `@group(3)` in shader doesn't conflict with other bind groups
+- Ensure bind group name matches exactly (case-sensitive) between `groups[4]` and `preRender()`
+- Verify the custom group is at `@group(4)` (or higher) - `@group(3)` collides with the engine Object group
 
 **Floor appears stretched/wrong**
 - Verify TileUniforms struct size matches shader (16 bytes = 2 × vec2f)
@@ -592,15 +591,14 @@ In **Tutorial 03**, you'll learn:
 - Check instance ID is correct in `BindGroupDataProvider::create()`
 
 **Shader compilation error**
-- Check `@group(3)` doesn't conflict with other bind groups
+- Ensure the custom group is at `@group(4)` (or higher), not `@group(3)`
 - Ensure TileUniforms struct is defined before use
-- Verify binding index `@binding(0)` matches registration
+- In Debug builds the shader validator is fatal, so the load fails fast with the offending line
 - Verify there are no missing `;`
 
 ### Debug Strategy
 
 **If errors are unclear:**
-1. Open `MeshPass.cpp` in your editor
-2. Add a breakpoint in the `render()` method
-3. Press `F5` to start debugging with VS Code
-4. Check the **Terminal Output** panel - shader errors will be printed there
+1. Run the tutorial - shader reflection and validation happen at load time
+2. Check the console / `run_out.log` - shader compile and validation errors are printed there with the line/column
+3. In Debug builds a malformed custom group (wrong index, redeclared engine struct) fails the load with a structured diagnostic

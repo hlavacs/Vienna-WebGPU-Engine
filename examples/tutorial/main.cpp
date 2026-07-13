@@ -46,7 +46,7 @@ int main(int argc, char **argv)
 	auto freeFlyCameraController = std::make_shared<demo::FreeFlyCameraController>(mainCamera);
 	rootNode->addChild(freeFlyCameraController);
 
-	auto maybeModelFourareen = resourceManager->m_modelManager->createModel(PathProvider::getResource("fourareen.obj"));
+	auto maybeModelFourareen = resourceManager->m_modelManager->createModel(PathProvider::getAssets("fourareen.obj"));
 	if (!maybeModelFourareen.has_value())
 	{
 		spdlog::error("Failed to load fourareen.obj model");
@@ -56,7 +56,7 @@ int main(int argc, char **argv)
 	fourareenNode->getTransform().setLocalPosition(glm::vec3(0.0f, 1.0f, 0.0f));
 	rootNode->addChild(fourareenNode);
 
-	auto maybeModelFloor = resourceManager->m_modelManager->createModel(PathProvider::getResource("plane.obj"));
+	auto maybeModelFloor = resourceManager->m_modelManager->createModel(PathProvider::getAssets("plane.obj"));
 	if (!maybeModelFloor.has_value())
 	{
 		spdlog::error("Failed to load plane.obj model");
@@ -88,7 +88,7 @@ int main(int argc, char **argv)
 	auto unlitProperties = engine::rendering::UnlitProperties{};
 	unlitProperties.color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 	auto diffuseTexture = resourceManager->m_textureManager->createTextureFromFile(
-		PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg")
+		PathProvider::getAssets("cobblestone_floor_08_diff_2k.jpg")
 	);
 	auto maybeFloorMaterial = resourceManager->m_materialManager->createMaterial(
 		"Floor_Material",

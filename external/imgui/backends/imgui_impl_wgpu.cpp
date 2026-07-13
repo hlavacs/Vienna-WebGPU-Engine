@@ -437,6 +437,8 @@ void ImGui_ImplWGPU_RenderDrawData(ImDrawData* draw_data, WGPURenderPassEncoder 
     int global_idx_offset = 0;
     ImVec2 clip_scale = draw_data->FramebufferScale;
     ImVec2 clip_off = draw_data->DisplayPos;
+    const float fb_width = draw_data->DisplaySize.x * clip_scale.x;
+    const float fb_height = draw_data->DisplaySize.y * clip_scale.y;
     for (int n = 0; n < draw_data->CmdListsCount; n++)
     {
         const ImDrawList* cmd_list = draw_data->CmdLists[n];
@@ -472,6 +474,16 @@ void ImGui_ImplWGPU_RenderDrawData(ImDrawData* draw_data, WGPURenderPassEncoder 
                 // Project scissor/clipping rectangles into framebuffer space
                 ImVec2 clip_min((pcmd->ClipRect.x - clip_off.x) * clip_scale.x, (pcmd->ClipRect.y - clip_off.y) * clip_scale.y);
                 ImVec2 clip_max((pcmd->ClipRect.z - clip_off.x) * clip_scale.x, (pcmd->ClipRect.w - clip_off.y) * clip_scale.y);
+
+                // Clamp to the framebuffer. wgpuRenderPassEncoderSetScissorRect rejects
+                // a rect that extends past the render target; a fractional/off-by-one
+                // clip (e.g. from DPI scaling, or a popup at the window edge) otherwise
+                // produces x = (uint32_t)-1 and a width past the edge, which fails
+                // WebGPU validation. This clamp is present in upstream imgui_impl_wgpu.
+                if (clip_min.x < 0.0f) clip_min.x = 0.0f;
+                if (clip_min.y < 0.0f) clip_min.y = 0.0f;
+                if (clip_max.x > fb_width)  clip_max.x = fb_width;
+                if (clip_max.y > fb_height) clip_max.y = fb_height;
                 if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
                     continue;
 

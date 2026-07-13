@@ -194,6 +194,28 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	std::optional<engine::rendering::Texture::Handle> getRenderTarget() const { return m_renderTexture; }
 
 	/**
+	 * @brief Render this camera off-screen only (not composited to the window
+	 * surface). The result is fetched via Renderer::getCameraOutputTexture and
+	 * displayed by the caller - used by the scene editor to show the scene inside
+	 * a dockable viewport panel while the surface carries the UI.
+	 * @param offscreenOnly True to skip surface compositing for this camera.
+	 */
+	void setOffscreenOnly(bool offscreenOnly) { m_offscreenOnly = offscreenOnly; }
+
+	/** @brief Whether this camera renders off-screen only. */
+	[[nodiscard]] bool isOffscreenOnly() const { return m_offscreenOnly; }
+
+	/**
+	 * @brief Fix the off-screen render resolution in pixels, instead of deriving
+	 * it from the window surface size. Used to match a UI viewport panel exactly.
+	 * @param size Pixel size, or std::nullopt to derive from the surface.
+	 */
+	void setRenderSize(std::optional<glm::uvec2> size) { m_renderSize = size; }
+
+	/** @brief The fixed off-screen render size, if any. */
+	[[nodiscard]] std::optional<glm::uvec2> getRenderSize() const { return m_renderSize; }
+
+	/**
 	 * @brief Set the rendering depth/order for this camera.
 	 * @param depth Depth value. Lower values render first, higher values render on top.
 	 * @note Default is 0. Use negative values for background cameras, positive for overlay cameras.
@@ -274,6 +296,15 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	 * @brief Get irradiance intensity multiplier.
 	 */
 	float getIrradianceIntensity() const { return m_irradianceIntensity; }
+
+	/**
+	 * @brief Environment-map path to resolve on scene load. The serializer stores
+	 * the environment by path (engine token); SceneManager loads it through the
+	 * TextureManager once available and assigns it via setEnvironmentTexture. Empty
+	 * means none.
+	 */
+	void setPendingEnvironmentPath(const std::string &path) { m_pendingEnvironmentPath = path; }
+	const std::string &getPendingEnvironmentPath() const { return m_pendingEnvironmentPath; }
 
 	// =========================================================
 	// Frustum
@@ -403,6 +434,8 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	engine::rendering::ClearFlags m_clearFlags =
 		engine::rendering::ClearFlags::SolidColor | engine::rendering::ClearFlags::Depth; ///< Clear flags
 	std::optional<engine::rendering::Texture::Handle> m_renderTexture;					  ///< Target texture/surface
+	bool m_offscreenOnly = false;														  ///< Render off-screen, skip surface composite
+	std::optional<glm::uvec2> m_renderSize;												  ///< Fixed off-screen pixel size (else surface-derived)
 	int m_depth = 0;																	  ///< Rendering depth/order
 	bool m_msaa = true;																	  ///< MSAA enabled
 	bool m_hdr = true;																	  ///< HDR enabled
@@ -410,6 +443,7 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 	bool m_irradianceEnabled = false;							  ///< Irradiance enabled
 	float m_irradianceIntensity = 1.0f;						  ///< Irradiance multiplier
 	std::optional<engine::rendering::Texture::Handle> m_environmentTexture; ///< Environment texture
+	std::string m_pendingEnvironmentPath;					  ///< env-map to load on scene init (by path)
 };
 
 } // namespace engine::scene::nodes

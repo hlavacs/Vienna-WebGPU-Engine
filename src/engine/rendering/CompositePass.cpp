@@ -178,6 +178,11 @@ void CompositePass::render(FrameCache &frameCache)
 
 	for (const auto &[targetId, target] : frameCache.renderTargets)
 	{
+		// Off-screen cameras (e.g. an editor viewport) render into their own
+		// texture and are displayed by the caller; never blit them to the surface.
+		if (target.offscreenOnly)
+			continue;
+
 		auto renderToTexture = frameCache.finalTextures[targetId];
 		if (!renderToTexture)
 		{

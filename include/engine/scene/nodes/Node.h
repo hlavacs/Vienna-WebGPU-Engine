@@ -5,6 +5,11 @@
 #include <memory>
 #include <vector>
 
+namespace engine::reflection
+{
+class Reflector; // fwd - keeps Node.h free of the reflection/JSON headers
+}
+
 #ifdef None
 #undef None
 #endif
@@ -87,6 +92,12 @@ class Node : public engine::core::Identifiable<Node>, public std::enable_shared_
 	/** @brief Called when node is destroyed. */
 	virtual void onDestroy();
 
+	/** @brief Expose editable fields to a reflector, which drives serialization
+	 *  and the inspector UI from one list. Override in scripts, e.g.
+	 *  `void reflect(Reflector &r) override { r("speed", speed); r("axis", axis); }`.
+	 *  Default is no reflected fields. */
+	virtual void reflect(engine::reflection::Reflector &) {}
+
 	/** @brief Called during debug rendering to add debug primitives.
 	 *  Override this in derived classes to visualize node-specific data.
 	 *  @param collector The debug collector to add primitives to.
@@ -105,6 +116,15 @@ class Node : public engine::core::Identifiable<Node>, public std::enable_shared_
 
 	/** @brief Check if debug rendering is enabled for this node. */
 	bool isDebugEnabled() const { return m_debugEnabled; }
+
+	/** @brief Mark whether this node and its subtree are written by the scene
+	 *  serializer. Editor-only helper nodes (e.g. the editor camera and its
+	 *  controller) set this false so they never appear in saved scenes. The flag
+	 *  is transient and is not itself serialized. */
+	void setSerializable(bool serializable) { m_serializable = serializable; }
+
+	/** @brief Is this node written by the scene serializer? */
+	bool isSerializable() const { return m_serializable; }
 
 	/**
 	 * @brief Add a child node.
@@ -222,6 +242,7 @@ class Node : public engine::core::Identifiable<Node>, public std::enable_shared_
 	bool enabled = true;
 	bool started = false;
 	bool m_debugEnabled = false;
+	bool m_serializable = true;
 	Node *parent = nullptr;
 	std::vector<Ptr> children;
 	NodeType m_nodeType = NodeType::Base;

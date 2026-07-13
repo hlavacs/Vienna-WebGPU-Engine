@@ -46,7 +46,6 @@ In Tutorial 04, you'll learn how to write a custom render pass by implementing p
 ### Debug Strategy
 
 **If errors are unclear:**
-1. Open `MeshPass.cpp` in your editor
-2. Add a breakpoint in the `render()` method
-3. Press `F5` to start debugging with VS Code
-4. Check the **Terminal Output** panel - errors will be printed there
+1. Run the example - shader reflection, validation and pipeline creation happen at load time
+2. Check the console / `run_out.log` - shader and validation errors are printed there with the line/column
+3. For a deferred-path reference, the scene is rendered by `GBufferPass` then `CompositionPass`; shadows are produced by `ShadowPass` (see `src/engine/rendering/`)

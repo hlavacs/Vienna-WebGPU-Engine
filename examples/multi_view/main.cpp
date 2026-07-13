@@ -5,6 +5,8 @@
 #include "engine/EngineMain.h"
 // ^ This has to be on top to define SDL_MAIN_HANDLED ^
 
+#include "engine/core/PathProvider.h"
+
 #include "CameraSwitcher.h"
 #include "FreeFlyCamera.h"
 
@@ -133,8 +135,8 @@ int main(int argc, char **argv)
 	rootNode->addChild(spotLightNode->asNode());
 
 	// Load models
-	auto maybeModelFourareen = resourceManager->m_modelManager->createModel("fourareen.obj");
-	auto maybeModelFloor = resourceManager->m_modelManager->createModel("floor.obj");
+	auto maybeModelFourareen = resourceManager->m_modelManager->createModel(engine::core::PathProvider::getAssets("fourareen.obj"));
+	auto maybeModelFloor = resourceManager->m_modelManager->createModel(engine::core::PathProvider::getAssets("floor.obj"));
 
 	if (!maybeModelFourareen.has_value())
 	{

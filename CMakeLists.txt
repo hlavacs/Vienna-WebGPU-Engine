@@ -81,6 +81,9 @@ target_include_directories(WebGPU_Engine_Lib SYSTEM PUBLIC "${CMAKE_CURRENT_SOUR
 # tinygltf is header-only — no build needed
 target_include_directories(WebGPU_Engine_Lib SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/tinygltf")
 
+# nlohmann/json is header-only — no build needed (scene serialization)
+target_include_directories(WebGPU_Engine_Lib SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann")
+
 # Link libraries publicly so examples can use them
 target_link_libraries(WebGPU_Engine_Lib PUBLIC
     SDL3::SDL3

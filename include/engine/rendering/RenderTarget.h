@@ -49,6 +49,16 @@ struct RenderTarget
 	std::shared_ptr<webgpu::WebGPUTexture> gpuTexture; // actual GPU render target texture
 	int layerIndex{-1};								   // for texture arrays or cube maps
 
+	// Editor / off-screen support. When offscreenOnly is true the camera renders
+	// into its own texture but is NOT composited to the window surface (the
+	// surface is left for the UI to own); the caller fetches the result via
+	// Renderer::getCameraOutputTexture. renderSize, when set, fixes the offscreen
+	// texture resolution in pixels instead of deriving it from the surface size -
+	// used to match a UI viewport panel exactly. Defaults preserve normal
+	// surface-composited rendering.
+	bool offscreenOnly{false};
+	std::optional<glm::uvec2> renderSize;
+
 	/**
 	 * @brief Constructs FrameUniforms from this RenderTarget.
 	 * @param time Current frame time in seconds.

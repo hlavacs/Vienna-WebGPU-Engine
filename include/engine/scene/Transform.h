@@ -154,6 +154,16 @@ class Transform : public engine::core::Versioned
 	 */
 	glm::mat4 getWorldMatrix() const;
 
+	/**
+	 * @brief Monotonic counter that changes whenever this transform's world
+	 * matrix changes - whether from a local edit OR from any ancestor moving.
+	 * Cache this value and compare it next frame to detect world-space changes
+	 * across the whole hierarchy (the local getVersion() only catches local
+	 * edits). Brings the world matrix up to date before returning.
+	 * @return The current world version.
+	 */
+	uint64_t getWorldVersion() const;
+
 	// --- Direction Vectors ---
 
 	/**
@@ -241,9 +251,17 @@ class Transform : public engine::core::Versioned
 	mutable bool m_dirtyLocal = true;
 	mutable bool m_dirtyWorld = true;
 
+	// World-matrix change counter. Bumped whenever m_worldMatrixCache is
+	// actually recomputed (local edit OR an ancestor moved). A child compares
+	// this against its own m_cachedParentWorldVersion to decide whether it must
+	// rebuild - this is what makes invalidation correct for hierarchies deeper
+	// than one level (the old code compared the parent's LOCAL version, which
+	// never changes when a grandparent moves, leaving grandchildren stale).
+	mutable uint64_t m_worldVersion = 0ul;
+
 	// Hierarchy (parent only - children are managed by Node hierarchy)
 	Transform *m_parent = nullptr;
-	mutable uint64_t m_cachedParentVersion = 0ul;
+	mutable uint64_t m_cachedParentWorldVersion = 0ul;
 
 	/**
 	 * @brief Marks this transform as needing matrix recomputation.
@@ -261,9 +279,12 @@ class Transform : public engine::core::Versioned
 	void updateLocalMatrix() const;
 
 	/**
-	 * @brief Updates the world matrix cache if dirty.
+	 * @brief Brings m_worldMatrixCache up to date, recursing into the parent
+	 * first so ancestor moves propagate. Bumps m_worldVersion when the cached
+	 * world matrix actually changes. Backs both getWorldMatrix and
+	 * getWorldVersion.
 	 */
-	void updateWorldMatrix() const;
+	void ensureWorldMatrix() const;
 
 	/**
 	 * @brief Internal method to set parent transform.

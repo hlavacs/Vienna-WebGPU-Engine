@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -152,6 +153,47 @@ class PathProvider
 	/// @return    The fully resolved filesystem path.
 	static std::filesystem::path resolve(const std::string &key);
 
+	// === Portable engine path tokens ==========================================
+	// A path stored as a token resolves the same on any machine:
+	//   "asset://foo/bar.png"      -> <assetRoot>/foo/bar.png   (project assets)
+	//   "resource://shaders/x.wgsl"-> <resourceRoot>/...        (engine resources)
+	// Paths outside both roots are kept absolute. Used for scene serialization,
+	// the editor's path display, and the copy-path menu.
+
+	static constexpr const char *kAssetScheme = "asset://";
+	static constexpr const char *kResourceScheme = "resource://";
+
+	/// @brief The project asset root (editable user assets); same as resolve("assets").
+	static std::filesystem::path getAssetRoot();
+
+	/// @brief Repoints the project asset root to @p assetsDir (typically an opened
+	/// project's `assets/` folder). Every asset category (getAssets / getTextures /
+	/// getScenes / getMaterials / ...) and the "asset://" token then resolve inside
+	/// it. Engine resources ("resource://") are unaffected. Pass an empty path, or
+	/// call clearAssetRoot(), to revert to the executable-adjacent `assets/` folder.
+	static void setAssetRoot(const std::filesystem::path &assetsDir);
+
+	/// @brief Reverts the asset root to the default executable-adjacent `assets/`.
+	static void clearAssetRoot();
+
+	/// @brief True if @p p resolves to a location inside the resource (engine) root.
+	static bool isUnderResources(const std::filesystem::path &p);
+	/// @brief True if @p p resolves to a location inside the asset (project) root.
+	static bool isUnderAssets(const std::filesystem::path &p);
+
+	/// @brief @p abs expressed relative to the resource root, or nullopt if outside.
+	static std::optional<std::string> toResourceRelative(const std::filesystem::path &abs);
+	/// @brief @p abs expressed relative to the asset root, or nullopt if outside.
+	static std::optional<std::string> toAssetRelative(const std::filesystem::path &abs);
+
+	/// @brief Best portable token for @p abs: "asset://<rel>" if under the asset
+	/// root, else "resource://<rel>" if under resources, else the absolute path.
+	static std::string toEnginePath(const std::filesystem::path &abs);
+
+	/// @brief Resolve an engine path token ("asset://" / "resource://") or a plain
+	/// (absolute/relative) path string back to an absolute filesystem path.
+	static std::filesystem::path resolveEnginePath(const std::string &token);
+
   private:
 	/// @brief  Normaly represents the executable path. For Debug builds it will be the resource dir instead.
 	static std::filesystem::path basePath;
@@ -160,8 +202,14 @@ class PathProvider
 	/// @brief Root directory for internal engine resource files.
 	static std::filesystem::path resourceRoot;
 
+	/// @brief Active project asset root; empty means the default basePath/"assets".
+	static std::filesystem::path assetRootOverride;
+
 	/// @brief Optional overrides for specific asset categories or paths.
 	static std::unordered_map<std::string, std::filesystem::path> overrides;
+
+	/// @brief The active assets base: the project override if set, else basePath/"assets".
+	static std::filesystem::path assetsBase();
 
 	template <typename... Args>
 	static std::filesystem::path join(const std::filesystem::path &base, Args &&...parts)
