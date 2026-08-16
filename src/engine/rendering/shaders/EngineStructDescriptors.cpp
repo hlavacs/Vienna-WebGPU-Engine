@@ -23,6 +23,7 @@ ENGINE_GPU_STRUCT(engine::rendering::FrameUniforms,
 	viewMatrix,
 	projectionMatrix,
 	viewProjectionMatrix,
+	inverseViewProjectionMatrix,
 	cameraWorldPosition,
 	time);
 

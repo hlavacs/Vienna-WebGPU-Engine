@@ -80,7 +80,7 @@ engine::rendering::cache::Handle<webgpu::WebGPUPipeline> GBufferPass::getPipelin
 			m_shader,
 			// Fallback color format; the shader's declared color-target list wins
 			// inside the pipeline factory for the actual MRT setup.
-			webgpu::GBuffer::FORMAT_POSITION,
+			webgpu::GBuffer::FORMAT_NORMAL,
 			webgpu::GBuffer::FORMAT_DEPTH,
 			engine::rendering::Topology::Type::Triangles,
 			cullMode,

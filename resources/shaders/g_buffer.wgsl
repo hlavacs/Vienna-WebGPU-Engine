@@ -1,15 +1,15 @@
 // G-Buffer geometry pass for deferred shading.
 //
-// Writes per-pixel surface data into five render targets so the composition
-// pass can apply lighting per pixel.
+// Writes per-pixel surface data into four render targets so the composition
+// pass can apply lighting per pixel. World position is not stored; composition
+// reconstructs it from the depth buffer + inverse view-projection.
 //
 // Render targets (locations must match engine::rendering::webgpu::GBuffer):
-//   @location(0) position : RGBA16Float    - xyz = world position, w = view-space depth
-//   @location(1) normal   : RGBA16Float    - xyz = world normal,   w = view-space depth
-//   @location(2) albedo   : RGBA8UnormSrgb - rgb = base color * diffuse, a = coverage
-//   @location(3) material : RGBA8Unorm     - r = roughness, g = metallic, b = AO,
+//   @location(0) normal   : RGBA16Float    - xyz = world normal,   w = view-space depth (unused)
+//   @location(1) albedo   : RGBA8UnormSrgb - rgb = base color * diffuse, a = coverage
+//   @location(2) material : RGBA8Unorm     - r = roughness, g = metallic, b = AO,
 //                                            a = materialType id (0 = standard PBR)
-//   @location(4) emission : RGBA16Float    - rgb = additive emission (post-lighting), a unused
+//   @location(3) emission : RGBA16Float    - rgb = additive emission (post-lighting), a unused
 //
 // The materialType id in material.a is a forward-compatibility slot for a
 // "data-reinterpretation" deferred design (skin / hair / cloth / water). The
@@ -54,12 +54,11 @@ struct VertexOutput {
 }
 
 struct FragmentOutput {
-	@location(0) position: vec4<f32>,
-	@location(1) normal: vec4<f32>,
-	@location(2) albedo: vec4<f32>,
-	@location(3) material: vec4<f32>,
+	@location(0) normal: vec4<f32>,
+	@location(1) albedo: vec4<f32>,
+	@location(2) material: vec4<f32>,
 	// RGBA16Float in C++; only rgb is used (alpha reserved).
-	@location(4) emission: vec4<f32>,
+	@location(3) emission: vec4<f32>,
 }
 
 @vertex
@@ -139,7 +138,6 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
 	let materialTypeId: f32 = 0.0;
 
 	var output: FragmentOutput;
-	output.position = vec4<f32>(input.worldPos, viewDepth);
 	output.normal = vec4<f32>(worldNormal, viewDepth);
 	output.albedo = vec4<f32>(baseColor, coverage);
 	output.material = vec4<f32>(roughness, metallic, ao, materialTypeId);

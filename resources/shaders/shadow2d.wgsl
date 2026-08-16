@@ -15,7 +15,7 @@ struct ShadowPass2DUniforms {
 
 #include "engine://core/object_uniforms.wgsl"
 
-@group(4) @binding(0)
+@group(0) @binding(0)
 var<uniform> uShadow: ShadowPass2DUniforms;
 
 @vertex

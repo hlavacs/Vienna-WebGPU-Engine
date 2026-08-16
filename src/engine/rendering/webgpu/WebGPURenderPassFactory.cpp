@@ -114,6 +114,7 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createCustom(
 	for (size_t i = 0; i < descriptor.colorAttachmentCount; ++i)
 	{
 		colorAttachmentCopies[i] = descriptor.colorAttachments[i];
+		colorAttachmentCopies[i].depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; // 2D targets only in this engine
 		if (i < colorTextures.size() && colorTextures[i])
 			colorAttachmentCopies[i].view = colorTextures[i]->getTextureView();
 	}
@@ -157,6 +158,7 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createMultiTar
 		att.loadOp = wgpu::LoadOp::Clear;
 		att.storeOp = wgpu::StoreOp::Store;
 		att.clearValue = {clearColor.r, clearColor.g, clearColor.b, clearColor.a};
+		att.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; // 2D targets: Dawn rejects a concrete slice index
 	}
 
 	wgpu::RenderPassDepthStencilAttachment depthAttachment{};
@@ -174,7 +176,7 @@ std::shared_ptr<WebGPURenderPassContext> WebGPURenderPassFactory::createMultiTar
 	}
 
 	wgpu::RenderPassDescriptor desc{};
-	desc.label = label;
+	desc.label = wgpu::StringView(label ? label : "");
 	desc.colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size());
 	desc.colorAttachments = colorAttachments.data();
 	desc.depthStencilAttachment = depthTexture ? &depthAttachment : nullptr;

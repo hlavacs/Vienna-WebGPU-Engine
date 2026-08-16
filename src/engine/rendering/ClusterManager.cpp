@@ -129,8 +129,9 @@ bool ClusterManager::createComputePipeline()
 	// read-only, cluster grid + index pool read_write with atomics).
 	//
 	// Frame @group(0) @binding(0): FrameUniforms uniform
+	// Zero-init, not wgpu::Default: v24 setDefault writes Undefined(1), now read as
+	// "used", which mis-types the entry. See doc/WebGPUv24Migration.md.
 	std::vector<wgpu::BindGroupLayoutEntry> frameEntries(1);
-	frameEntries[0] = wgpu::Default;
 	frameEntries[0].binding               = 0;
 	frameEntries[0].visibility            = wgpu::ShaderStage::Compute;
 	frameEntries[0].buffer.type           = wgpu::BufferBindingType::Uniform;
@@ -139,8 +140,7 @@ bool ClusterManager::createComputePipeline()
 		frameEntries, "ClusterCompute.FrameLayout");
 
 	// Scene @group(1) @binding(0..2): lights / cluster grid / cluster indices
-	std::vector<wgpu::BindGroupLayoutEntry> sceneEntries(3);
-	for (auto &e : sceneEntries) e = wgpu::Default;
+	std::vector<wgpu::BindGroupLayoutEntry> sceneEntries(3); // zero-init = all BindingNotUsed (see note above)
 
 	sceneEntries[0].binding               = 0;
 	sceneEntries[0].visibility            = wgpu::ShaderStage::Compute;
@@ -337,7 +337,7 @@ bool ClusterManager::assignLights(
 		prof->beginGpuScope("Pass.ClusterCompute", encoder);
 	{
 		wgpu::ComputePassDescriptor passDesc{};
-		passDesc.label = "ClusterCompute.Pass";
+		passDesc.label = wgpu::StringView("ClusterCompute.Pass");
 		wgpu::ComputePassEncoder pass = encoder.beginComputePass(passDesc);
 
 		// Frame @group(0) + Scene-style compute view @group(1).

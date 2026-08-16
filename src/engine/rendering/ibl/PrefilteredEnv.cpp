@@ -39,7 +39,7 @@ std::shared_ptr<webgpu::WebGPUTexture> allocateMipChainTarget(
 	wgpu::TextureFormat format)
 {
 	wgpu::TextureDescriptor texDesc{};
-	texDesc.label                   = "PrefilteredEnv";
+	texDesc.label                   = wgpu::StringView("PrefilteredEnv");
 	texDesc.dimension               = wgpu::TextureDimension::_2D;
 	texDesc.size                    = {width, height, 1};
 	texDesc.mipLevelCount           = mipLevels;
@@ -52,7 +52,7 @@ std::shared_ptr<webgpu::WebGPUTexture> allocateMipChainTarget(
 	// Default view covers every mip — IBL consumers sample across the chain
 	// via textureSampleLevel with a roughness-driven LOD.
 	wgpu::TextureViewDescriptor viewDesc{};
-	viewDesc.label           = "PrefilteredEnv.FullView";
+	viewDesc.label           = wgpu::StringView("PrefilteredEnv.FullView");
 	viewDesc.format          = format;
 	viewDesc.dimension       = wgpu::TextureViewDimension::_2D;
 	viewDesc.baseMipLevel    = 0;
@@ -69,7 +69,9 @@ std::shared_ptr<webgpu::WebGPUTexture> allocateMipChainTarget(
 /// 0 = source equirect, 1 = sampler, 2 = roughness uniform (vec4).
 std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> buildBindGroupLayoutInfo(webgpu::WebGPUContext &context)
 {
-	std::vector<wgpu::BindGroupLayoutEntry> entries(3, wgpu::Default);
+	// Zero-init, not wgpu::Default (v24 BindingNotUsed vs Undefined).
+	// See doc/WebGPUv24Migration.md.
+	std::vector<wgpu::BindGroupLayoutEntry> entries(3);
 
 	entries[0].binding                 = 0;
 	entries[0].visibility              = wgpu::ShaderStage::Fragment;
@@ -150,7 +152,7 @@ MipResources makeMipResources(
 	out.bindGroup = context.bindGroupFactory().createBindGroup(bindGroupLayout, entries);
 
 	wgpu::TextureViewDescriptor viewDesc{};
-	viewDesc.label           = "PrefilteredEnv.MipView";
+	viewDesc.label           = wgpu::StringView("PrefilteredEnv.MipView");
 	viewDesc.format          = destinationFormat;
 	viewDesc.dimension       = wgpu::TextureViewDimension::_2D;
 	viewDesc.baseMipLevel    = mipIndex;

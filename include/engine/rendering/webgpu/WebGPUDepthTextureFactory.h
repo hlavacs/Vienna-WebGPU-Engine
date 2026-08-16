@@ -90,7 +90,7 @@ class WebGPUDepthTextureFactory
 		uint32_t width,
 		uint32_t height,
 		wgpu::TextureFormat format = wgpu::TextureFormat::Depth32Float,
-		WGPUTextureUsageFlags usage = WGPUTextureUsage_RenderAttachment
+		WGPUTextureUsage usage = WGPUTextureUsage_RenderAttachment
 	);
 
   private:

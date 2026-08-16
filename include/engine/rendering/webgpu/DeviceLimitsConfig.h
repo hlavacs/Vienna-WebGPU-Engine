@@ -39,19 +39,16 @@ struct DeviceLimitsConfig
 	// Inter-stage
 	// -------------------------------------------------------------------------
 
-	uint32_t maxInterStageShaderComponents = 60;
-	///< Maximum number of scalar components that can be passed between shader stages
-	///< (e.g. vertex → fragment). A vec4 counts as 4 components.
+	uint32_t maxInterStageShaderVariables = 16;
+	///< Inter-stage IO variables (replaces the removed maxInterStageShaderComponents).
 
 	// -------------------------------------------------------------------------
 	// Bind groups
 	// -------------------------------------------------------------------------
 
-	uint32_t maxBindGroups = 8;
-	///< Maximum number of bind groups usable in a pipeline. The engine
-	///< convention is @group(0..3) for engine roles (Frame/Scene/Material/Object)
-	///< and @group(4..7) for custom shader resources. wgpu-native's
-	///< hardware-reported limit caps this at 8 for the foreseeable future.
+	uint32_t maxBindGroups = 4;
+	///< Maximum bind groups per pipeline. WebGPU's spec max is 4 (Dawn/browsers
+	///< enforce it); the engine packs every shader into @group(0..3).
 
 	uint32_t maxBindingsPerBindGroup = 16;
 	///< Maximum number of bindings (buffers, textures, samplers) per bind group.
@@ -126,7 +123,7 @@ struct DeviceLimitsConfig
 
 	/// Build a config that exactly matches the hardware's supported limits.
 	/// Useful as a starting point when you want to allow everything the GPU can do.
-	static DeviceLimitsConfig fromSupported(const wgpu::SupportedLimits &supported);
+	static DeviceLimitsConfig fromSupported(const wgpu::Limits &supported);
 
 	// -------------------------------------------------------------------------
 	// Helpers
@@ -141,18 +138,18 @@ struct DeviceLimitsConfig
 	 * @param supported  The limits reported by the adapter (from adapter.getLimits()).
 	 * @return           A new DeviceLimitsConfig safe to pass to applyTo().
 	 */
-	[[nodiscard]] DeviceLimitsConfig clamped(const wgpu::SupportedLimits &supported) const;
+	[[nodiscard]] DeviceLimitsConfig clamped(const wgpu::Limits &supported) const;
 
 	/**
-	 * @brief Write this config's fields into a wgpu::RequiredLimits struct.
+	 * @brief Write this config's fields into a wgpu::Limits struct.
 	 *
 	 * Does NOT handle alignment limits (minUniformBufferOffsetAlignment, etc.) —
-	 * those are hardware-fixed and must be copied from SupportedLimits directly.
+	 * those are hardware-fixed and must be copied from the adapter's limits directly.
 	 * Always call clamped() before applyTo() to avoid requesting unsupported values.
 	 *
-	 * @param out  The RequiredLimits struct to populate.
+	 * @param out  The wgpu::Limits struct to populate.
 	 */
-	void applyTo(wgpu::RequiredLimits &out) const;
+	void applyTo(wgpu::Limits &out) const;
 };
 
 // -----------------------------------------------------------------------------
@@ -166,8 +163,8 @@ inline DeviceLimitsConfig DeviceLimitsConfig::minimal()
 	c.maxVertexBuffers = 4;
 	c.maxBufferSize = 16ULL * 1024 * 1024;
 	c.maxVertexBufferArrayStride = 128;
-	c.maxInterStageShaderComponents = 16;
-	c.maxBindGroups = 2;
+	c.maxInterStageShaderVariables = 8;
+	c.maxBindGroups = 4;
 	c.maxBindingsPerBindGroup = 8;
 	c.maxUniformBuffersPerShaderStage = 4;
 	c.maxUniformBufferBindingSize = 16ULL * 1024;
@@ -199,8 +196,8 @@ inline DeviceLimitsConfig DeviceLimitsConfig::high()
 	c.maxVertexBuffers = 16;
 	c.maxBufferSize = 256ULL * 1024 * 1024;
 	c.maxVertexBufferArrayStride = 512;
-	c.maxInterStageShaderComponents = 120;
-	c.maxBindGroups = 8;
+	c.maxInterStageShaderVariables = 28;
+	c.maxBindGroups = 4;
 	c.maxBindingsPerBindGroup = 32;
 	c.maxUniformBuffersPerShaderStage = 12;
 	c.maxUniformBufferBindingSize = 256ULL * 1024;
@@ -220,15 +217,15 @@ inline DeviceLimitsConfig DeviceLimitsConfig::high()
 	return c;
 }
 
-inline DeviceLimitsConfig DeviceLimitsConfig::fromSupported(const wgpu::SupportedLimits &supported)
+inline DeviceLimitsConfig DeviceLimitsConfig::fromSupported(const wgpu::Limits &supported)
 {
-	const auto &sl = supported.limits;
+	const auto &sl = supported;
 	DeviceLimitsConfig c{};
 	c.maxVertexAttributes = sl.maxVertexAttributes;
 	c.maxVertexBuffers = sl.maxVertexBuffers;
 	c.maxBufferSize = sl.maxBufferSize;
 	c.maxVertexBufferArrayStride = sl.maxVertexBufferArrayStride;
-	c.maxInterStageShaderComponents = sl.maxInterStageShaderComponents;
+	c.maxInterStageShaderVariables = sl.maxInterStageShaderVariables;
 	c.maxBindGroups = sl.maxBindGroups;
 	c.maxBindingsPerBindGroup = sl.maxBindingsPerBindGroup;
 	c.maxUniformBuffersPerShaderStage = sl.maxUniformBuffersPerShaderStage;
@@ -249,9 +246,9 @@ inline DeviceLimitsConfig DeviceLimitsConfig::fromSupported(const wgpu::Supporte
 	return c;
 }
 
-inline DeviceLimitsConfig DeviceLimitsConfig::clamped(const wgpu::SupportedLimits &supported) const
+inline DeviceLimitsConfig DeviceLimitsConfig::clamped(const wgpu::Limits &supported) const
 {
-	const auto &sl = supported.limits;
+	const auto &sl = supported;
 	DeviceLimitsConfig c = *this;
 
 #define CLAMP_FIELD(field)                                                         \
@@ -270,7 +267,7 @@ inline DeviceLimitsConfig DeviceLimitsConfig::clamped(const wgpu::SupportedLimit
 	CLAMP_FIELD(maxVertexBuffers)
 	CLAMP_FIELD(maxBufferSize)
 	CLAMP_FIELD(maxVertexBufferArrayStride)
-	CLAMP_FIELD(maxInterStageShaderComponents)
+	CLAMP_FIELD(maxInterStageShaderVariables)
 	CLAMP_FIELD(maxBindGroups)
 	CLAMP_FIELD(maxBindingsPerBindGroup)
 	CLAMP_FIELD(maxUniformBuffersPerShaderStage)
@@ -293,14 +290,14 @@ inline DeviceLimitsConfig DeviceLimitsConfig::clamped(const wgpu::SupportedLimit
 	return c;
 }
 
-inline void DeviceLimitsConfig::applyTo(wgpu::RequiredLimits &out) const
+inline void DeviceLimitsConfig::applyTo(wgpu::Limits &out) const
 {
-	auto &rl = out.limits;
+	auto &rl = out;
 	rl.maxVertexAttributes = maxVertexAttributes;
 	rl.maxVertexBuffers = maxVertexBuffers;
 	rl.maxBufferSize = maxBufferSize;
 	rl.maxVertexBufferArrayStride = maxVertexBufferArrayStride;
-	rl.maxInterStageShaderComponents = maxInterStageShaderComponents;
+	rl.maxInterStageShaderVariables = maxInterStageShaderVariables;
 	rl.maxBindGroups = maxBindGroups;
 	rl.maxBindingsPerBindGroup = maxBindingsPerBindGroup;
 	rl.maxUniformBuffersPerShaderStage = maxUniformBuffersPerShaderStage;
@@ -319,7 +316,7 @@ inline void DeviceLimitsConfig::applyTo(wgpu::RequiredLimits &out) const
 	rl.maxComputeWorkgroupSizeZ = maxComputeWorkgroupSizeZ;
 	rl.maxComputeWorkgroupsPerDimension = maxComputeWorkgroupsPerDimension;
 	// NOTE: minUniformBufferOffsetAlignment and minStorageBufferOffsetAlignment
-	// are hardware-fixed and must be set from SupportedLimits directly in initDevice().
+	// are hardware-fixed and must be set from the adapter's limits directly in initDevice().
 }
 
 } // namespace engine::rendering::webgpu

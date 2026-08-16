@@ -66,7 +66,7 @@ bool CompositePass::initialize()
 		sizeof(glm::vec4)
 	);
 
-	auto postLayout = m_shaderInfo->getBindGroupLayout(5);
+	auto postLayout = m_shaderInfo->getBindGroupLayout("PostProcess_BindGroup");
 	if (!postLayout || !m_postUniformBuffer)
 	{
 		spdlog::error("CompositePass: failed to create post-process bind group / buffer");
@@ -161,17 +161,10 @@ void CompositePass::render(FrameCache &frameCache)
 	auto renderPass = m_renderPassContext->begin(encoder);
 	renderPass.setPipeline(pipelineSnapshot->getPipeline());
 
-	// Group 1 (post-process settings) is identical for every per-camera draw -
-	// bind it once for the whole pass instead of per iteration.
-	// Pipeline layout has empty placeholders at slots 0..3 (engine convention
-	// reserves those for Frame/Scene/Material/Object); fullscreen_quad uses
-	// @4 + @5 only. Bind the shared empty group to satisfy wgpu's "every
-	// pipeline slot must have a bound bind group" requirement.
-	auto emptyBg = m_context->pipelineManager().getOrCreateEmptyBindGroup();
-	for (uint32_t slot = 0; slot < 4; ++slot)
-		renderPass.setBindGroup(slot, emptyBg, 0, nullptr);
+	// Post-process settings (@group 1) are identical for every per-camera draw,
+	// so bind once for the whole pass instead of per iteration.
 	if (m_postBindGroup)
-		renderPass.setBindGroup(5, m_postBindGroup->getBindGroup(), 0, nullptr);
+		renderPass.setBindGroup(1, m_postBindGroup->getBindGroup(), 0, nullptr);
 
 	const uint32_t surfaceW = surfaceTex->getWidth();
 	const uint32_t surfaceH = surfaceTex->getHeight();
@@ -206,8 +199,8 @@ void CompositePass::render(FrameCache &frameCache)
 			continue;
 		}
 
-		// --- Bind the texture bind group (group 0) ---
-		renderPass.setBindGroup(4, bindGroup->getBindGroup(), 0, nullptr);
+		// --- Bind the camera texture bind group (@group 0) ---
+		renderPass.setBindGroup(0, bindGroup->getBindGroup(), 0, nullptr);
 
 		// --- Draw fullscreen triangle constrained by viewport ---
 		renderPass.draw(3, 1, 0, 0);
@@ -240,7 +233,7 @@ std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
 	if (it != m_bindGroupCache.end())
 		return it->second;
 
-	auto bindGroupLayout = m_shaderInfo->getBindGroupLayout(4);
+	auto bindGroupLayout = m_shaderInfo->getBindGroupLayout(bindgroup::defaults::FULLSCREEN_QUAD);
 	if (!bindGroupLayout)
 		return nullptr;
 
@@ -252,9 +245,9 @@ std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
 		wgpu::BindGroupEntry entry{};
 		entry.binding = layoutEntry.binding;
 
-		if (layoutEntry.texture.sampleType != wgpu::TextureSampleType::Undefined)
+		if (layoutEntry.texture.sampleType != wgpu::TextureSampleType::BindingNotUsed)
 			entry.textureView = texture->getTextureView(layerIndex);
-		else if (layoutEntry.sampler.type != wgpu::SamplerBindingType::Undefined)
+		else if (layoutEntry.sampler.type != wgpu::SamplerBindingType::BindingNotUsed)
 			entry.sampler = m_sampler ? m_sampler->raw() : wgpu::Sampler(nullptr);
 
 		entries.push_back(entry);

@@ -5,6 +5,7 @@ struct FrameUniforms {
 	viewMatrix: mat4x4<f32>,
 	projectionMatrix: mat4x4<f32>,
 	viewProjectionMatrix: mat4x4<f32>,
+	inverseViewProjectionMatrix: mat4x4<f32>,
 	cameraWorldPosition: vec3<f32>,
 	time: f32,
 }

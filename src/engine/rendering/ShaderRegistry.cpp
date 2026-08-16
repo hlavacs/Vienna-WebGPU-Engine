@@ -261,7 +261,6 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
 	desc.type = ShaderType::Lit;
 	desc.path = PathProvider::getResource("shaders/g_buffer.wgsl");
 	desc.colorTargetFormats = {
-		engine::rendering::webgpu::GBuffer::FORMAT_POSITION,
 		engine::rendering::webgpu::GBuffer::FORMAT_NORMAL,
 		engine::rendering::webgpu::GBuffer::FORMAT_ALBEDO,
 		engine::rendering::webgpu::GBuffer::FORMAT_MATERIAL,
@@ -283,7 +282,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createGBufferShader()
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCompositionDeferredShader()
 {
 	// Canonical layout (doc/SpecShaderSystem.md §4): Frame@0, Scene@1, plus the
-	// GBuffer textures at custom @group(4). Structure is reflected from the WGSL;
+	// GBuffer textures at custom @group(2). Structure is reflected from the WGSL;
 	// only the custom group's name/reuse policy is supplied here.
 	webgpu::ShaderDescriptor desc;
 	desc.name          = shader::defaults::COMPOSITION_DEFERRED;
@@ -292,14 +291,14 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createCompositionDefer
 	desc.vertexLayout  = VertexLayout::None;
 	desc.enableDepth   = false;
 	desc.cullBackFaces = false;
-	desc.groups[4]     = {"GBuffer_BindGroup", BindGroupType::Custom, BindGroupReuse::Global, {}};
+	desc.groups[2]     = {"GBuffer_BindGroup", BindGroupType::Custom, BindGroupReuse::Global, {}};
 
 	return m_context.shaderFactory().buildFromDescriptor(desc);
 }
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 {
-	// Frame@0 plus the debug primitive storage buffer at custom @group(4).
+	// Frame@0 plus the debug primitive storage buffer at custom @group(1).
 	webgpu::ShaderDescriptor desc;
 	desc.name          = shader::defaults::DEBUG;
 	desc.type          = ShaderType::Debug;
@@ -307,14 +306,14 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createDebugShader()
 	desc.vertexLayout  = VertexLayout::None;
 	desc.enableDepth   = false;
 	desc.cullBackFaces = false;
-	desc.groups[4]     = {bindgroup::defaults::DEBUG, BindGroupType::Debug, BindGroupReuse::PerFrame, {}};
+	desc.groups[1]     = {bindgroup::defaults::DEBUG, BindGroupType::Debug, BindGroupReuse::PerFrame, {}};
 
 	return m_context.shaderFactory().buildFromDescriptor(desc);
 }
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadShader()
 {
-	// Custom @group(4): camera texture + sampler. Custom @group(5): post-process
+	// Custom @group(0): camera texture + sampler. Custom @group(1): post-process
 	// settings (HDR + exposure), one shared buffer owned by CompositePass.
 	webgpu::ShaderDescriptor desc;
 	desc.name          = shader::defaults::FULLSCREEN_QUAD;
@@ -323,8 +322,8 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createFullscreenQuadSh
 	desc.vertexLayout  = VertexLayout::None;
 	desc.enableDepth   = false;
 	desc.cullBackFaces = false;
-	desc.groups[4]     = {bindgroup::defaults::FULLSCREEN_QUAD, BindGroupType::Custom, BindGroupReuse::Global, {}};
-	desc.groups[5]     = {"PostProcess_BindGroup", BindGroupType::Custom, BindGroupReuse::Global, {}};
+	desc.groups[0]     = {bindgroup::defaults::FULLSCREEN_QUAD, BindGroupType::Custom, BindGroupReuse::Global, {}};
+	desc.groups[1]     = {"PostProcess_BindGroup", BindGroupType::Custom, BindGroupReuse::Global, {}};
 
 	return m_context.shaderFactory().buildFromDescriptor(desc);
 }
@@ -336,7 +335,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createSkyboxShader()
 	// plane). Depth test is LessEqual + read-only so the skybox only fills
 	// pixels where the G-buffer left the cleared 1.0 depth value (background)
 	// without stamping new depth itself.
-	// Frame@0 plus the environment uniform/sampler/texture at custom @group(4).
+	// Frame@0 plus the environment uniform/sampler/texture at custom @group(1).
 	// The WGSL writes clip.xyww so depth lands at the far plane: LessEqual test,
 	// no depth write, so the skybox only fills uncovered background pixels.
 	webgpu::ShaderDescriptor desc;
@@ -348,28 +347,28 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createSkyboxShader()
 	desc.depthCompare       = wgpu::CompareFunction::LessEqual;
 	desc.depthWrite         = false;
 	desc.colorTargetFormats = {wgpu::TextureFormat::RGBA16Float};
-	desc.groups[4]          = {bindgroup::defaults::SKYBOX, BindGroupType::Custom, BindGroupReuse::PerFrame, {}};
+	desc.groups[1]          = {bindgroup::defaults::SKYBOX, BindGroupType::Custom, BindGroupReuse::PerFrame, {}};
 
 	return m_context.shaderFactory().buildFromDescriptor(desc);
 }
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createMipmapBlitShader()
 {
-	// Source texture + sampler at custom @group(4); blits one mip to the next.
+	// Source texture + sampler at custom @group(0); blits one mip to the next.
 	webgpu::ShaderDescriptor desc;
 	desc.name         = shader::defaults::MIPMAP_BLIT;
 	desc.type         = ShaderType::Unlit;
 	desc.path         = PathProvider::getResource("shaders/mipmap_blit.wgsl");
 	desc.vertexLayout = VertexLayout::None;
 	desc.enableDepth  = false;
-	desc.groups[4]    = {bindgroup::defaults::MIPMAP_BLIT, BindGroupType::Mipmap, BindGroupReuse::Global, {}};
+	desc.groups[0]    = {bindgroup::defaults::MIPMAP_BLIT, BindGroupType::Mipmap, BindGroupReuse::Global, {}};
 
 	return m_context.shaderFactory().buildFromDescriptor(desc);
 }
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPass2DShader()
 {
-	// Depth-only pass: light view-proj uniform at custom @group(4) + Object@3.
+	// Depth-only pass: light view-proj uniform at custom @group(0) + Object@3.
 	webgpu::ShaderDescriptor desc;
 	desc.name          = shader::defaults::SHADOW_PASS_2D;
 	desc.type          = ShaderType::Unlit;
@@ -377,14 +376,14 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPass2DShad
 	desc.vertexEntry   = "vs_shadow";
 	desc.fragmentEntry = "fs_shadow";
 	desc.vertexLayout  = VertexLayout::Position;
-	desc.groups[4]     = {bindgroup::defaults::SHADOW_PASS_2D, BindGroupType::ShadowPass2D, BindGroupReuse::PerFrame, {}};
+	desc.groups[0]     = {bindgroup::defaults::SHADOW_PASS_2D, BindGroupType::ShadowPass2D, BindGroupReuse::PerFrame, {}};
 
 	return m_context.shaderFactory().buildFromDescriptor(desc);
 }
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPassCubeShader()
 {
-	// Depth-only point-light pass: light pos + far plane at custom @group(4) + Object@3.
+	// Depth-only point-light pass: light pos + far plane at custom @group(0) + Object@3.
 	webgpu::ShaderDescriptor desc;
 	desc.name          = shader::defaults::SHADOW_PASS_CUBE;
 	desc.type          = ShaderType::Unlit;
@@ -392,28 +391,28 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createShadowPassCubeSh
 	desc.vertexEntry   = "vs_shadow_cube";
 	desc.fragmentEntry = "fs_shadow_cube";
 	desc.vertexLayout  = VertexLayout::Position;
-	desc.groups[4]     = {bindgroup::defaults::SHADOW_PASS_CUBE, BindGroupType::ShadowPassCube, BindGroupReuse::PerFrame, {}};
+	desc.groups[0]     = {bindgroup::defaults::SHADOW_PASS_CUBE, BindGroupType::ShadowPassCube, BindGroupReuse::PerFrame, {}};
 
 	return m_context.shaderFactory().buildFromDescriptor(desc);
 }
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVisualizeDepthShader()
 {
-	// Debug: depth-array texture + sampler + layer index at custom @group(4).
+	// Debug: depth-array texture + sampler + layer index at custom @group(0).
 	webgpu::ShaderDescriptor desc;
 	desc.name         = shader::defaults::VISUALIZE_DEPTH;
 	desc.type         = ShaderType::Unlit;
 	desc.path         = PathProvider::getResource("shaders/visualize_depth.wgsl");
 	desc.vertexLayout = VertexLayout::None;
 	desc.enableDepth  = false;
-	desc.groups[4]    = {bindgroup::defaults::VISUALIZE_DEPTH, BindGroupType::Custom, BindGroupReuse::Global, {}};
+	desc.groups[0]    = {bindgroup::defaults::VISUALIZE_DEPTH, BindGroupType::Custom, BindGroupReuse::Global, {}};
 
 	return m_context.shaderFactory().buildFromDescriptor(desc);
 }
 
 std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVignetteShader()
 {
-	// Input texture + sampler from the previous pass at custom @group(4).
+	// Input texture + sampler from the previous pass at custom @group(0).
 	webgpu::ShaderDescriptor desc;
 	desc.name          = shader::defaults::VIGNETTE;
 	desc.type          = ShaderType::Unlit;
@@ -421,7 +420,7 @@ std::shared_ptr<webgpu::WebGPUShaderInfo> ShaderRegistry::createVignetteShader()
 	desc.vertexLayout  = VertexLayout::None;
 	desc.enableDepth   = false;
 	desc.cullBackFaces = false;
-	desc.groups[4]     = {bindgroup::defaults::VIGNETTE, BindGroupType::Custom, BindGroupReuse::PerFrame, {}};
+	desc.groups[0]     = {bindgroup::defaults::VIGNETTE, BindGroupType::Custom, BindGroupReuse::PerFrame, {}};
 
 	return m_context.shaderFactory().buildFromDescriptor(desc);
 }

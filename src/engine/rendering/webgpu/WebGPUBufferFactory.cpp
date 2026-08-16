@@ -51,10 +51,10 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBuffer(
 	wgpu::BufferDescriptor desc = {};
 	desc.size = size;
 	desc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-	desc.label = name.c_str();
+	desc.label = wgpu::StringView(name.c_str());
 
 	wgpu::Buffer buffer = createBuffer(desc);
-	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage), m_context.getQueue());
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsage>(desc.usage), m_context.getQueue());
 }
 
 std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBuffer(
@@ -66,10 +66,10 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBuffer(
 	wgpu::BufferDescriptor desc = {};
 	desc.size = size;
 	desc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
-	desc.label = name.c_str();
+	desc.label = wgpu::StringView(name.c_str());
 
 	wgpu::Buffer buffer = createBuffer(desc);
-	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage), m_context.getQueue());
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsage>(desc.usage), m_context.getQueue());
 }
 
 std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
@@ -84,12 +84,19 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
 
 	// Determine buffer size
 	size_t bufferSize = size > 0 ? size : static_cast<size_t>(entry->buffer.minBindingSize);
-	assert(bufferSize > 0 && "Buffer size must be greater than 0");
+
+	// Runtime-sized bindings report minBindingSize == 0; a zero-size buffer is
+	// invalid in v24, so use a placeholder. See doc/WebGPUv24Migration.md.
+	if (bufferSize == 0)
+	{
+		spdlog::warn("[WebGPU] Auto-created buffer '{}' resolved to zero size (runtime-sized binding); using a 16-byte placeholder.", name);
+		bufferSize = 16;
+	}
 
 	// Create buffer with appropriate usage flags based on buffer type
 	wgpu::BufferDescriptor desc;
 	desc.size = bufferSize;
-	desc.label = name.c_str();
+	desc.label = wgpu::StringView(name.c_str());
 
 	if (entry->buffer.type == wgpu::BufferBindingType::Uniform)
 	{
@@ -105,7 +112,7 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
 	}
 
 	wgpu::Buffer buffer = createBuffer(desc);
-	return std::make_shared<WebGPUBuffer>(buffer, name, binding, bufferSize, static_cast<WGPUBufferUsageFlags>(desc.usage), m_context.getQueue());
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, bufferSize, static_cast<WGPUBufferUsage>(desc.usage), m_context.getQueue());
 }
 
 void WebGPUBufferFactory::writeToBuffer(const std::shared_ptr<WebGPUBuffer> &buffer, const void *data, size_t size)

@@ -70,6 +70,7 @@ struct RenderTarget
 		uniforms.viewMatrix = viewMatrix;
 		uniforms.projectionMatrix = projectionMatrix;
 		uniforms.viewProjectionMatrix = viewProjectionMatrix;
+		uniforms.inverseViewProjectionMatrix = glm::inverse(viewProjectionMatrix);
 		uniforms.cameraWorldPosition = cameraPosition;
 		uniforms.time = time;
 		return uniforms;

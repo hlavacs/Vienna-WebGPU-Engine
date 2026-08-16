@@ -57,7 +57,7 @@ class WebGPUSampler
 	{
 		if (m_sampler && addRef)
 		{
-			m_sampler.reference();
+			m_sampler.addRef();
 		}
 	}
 

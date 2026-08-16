@@ -123,11 +123,9 @@ class BindGroupBinder
 	std::optional<uint64_t> m_lastObjectId;
 	std::optional<uint64_t> m_lastMaterialId;
 
-	/// wgpu's spec maximum bind groups per pipeline. The engine convention
-	/// uses @group(0..3) for the canonical Frame/Scene/Material/Object set
-	/// plus @group(4..7) for pass-specific custom groups. Anything outside
-	/// 0..7 is invalid; the binder asserts on out-of-range slot indices.
-	static constexpr uint32_t kMaxBindGroups = 8;
+	/// wgpu's spec maximum bind groups per pipeline (@group 0..3). Every shader
+	/// packs into this range, so the binder treats any index >= 4 as invalid.
+	static constexpr uint32_t kMaxBindGroups = 4;
 
 	/// Currently bound bind groups, keyed by @group index. Array (not
 	/// hashmap) because this is touched on every layout iteration of every

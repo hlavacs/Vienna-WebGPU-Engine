@@ -177,8 +177,14 @@ elseif(APPLE)
 endif()
 
 
-# imgui backend definition (if WGPU backend is used)
-if(WEBGPU_BACKEND_WGPU)
+# imgui backend definition: the ImGui 1.92 WebGPU backend requires exactly one
+# of IMGUI_IMPL_WEBGPU_BACKEND_{DAWN,WGPU,WGVK}. Map from the unified
+# distribution's WEBGPU_BACKEND selector (emscripten uses the Dawn-flavored
+# emdawnwebgpu headers, so it takes the DAWN backend macro).
+string(TOUPPER "${WEBGPU_BACKEND}" _IMGUI_WEBGPU_BACKEND_U)
+if(EMSCRIPTEN OR _IMGUI_WEBGPU_BACKEND_U STREQUAL "DAWN")
+    target_compile_definitions(imgui PRIVATE IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
+else()
     target_compile_definitions(imgui PRIVATE IMGUI_IMPL_WEBGPU_BACKEND_WGPU)
 endif()
 

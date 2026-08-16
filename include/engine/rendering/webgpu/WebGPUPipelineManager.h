@@ -181,9 +181,8 @@ class WebGPUPipelineManager
 	std::size_t evictStale() { return m_pipelines.evictStale(); }
 
 	/// Pass-through to the underlying factory's shared empty bind group used
-	/// to fill unused pipeline-layout slots (engine convention reserves
-	/// @group(0..3) so utility shaders that only use @group(4)+ must still
-	/// bind something at the empty slots).
+	/// to fill holes in a sparse pipeline layout (a shader that skips an engine
+	/// slot must still bind something there).
 	wgpu::BindGroup getOrCreateEmptyBindGroup();
 
 	/// Direct access to the underlying pipeline factory for low-level,

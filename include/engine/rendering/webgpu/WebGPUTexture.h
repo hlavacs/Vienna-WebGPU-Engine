@@ -350,7 +350,7 @@ class WebGPUTexture
 	uint32_t m_readbackBytesPerRow = 0;
 	uint32_t m_readbackBPP = 0;
 	bool m_readbackPending = false;
-	std::unique_ptr<wgpu::BufferMapCallback> m_readbackCallback;
+	wgpu::Future m_readbackFuture{}; ///< wgpu-native v24: mapAsync returns a Future (callback is captureless fn + userdata).
 	bool m_readbackMapped = false;
 	bool m_readbackSuccess = false;
 };

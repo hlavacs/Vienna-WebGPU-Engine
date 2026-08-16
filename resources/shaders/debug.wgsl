@@ -22,7 +22,7 @@ struct VertexOut {
     @location(0) color: vec4<f32>,
 }
 
-@group(4) @binding(0)
+@group(1) @binding(0)
 var<storage, read> uDebugPrimitives: array<DebugPrimitive>;
 
 @vertex

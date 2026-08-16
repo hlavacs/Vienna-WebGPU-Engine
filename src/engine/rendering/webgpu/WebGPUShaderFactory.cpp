@@ -201,24 +201,37 @@ std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::buildFromDescriptor(const
 
 	for (const auto &bg : reflected.reflection.bindGroups)
 	{
-		const uint32_t idx        = bg.groupIndex;
-		const bool     engineRole = idx < engine::rendering::shaders::kFirstCustomBindGroupIndex;
+		const uint32_t idx = bg.groupIndex;
+		auto           it  = desc.groups.find(idx);
 
-		BindGroupMeta meta = engineRole ? defaultEngineMeta(idx) : BindGroupMeta{};
-		if (auto it = desc.groups.find(idx); it != desc.groups.end())
+		// A named descriptor entry fully defines a custom group at any index;
+		// otherwise fall back to the canonical engine role for @group 0..3.
+		const bool    named         = (it != desc.groups.end() && !it->second.name.empty());
+		bool          engineManaged = false;
+		BindGroupMeta meta;
+		if (named)
 		{
-			const BindGroupMeta &o = it->second;
-			if (!o.name.empty()) meta.name = o.name;
-			meta.bindings = o.bindings;
-			if (!engineRole) { meta.type = o.type; meta.reuse = o.reuse; }
+			meta = it->second;
+		}
+		else
+		{
+			if (idx < engine::rendering::shaders::kFirstCustomBindGroupIndex)
+			{
+				meta          = defaultEngineMeta(idx);
+				engineManaged = true;
+			}
+			if (it != desc.groups.end()) meta.bindings = it->second.bindings;
 		}
 		if (meta.name.empty())
 		{
-			spdlog::error("Shader '{}' custom @group({}) has no metadata in its descriptor", desc.name, idx);
+			spdlog::error("Shader '{}' @group({}) has no metadata in its descriptor", desc.name, idx);
 			continue;
 		}
 
-		const bool shared = (idx == 0 || idx == 1 || idx == 3) || meta.reuse == BindGroupReuse::Global;
+		// Engine groups share a global layout by name (Material excepted);
+		// custom groups opt into sharing via Global reuse.
+		const bool shared = engineManaged ? (idx == 0 || idx == 1 || idx == 3)
+		                                  : (meta.reuse == BindGroupReuse::Global);
 
 		std::shared_ptr<WebGPUBindGroupLayoutInfo> layoutInfo;
 		if (shared)
@@ -235,7 +248,7 @@ std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::buildFromDescriptor(const
 				const BindingMeta *bmeta = nullptr;
 				if (auto bit = meta.bindings.find(rb.bindingIndex); bit != meta.bindings.end())
 					bmeta = &bit->second;
-				auto built = translateBinding(rb, bmeta, engineRole);
+				auto built = translateBinding(rb, bmeta, engineManaged);
 				entries.push_back(built.entry);
 				typed.push_back(built.typed);
 			}
@@ -285,16 +298,13 @@ std::string WebGPUShaderFactory::expandShaderSource(const std::filesystem::path 
 
 wgpu::ShaderModule WebGPUShaderFactory::createShaderModuleFromWgsl(const std::string &wgsl, const std::filesystem::path &path)
 {
-	wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc;
+	// v24: ShaderModuleWGSLDescriptor -> ShaderSourceWGSL, StringView code, hints removed.
+	wgpu::ShaderSourceWGSL shaderCodeDesc;
 	shaderCodeDesc.chain.next = nullptr;
-	shaderCodeDesc.chain.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-	shaderCodeDesc.code = wgsl.c_str();
+	shaderCodeDesc.chain.sType = wgpu::SType::ShaderSourceWGSL;
+	shaderCodeDesc.code = wgpu::StringView(wgsl.c_str());
 	wgpu::ShaderModuleDescriptor shaderDesc;
 	shaderDesc.nextInChain = &shaderCodeDesc.chain;
-#ifdef WEBGPU_BACKEND_WGPU
-	shaderDesc.hintCount = 0;
-	shaderDesc.hints = nullptr;
-#endif
 
 	auto shaderModule = m_context.getDevice().createShaderModule(shaderDesc);
 	if (!shaderModule)

@@ -99,16 +99,16 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 			fragmentState.targetCount = 1;
 		}
 		fragmentState.module = shaderInfo->getModule();
-		fragmentState.entryPoint = shaderInfo->getFragmentEntryPoint().c_str();
+		fragmentState.entryPoint = wgpu::StringView(shaderInfo->getFragmentEntryPoint().c_str());
 	}
 
 	// Pipeline descriptor
 	wgpu::RenderPipelineDescriptor desc{};
-	desc.label = shaderInfo->getName().c_str();
+	desc.label = wgpu::StringView(shaderInfo->getName().c_str());
 
 	// Vertex stage
 	desc.vertex.module = shaderInfo->getModule();
-	desc.vertex.entryPoint = shaderInfo->getVertexEntryPoint().c_str();
+	desc.vertex.entryPoint = wgpu::StringView(shaderInfo->getVertexEntryPoint().c_str());
 	if (vertexLayout != engine::rendering::VertexLayout::None)
 	{
 		desc.vertex.bufferCount = 1;
@@ -142,7 +142,8 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	if (hasDepth)
 	{
 		depthStencil.format = depthFormat;
-		depthStencil.depthWriteEnabled = blendEnabled ? false : shaderInfo->isDepthWriteEnabled();
+		depthStencil.depthWriteEnabled = (blendEnabled ? false : shaderInfo->isDepthWriteEnabled())
+			? WGPUOptionalBool_True : WGPUOptionalBool_False;
 		depthStencil.depthCompare = shaderInfo->getDepthCompare();
 		depthStencil.stencilFront = {wgpu::CompareFunction::Always, wgpu::StencilOperation::Keep, wgpu::StencilOperation::Keep, wgpu::StencilOperation::Keep};
 		depthStencil.stencilBack = depthStencil.stencilFront;
@@ -206,10 +207,10 @@ wgpu::ComputePipeline WebGPUPipelineFactory::createComputePipeline(
 )
 {
 	wgpu::ComputePipelineDescriptor desc{};
-	desc.label                 = label;
+	desc.label                 = wgpu::StringView(label ? label : "");
 	desc.layout                = layout;
 	desc.compute.module        = module;
-	desc.compute.entryPoint    = entryPoint;
+	desc.compute.entryPoint    = wgpu::StringView(entryPoint ? entryPoint : "");
 	desc.compute.constantCount = 0;
 	desc.compute.constants     = nullptr;
 	return m_context.getDevice().createComputePipeline(desc);
@@ -224,8 +225,8 @@ wgpu::BindGroupLayout WebGPUPipelineFactory::getOrCreateEmptyBindGroupLayout()
 {
 	// Single device-wide empty layout reused as a placeholder for every
 	// unused bind-group slot in every pipeline. wgpu refuses null entries in
-	// the pipeline layout array, so even a shader that only uses @group(4)
-	// needs slots 0..3 to be real BindGroupLayouts. Sharing one instance
+	// the pipeline layout array, so a shader that skips an engine slot still
+	// needs a real BindGroupLayout there. Sharing one instance
 	// keeps the GPU memory footprint at one descriptor.
 	if (!m_emptyBindGroupLayout)
 	{
@@ -333,17 +334,17 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createFullscreenPipeline(
 
 	wgpu::FragmentState fragState{};
 	fragState.module        = module;
-	fragState.entryPoint    = "fs_main";
+	fragState.entryPoint    = wgpu::StringView("fs_main");
 	fragState.constantCount = 0;
 	fragState.constants     = nullptr;
 	fragState.targetCount   = 1;
 	fragState.targets       = &colorTarget;
 
 	wgpu::RenderPipelineDescriptor pipeDesc{};
-	pipeDesc.label               = label;
+	pipeDesc.label               = wgpu::StringView(label ? label : "");
 	pipeDesc.layout              = layout;
 	pipeDesc.vertex.module       = module;
-	pipeDesc.vertex.entryPoint   = "vs_main";
+	pipeDesc.vertex.entryPoint   = wgpu::StringView("vs_main");
 	pipeDesc.vertex.bufferCount  = 0;
 	pipeDesc.vertex.buffers      = nullptr;
 	pipeDesc.primitive.topology  = wgpu::PrimitiveTopology::TriangleList;
@@ -379,9 +380,10 @@ void WebGPUPipelineFactory::recordFullscreenPass(
 	colorAttach.loadOp     = wgpu::LoadOp::Clear;
 	colorAttach.storeOp    = wgpu::StoreOp::Store;
 	colorAttach.clearValue = wgpu::Color{0.0, 0.0, 0.0, 0.0};
+	colorAttach.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; // 2D target: Dawn rejects a concrete slice index
 
 	wgpu::RenderPassDescriptor rpDesc{};
-	rpDesc.label                  = label;
+	rpDesc.label                  = wgpu::StringView(label ? label : "");
 	rpDesc.colorAttachmentCount   = 1;
 	rpDesc.colorAttachments       = &colorAttach;
 	rpDesc.depthStencilAttachment = nullptr;

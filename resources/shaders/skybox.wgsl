@@ -2,11 +2,11 @@
 
 #include "engine://core/environment_uniforms.wgsl"
 
-@group(4) @binding(0)
+@group(1) @binding(0)
 var<uniform> u_environment: EnvironmentUniforms;
-@group(4) @binding(1)
+@group(1) @binding(1)
 var environment_sampler: sampler;
-@group(4) @binding(2)
+@group(1) @binding(2)
 var environment_texture: texture_2d<f32>;
 
 struct VertexOut {

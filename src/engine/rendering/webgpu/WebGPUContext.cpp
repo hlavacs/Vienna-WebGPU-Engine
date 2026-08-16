@@ -193,21 +193,19 @@ void WebGPUContext::initAdapter()
 void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 {
 	// --------------- Query supported limits ---------------
-	wgpu::SupportedLimits supportedLimits{};
-#ifdef WEBGPU_BACKEND_WGPU
+	wgpu::Limits supportedLimits{};
 	m_adapter.getLimits(&supportedLimits);
-#else
-	supportedLimits.limits.minStorageBufferOffsetAlignment = 256;
-	supportedLimits.limits.minUniformBufferOffsetAlignment = 256;
-#endif
 
 	spdlog::info("[WebGPU] Adapter limits: maxBindGroups={}, maxBindingsPerBindGroup={}, maxSampledTexturesPerShaderStage={}",
-	             supportedLimits.limits.maxBindGroups,
-	             supportedLimits.limits.maxBindingsPerBindGroup,
-	             supportedLimits.limits.maxSampledTexturesPerShaderStage);
+	             supportedLimits.maxBindGroups,
+	             supportedLimits.maxBindingsPerBindGroup,
+	             supportedLimits.maxSampledTexturesPerShaderStage);
 
 	// --------------- Clamp requested limits against hardware ---------------
-	wgpu::RequiredLimits requiredLimits = wgpu::Default;
+	// Start from the adapter's full supported set so every limit (incl. Dawn's
+	// granular per-stage limits, which default to 0) is requested; applyTo then
+	// caps the engine's tuned subset. See doc/WebGPUv24Migration.md.
+	wgpu::Limits requiredLimits = supportedLimits;
 	const DeviceLimitsConfig resolved = limits
 											? limits->clamped(supportedLimits)
 											: DeviceLimitsConfig::fromSupported(supportedLimits);
@@ -215,11 +213,16 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	resolved.applyTo(requiredLimits);
 
 	// Alignment limits are hardware-fixed — must always use the adapter's value
-	requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
-	requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
+	requiredLimits.minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment;
+	requiredLimits.minStorageBufferOffsetAlignment = supportedLimits.minStorageBufferOffsetAlignment;
+
+	// Request the adapter's supported max (Dawn honors it; wgpu-native reports 0
+	// here and caps MRT at 32 regardless). See doc/WebGPUv24Migration.md.
+	requiredLimits.maxColorAttachmentBytesPerSample = supportedLimits.maxColorAttachmentBytesPerSample;
+	requiredLimits.maxColorAttachments = supportedLimits.maxColorAttachments;
 
 	// Store what was actually resolved for later inspection via resolvedLimits()
-	m_resolvedLimits = requiredLimits.limits;
+	m_resolvedLimits = requiredLimits;
 
 	// --------------- Optional features ---------------
 	// timestamp-query enables wgpu::QuerySet of type Timestamp + encoder.writeTimestamp(),
@@ -228,15 +231,47 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	std::vector<WGPUFeatureName> requiredFeatures;
 	m_supportsTimestampQuery = m_adapter.hasFeature(wgpu::FeatureName::TimestampQuery);
 	if (m_supportsTimestampQuery)
+	{
 		requiredFeatures.push_back(WGPUFeatureName_TimestampQuery);
+#ifdef WEBGPU_BACKEND_WGPU
+		// v24 gates encoder.writeTimestamp behind this native feature; require it
+		// when available, else disable GPU timing. See doc/WebGPUv24Migration.md.
+		const auto insideEncoders = static_cast<WGPUFeatureName>(WGPUNativeFeature_TimestampQueryInsideEncoders);
+		if (m_adapter.hasFeature(static_cast<wgpu::FeatureName>(insideEncoders)))
+			requiredFeatures.push_back(insideEncoders);
+		else
+			m_supportsTimestampQuery = false;
+#endif
+	}
 
 	// --------------- Request device ---------------
 	wgpu::DeviceDescriptor deviceDesc{};
-	deviceDesc.label = "WebGPUContext Device";
+	deviceDesc.label = wgpu::StringView("WebGPUContext Device");
 	deviceDesc.requiredFeatureCount = static_cast<uint32_t>(requiredFeatures.size());
 	deviceDesc.requiredFeatures = requiredFeatures.empty() ? nullptr : requiredFeatures.data();
 	deviceDesc.requiredLimits = &requiredLimits;
-	deviceDesc.defaultQueue.label = "Default Queue";
+	deviceDesc.defaultQueue.label = wgpu::StringView("Default Queue");
+
+	// v24: uncaptured-error callback goes in the descriptor (captureless fn ptr).
+	// See doc/WebGPUv24Migration.md.
+	deviceDesc.uncapturedErrorCallbackInfo.callback =
+		[](WGPUDevice const *, WGPUErrorType type, WGPUStringView message, void *, void *)
+		{
+			spdlog::error("[WebGPU] Device error (type {}): {}", static_cast<int>(type),
+			              message.data ? std::string(message.data, message.length) : std::string("unknown"));
+		};
+
+#ifdef WEBGPU_BACKEND_DAWN
+	// Dawn gates encoder.writeTimestamp behind an unsafe-API toggle; enable it so
+	// the FrameProfiler's per-pass GPU timers work. See doc/WebGPUv24Migration.md.
+	const char *const dawnEnabledToggles[] = {"allow_unsafe_apis"};
+	WGPUDawnTogglesDescriptor dawnToggles{};
+	dawnToggles.chain.sType     = WGPUSType_DawnTogglesDescriptor;
+	dawnToggles.enabledToggleCount = 1;
+	dawnToggles.enabledToggles  = dawnEnabledToggles;
+	deviceDesc.nextInChain      = &dawnToggles.chain;
+#endif
+
 	m_device = m_adapter.requestDevice(deviceDesc);
 
 	if (!m_device)
@@ -246,11 +281,8 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	}
 
 	// --------------- Error callback ---------------
-	static std::unique_ptr<wgpu::ErrorCallback> errorCallback;
-	errorCallback = m_device.setUncapturedErrorCallback(
-		[](wgpu::ErrorType type, char const *message)
-		{ spdlog::error("[WebGPU] Device error (type {}): {}", static_cast<int>(type), message ? message : "unknown"); }
-	);
+	// Registered via DeviceDescriptor::uncapturedErrorCallbackInfo in the
+	// requestDevice block above (wgpu-native v24 removed setUncapturedErrorCallback).
 
 	// --------------- Queue ---------------
 	m_queue = m_device.getQueue();
@@ -261,11 +293,13 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	}
 
 	// --------------- Swap chain format ---------------
-#ifdef WEBGPU_BACKEND_WGPU
-	m_swapChainFormat = m_surface.getPreferredFormat(m_adapter);
-#else
-	m_swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
-#endif
+	// v24: getPreferredFormat removed; use getCapabilities (formats[0]) + freeMembers().
+	wgpu::SurfaceCapabilities caps{};
+	m_surface.getCapabilities(m_adapter, &caps);
+	m_swapChainFormat = (caps.formatCount > 0)
+		? static_cast<wgpu::TextureFormat>(caps.formats[0])
+		: wgpu::TextureFormat::BGRA8Unorm;
+	caps.freeMembers();
 
 	if (m_swapChainFormat == wgpu::TextureFormat::Undefined)
 	{
@@ -277,9 +311,9 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	spdlog::info("[WebGPU] Device created successfully.");
 }
 
-wgpu::SupportedLimits WebGPUContext::getHardwareLimits() const
+wgpu::Limits WebGPUContext::getHardwareLimits() const
 {
-	wgpu::SupportedLimits limits{};
+	wgpu::Limits limits{};
 	wgpuDeviceGetLimits(m_device, &limits);
 	return limits;
 }

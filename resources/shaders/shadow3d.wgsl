@@ -20,7 +20,7 @@ struct ShadowPassCubeUniform {
     farPlane: f32,      // far plane for normalization
 };
 
-@group(4) @binding(0)
+@group(0) @binding(0)
 var<uniform> uShadowCube: ShadowPassCubeUniform;
 
 @vertex

@@ -8,16 +8,16 @@
 // binding declarations all bundled. Same include PBR forward uses.
 #include "engine://core/scene_bindings.wgsl"
 
-// @group(4) Custom — GBuffer textures (per-camera, pass-specific).
+// @group(2) Custom — GBuffer textures (per-camera, pass-specific).
 // RGBA16Float in C++ (alpha unused) for the emission target. Emission is added
 // post-lighting so emissive surfaces (sky-domes, neon, eyes, magic) survive
 // the deferred "albedo * lighting" multiplication that would otherwise zero
 // them out when base color is dark.
-@group(4) @binding(0) var gBufferPositionTexture: texture_2d<f32>;
-@group(4) @binding(1) var gBufferNormalTexture: texture_2d<f32>;
-@group(4) @binding(2) var gBufferAlbedoTexture: texture_2d<f32>;
-@group(4) @binding(3) var gBufferMaterialTexture: texture_2d<f32>;
-@group(4) @binding(4) var gBufferEmissionTexture: texture_2d<f32>;
+@group(2) @binding(0) var gBufferNormalTexture: texture_2d<f32>;
+@group(2) @binding(1) var gBufferAlbedoTexture: texture_2d<f32>;
+@group(2) @binding(2) var gBufferMaterialTexture: texture_2d<f32>;
+@group(2) @binding(3) var gBufferEmissionTexture: texture_2d<f32>;
+@group(2) @binding(4) var gBufferDepthTexture: texture_depth_2d;
 
 // PBRProperties intentionally not declared — composition samples the
 // G-buffer (RGBA packed material data) rather than the per-material UBO.
@@ -54,8 +54,8 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 // getClusterIndex + the CLUSTER_* constants are shared with the forward PBR
 // path via lib/clustering.wgsl, so opaque and transparent fragments map to the
-// same froxel. depth fed in is VIEW-SPACE depth in world units (positionData.w
-// from the g-buffer), not NDC depth.
+// same froxel. depth fed in is VIEW-SPACE depth in world units (reconstructed
+// from the depth buffer), not NDC depth.
 #include "engine://lib/clustering.wgsl"
 
 // Shared shadow + lighting math — single source for both PBR forward and
@@ -84,14 +84,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let uvFlipped = vec2<f32>(input.uv.x, 1.0 - input.uv.y);
 	let uv = clamp(uvFlipped, vec2<f32>(0.0, 0.0), vec2<f32>(0.999999, 0.999999));
 	let uvCluster = clamp(input.uv, vec2<f32>(0.0, 0.0), vec2<f32>(0.999999, 0.999999));
-	let texSize = textureDimensions(gBufferPositionTexture, 0);
+	let texSize = textureDimensions(gBufferNormalTexture, 0);
 	let pixelCoord = vec2<i32>(
 		i32(uv.x * f32(texSize.x)),
 		i32(uv.y * f32(texSize.y))
 	);
-	
+
 	// Read G-buffers with integer texel fetch to support unfilterable float formats.
-	let positionData = textureLoad(gBufferPositionTexture, pixelCoord, 0);
 	let normalData = textureLoad(gBufferNormalTexture, pixelCoord, 0);
 	let albedo = textureLoad(gBufferAlbedoTexture, pixelCoord, 0);
 	let emissionData = textureLoad(gBufferEmissionTexture, pixelCoord, 0);
@@ -112,7 +111,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let albedoLinear = clamp(albedo.xyz, vec3<f32>(0.0), vec3<f32>(1.0));
 	let materialData = textureLoad(gBufferMaterialTexture, pixelCoord, 0);
 
-	let worldPos = positionData.xyz;
+	// Reconstruct world position from the depth buffer + inverse view-proj (the
+	// position target was dropped to fit wgpu-native's 32-byte MRT budget). NDC
+	// uses the un-flipped fullscreen uv; depth is sampled at the y-down texel.
+	// textureSample (not textureLoad): compatibility mode forbids textureLoad on
+	// depth textures. environment_sampler is non-comparison; level 0, no filtering.
+	let depth = textureSampleLevel(gBufferDepthTexture, environment_sampler, uv, 0.0);
+	let ndc = input.uv * 2.0 - 1.0;
+	let worldH = u_frame.inverseViewProjectionMatrix * vec4<f32>(ndc, depth, 1.0);
+	let worldPos = worldH.xyz / worldH.w;
+
 	let worldNormal = normalize(normalData.xyz);
 	let roughness = materialData.x;
 	let metallic = materialData.y;
@@ -120,8 +128,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	// materialData.w = materialType id (0 = standard PBR). Reserved for the
 	// future data-reinterpretation deferred design - ignored today.
 	let emission = emissionData.rgb;
-	// position.w is VIEW-SPACE depth in world units (gbuffer wrote -viewPos.z).
-	let viewDepth = positionData.w;
+	// View-space depth for the cluster lookup, from the reconstructed position.
+	let viewPos = u_frame.viewMatrix * vec4<f32>(worldPos, 1.0);
+	let viewDepth = -viewPos.z;
 	let viewDir = normalize(u_frame.cameraWorldPosition - worldPos);
 
 	// Trust the cluster compute - count=0 means no direct light affects this

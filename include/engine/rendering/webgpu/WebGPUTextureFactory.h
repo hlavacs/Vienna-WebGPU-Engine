@@ -123,7 +123,7 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 		uint32_t width,
 		uint32_t height,
 		wgpu::TextureFormat format,
-		WGPUTextureUsageFlags usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
+		WGPUTextureUsage usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
 	);
 
 	/**

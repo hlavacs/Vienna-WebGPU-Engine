@@ -272,7 +272,7 @@ uint32_t EngineCoreRegistry::regenerateAll()
 		     << "@group(1) @binding(0)  var<storage, read> u_lights:                 LightsBuffer;\n"
 		     << "@group(1) @binding(1)  var                shadow_sampler:           sampler_comparison;\n"
 		     << "@group(1) @binding(2)  var                shadow_maps_2d:           texture_depth_2d_array;\n"
-		     << "@group(1) @binding(3)  var                shadow_maps_cube:         texture_depth_cube_array;\n"
+		     << "@group(1) @binding(3)  var                shadow_maps_cube:         texture_depth_2d_array;\n"
 		     << "@group(1) @binding(4)  var<storage, read> u_shadows:                array<ShadowUniform>;\n"
 		     << "@group(1) @binding(5)  var<uniform>       u_environment:            EnvironmentUniforms;\n"
 		     << "@group(1) @binding(6)  var                environment_sampler:      sampler;\n"

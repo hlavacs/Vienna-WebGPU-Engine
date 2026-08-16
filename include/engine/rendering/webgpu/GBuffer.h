@@ -26,12 +26,11 @@ class WebGPUTexture;
  * **Layout** (matches @c deferred_composition.wgsl ):
  * | Slot | Attachment | Format            | Channels                                                    |
  * |------|------------|-------------------|-------------------------------------------------------------|
- * | 0    | Position   | RGBA16Float       | xyz = world position, w = view-space depth                  |
- * | 1    | Normal     | RGBA16Float       | xyz = world normal,   w = view-space depth                  |
- * | 2    | Albedo     | RGBA8UnormSrgb    | rgb = base color,     a = coverage                          |
- * | 3    | Material   | RGBA8Unorm        | r = roughness, g = metallic, b = ao, a = materialType id    |
- * | 4    | Emission   | RGBA16Float       | rgb = additive emission, a = unused                         |
- * | -    | Depth      | Depth32Float      | shared with composition / forward passes                    |
+ * | 0    | Normal     | RGBA16Float       | xyz = world normal,   w = view-space depth (unused)         |
+ * | 1    | Albedo     | RGBA8UnormSrgb    | rgb = base color,     a = coverage                          |
+ * | 2    | Material   | RGBA8Unorm        | r = roughness, g = metallic, b = ao, a = materialType id    |
+ * | 3    | Emission   | RGBA16Float       | rgb = additive emission, a = unused                         |
+ * | -    | Depth      | Depth32Float      | sampled by composition to reconstruct world position        |
  *
  * The @c materialType slot in @c material.a is reserved for a future
  * "data-reinterpretation" deferred design where one fixed-size material
@@ -51,17 +50,15 @@ class GBuffer
 {
 public:
 	/// Index constants for the color attachment array.
-	static constexpr size_t SLOT_POSITION = 0;
-	static constexpr size_t SLOT_NORMAL = 1;
-	static constexpr size_t SLOT_ALBEDO = 2;
-	static constexpr size_t SLOT_MATERIAL = 3;
-	static constexpr size_t SLOT_EMISSION = 4;
-	static constexpr size_t COLOR_ATTACHMENT_COUNT = 5;
+	static constexpr size_t SLOT_NORMAL = 0;
+	static constexpr size_t SLOT_ALBEDO = 1;
+	static constexpr size_t SLOT_MATERIAL = 2;
+	static constexpr size_t SLOT_EMISSION = 3;
+	static constexpr size_t COLOR_ATTACHMENT_COUNT = 4;
 
 	// Pixel formats used by each slot (kept here so other systems can match them).
 	// wgpu::TextureFormat is a thin C++ wrapper struct around the C enum and
 	// its constructor isn't constexpr, hence `inline const` rather than constexpr.
-	static inline const wgpu::TextureFormat FORMAT_POSITION = wgpu::TextureFormat::RGBA16Float;
 	static inline const wgpu::TextureFormat FORMAT_NORMAL = wgpu::TextureFormat::RGBA16Float;
 	static inline const wgpu::TextureFormat FORMAT_ALBEDO = wgpu::TextureFormat::RGBA8UnormSrgb;
 	static inline const wgpu::TextureFormat FORMAT_MATERIAL = wgpu::TextureFormat::RGBA8Unorm;
@@ -115,7 +112,6 @@ public:
 	[[nodiscard]] std::shared_ptr<WebGPUTexture> getDepthTexture() const { return m_depthTexture; }
 
 	/// Convenience accessors for individual slots.
-	[[nodiscard]] std::shared_ptr<WebGPUTexture> getPositionTexture() const { return m_colorTextures[SLOT_POSITION]; }
 	[[nodiscard]] std::shared_ptr<WebGPUTexture> getNormalTexture()   const { return m_colorTextures[SLOT_NORMAL]; }
 	[[nodiscard]] std::shared_ptr<WebGPUTexture> getAlbedoTexture()   const { return m_colorTextures[SLOT_ALBEDO]; }
 	[[nodiscard]] std::shared_ptr<WebGPUTexture> getMaterialTexture() const { return m_colorTextures[SLOT_MATERIAL]; }

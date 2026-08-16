@@ -36,7 +36,7 @@ std::shared_ptr<WebGPUBindGroupLayoutInfo> WebGPUBindGroupFactory::createBindGro
 			nextBinding = std::max(nextBinding, entry.binding + 1);
 	}
 	wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
-	desc.label = name.c_str();
+	desc.label = wgpu::StringView(name.c_str());
 	auto layout = m_context.getDevice().createBindGroupLayout(desc);
 	return std::make_shared<WebGPUBindGroupLayoutInfo>(
 		layout,
@@ -105,8 +105,9 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 		}
 		else
 		{
-			// No override - create resource automatically based on layout
-			if (entryLayout.buffer.type != wgpu::BufferBindingType::Undefined)
+			// No override: auto-create from the layout. Test != BindingNotUsed (v24),
+			// not != Undefined. See doc/WebGPUv24Migration.md.
+			if (entryLayout.buffer.type != wgpu::BufferBindingType::BindingNotUsed)
 			{
 				auto buffer = m_context.bufferFactory().createBufferFromLayoutEntry(
 					*layoutInfo,
@@ -122,9 +123,10 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 				}
 				entry.buffer = buffer->getBuffer();
 				entry.offset = 0;
-				entry.size = entryLayout.buffer.minBindingSize;
+				// Bind the buffer's actual size; a zero entry size is invalid in v24.
+				entry.size = buffer->getSize();
 			}
-			else if (entryLayout.texture.sampleType != wgpu::TextureSampleType::Undefined)
+			else if (entryLayout.texture.sampleType != wgpu::TextureSampleType::BindingNotUsed)
 			{
 				if (!material)
 				{
@@ -153,7 +155,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 					}
 				}
 			}
-			else if (entryLayout.sampler.type != wgpu::SamplerBindingType::Undefined)
+			else if (entryLayout.sampler.type != wgpu::SamplerBindingType::BindingNotUsed)
 			{
 				// Factory's slot keeps the WebGPUSampler alive across this
 				// expression; createBindGroup bumps the wgpu refcount
@@ -176,7 +178,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 	desc.layout = layoutInfo->getLayout();
 	desc.entryCount = static_cast<uint32_t>(entries.size());
 	desc.entries = entries.data();
-	desc.label = labelStr.c_str();
+	desc.label = wgpu::StringView(labelStr.c_str());
 
 	wgpu::BindGroup rawBindGroup = m_context.getDevice().createBindGroup(desc);
 
@@ -284,7 +286,7 @@ wgpu::BindGroupLayout WebGPUBindGroupFactory::createBindGroupLayout(
 )
 {
 	wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
-	desc.label = label;
+	desc.label = wgpu::StringView(label ? label : "");
 	return m_context.getDevice().createBindGroupLayout(desc);
 }
 

@@ -756,17 +756,17 @@ bool MainDemoImGuiUI::ensureDepthPreviewPipeline()
 
 	wgpu::FragmentState fragState{};
 	fragState.module        = m_depthPreviewShaderModule;
-	fragState.entryPoint    = "fs_main";
+	fragState.entryPoint    = wgpu::StringView("fs_main");
 	fragState.constantCount = 0;
 	fragState.constants     = nullptr;
 	fragState.targetCount   = 1;
 	fragState.targets       = &colorTarget;
 
 	wgpu::RenderPipelineDescriptor pipeDesc{};
-	pipeDesc.label                = "DepthPreview.Pipeline";
+	pipeDesc.label                = wgpu::StringView("DepthPreview.Pipeline");
 	pipeDesc.layout               = m_depthPreviewPipelineLayout;
 	pipeDesc.vertex.module        = m_depthPreviewShaderModule;
-	pipeDesc.vertex.entryPoint    = "vs_main";
+	pipeDesc.vertex.entryPoint    = wgpu::StringView("vs_main");
 	pipeDesc.vertex.bufferCount   = 0;
 	pipeDesc.vertex.buffers       = nullptr;
 	pipeDesc.primitive.topology   = wgpu::PrimitiveTopology::TriangleList;
@@ -857,7 +857,7 @@ bool MainDemoImGuiUI::renderDepthPreviewBlit(
 	colorAttach.clearValue = wgpu::Color{0.0, 0.0, 0.0, 1.0};
 
 	wgpu::RenderPassDescriptor rpDesc{};
-	rpDesc.label                  = "DepthPreview.RenderPass";
+	rpDesc.label                  = wgpu::StringView("DepthPreview.RenderPass");
 	rpDesc.colorAttachmentCount   = 1;
 	rpDesc.colorAttachments       = &colorAttach;
 	rpDesc.depthStencilAttachment = nullptr;

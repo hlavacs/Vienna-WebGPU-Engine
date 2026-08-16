@@ -52,7 +52,6 @@ void GBuffer::createTextures()
 		wgpu::TextureFormat format;
 	};
 	const std::array<ColorSlot, COLOR_ATTACHMENT_COUNT> slots{{
-		{"GBuffer.Position", FORMAT_POSITION},
 		{"GBuffer.Normal", FORMAT_NORMAL},
 		{"GBuffer.Albedo", FORMAT_ALBEDO},
 		{"GBuffer.Material", FORMAT_MATERIAL},

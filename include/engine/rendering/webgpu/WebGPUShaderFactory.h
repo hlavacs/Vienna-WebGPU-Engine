@@ -43,8 +43,8 @@ struct BindingMeta
  * @brief Non-WGSL metadata for one bind group: engine-facing name, semantic
  * type, reuse policy, and per-binding overrides.
  *
- * Engine groups (`@group` 0..3) get canonical name/type/reuse when omitted;
- * custom groups (>= 4) must provide at least a name.
+ * Groups without a name fall back to the canonical engine role for @group 0..3;
+ * a named entry defines a custom group at any index.
  */
 struct BindGroupMeta
 {

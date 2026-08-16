@@ -77,16 +77,16 @@ class WebGPUPipelineFactory
 	);
 
 	/// Shared empty `wgpu::BindGroupLayout`, lazily created on first request.
-	/// Used to fill unused slots in a sparse pipeline layout (e.g. a shader
-	/// that only declares @group(4) still needs slots 0..3 in the pipeline
-	/// layout array; wgpu refuses null entries).
+	/// Used to fill holes in a sparse pipeline layout (e.g. the shadow pass
+	/// declares @group(0) + @group(3), so slots 1..2 need a non-null layout;
+	/// wgpu refuses null entries).
 	wgpu::BindGroupLayout getOrCreateEmptyBindGroupLayout();
 
 	/// Shared empty `wgpu::BindGroup` paired with the empty layout above.
 	/// Render passes must bind something at every pipeline slot the shader's
-	/// pipeline layout declares — utility shaders that only sample @group(4)
-	/// still need an empty bind group at slots 0..3 to satisfy wgpu's
-	/// "bind group at index N is unbound" validation.
+	/// pipeline layout declares — a shader that leaves an engine slot unused
+	/// (e.g. shadow's slots 1..2) still needs an empty bind group there to
+	/// satisfy wgpu's "bind group at index N is unbound" validation.
 	wgpu::BindGroup getOrCreateEmptyBindGroup();
 
 	/**

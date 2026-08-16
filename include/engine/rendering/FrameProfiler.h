@@ -172,7 +172,7 @@ private:
 		// underlying C API as userdata - dropping the unique_ptr immediately
 		// frees the callback and the GPU's eventual invocation derefs a
 		// dangling pointer (the access violation we hit before).
-		std::unique_ptr<wgpu::BufferMapCallback> mapCallback;
+		wgpu::Future mapFuture{}; ///< wgpu-native v24: mapAsync returns a Future; the callback is a captureless fn + userdata, no holder to own.
 		bool inFlight = false;
 		bool mapped = false;
 	};

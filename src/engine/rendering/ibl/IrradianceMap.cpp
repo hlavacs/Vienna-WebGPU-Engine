@@ -27,7 +27,9 @@ namespace
 /// engine's BindGroupFactory wraps the wgpu handle in WebGPUBindGroupLayoutInfo.
 std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> buildBindGroupLayoutInfo(webgpu::WebGPUContext &context)
 {
-	std::vector<wgpu::BindGroupLayoutEntry> entries(2, wgpu::Default);
+	// Zero-init, not wgpu::Default (v24 BindingNotUsed vs Undefined).
+	// See doc/WebGPUv24Migration.md.
+	std::vector<wgpu::BindGroupLayoutEntry> entries(2);
 
 	entries[0].binding                 = 0;
 	entries[0].visibility              = wgpu::ShaderStage::Fragment;

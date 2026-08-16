@@ -107,13 +107,13 @@ void FrameProfiler::initGpu(webgpu::WebGPUContext &context, uint32_t maxPasses)
 	const uint64_t bufferSize = static_cast<uint64_t>(m_maxTimestamps) * TIMESTAMP_BYTES;
 
 	wgpu::QuerySetDescriptor qsDesc{};
-	qsDesc.label = "FrameProfiler.QuerySet";
+	qsDesc.label = wgpu::StringView("FrameProfiler.QuerySet");
 	qsDesc.type = wgpu::QueryType::Timestamp;
 	qsDesc.count = m_maxTimestamps;
 	m_querySet = context.createQuerySet(qsDesc);
 
 	wgpu::BufferDescriptor resDesc{};
-	resDesc.label = "FrameProfiler.Resolve";
+	resDesc.label = wgpu::StringView("FrameProfiler.Resolve");
 	resDesc.size = bufferSize;
 	resDesc.usage = wgpu::BufferUsage::QueryResolve | wgpu::BufferUsage::CopySrc;
 	resDesc.mappedAtCreation = false;
@@ -122,7 +122,7 @@ void FrameProfiler::initGpu(webgpu::WebGPUContext &context, uint32_t maxPasses)
 	for (auto &f : m_frames)
 	{
 		wgpu::BufferDescriptor rbDesc{};
-		rbDesc.label = "FrameProfiler.Readback";
+		rbDesc.label = wgpu::StringView("FrameProfiler.Readback");
 		rbDesc.size = bufferSize;
 		rbDesc.usage = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopyDst;
 		rbDesc.mappedAtCreation = false;
@@ -199,18 +199,20 @@ void FrameProfiler::resolveGpuTimestamps(webgpu::WebGPUContext &context)
 	// the reference is pointer-stable for the profiler's lifetime. The
 	// returned unique_ptr MUST be stored or the callback object frees and
 	// the GPU callback fires through a dangling userdata pointer.
-	slot.mapCallback = slot.readback.mapAsync(
-		wgpu::MapMode::Read,
-		0,
-		byteCount,
-		[&slot](wgpu::BufferMapAsyncStatus status)
-		{
-			if (status == wgpu::BufferMapAsyncStatus::Success)
-				slot.mapped = true;
-			else
-				slot.inFlight = false;
-		}
-	);
+	// v24: mapAsync takes BufferMapCallbackInfo + returns a Future; AllowSpontaneous
+	// fires the callback without an explicit poll. See doc/WebGPUv24Migration.md.
+	wgpu::BufferMapCallbackInfo mapCbInfo{};
+	mapCbInfo.mode = wgpu::CallbackMode::AllowSpontaneous;
+	mapCbInfo.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void *ud1, void *)
+	{
+		auto *s = static_cast<InFlightFrame *>(ud1);
+		if (status == WGPUMapAsyncStatus_Success)
+			s->mapped = true;
+		else
+			s->inFlight = false;
+	};
+	mapCbInfo.userdata1 = &slot;
+	slot.mapFuture = slot.readback.mapAsync(wgpu::MapMode::Read, 0, byteCount, mapCbInfo);
 
 	m_writeFrame = (m_writeFrame + 1) % IN_FLIGHT;
 }
@@ -245,7 +247,7 @@ void FrameProfiler::pollGpuTimestamps()
 		slot.inFlight = false;
 		slot.mapped = false;
 		slot.pairs.clear();
-		slot.mapCallback.reset();
+		slot.mapFuture = {};
 	}
 }
 

@@ -69,7 +69,8 @@ enum class EngineBindGroup : uint8_t
 
 constexpr uint32_t canonicalGroupIndex(EngineBindGroup g) { return static_cast<uint32_t>(g); }
 
-/// First @group index available to user / pass-specific bindings. See §4.
+/// Engine roles occupy @group(0..3); this is the first index with no built-in
+/// role. A named descriptor entry still defines a custom group at any index.
 constexpr uint32_t kFirstCustomBindGroupIndex = 4;
 
 // ---- Implementation ----

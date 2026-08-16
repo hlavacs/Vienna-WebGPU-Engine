@@ -18,7 +18,7 @@ std::shared_ptr<WebGPUTexture> WebGPUDepthTextureFactory::createDepthTarget(
 	uint32_t width,
 	uint32_t height,
 	wgpu::TextureFormat format,
-	WGPUTextureUsageFlags usage
+	WGPUTextureUsage usage
 )
 {
 	assert(width > 0 && height > 0 && "Depth target dimensions must be > 0");
@@ -44,7 +44,7 @@ std::shared_ptr<WebGPUTexture> WebGPUDepthTextureFactory::create(
 {
 	// Describe the texture
 	wgpu::TextureDescriptor desc{};
-	desc.label = label ? label : "DepthTexture";
+	desc.label = wgpu::StringView(label ? label : "DepthTexture");
 	desc.dimension = wgpu::TextureDimension::_2D;
 	desc.size.width = width;
 	desc.size.height = height;

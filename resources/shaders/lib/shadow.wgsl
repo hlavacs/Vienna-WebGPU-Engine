@@ -23,6 +23,30 @@ fn select_cascade(view_depth: f32, light: LightStruct) -> u32 {
 	return light.shadowCount - 1u;
 }
 
+// Direction -> cube face index (+X,-X,+Y,-Y,+Z,-Z order) and its [0,1] UV.
+// Replaces hardware cube sampling so point shadows work in compatibility mode.
+fn cube_face_uv(dir: vec3<f32>) -> vec3<f32> {
+	let a = abs(dir);
+	var face: f32;
+	var sc: f32;
+	var tc: f32;
+	var ma: f32;
+	if (a.x >= a.y && a.x >= a.z) {
+		ma = a.x;
+		if (dir.x > 0.0) { face = 0.0; sc = -dir.z; tc = -dir.y; }
+		else             { face = 1.0; sc =  dir.z; tc = -dir.y; }
+	} else if (a.y >= a.z) {
+		ma = a.y;
+		if (dir.y > 0.0) { face = 2.0; sc = dir.x; tc =  dir.z; }
+		else             { face = 3.0; sc = dir.x; tc = -dir.z; }
+	} else {
+		ma = a.z;
+		if (dir.z > 0.0) { face = 4.0; sc =  dir.x; tc = -dir.y; }
+		else             { face = 5.0; sc = -dir.x; tc = -dir.y; }
+	}
+	return vec3<f32>(0.5 * (sc / ma + 1.0), 0.5 * (tc / ma + 1.0), face);
+}
+
 fn calculate_shadow(world_pos: vec3<f32>, normal: vec3<f32>, light: LightStruct) -> f32 {
 	if (light.shadowCount == 0u) {
 		return 1.0;
@@ -90,7 +114,7 @@ fn calculate_shadow(world_pos: vec3<f32>, normal: vec3<f32>, light: LightStruct)
 			for (var y = -kernel; y <= kernel; y = y + 1) {
 				let offset = vec2<f32>(f32(x), f32(y)) * shadow.texelSize * pcf_scale;
 				let uv     = shadow_uv + offset;
-				visibility += textureSampleCompare(shadow_maps_2d, shadow_sampler, uv, shadow.textureIndex, current_depth);
+				visibility += textureSampleCompareLevel(shadow_maps_2d, shadow_sampler, uv, shadow.textureIndex, current_depth);
 				samples += 1.0;
 			}
 		}
@@ -101,7 +125,7 @@ fn calculate_shadow(world_pos: vec3<f32>, normal: vec3<f32>, light: LightStruct)
 		return visibility / samples;
 	}
 
-	// Point light (2): cube shadow map.
+	// Point light (2): 6 faces packed into a 2D-array, sampled manually.
 	if (light.light_type == 2u) {
 		let shadow = u_shadows[light.shadowIndex];
 		let to_frag      = (world_pos - shadow.lightPos) * vec3<f32>(-1.0, 1.0, 1.0);
@@ -130,7 +154,9 @@ fn calculate_shadow(world_pos: vec3<f32>, normal: vec3<f32>, light: LightStruct)
 				for (var z = -kernel; z <= kernel; z = z + 1) {
 					let offset             = u * f32(x) + v * f32(y) + w * f32(z);
 					let sample_dir_offset  = normalize(to_frag + offset * radius);
-					visibility += textureSampleCompare(shadow_maps_cube, shadow_sampler, sample_dir_offset, shadow.textureIndex, current_depth);
+					let fuv                = cube_face_uv(sample_dir_offset);
+					let layer              = shadow.textureIndex * 6u + u32(fuv.z);
+					visibility += textureSampleCompareLevel(shadow_maps_cube, shadow_sampler, fuv.xy, layer, current_depth);
 					samples += 1.0;
 				}
 			}

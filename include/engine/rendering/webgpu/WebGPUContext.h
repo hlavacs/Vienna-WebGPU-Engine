@@ -86,7 +86,7 @@ class WebGPUContext
 	[[nodiscard]] wgpu::TextureFormat getSwapChainFormat() const { return m_swapChainFormat; }
 
 	/** @brief Returns the hardware limits of the device. */
-	[[nodiscard]] wgpu::SupportedLimits getHardwareLimits() const;
+	[[nodiscard]] wgpu::Limits getHardwareLimits() const;
 	/** @brief Returns the resolved device limits. */
 	[[nodiscard]] const wgpu::Limits &resolvedLimits() const { return m_resolvedLimits; }
 	/** @brief Returns the device limits configuration. */
@@ -153,7 +153,7 @@ class WebGPUContext
 	wgpu::CommandEncoder createCommandEncoder(const char *label = nullptr)
 	{
 		wgpu::CommandEncoderDescriptor desc{};
-		desc.label = label;
+		desc.label = wgpu::StringView(label ? label : "");
 		return getDevice().createCommandEncoder(desc);
 	}
 
@@ -178,7 +178,7 @@ class WebGPUContext
 	void submitCommandEncoder(wgpu::CommandEncoder &encoder, const char *label = nullptr)
 	{
 		wgpu::CommandBufferDescriptor cmdDesc{};
-		cmdDesc.label = label;
+		cmdDesc.label = wgpu::StringView(label ? label : "");
 		wgpu::CommandBuffer cmdBuffer = encoder.finish(cmdDesc);
 		encoder.release();
 		getQueue().submit(cmdBuffer);

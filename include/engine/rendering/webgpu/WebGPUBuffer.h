@@ -30,7 +30,7 @@ class WebGPUBuffer
 		std::string name,
 		uint32_t binding,
 		size_t size,
-		WGPUBufferUsageFlags usage,
+		WGPUBufferUsage usage,
 		wgpu::Queue queue
 	) : m_buffer(buffer),
 		m_name(std::move(name)),
@@ -104,7 +104,7 @@ class WebGPUBuffer
 	[[nodiscard]] const std::string &getName() const { return m_name; }
 	[[nodiscard]] uint32_t getBinding() const { return m_binding; }
 	[[nodiscard]] size_t getSize() const { return m_size; }
-	[[nodiscard]] WGPUBufferUsageFlags getUsage() const { return m_usage; }
+	[[nodiscard]] WGPUBufferUsage getUsage() const { return m_usage; }
 	[[nodiscard]] bool isValid() const { return m_buffer != nullptr; }
 
 	// === Writes ===
@@ -132,7 +132,7 @@ class WebGPUBuffer
 	std::string m_name;
 	uint32_t m_binding = 0;
 	size_t m_size = 0;
-	WGPUBufferUsageFlags m_usage = 0;
+	WGPUBufferUsage m_usage = 0;
 	wgpu::Queue m_queue = nullptr;
 };
 
