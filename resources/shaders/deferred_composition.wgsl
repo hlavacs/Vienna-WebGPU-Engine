@@ -17,7 +17,6 @@
 @group(2) @binding(1) var gBufferAlbedoTexture: texture_2d<f32>;
 @group(2) @binding(2) var gBufferMaterialTexture: texture_2d<f32>;
 @group(2) @binding(3) var gBufferEmissionTexture: texture_2d<f32>;
-@group(2) @binding(4) var gBufferDepthTexture: texture_depth_2d;
 
 // PBRProperties intentionally not declared — composition samples the
 // G-buffer (RGBA packed material data) rather than the per-material UBO.
@@ -111,14 +110,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let albedoLinear = clamp(albedo.xyz, vec3<f32>(0.0), vec3<f32>(1.0));
 	let materialData = textureLoad(gBufferMaterialTexture, pixelCoord, 0);
 
-	// Reconstruct world position from the depth buffer + inverse view-proj (the
-	// position target was dropped to fit wgpu-native's 32-byte MRT budget). NDC
-	// uses the un-flipped fullscreen uv; depth is sampled at the y-down texel.
-	// textureSample (not textureLoad): compatibility mode forbids textureLoad on
-	// depth textures. environment_sampler is non-comparison; level 0, no filtering.
-	let depth = textureSampleLevel(gBufferDepthTexture, environment_sampler, uv, 0.0);
+	// Reconstruct world position from the G-buffer's view-space depth (normal.w).
+	// The position target was dropped to fit wgpu-native's 32-byte MRT budget, and
+	// the depth buffer can't be read in compat mode (comparison samplers only), so
+	// convert linear view depth to NDC z via the projection, then unproject.
+	let viewDepth = normalData.w;
 	let ndc = input.uv * 2.0 - 1.0;
-	let worldH = u_frame.inverseViewProjectionMatrix * vec4<f32>(ndc, depth, 1.0);
+	let vz = -viewDepth;
+	let clipZ = u_frame.projectionMatrix[2].z * vz + u_frame.projectionMatrix[3].z;
+	let clipW = u_frame.projectionMatrix[2].w * vz + u_frame.projectionMatrix[3].w;
+	let worldH = u_frame.inverseViewProjectionMatrix * vec4<f32>(ndc, clipZ / clipW, 1.0);
 	let worldPos = worldH.xyz / worldH.w;
 
 	let worldNormal = normalize(normalData.xyz);
@@ -128,9 +129,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	// materialData.w = materialType id (0 = standard PBR). Reserved for the
 	// future data-reinterpretation deferred design - ignored today.
 	let emission = emissionData.rgb;
-	// View-space depth for the cluster lookup, from the reconstructed position.
-	let viewPos = u_frame.viewMatrix * vec4<f32>(worldPos, 1.0);
-	let viewDepth = -viewPos.z;
 	let viewDir = normalize(u_frame.cameraWorldPosition - worldPos);
 
 	// Trust the cluster compute - count=0 means no direct light affects this

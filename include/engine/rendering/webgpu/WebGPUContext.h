@@ -67,6 +67,15 @@ class WebGPUContext
 	 */
 	void updatePresentMode(bool enableVSync);
 
+	/// True when the device runs in WebGPU compatibility mode (Dawn's restricted
+	/// profile: no cube-array views, no single-2D-layer views of arrays, comparison-
+	/// only depth samplers, ...). Always false on wgpu-native (no compat profile).
+	[[nodiscard]] bool isCompatibilityMode() const { return m_compatibilityMode; }
+
+	/// Request Compatibility vs Core feature level. Dawn-only; call before
+	/// initialize(). Core lifts the compat restrictions listed above.
+	void setPreferCompatibility(bool prefer) { m_preferCompatibility = prefer; }
+
 	/**
 	 * @brief Releases and nulls the surface. Safe to call multiple times.
 	 */
@@ -84,6 +93,9 @@ class WebGPUContext
 	[[nodiscard]] wgpu::Queue getQueue() const { return m_queue; }
 	/** @brief Returns the swap chain format. */
 	[[nodiscard]] wgpu::TextureFormat getSwapChainFormat() const { return m_swapChainFormat; }
+	/** @brief True if the surface format is sRGB (present auto-encodes gamma). If
+	 *  false, the composite must encode gamma itself. */
+	[[nodiscard]] bool isSurfaceSrgb() const { return m_surfaceIsSrgb; }
 
 	/** @brief Returns the hardware limits of the device. */
 	[[nodiscard]] wgpu::Limits getHardwareLimits() const;
@@ -199,10 +211,20 @@ class WebGPUContext
 	wgpu::Device m_device = nullptr;
 	wgpu::Queue m_queue = nullptr;
 	wgpu::TextureFormat m_swapChainFormat = wgpu::TextureFormat::Undefined;
+	bool m_surfaceIsSrgb = false; ///< Surface format is an *Srgb variant (present auto-encodes gamma).
 	wgpu::Sampler m_defaultSampler = nullptr;
 
 	wgpu::Limits m_resolvedLimits{};
 	bool m_supportsTimestampQuery = false;
+	bool m_immediateSupported = false;
+	bool m_mailboxSupported = false;
+	bool m_fifoRelaxedSupported = false;
+	bool m_compatibilityMode = false;
+#ifdef WEBGPU_BACKEND_DAWN
+	bool m_preferCompatibility = false;	///< Desktop Dawn defaults to Core; DAWN_COMPAT=1 forces compat (WASM parity).
+#else
+	bool m_preferCompatibility = false; ///< wgpu-native has no compatibility profile
+#endif
 	engine::rendering::FrameProfiler *m_frameProfiler = nullptr;
 	DeviceLimitsConfig m_limitsConfig{};
 

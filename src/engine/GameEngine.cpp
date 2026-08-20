@@ -16,6 +16,9 @@
 #include <iostream>
 #include <sdl3webgpu.h>
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <vector>
 
 #include "engine/core/PathProvider.h"
 #include "engine/scene/NodeTypeRegistry.h"
@@ -31,6 +34,22 @@ namespace engine
 GameEngine::GameEngine() :
 	running(false)
 {
+	// Dual logging: colored console + a flushed "engine.log" in the working dir, so
+	// the log survives a crash and can be read directly (no stdout capture needed).
+	try
+	{
+		std::vector<spdlog::sink_ptr> sinks{
+			std::make_shared<spdlog::sinks::stdout_color_sink_mt>(),
+			std::make_shared<spdlog::sinks::basic_file_sink_mt>("engine.log", true)};
+		auto logger = std::make_shared<spdlog::logger>("engine", sinks.begin(), sinks.end());
+		logger->flush_on(spdlog::level::info);
+		spdlog::set_default_logger(logger);
+	}
+	catch (const spdlog::spdlog_ex &)
+	{
+		// Fall back to the default stdout logger if the file can't be opened.
+	}
+
 #if defined(DEBUG_ROOT_DIR) && defined(ASSETS_ROOT_DIR)
 	engine::core::PathProvider::initialize(ASSETS_ROOT_DIR, DEBUG_ROOT_DIR);
 #elif defined(DEBUG_ROOT_DIR)

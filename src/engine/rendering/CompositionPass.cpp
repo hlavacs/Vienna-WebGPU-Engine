@@ -75,10 +75,8 @@ bool CompositionPass::ensureGBufferBindGroup()
 	// resizes like multi-camera split-screen with different viewports,
 	// where Renderer::onResize never fires).
 	const auto &textures = m_gBuffer->getColorTextures();
-	auto depthTexture = m_gBuffer->getDepthTexture();
 	engine::rendering::cache::BindGroupSignature signature;
 	for (const auto &tex : textures) signature.add(tex);
-	signature.add(depthTexture);
 
 	if (m_gBufferBindGroup && m_gBufferBindGroupSignature == signature)
 		return true;
@@ -101,11 +99,6 @@ bool CompositionPass::ensureGBufferBindGroup()
 			webgpu::BindGroupResource(textures[binding])
 		);
 	}
-	// Depth at the next binding: composition reconstructs world position from it.
-	overrides.emplace(
-		std::make_tuple(uint32_t{0}, static_cast<uint32_t>(textures.size())),
-		webgpu::BindGroupResource(depthTexture)
-	);
 
 	m_gBufferBindGroup = m_context->bindGroupFactory().createBindGroup(
 		layoutInfo,

@@ -58,6 +58,7 @@ class MainDemoImGuiUI
 	std::shared_ptr<engine::scene::nodes::CameraNode> m_cameraNode;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> m_debugShadowCubeArray;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUTexture> m_debugShadow2DArray;
+	bool m_isCompatibilityMode = false; ///< Cached from the context; gates compat-only UI paths.
 
 	std::vector<std::shared_ptr<engine::scene::nodes::LightNode>> m_lightNodes;
 	std::map<size_t, glm::vec3> m_lightDirectionsUI; //< Seperate storage for Euler angles for ImGui because of instability when converting from quaternions every frame.

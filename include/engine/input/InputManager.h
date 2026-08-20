@@ -58,42 +58,42 @@ class InputManager
 	 * @param key SDL scancode of the key to check
 	 * @return true if the key is pressed, false otherwise
 	 */
-	bool isKey(SDL_Scancode key) const;
+	bool isKey(SDL_Scancode key, bool captureOverUi = false) const;
 
 	/**
 	 * @brief Check if a keyboard key was pressed down this frame
 	 * @param key SDL scancode of the key to check
 	 * @return true if the key was pressed down this frame, false otherwise
 	 */
-	bool isKeyDown(SDL_Scancode key) const;
+	bool isKeyDown(SDL_Scancode key, bool captureOverUi = false) const;
 
 	/**
 	 * @brief Check if a keyboard key was released this frame
 	 * @param key SDL scancode of the key to check
 	 * @return true if the key was released this frame, false otherwise
 	 */
-	bool isKeyUp(SDL_Scancode key) const;
+	bool isKeyUp(SDL_Scancode key, bool captureOverUi = false) const;
 
 	/**
 	 * @brief Check if a mouse button is currently pressed
 	 * @param button SDL mouse button index (LEFT, RIGHT, etc.)
 	 * @return true if the button is pressed, false otherwise
 	 */
-	bool isMouse(Uint8 button) const;
+	bool isMouse(Uint8 button, bool captureOverUi = false) const;
 
 	/**
 	 * @brief Check if a mouse button was pressed down this frame
 	 * @param button SDL mouse button index (LEFT, RIGHT, etc.)
 	 * @return true if the button was pressed down this frame, false otherwise
 	 */
-	bool isMouseDown(Uint8 button) const;
+	bool isMouseDown(Uint8 button, bool captureOverUi = false) const;
 
 	/**
 	 * @brief Check if a mouse button was released this frame
 	 * @param button SDL mouse button index (LEFT, RIGHT, etc.)
 	 * @return true if the button was released this frame, false otherwise
 	 */
-	bool isMouseUp(Uint8 button) const;
+	bool isMouseUp(Uint8 button, bool captureOverUi = false) const;
 
 	/**
 	 * @brief Get absolute mouse position in window coordinates
@@ -116,7 +116,7 @@ class InputManager
 	 * @note Polled once per frame in startFrame() via SDL_GetRelativeMouseState
 	 * @note Reset to (0, 0) at endFrame()
 	 */
-	glm::vec2 getMouseDelta() const { return m_mouseDelta; }
+	glm::vec2 getMouseDelta(bool captureOverUi = false) const;
 
 	/**
 	 * @brief Get mouse wheel movement for this frame
@@ -124,7 +124,7 @@ class InputManager
 	 * @note Accumulates multiple SDL_MOUSEWHEEL events in the same frame
 	 * @note Reset to (0, 0) at endFrame()
 	 */
-	glm::vec2 getMouseWheel() const { return m_mouseWheel; }
+	glm::vec2 getMouseWheel(bool captureOverUi = false) const;
 
 	/**
 	 * @brief Reset per-frame input values at the end of each frame
@@ -135,6 +135,12 @@ class InputManager
 	void endFrame();
 
   private:
+	/// ImGui-capture queries (safe before ImGui is initialised). Mouse capture is
+	/// true while hovering/dragging a panel; keyboard while a text widget is focused.
+	/// Input getters respect these unless the caller passes captureOverUi = true.
+	bool uiWantsMouse() const;
+	bool uiWantsKeyboard() const;
+
 	std::array<bool, SDL_SCANCODE_COUNT> m_keyStates{false};	 ///< Keyboard key states (scancode -> pressed)
 	std::array<bool, 8> m_mouseButtonStates{false};			 ///< Mouse button states (button -> pressed)
 

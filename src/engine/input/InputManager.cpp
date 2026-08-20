@@ -1,7 +1,23 @@
 #include "engine/input/InputManager.h"
 
+#include <imgui.h>
+
 namespace engine::input
 {
+
+// ImGui owns the pointer while the user hovers/drags a panel, and the keyboard
+// while a text widget is focused. Input getters respect that by default so game
+// input doesn't double-fire with the UI; pass captureOverUi = true to read raw
+// state regardless. Guard on GetCurrentContext so early frames (pre-ImGui) are safe.
+bool InputManager::uiWantsMouse() const
+{
+	return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse;
+}
+
+bool InputManager::uiWantsKeyboard() const
+{
+	return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard;
+}
 
 void InputManager::startFrame()
 {
@@ -19,46 +35,72 @@ void InputManager::startFrame()
 	m_mouseDelta = glm::vec2(deltaX, deltaY);
 }
 
-bool InputManager::isKey(SDL_Scancode key) const
+bool InputManager::isKey(SDL_Scancode key, bool captureOverUi) const
 {
 	if (key >= m_keyStates.size())
+		return false;
+	if (!captureOverUi && uiWantsKeyboard())
 		return false;
 	return m_keyStates[key];
 }
 
-bool InputManager::isKeyDown(SDL_Scancode key) const
+bool InputManager::isKeyDown(SDL_Scancode key, bool captureOverUi) const
 {
 	if (key >= m_keyStates.size())
+		return false;
+	if (!captureOverUi && uiWantsKeyboard())
 		return false;
 	return m_keyStates[key] && !m_keyStatesPrevious[key];
 }
 
-bool InputManager::isKeyUp(SDL_Scancode key) const
+bool InputManager::isKeyUp(SDL_Scancode key, bool captureOverUi) const
 {
 	if (key >= m_keyStates.size())
+		return false;
+	if (!captureOverUi && uiWantsKeyboard())
 		return false;
 	return !m_keyStates[key] && m_keyStatesPrevious[key];
 }
 
-bool InputManager::isMouse(Uint8 button) const
+bool InputManager::isMouse(Uint8 button, bool captureOverUi) const
 {
 	if (button >= m_mouseButtonStates.size())
+		return false;
+	if (!captureOverUi && uiWantsMouse())
 		return false;
 	return m_mouseButtonStates[button];
 }
 
-bool InputManager::isMouseDown(Uint8 button) const
+bool InputManager::isMouseDown(Uint8 button, bool captureOverUi) const
 {
 	if (button >= m_mouseButtonStates.size())
+		return false;
+	if (!captureOverUi && uiWantsMouse())
 		return false;
 	return m_mouseButtonStates[button] && !m_mouseButtonStatesPrevious[button];
 }
 
-bool InputManager::isMouseUp(Uint8 button) const
+bool InputManager::isMouseUp(Uint8 button, bool captureOverUi) const
 {
 	if (button >= m_mouseButtonStates.size())
 		return false;
+	if (!captureOverUi && uiWantsMouse())
+		return false;
 	return !m_mouseButtonStates[button] && m_mouseButtonStatesPrevious[button];
+}
+
+glm::vec2 InputManager::getMouseDelta(bool captureOverUi) const
+{
+	if (!captureOverUi && uiWantsMouse())
+		return glm::vec2(0.0f, 0.0f);
+	return m_mouseDelta;
+}
+
+glm::vec2 InputManager::getMouseWheel(bool captureOverUi) const
+{
+	if (!captureOverUi && uiWantsMouse())
+		return glm::vec2(0.0f, 0.0f);
+	return m_mouseWheel;
 }
 
 void InputManager::processEvent(const SDL_Event &event)

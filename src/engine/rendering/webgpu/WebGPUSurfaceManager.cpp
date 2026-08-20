@@ -1,7 +1,7 @@
 #include "engine/rendering/webgpu/WebGPUSurfaceManager.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
-#include <iostream>
+#include <spdlog/spdlog.h>
 
 namespace engine::rendering::webgpu
 {
@@ -37,10 +37,11 @@ void WebGPUSurfaceManager::reconfigure(const std::optional<Config> &config)
 
 void WebGPUSurfaceManager::applyConfig()
 {
-	m_context.terminateSurface();
+	// Configure the EXISTING surface; do NOT terminate + recreate it. The adapter
+	// was requested with this surface as compatibleSurface, so a recreated one is a
+	// different object Dawn rejects (getCurrentTexture status=Error -> black screen).
+	// surface.configure() already handles resize by rebuilding the swap chain.
 	auto surface = m_context.getSurface();
-
-	// Modern surface API for all backends (Dawn/current webgpu.h removed SwapChain).
 	wgpu::SurfaceConfiguration cfg = m_config.asSurfaceConfiguration(m_context.getDevice());
 	surface.configure(cfg);
 
@@ -58,8 +59,28 @@ std::shared_ptr<WebGPUTexture> WebGPUSurfaceManager::acquireNextTexture()
 	wgpu::SurfaceTexture surfaceTexture{};
 	surface.getCurrentTexture(&surfaceTexture);
 
-	if (!surfaceTexture.texture)
-		return nullptr;
+	// v24 reports a status alongside the texture. Dawn hands back no usable texture
+	// with an Outdated/Lost status when the swap chain needs rebuilding (after the
+	// SDL surface handshake or a resize); reconfigure once and retry. wgpu-native
+	// returned a texture without this, so the missing check only bit Dawn (black screen).
+	auto usable = [](const wgpu::SurfaceTexture &st) {
+		const auto s = static_cast<uint32_t>(st.status);
+		return st.texture != nullptr &&
+		       (s == WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal ||
+		        s == WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal);
+	};
+
+	if (!usable(surfaceTexture))
+	{
+		applyConfig();
+		surface.getCurrentTexture(&surfaceTexture);
+		if (!usable(surfaceTexture))
+		{
+			spdlog::warn("[Surface] getCurrentTexture unusable (status={})",
+			             static_cast<uint32_t>(surfaceTexture.status));
+			return nullptr;
+		}
+	}
 
 	wgpu::TextureView nextTexture = wgpu::Texture(surfaceTexture.texture).createView();
 

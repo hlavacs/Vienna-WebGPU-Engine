@@ -63,6 +63,7 @@ MainDemoImGuiUI::MainDemoImGuiUI(
 	auto renderer = m_engine.getRenderer().lock();
 	m_debugShadowCubeArray = renderer->getShadowPass().DEBUG_SHADOW_CUBE_ARRAY;
 	m_debugShadow2DArray = renderer->getShadowPass().DEBUG_SHADOW_2D_ARRAY;
+	m_isCompatibilityMode = m_engine.getContext()->isCompatibilityMode();
 
 	registerSettingsPersistence();
 }
@@ -651,10 +652,17 @@ void MainDemoImGuiUI::renderShadowDebugWindow()
 					for (int faceIndex = 0; faceIndex < 6; ++faceIndex)
 					{
 						int layerIndex = cubeIndex * 6 + faceIndex;
-						ImTextureID faceImguiId = toImTextureID(m_debugShadowCubeArray->getTextureView(layerIndex));
-
 						ImGui::Text("Face %d", faceIndex);
-						ImGui::Image(faceImguiId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
+						if (m_isCompatibilityMode)
+						{
+							// Compat mode forbids sampling a single 2D layer of a 2D-array texture.
+							ImGui::TextDisabled("(n/a in compatibility mode)");
+						}
+						else
+						{
+							ImTextureID faceImguiId = toImTextureID(m_debugShadowCubeArray->getTextureView(layerIndex));
+							ImGui::Image(faceImguiId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
+						}
 						ImGui::NextColumn();
 					}
 
@@ -679,10 +687,17 @@ void MainDemoImGuiUI::renderShadowDebugWindow()
 
 			for (int layerIndex = 0; layerIndex < totalLayers; ++layerIndex)
 			{
-				ImTextureID texId = toImTextureID(m_debugShadow2DArray->getTextureView(layerIndex));
-
 				ImGui::Text("Layer %d", layerIndex);
-				ImGui::Image(texId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
+				if (m_isCompatibilityMode)
+				{
+					// Compat mode forbids sampling a single 2D layer of a 2D-array texture.
+					ImGui::TextDisabled("(n/a in compatibility mode)");
+				}
+				else
+				{
+					ImTextureID texId = toImTextureID(m_debugShadow2DArray->getTextureView(layerIndex));
+					ImGui::Image(texId, ImVec2((float)thumbSize, (float)thumbSize), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0));
+				}
 				ImGui::NextColumn();
 			}
 
@@ -792,6 +807,9 @@ bool MainDemoImGuiUI::renderDepthPreviewBlit(
 )
 {
 	if (!depthSource) return false;
+	// Compat mode forbids textureLoad on depth textures (the blit shader uses it),
+	// so skip the preview; the caller shows a disabled label instead.
+	if (m_isCompatibilityMode) return false;
 	if (!ensureDepthPreviewPipeline()) return false;
 
 	auto ctx = m_engine.getContext();
@@ -855,6 +873,7 @@ bool MainDemoImGuiUI::renderDepthPreviewBlit(
 	colorAttach.loadOp     = wgpu::LoadOp::Clear;
 	colorAttach.storeOp    = wgpu::StoreOp::Store;
 	colorAttach.clearValue = wgpu::Color{0.0, 0.0, 0.0, 1.0};
+	colorAttach.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; // v24: 2D target, not a 3D slice.
 
 	wgpu::RenderPassDescriptor rpDesc{};
 	rpDesc.label                  = wgpu::StringView("DepthPreview.RenderPass");
@@ -1012,6 +1031,10 @@ void MainDemoImGuiUI::renderPassControlsWindow()
 						thumbSize, ImVec2(0, 0), ImVec2(1, 1),
 						ImVec4(1, 1, 1, 1), ImVec4(0, 0, 0, 0)
 					);
+				}
+				else if (m_isCompatibilityMode)
+				{
+					ImGui::TextDisabled("Depth: n/a in compatibility mode.");
 				}
 				else
 				{
