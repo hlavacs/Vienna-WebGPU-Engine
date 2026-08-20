@@ -3,8 +3,9 @@
 *.h   text eol=crlf
 *.hpp text eol=crlf
 
-# WGSL shader files
-*.wgsl text eol=crlf
+# WGSL shader files: LF - the engine's shader tooling rewrites them with LF, so
+# CRLF checkouts caused phantom diffs after every run.
+*.wgsl text eol=lf
 
 # Markdown CRLF is more common and works better with diff tools, so enforce it for docs.
 *.md text eol=crlf

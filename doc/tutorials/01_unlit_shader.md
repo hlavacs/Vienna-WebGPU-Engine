@@ -1,6 +1,6 @@
 # Tutorial 01: Writing a Custom Unlit Shader
 
-> **💡 Tip:** It's recommended using the [01_unlit_shader.html](01_unlit_shader.html) version of this tutorial as copying code works best there regarding padding and formatting.
+> **💡 Tip:** There is also an [01_unlit_shader.html](01_unlit_shader.html) version of this tutorial where copying code works best regarding padding and formatting. Note that the html/pdf versions are generated from this Markdown file and may lag behind it - when in doubt, the `.md` is the source of truth.
 
 > **⚠️ Build issues?** See [Troubleshooting](#troubleshooting) at the end of this tutorial for help reading build errors from the terminal.
 
@@ -16,7 +16,7 @@ Welcome to your first shader tutorial! In this guide, you'll learn how to write 
 
 **What's provided:**
 - Complete C++ setup in `examples/tutorial/main.cpp` (scene, models, lighting)
-- Empty shader file at `examples/tutorial/assets/shaders/unlit.wgsl`
+- Skeleton shader file at `examples/tutorial/assets/shaders/unlit.wgsl` (just step-marker comments, no code)
 - Tutorial project ready to build and run
 
 ---
@@ -36,11 +36,11 @@ This tutorial teaches both sides of rendering:
 The C++ code prepares everything the GPU needs, but the actual drawing happens on the GPU running your shader code.
 
 **Why is material assignment commented out?**
-Without a complete shader file, the engine can't create a **render pipeline** (the GPU program combining your shaders with rendering state). We'll uncomment it in Step 10.
+Without a complete shader file, the engine can't create a **render pipeline** (the GPU program combining your shaders with rendering state). We'll uncomment it in Step 9.
 
 ### File: `examples/tutorial/assets/shaders/unlit.wgsl`
 
-**Currently empty** - you'll write this! The engine expects:
+**Currently just step-marker comments** - you'll write the code! The engine expects:
 - Vertex shader: `vs_main`
 - Fragment shader: `fs_main`
 - The Frame and Object bind groups, pulled in via `#include` (the engine generates these structs from C++)
@@ -51,18 +51,20 @@ Without a complete shader file, the engine can't create a **render pipeline** (t
 You can build the tutorial at any time to check for errors. Before starting, try building once:
 
 ```bash
-# Windows
-scripts\build-example.bat tutorial Debug WGPU
+# Windows (Dawn backend - same as the VS Code tasks)
+scripts\build-example.bat tutorial Debug DAWN
 
 # Linux
-bash scripts/build-example.sh tutorial Debug WGPU
+bash scripts/build-example.sh tutorial Debug DAWN
 ```
+
+**Where the build lands:** the build script uses **per-backend build directories** on Windows. `DAWN` (vendored prebuilt, recommended) builds into `examples\build\tutorial\Windows\Debug-DAWN`, `WGPU` into `...\Debug-WGPU`, and Dawn built from source (`DAWN ... SOURCE`) into the plain `...\Debug` folder. The `EMDAWN` backend produces a browser build under `examples\build\tutorial\Emscripten\Debug` (see [WebShipping](../WebShipping.md)). On Linux/Mac the directory is always `examples/build/tutorial/<Linux|Mac>/Debug`.
 
 **VS Code shortcuts:**
 - **Build**: Press `Ctrl+Shift+B` → select **"Build Example: Tutorial (Debug)"**
-- **Run**: Press `F5` or use the **Run and Debug** panel (`Ctrl+Shift+D`) → select **"Tutorial (Debug)"**
+- **Run**: Press `F5` or use the **Run and Debug** panel (`Ctrl+Shift+D`) → select **"Tutorial (Debug) - Windows"** (or your platform)
 
-Since the shader file is empty, the build will succeed but the the floor won't render yet (only magenta as its the fallback color) until we assign the material in a later step.
+Since the shader code is not written yet, the build will succeed but the floor won't render with your shader yet (it shows magenta, the engine's fallback material color) until we assign the material in a later step.
 
 ---
 
@@ -90,7 +92,7 @@ struct VertexInput {
 - `texCoord` - UV coordinates (where on the texture to sample, range 0-1)
 
 **Why these attributes?**
-The engine's mesh loader provides these three attributes for every vertex. The `@location(N)` numbers map to the vertex buffer layout defined in C++. While the engine's mesh format includes other properties (tangents, vertex colors), you only need to declare the attributes your shader actually uses. We'll cover shader reflection in detail in Tutorial 03. 
+The engine's mesh loader provides these three attributes for every vertex. The `@location(N)` numbers map to the vertex buffer layout defined in C++. While the engine's mesh format includes other properties (tangents, vertex colors), you only need to declare the attributes your shader actually uses. We'll cover shader reflection in detail in Tutorial 02. 
 
 ---
 
@@ -194,6 +196,7 @@ struct FrameUniforms {
     viewMatrix: mat4x4<f32>,
     projectionMatrix: mat4x4<f32>,
     viewProjectionMatrix: mat4x4<f32>,
+    inverseViewProjectionMatrix: mat4x4<f32>,
     cameraWorldPosition: vec3<f32>,
     time: f32,
 }
@@ -206,6 +209,7 @@ var<uniform> u_frame: FrameUniforms;
 - `viewMatrix` - Camera's view matrix (transforms world space to camera space)
 - `projectionMatrix` - Projection matrix (applies perspective/orthographic)
 - `viewProjectionMatrix` - The two combined (handy when you don't need them separately)
+- `inverseViewProjectionMatrix` - The inverse of the combined matrix (used to reconstruct world positions from depth, e.g. in the deferred composition pass)
 - `cameraWorldPosition` - Camera world position (useful for effects like reflections, fog)
 - `time` - Time since engine start in seconds (useful for animations)
 
@@ -368,13 +372,15 @@ floorModel->getSubmeshes()[0].material = floorMaterial->getHandle();
 
 ```bash
 # Rebuild and run
-scripts\build-example.bat tutorial Debug WGPU
-examples/build/tutorial/Windows/Debug/Tutorial.exe
+scripts\build-example.bat tutorial Debug DAWN
+examples\build\tutorial\Windows\Debug-DAWN\Tutorial.exe
 ```
+
+(If you built with the `WGPU` backend instead, the executable is in `examples\build\tutorial\Windows\Debug-WGPU\`.)
 
 **VS Code shortcuts:**
 - Press `F5` to build and run with debugger
-- Or open **Run and Debug** panel (`Ctrl+Shift+D`) → select **"Tutorial (Debug)"** → click green play button
+- Or open **Run and Debug** panel (`Ctrl+Shift+D`) → select **"Tutorial (Debug) - Windows"** (or your platform) → click green play button
 
 ## Expected Result
 
@@ -399,35 +405,32 @@ Before understanding what we built, let's see how your shader actually runs on t
 
 WebGPU doesn't execute commands immediately. Instead:
 
-1. **CPU Records Commands** - The engine uses two encoder types:
+1. **CPU Records Commands** - The engine uses two encoder types (simplified from the engine's render passes):
    ```cpp
-   // Step 1: Create command encoder (organizes work into command buffer)
-   CommandEncoder commandEncoder = device.createCommandEncoder();
+   // Step 1: Create command encoder (organizes work into a command buffer)
+   wgpu::CommandEncoder encoder = m_context->createCommandEncoder("Pass.Encoder");
    
-   // Step 2: Begin render pass (creates RenderPassEncoder for drawing)
-   RenderPassEncoder renderPass = commandEncoder.beginRenderPass(colorTexture, depthTexture);
+   // Step 2: Begin render pass (creates a RenderPassEncoder for drawing)
+   wgpu::RenderPassEncoder renderPass = passContext->begin(encoder);
    
-   // Step 3: Record drawing commands using RenderPassEncoder
+   // Step 3: Record drawing commands using the RenderPassEncoder
    renderPass.setPipeline(yourShaderPipeline);
    renderPass.setBindGroup(0, frameBindGroup);    // Camera data
    renderPass.setBindGroup(2, materialBindGroup); // Textures
    renderPass.setBindGroup(3, objectBindGroup);   // Transform
-   renderPass.draw(vertexCount);                  // "Draw this mesh!"
+   renderPass.drawIndexed(indexCount, 1, indexOffset, 0, 0); // "Draw this mesh!"
    
    // Step 4: End render pass
-   renderPass.end();
-   
-   // Step 5: Finish encoding to get command buffer
-   CommandBuffer commandBuffer = commandEncoder.finish();
+   passContext->end(renderPass);
    ```
    
    **Key distinction:**
-   - `CommandEncoder` - Top-level container for all GPU work (can create multiple render passes, compute passes, copy operations)
-   - `RenderPassEncoder` - Specific to drawing operations (setPipeline, setBindGroup, draw)
+   - `wgpu::CommandEncoder` - Top-level container for all GPU work (can create multiple render passes, compute passes, copy operations)
+   - `wgpu::RenderPassEncoder` - Specific to drawing operations (setPipeline, setBindGroup, draw)
 
-2. **CPU Submits to GPU** - Command buffer sent to GPU queue:
+2. **CPU Submits to GPU** - The finished command buffer is sent to the GPU queue:
    ```cpp
-   queue.submit(commandBuffer);
+   m_context->submitCommandEncoder(encoder, "Pass.Commands");
    ```
 
 3. **GPU Executes Asynchronously** - Your shaders run in parallel:
@@ -444,7 +447,9 @@ A render pass defines **what you're drawing to**:
 
 Your fragment shader's `@location(0) vec4f` output goes directly to the color attachment.
 
-**Where to see this:** Check [Renderer.cpp:renderToTexture()](../../src/engine/rendering/Renderer.cpp) - line 270+ shows the full command recording sequence.
+**Where to see this:** Check [GBufferPass.cpp](../../src/engine/rendering/GBufferPass.cpp) (`render()`) for a complete real-world command recording sequence, and [Renderer.cpp](../../src/engine/rendering/Renderer.cpp) (`renderToTexture()`) for how the individual render passes are orchestrated per frame.
+
+**Which pass draws YOUR shader?** The engine renders opaque PBR materials through the deferred G-buffer path with a fixed shader. A material with a *custom* shader (like our `unlit`) is routed to the forward pass instead ([ForwardTransparencyPass.cpp](../../src/engine/rendering/ForwardTransparencyPass.cpp)) - that pass builds a pipeline from *your* shader per material (see `Material::usesForwardShading()` in [Material.h](../../include/engine/rendering/Material.h)). So when the floor renders with your WGSL, it is the forward pass executing it.
 
 ---
 
@@ -473,7 +478,7 @@ Between stages, WebGPU's fixed-function rasterizer converts clip-space triangles
 
 **How a Draw Call Works:**
 
-When the engine issues `encoder.draw(vertexCount)`, the GPU:
+When the engine issues a draw call (`renderPass.drawIndexed(...)`), the GPU:
 
 1. **Fetches Vertices**: Reads position/normal/UV from vertex buffer using the pipeline's vertex layout
 2. **Runs Vertex Shader**: Executes `vs_main()` in parallel for all vertices (4 for our plane)
@@ -482,7 +487,7 @@ When the engine issues `encoder.draw(vertexCount)`, the GPU:
 5. **Runs Fragment Shader**: Executes `fs_main()` in parallel for all visible pixels
 6. **Outputs to Attachments**: Writes colors to render target, depth values to depth buffer
 
-All bind groups must be set before the draw call - that's why Groups 0, 1, 2 are bound in [Renderer.cpp](../../src/engine/rendering/Renderer.cpp) before calling `draw()`.
+All bind groups must be set before the draw call - that's why the render passes (e.g. [GBufferPass.cpp](../../src/engine/rendering/GBufferPass.cpp)) run the [BindGroupBinder](../../src/engine/rendering/BindGroupBinder.cpp) before calling `drawIndexed()`.
 
 **Performance Insight:**
 
@@ -503,7 +508,7 @@ If you want to understand how the engine implements these WebGPU features:
 
 - **Bind Group Creation** → [WebGPUBindGroupFactory.cpp](../../src/engine/rendering/webgpu/WebGPUBindGroupFactory.cpp) - See how `@group` and `@binding` map to WebGPU resources
 - **Pipeline Building** → [WebGPUPipelineFactory.cpp](../../src/engine/rendering/webgpu/WebGPUPipelineFactory.cpp) - See how shaders, vertex layouts, and state combine into pipelines
-- **Vertex Layout Definition** → [WebGPUPipelineManager.cpp](../../src/engine/rendering/webgpu/WebGPUPipelineManager.cpp) - Look for `VertexBufferLayout` with attribute formats and offsets
+- **Vertex Layout Definition** → [WebGPUPipelineFactory.cpp](../../src/engine/rendering/webgpu/WebGPUPipelineFactory.cpp) - Look for `VertexBufferLayout` with attribute formats and offsets
 - **Shader Compilation** → [WebGPUShaderFactory.cpp](../../src/engine/rendering/webgpu/WebGPUShaderFactory.cpp) - See WGSL → shader module → bind group layout extraction
 - **Bind Group Binding Logic** → [BindGroupBinder.cpp](../../src/engine/rendering/BindGroupBinder.cpp) - See reuse policies and automatic rebinding
 - **Frame Rendering Loop** → [Renderer.cpp](../../src/engine/rendering/Renderer.cpp) - See the complete flow from `renderFrame()` through all passes
@@ -571,11 +576,11 @@ In **Tutorial 02**, you'll learn:
 
 ### Build Failures - Reading Terminal Output
 
-**⚠️ Important:** When using `scripts/build.bat`, the task system may report success even if the build actually failed. You **MUST check the terminal output** to see the real result.
+**⚠️ Important:** When using `scripts\build-example.bat` (directly or via the VS Code task), the task system may report success even if the build actually failed. You **MUST check the terminal output** to see the real result.
 
 **What to look for in terminal:**
 1. Scroll to the **very end** of the terminal output
-2. Look for `[SUCCESS] Build completed successfully!` - if this appears, build succeeded
+2. Look for `[SUCCESS] Example 'tutorial' built successfully!` - if this appears, build succeeded
 3. If you see `[ERROR] Build failed.` - the build failed regardless of task status
 
 **Common build issues:**
@@ -585,7 +590,7 @@ In **Tutorial 02**, you'll learn:
 - **Redeclared engine struct** - Don't hand-write `FrameUniforms`/`ObjectUniforms`; the `#include` already provides them, and redeclaring one is an error
 - **Bind group mismatch** - Shader declares a different `@group` than the engine expects (Frame 0, Material 2, Object 3)
 - **Entry point names** - Must be exactly `vs_main` and `fs_main`
-- **CMake issues** - Run `rm -r build` (or delete `build/` folder) then rebuild clean
+- **CMake issues** - Delete the tutorial's build folder (`examples\build\tutorial\`) then rebuild clean
 
 ### Shader Issues
 
@@ -601,13 +606,13 @@ In **Tutorial 02**, you'll learn:
 - Check material assignment line is uncommented
 
 **Floor doesn't render**
-- Verify material assignment is uncommented (Step 10)
+- Verify material assignment is uncommented (Step 9)
 - Check shader name matches in registration and material creation
 
 ### Debug Strategy
 
 **If errors are unclear:**
-1. Open `MeshPass.cpp` in your editor
+1. Open `ForwardTransparencyPass.cpp` (custom-shader materials like this tutorial's render there; `GBufferPass.cpp` covers the deferred PBR path) in your editor
 2. Add a breakpoint in the `render()` method
 3. Press `F5` to start debugging
 4. Check the **Terminal Output** panel - shader errors will be printed there

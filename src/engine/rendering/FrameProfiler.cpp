@@ -195,24 +195,17 @@ void FrameProfiler::resolveGpuTimestamps(webgpu::WebGPUContext &context)
 	slot.inFlight = true;
 	slot.mapped = false;
 
-	// Lambda captures slot by reference; m_frames is a std::array member so
-	// the reference is pointer-stable for the profiler's lifetime. The
-	// returned unique_ptr MUST be stored or the callback object frees and
-	// the GPU callback fires through a dangling userdata pointer.
-	// v24: mapAsync takes BufferMapCallbackInfo + returns a Future; AllowSpontaneous
-	// fires the callback without an explicit poll. See doc/WebGPUv24Migration.md.
-	wgpu::BufferMapCallbackInfo mapCbInfo{};
-	mapCbInfo.mode = wgpu::CallbackMode::AllowSpontaneous;
-	mapCbInfo.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void *ud1, void *)
-	{
-		auto *s = static_cast<InFlightFrame *>(ud1);
-		if (status == WGPUMapAsyncStatus_Success)
-			s->mapped = true;
-		else
-			s->inFlight = false;
-	};
-	mapCbInfo.userdata1 = &slot;
-	slot.mapFuture = slot.readback.mapAsync(wgpu::MapMode::Read, 0, byteCount, mapCbInfo);
+	// &slot is pointer-stable (member std::array); the v29 wrapper heap-copies the
+	// lambda and frees it on the exactly-once callback.
+	slot.mapFuture = slot.readback.mapAsync(
+		wgpu::MapMode::Read, 0, byteCount, wgpu::CallbackMode::AllowSpontaneous,
+		[&slot](wgpu::MapAsyncStatus status, wgpu::StringView)
+		{
+			if (status == wgpu::MapAsyncStatus::Success)
+				slot.mapped = true;
+			else
+				slot.inFlight = false;
+		});
 
 	m_writeFrame = (m_writeFrame + 1) % IN_FLIGHT;
 }
@@ -247,7 +240,7 @@ void FrameProfiler::pollGpuTimestamps()
 		slot.inFlight = false;
 		slot.mapped = false;
 		slot.pairs.clear();
-		slot.mapFuture = {};
+		slot.mapFuture = wgpu::Future{};
 	}
 }
 

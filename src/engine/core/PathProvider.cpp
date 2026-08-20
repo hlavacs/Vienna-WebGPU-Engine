@@ -210,7 +210,7 @@ std::filesystem::path PathProvider::getExecutablePath()
 {
 
 #if defined(__EMSCRIPTEN__)
-#error "TODO: Emscripten exe path"
+	return std::filesystem::path("/"); // MEMFS root
 #elif defined(_WIN32)
 	char buffer[MAX_PATH];
 	DWORD length = GetModuleFileNameA(nullptr, buffer, MAX_PATH);

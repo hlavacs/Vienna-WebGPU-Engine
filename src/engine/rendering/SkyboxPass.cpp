@@ -55,9 +55,10 @@ void SkyboxPass::render(FrameCache &frameCache)
 	// the per-camera depth buffer instead - both work because the depth
 	// compare/write state was baked into the shader info at registration.
 	auto depthTexture = m_renderPassContext->getDepthTexture();
-	const wgpu::TextureFormat depthFormat = depthTexture
-		? depthTexture->getFormat()
-		: wgpu::TextureFormat::Undefined;
+	// No ternary: emdawn's wrapper enums make mixed wrapper/member arms ambiguous.
+	wgpu::TextureFormat depthFormat = wgpu::TextureFormat::Undefined;
+	if (depthTexture)
+		depthFormat = depthTexture->getFormat();
 
 	auto pipeline = m_pipeline.lock();
 	if (!pipeline)

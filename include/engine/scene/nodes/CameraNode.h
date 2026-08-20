@@ -391,6 +391,10 @@ class CameraNode : public nodes::UpdateNode, public nodes::RenderNode, public no
 		auto pixelWidth = static_cast<uint32_t>(windowWidth * m_viewport.width());
 		auto pixelHeight = static_cast<uint32_t>(windowHeight * m_viewport.height());
 
+		// A not-yet-configured viewport must not create 0x0 GPU textures.
+		if (pixelWidth == 0 || pixelHeight == 0)
+			return;
+
 		onRenderAreaChanged(pixelWidth, pixelHeight);
 	}
 	/**

@@ -664,7 +664,11 @@ bool Renderer::renderFrame(
 
 	{
 		FrameProfiler::Scope s(m_profiler, "Frame.Present");
+#ifndef __EMSCRIPTEN__
+		// The browser presents implicitly at the end of the rAF callback;
+		// wgpuSurfacePresent aborts under emdawnwebgpu.
 		m_context->getSurface().present();
+#endif
 	}
 	m_surfaceTexture.reset();
 
@@ -871,8 +875,10 @@ void Renderer::updateSceneBindGroup(const RenderTarget &target)
 	std::shared_ptr<webgpu::WebGPUBuffer> clusterIndices;
 	if (clusterManager)
 	{
-		clusterGrid    = clusterManager->getClusterGridBuffer();
-		clusterIndices = clusterManager->getClusterIndicesBuffer();
+		// Per-camera cluster storage; the bind-group signature below picks up
+		// the per-camera buffer identities automatically.
+		clusterGrid    = clusterManager->getClusterGridBuffer(target.cameraId);
+		clusterIndices = clusterManager->getClusterIndicesBuffer(target.cameraId);
 	}
 	if (!clusterGrid || !clusterIndices)
 	{
@@ -1367,6 +1373,11 @@ void Renderer::onResize(uint32_t width, uint32_t height)
 		auto viewport = target.viewport;
 		auto viewPortWidth = static_cast<uint32_t>(width * viewport.width());
 		auto viewPortHeight = static_cast<uint32_t>(height * viewport.height());
+		if (viewPortWidth == 0 || viewPortHeight == 0)
+		{
+			spdlog::warn("Skipping depth-buffer resize for target {}: zero-size viewport", id);
+			continue;
+		}
 		auto depthBuffer = m_depthBuffers[id];
 		if (depthBuffer)
 			depthBuffer->resize(*m_context, viewPortWidth, viewPortHeight);

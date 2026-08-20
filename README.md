@@ -13,9 +13,24 @@ A **cross-platform, WebGPU-based game engine** designed for educational purposes
 | **Windows** | ✅ Working | MSVC 2019+ | Primary development platform |
 | **macOS** | ✅ Working | Clang (Xcode CLT) | Tested on Apple Silicon |
 | **Linux** | ✅ Working | Clang | Tested on Arch Linux Hyperland |
-| **Web** | 🚧 In Progress | Emscripten | Build system exists, not functional |
+| **Web** | ✅ Working | Emscripten (emdawnwebgpu) | `WEBGPU_BACKEND=EMDAWN`, see [doc/WebShipping.md](doc/WebShipping.md) |
 
 *Working = Actively developed and tested. Untested = May require fixes.*
+
+## Live Demos
+
+Every example runs in the browser as WebAssembly on WebGPU (recent Chrome/Edge;
+Firefox 141+, Safari 26+). Built and published by the
+[Web Demos workflow](.github/workflows/web-demo.yml) on tagged commits.
+
+| Demo | Link | What it shows |
+|------|------|---------------|
+| Main Demo | [live](https://hlavacs.github.io/Vienna-WebGPU-Engine/main_demo/) | Deferred renderer on the SeaKeep scene: clustered lights, shadows, IBL, day-night cycle (~58 MB download) |
+| Scene Editor | [live](https://hlavacs.github.io/Vienna-WebGPU-Engine/scene_editor/) | The dockable editor; edits live in browser memory |
+| Tutorial | [live](https://hlavacs.github.io/Vienna-WebGPU-Engine/tutorial/) | The getting-started example scene |
+| Multi View | [live](https://hlavacs.github.io/Vienna-WebGPU-Engine/multi_view/) | Several cameras in split viewports |
+
+All demos: **[hlavacs.github.io/Vienna-WebGPU-Engine](https://hlavacs.github.io/Vienna-WebGPU-Engine/)**
 
 ## Features
 
@@ -25,7 +40,7 @@ A **cross-platform, WebGPU-based game engine** designed for educational purposes
 - 🔄 Resource hot-reloading
 - 📦 Factory pattern for GPU resource management
 - 📐 Model loading: OBJ (stable), GLTF/GLB (Animations WIP)
-- 📚 Tutorial series (4 tutorials: shaders, bind groups, shadows (WIP), post-processing)
+- 📚 Tutorial series (4 tutorials: shaders, bind groups, glass shader with transparency & shadows, post-processing)
 
 ## Quick Start
 
@@ -91,10 +106,11 @@ chmod +x scripts/build-example.sh
 ./scripts/build-example.sh tutorial Debug WGPU
 ```
 
-**Output:**
-- **Windows:** `examples/build/<name>/Windows/Debug/`
-- **macOS:** `examples/build/<name>/Mac/Debug/`
-- **Linux:** `examples/build/<name>/Linux/Debug/`
+**Output** (per-backend build directories):
+- **Windows:** `examples/build/<name>/Windows/Debug-WGPU/` (WGPU), `Debug-DAWN/` (Dawn prebuilt), `Debug/` (Dawn from source via the `SOURCE` arg)
+- **macOS:** `examples/build/<name>/Mac/Debug-WGPU/` (WGPU), `Debug/` (Dawn, built from source)
+- **Linux:** `examples/build/<name>/Linux/Debug-WGPU/` (WGPU), `Debug/` (Dawn, built from source)
+- **Web:** `examples/build/<name>/Emscripten/Debug/` (`EMDAWN` backend, see [doc/WebShipping.md](doc/WebShipping.md))
 
 ### Option 3: IDE Setup
 
@@ -116,11 +132,12 @@ Select example scheme, press `⌘+R` to run.
 
 ### Getting Started
 - **[Getting Started Guide](doc/GettingStarted.md)** - Build your first application
-- **[Tutorial Series](doc/tutorials/01_unlit_shader.md)** - 4-part hands-on tutorials:
+- **[Tutorial Series](doc/tutorials/01_unlit_shader.md)** - hands-on tutorials:
   1. Custom Shaders
   2. Bind Groups & Uniforms
-  3. Shadow Mapping (WIP)
+  3. Glass Shader (Transparency & Shadows)
   4. Post-Processing Effects
+  5. Fog in the Deferred Renderer (planned)
 
 ### Technical Reference
 - **[Engine Architecture](doc/EngineArchitecture.md)** - Design patterns and systems

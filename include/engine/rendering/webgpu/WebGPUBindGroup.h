@@ -142,6 +142,16 @@ class WebGPUBindGroup
 			return false;
 		}
 
+		// Clamp instead of letting WebGPU reject the whole write: auto-created
+		// buffers are minBindingSize-sized, growing data must preallocate capacity.
+		if (offset + size > buffer->getSize())
+		{
+			spdlog::warn("updateBuffer: write {}+{} exceeds buffer '{}' size {} - clamping", offset, size, buffer->getName(), buffer->getSize());
+			if (offset >= buffer->getSize())
+				return false;
+			size = buffer->getSize() - offset;
+		}
+
 		buffer->write(data, size, offset);
 		return true;
 	}

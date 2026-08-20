@@ -91,10 +91,14 @@ class WebGPUContext
 	[[nodiscard]] wgpu::Device getDevice() const { return m_device; }
 	/** @brief Returns the WebGPU queue. */
 	[[nodiscard]] wgpu::Queue getQueue() const { return m_queue; }
-	/** @brief Returns the swap chain format. */
+	/** @brief Returns the format render pipelines target on the surface. When the
+	 *  surface itself cannot be sRGB (D3D12/DXGI), this is the sRGB view format the
+	 *  surface texture is reinterpreted as; otherwise it equals the surface format. */
 	[[nodiscard]] wgpu::TextureFormat getSwapChainFormat() const { return m_swapChainFormat; }
-	/** @brief True if the surface format is sRGB (present auto-encodes gamma). If
-	 *  false, the composite must encode gamma itself. */
+	/** @brief Returns the format the surface swap chain is actually configured with. */
+	[[nodiscard]] wgpu::TextureFormat getSurfaceFormat() const { return m_surfaceFormat; }
+	/** @brief True if presents gamma-encode (native sRGB surface or sRGB view
+	 *  reinterpretation). If false, the composite must encode gamma itself. */
 	[[nodiscard]] bool isSurfaceSrgb() const { return m_surfaceIsSrgb; }
 
 	/** @brief Returns the hardware limits of the device. */
@@ -210,8 +214,9 @@ class WebGPUContext
 	wgpu::Adapter m_adapter = nullptr;
 	wgpu::Device m_device = nullptr;
 	wgpu::Queue m_queue = nullptr;
-	wgpu::TextureFormat m_swapChainFormat = wgpu::TextureFormat::Undefined;
-	bool m_surfaceIsSrgb = false; ///< Surface format is an *Srgb variant (present auto-encodes gamma).
+	wgpu::TextureFormat m_swapChainFormat = wgpu::TextureFormat::Undefined; ///< Format pipelines render in (sRGB view format when reinterpreting).
+	wgpu::TextureFormat m_surfaceFormat = wgpu::TextureFormat::Undefined;   ///< Format the swap chain is configured with.
+	bool m_surfaceIsSrgb = false; ///< Presents gamma-encode (native sRGB surface or sRGB view reinterpretation).
 	wgpu::Sampler m_defaultSampler = nullptr;
 
 	wgpu::Limits m_resolvedLimits{};

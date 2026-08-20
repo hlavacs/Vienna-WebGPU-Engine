@@ -67,7 +67,8 @@
 #error Emscripten <4.0.10 with '-sUSE_WEBGPU=1' is not supported anymore.
 #endif
 
-#if defined IMGUI_IMPL_WEBGPU_BACKEND_DAWN || defined IMGUI_IMPL_WEBGPU_BACKEND_WGVK
+// [engine patch] wgpu-native v29+ is on the same webgpu-headers generation as Dawn.
+#if defined IMGUI_IMPL_WEBGPU_BACKEND_DAWN || defined IMGUI_IMPL_WEBGPU_BACKEND_WGVK || defined IMGUI_IMPL_WEBGPU_BACKEND_WGPU
 // Dawn renamed WGPUProgrammableStageDescriptor to WGPUComputeState (see: https://github.com/webgpu-native/webgpu-headers/pull/413)
 // Using type alias until WGPU adopts the same naming convention (#8369)
 using WGPUProgrammableStageDescriptor = WGPUComputeState;
@@ -779,7 +780,8 @@ bool ImGui_ImplWGPU_CreateDeviceObjects()
     // Vertex input configuration
     WGPUVertexAttribute attribute_desc[] =
     {
-#if defined IMGUI_IMPL_WEBGPU_BACKEND_DAWN || defined IMGUI_IMPL_WEBGPU_BACKEND_WGVK
+// [engine patch] wgpu-native v29+ is on the same webgpu-headers generation as Dawn.
+#if defined IMGUI_IMPL_WEBGPU_BACKEND_DAWN || defined IMGUI_IMPL_WEBGPU_BACKEND_WGVK || defined IMGUI_IMPL_WEBGPU_BACKEND_WGPU
         { nullptr, WGPUVertexFormat_Float32x2, (uint64_t)offsetof(ImDrawVert, pos), 0 },
         { nullptr, WGPUVertexFormat_Float32x2, (uint64_t)offsetof(ImDrawVert, uv),  1 },
         { nullptr, WGPUVertexFormat_Unorm8x4,  (uint64_t)offsetof(ImDrawVert, col), 2 },
@@ -994,7 +996,8 @@ void ImGui_ImplWGPU_NewFrame()
 
 bool ImGui_ImplWGPU_IsSurfaceStatusError(WGPUSurfaceGetCurrentTextureStatus status)
 {
-#if defined(IMGUI_IMPL_WEBGPU_BACKEND_DAWN) || defined(IMGUI_IMPL_WEBGPU_BACKEND_WGVK)
+// [engine patch] wgpu-native v29+ is on the same webgpu-headers generation as Dawn.
+#if defined(IMGUI_IMPL_WEBGPU_BACKEND_DAWN) || defined(IMGUI_IMPL_WEBGPU_BACKEND_WGVK) || defined(IMGUI_IMPL_WEBGPU_BACKEND_WGPU)
     return (status == WGPUSurfaceGetCurrentTextureStatus_Error);
 #else
     return (status == WGPUSurfaceGetCurrentTextureStatus_OutOfMemory || status == WGPUSurfaceGetCurrentTextureStatus_DeviceLost);
@@ -1011,7 +1014,8 @@ bool ImGui_ImplWGPU_IsSurfaceStatusSubOptimal(WGPUSurfaceGetCurrentTextureStatus
 }
 
 // Helpers to obtain a string
-#if defined(IMGUI_IMPL_WEBGPU_BACKEND_DAWN) || defined(IMGUI_IMPL_WEBGPU_BACKEND_WGVK)
+// [engine patch] wgpu-native v29+ is on the same webgpu-headers generation as Dawn.
+#if defined(IMGUI_IMPL_WEBGPU_BACKEND_DAWN) || defined(IMGUI_IMPL_WEBGPU_BACKEND_WGVK) || defined(IMGUI_IMPL_WEBGPU_BACKEND_WGPU)
 const char* ImGui_ImplWGPU_GetErrorTypeName(WGPUErrorType type)
 {
     switch (type)

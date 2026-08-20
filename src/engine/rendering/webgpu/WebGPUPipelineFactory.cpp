@@ -28,8 +28,14 @@ WebGPUPipelineFactory::WebGPUPipelineFactory(WebGPUContext &context) :
 	m_defaultBlendState = wgpu::BlendState{};
 	m_defaultBlendState.alpha = wgpu::BlendComponent{};
 	m_defaultBlendState.color = wgpu::BlendComponent{};
-	m_defaultBlendState.alpha.srcFactor = wgpu::BlendFactor::One;
-	m_defaultBlendState.alpha.dstFactor = wgpu::BlendFactor::Zero;
+	// Preserve the destination's alpha instead of overwriting it with the
+	// source's. Transparent forward draws land on the lit HDR target whose
+	// alpha is 1 (opaque coverage); writing the material's blend alpha into
+	// it (One/Zero) punched per-pixel holes that the alpha-blended composite
+	// blit then mixed with the swapchain clear color, visibly darkening every
+	// transparent surface at present time (and in editor viewport textures).
+	m_defaultBlendState.alpha.srcFactor = wgpu::BlendFactor::Zero;
+	m_defaultBlendState.alpha.dstFactor = wgpu::BlendFactor::One;
 	m_defaultBlendState.alpha.operation = wgpu::BlendOperation::Add;
 	m_defaultBlendState.color.srcFactor = wgpu::BlendFactor::SrcAlpha;
 	m_defaultBlendState.color.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;

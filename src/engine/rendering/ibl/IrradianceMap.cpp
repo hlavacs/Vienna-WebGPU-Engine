@@ -28,7 +28,6 @@ namespace
 std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> buildBindGroupLayoutInfo(webgpu::WebGPUContext &context)
 {
 	// Zero-init, not wgpu::Default (v24 BindingNotUsed vs Undefined).
-	// See doc/WebGPUv24Migration.md.
 	std::vector<wgpu::BindGroupLayoutEntry> entries(2);
 
 	entries[0].binding                 = 0;

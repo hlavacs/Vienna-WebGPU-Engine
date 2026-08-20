@@ -33,8 +33,15 @@ bool DebugPass::initialize()
 	if (!m_shaderInfo)
 		return false;
 
+	// Preallocate the primitive buffer at capacity and hand it to the factory:
+	// auto-created buffers are sized minBindingSize = one array element.
+	m_debugPrimitiveBuffer = m_context->bufferFactory().createStorageBuffer(
+		"DebugPrimitives", 0, MAX_DEBUG_PRIMITIVES * sizeof(DebugPrimitive));
+	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> overrides;
+	overrides.emplace(webgpu::BindGroupBindingKey{0, 0}, webgpu::BindGroupResource(m_debugPrimitiveBuffer));
 	m_debugBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_shaderInfo->getBindGroupLayout(bindgroup::defaults::DEBUG)
+		m_shaderInfo->getBindGroupLayout(bindgroup::defaults::DEBUG),
+		overrides
 	);
 
 	if (!m_debugBindGroup || !m_debugBindGroup->isValid())
@@ -91,6 +98,11 @@ void DebugPass::render(FrameCache &frameCache)
 
 	auto primitives = m_debugCollector->getPrimitives();
 	uint32_t primitiveCount = static_cast<uint32_t>(m_debugCollector->getPrimitiveCount());
+	if (primitiveCount > MAX_DEBUG_PRIMITIVES)
+	{
+		spdlog::warn("DebugPass: {} primitives exceed capacity {}; extra ones are dropped", primitiveCount, MAX_DEBUG_PRIMITIVES);
+		primitiveCount = MAX_DEBUG_PRIMITIVES;
+	}
 	m_debugBindGroup->updateBuffer(
 		0, // binding 0
 		primitives.data(),

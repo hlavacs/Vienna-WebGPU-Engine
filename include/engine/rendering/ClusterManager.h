@@ -98,23 +98,45 @@ class ClusterManager
 	);
 
 	/**
-	 * @brief Get the cluster grid storage buffer.
-	 * Used by composition pass to look up lights affecting each pixel.
-	 * @return Shared pointer to cluster grid buffer.
+	 * @brief Get THIS camera's cluster grid storage buffer (created on demand).
+	 * Used by composition pass to look up lights affecting each pixel. Cluster
+	 * storage is per camera so the dispatch-skip stays valid in multi-view
+	 * (each camera's grid persists between its own dispatches).
+	 * @return Shared pointer to the camera's cluster grid buffer.
 	 */
-	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBuffer> getClusterGridBuffer() const { return m_clusterGridBuffer; }
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBuffer> getClusterGridBuffer(uint64_t cameraId);
 
-	/// Flat u32 index pool storing the per-cluster light lists.
-	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBuffer> getClusterIndicesBuffer() const { return m_clusterIndicesBuffer; }
+	/// Flat u32 index pool storing the per-cluster light lists (per camera).
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUBuffer> getClusterIndicesBuffer(uint64_t cameraId);
+
+	/// @name CacheRegistry factory-cache contract
+	/// Per-camera cluster storage is registered with the CacheRegistry so idle
+	/// cameras (disabled / destroyed) get their buffers evicted like any other
+	/// factory-cached resource.
+	///@{
+	void notifyFrame() { ++m_frameCounter; }
+	std::size_t evictStale();
+	void cleanup();
+	[[nodiscard]] std::size_t cacheSize() const { return m_cameraClusters.size(); }
+	void setMaxIdleFrames(uint32_t frames) { m_maxIdleFrames = frames; }
+	[[nodiscard]] uint32_t maxIdleFrames() const { return m_maxIdleFrames; }
+	///@}
 
   private:
 	webgpu::WebGPUContext &m_context;
 
-	// GPU cluster storage shared with the composition pass (different bind-group
-	// views of the same buffers: read-only for the fragment shader, atomic +
-	// read_write for the compute shader).
-	std::shared_ptr<webgpu::WebGPUBuffer> m_clusterGridBuffer;	  // {offset, count} per cluster
-	std::shared_ptr<webgpu::WebGPUBuffer> m_clusterIndicesBuffer; // Flat u32 index pool
+	// Per-camera GPU cluster storage shared with the composition pass (different
+	// bind-group views of the same buffers: read-only for the fragment shader,
+	// atomic + read_write for the compute shader).
+	struct CameraClusters
+	{
+		std::shared_ptr<webgpu::WebGPUBuffer> grid;    // {offset, count} per cluster
+		std::shared_ptr<webgpu::WebGPUBuffer> indices; // Flat u32 index pool
+		uint64_t lastUsedFrame = 0;
+	};
+	std::unordered_map<uint64_t, CameraClusters> m_cameraClusters;
+	uint64_t m_frameCounter = 0;
+	uint32_t m_maxIdleFrames = 300;
 
 	// Compute pipeline (clear + assign share one pipeline layout). Canonical
 	// split: Frame @group(0), Scene-like @group(1) for lights + cluster grid
@@ -136,6 +158,7 @@ class ClusterManager
 
 		WGPUBuffer frameBuffer = nullptr;
 		WGPUBuffer lightBuffer = nullptr;
+		WGPUBuffer gridBuffer  = nullptr; ///< identity of the camera's cluster grid
 
 		uint32_t lastLightCount = 0;
 	};
@@ -158,10 +181,10 @@ class ClusterManager
 	std::unordered_map<uint64_t, DispatchFingerprint> m_dispatchFingerprints;
 
 	/**
-	 * @brief Create the cluster grid storage buffer.
-	 * @return True if creation succeeded.
+	 * @brief Get or lazily create this camera's cluster buffers (zero-initialized
+	 *        grid) and touch its last-used frame. Returns nullptr on failure.
 	 */
-	bool createClusterGridBuffer();
+	CameraClusters *getOrCreateCameraClusters(uint64_t cameraId);
 
 	/**
 	 * @brief Create the compute pipeline for clustering.
@@ -177,6 +200,7 @@ class ClusterManager
 	 */
 	const CachedComputeBindGroup *getOrCreateComputeBindGroups(
 		uint64_t cameraId,
+		const CameraClusters &clusters,
 		wgpu::Buffer frameBuffer,
 		wgpu::Buffer lightBuffer,
 		uint32_t lightCount);

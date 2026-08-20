@@ -4,8 +4,9 @@
 // The engine's Frame (@group(0)) and Object (@group(3)) uniform structs are
 // auto-generated from C++ via the codegen pipeline. Pulling them in by URI
 // keeps this tutorial in lockstep with whatever the engine actually binds —
-// no risk of the inline struct drifting from the C++ side. Custom bind groups
-// belong on @group(4..7); slots 0..3 are reserved for engine roles.
+// no risk of the inline struct drifting from the C++ side. WebGPU allows only
+// 4 bind groups (indices 0..3); a custom group takes a slot whose engine role
+// this shader does not use — here @group(1), since there is no Scene group.
 #include "engine://core/frame_uniforms.wgsl"
 #include "engine://core/object_uniforms.wgsl"
 
@@ -25,7 +26,11 @@ struct UnlitMaterialUniforms {
 }
 
 // Tutorial 02 - Step 3: Add TileUniforms struct
-
+struct TileUniforms
+{
+    tileOffset: vec2f,
+    tileSize: vec2f,
+}
 
 
 @group(2) @binding(0)
@@ -35,7 +40,11 @@ var textureSampler: sampler;
 @group(2) @binding(2)
 var baseColorTexture: texture_2d<f32>;
 
-// Tutorial 02 - Step 4: Declare custom bind group (use @group(4) or higher)
+// Tutorial 02 - Step 4: Declare custom bind group (use a slot in 0..3 that
+// this shader's engine roles do not occupy - here @group(1), since this
+// shader has no Scene group)
+@group(1) @binding(0)
+var<uniform> tileUniforms: TileUniforms;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -50,7 +59,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     // Tutorial 02 - Step 5: Modify fragment shader to use TileUniforms
-    let textureColor = textureSample(baseColorTexture, textureSampler, input.texCoord);
+    // Apply tiling and offset to UV coordinates
+    let tiledUV = input.texCoord * tileUniforms.tileSize + tileUniforms.tileOffset;
+
+    // Sample texture with modified UVs
+    let textureColor = textureSample(baseColorTexture, textureSampler, tiledUV);
     let finalColor = textureColor * unlitMaterialUniforms.color;
     return finalColor;
 }

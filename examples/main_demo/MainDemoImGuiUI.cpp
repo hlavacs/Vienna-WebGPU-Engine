@@ -1060,12 +1060,12 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 			renderer->reloadShaders();
 	}
 	ImGui::SameLine();
-	// Debug rendering toggle
+	// Debug rendering toggle. Shadow-map debug capture has no checkbox here:
+	// it follows the Shadow Map Debug window (View menu) being open - a second
+	// toggle would fight that sync, last writer wins.
 	static bool showDebugRendering = false;
-	static bool showDebugShadowMaps = false;
 	static bool prevDebugState = false;
 	ImGui::Checkbox("Debug Rendering", &showDebugRendering);
-	ImGui::Checkbox("Debug Shadow Maps", &showDebugShadowMaps);
 	if (showDebugRendering != prevDebugState)
 	{
 		for (auto &light : m_lightNodes)
@@ -1085,8 +1085,6 @@ void MainDemoImGuiUI::renderLightingAndCameraControls()
 		}
 		prevDebugState = showDebugRendering;
 	}
-	m_engine.getRenderer().lock()->getShadowPass().setDebugMode(showDebugShadowMaps);
-
 	// Environment controls: skybox visibility and IBL contribution are
 	// independent toggles (see Renderer.cpp comment near irradianceEnabled).
 	// "Visible" draws the sky behind everything; "Lighting" feeds the

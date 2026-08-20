@@ -135,22 +135,14 @@ std::future<bool> SceneManager::loadSceneAsync(const std::string &sceneName)
 
 	auto newScene = it->second;
 
-	// Launch async initialization - ONLY initialize, don't touch m_activeScene
-	auto initFuture = std::async(std::launch::async, [this, newScene, sceneName]() -> bool
+	// Initialize the scene tree inline: the previous std::async was .get()-awaited
+	// immediately (no real concurrency), and wasm builds have no threads.
+	if (newScene && newScene->getRoot())
 	{
-		// Initialize all nodes in the scene tree (loads resources)
-		// This runs on worker thread - no scene switching here!
-		if (newScene && newScene->getRoot())
-		{
-			initializeNodeTree(newScene->getRoot());
-		}
-
-		spdlog::info("Scene '{}' initialization complete", sceneName);
-		return true;
-	});
-
-	// Wait for initialization to complete
-	bool success = initFuture.get();
+		initializeNodeTree(newScene->getRoot());
+	}
+	spdlog::info("Scene '{}' initialization complete", sceneName);
+	const bool success = true;
 
 	if (!success)
 	{

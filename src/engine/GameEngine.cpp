@@ -18,6 +18,10 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
 #include <vector>
 
 #include "engine/core/PathProvider.h"
@@ -50,7 +54,14 @@ GameEngine::GameEngine() :
 		// Fall back to the default stdout logger if the file can't be opened.
 	}
 
-#if defined(DEBUG_ROOT_DIR) && defined(ASSETS_ROOT_DIR)
+#if defined(__EMSCRIPTEN__)
+	// MEMFS root; --preload-file maps resources/ and assets/ under "/" (host
+	// paths from ASSETS_ROOT_DIR/DEBUG_ROOT_DIR are meaningless in the browser).
+	engine::core::PathProvider::initialize("/", "/");
+	// Per-frame trace/debug spam must never reach the browser console or the
+	// page's log panel - console.log + DOM appends at frame rate stall the tab.
+	spdlog::set_level(spdlog::level::info);
+#elif defined(DEBUG_ROOT_DIR) && defined(ASSETS_ROOT_DIR)
 	engine::core::PathProvider::initialize(ASSETS_ROOT_DIR, DEBUG_ROOT_DIR);
 #elif defined(DEBUG_ROOT_DIR)
 	engine::core::PathProvider::initialize("", DEBUG_ROOT_DIR);
@@ -309,8 +320,13 @@ void GameEngine::run()
 	running = true;
 
 	// Launch physics thread if enabled
+#if defined(__EMSCRIPTEN__)
+	if (options.runPhysics)
+		spdlog::warn("Physics thread unavailable in the wasm build (no pthreads); physics is disabled.");
+#else
 	if (options.runPhysics)
 		physicsThread = std::thread(&GameEngine::physicsLoop, this);
+#endif
 
 	// Main/game logic loop (runs on main thread)
 	gameLoop();
@@ -356,26 +372,49 @@ void GameEngine::physicsLoop()
 
 void GameEngine::gameLoop()
 {
-	double previousTime = getCurrentTime();
+	m_loopPreviousTime = getCurrentTime();
 	onWindowResize(options.windowWidth, options.windowHeight);
+#if defined(__EMSCRIPTEN__)
+	// The browser owns the loop: one engine frame per requestAnimationFrame tick.
+	// A while() here never yields and freezes the tab. This call unwinds gameLoop.
+	emscripten_set_main_loop_arg(
+		[](void *arg)
+		{
+			auto *self = static_cast<GameEngine *>(arg);
+			if (!self->running)
+			{
+				emscripten_cancel_main_loop();
+				return;
+			}
+			self->frameTick();
+		},
+		this, 0, true);
+#else
 	while (running)
-	{
-		processEvents();
+		frameTick();
+#endif
+}
 
-		const double currentTime = getCurrentTime();
-		float frameDelta = static_cast<float>(currentTime - previousTime);
-		previousTime = currentTime;
+void GameEngine::frameTick()
+{
+	processEvents();
 
-		if (frameDelta > options.maxDeltaTime)
-			frameDelta = options.maxDeltaTime;
+	const double currentTime = getCurrentTime();
+	float frameDelta = static_cast<float>(currentTime - m_loopPreviousTime);
+	m_loopPreviousTime = currentTime;
 
-		updateScene(frameDelta);
-		renderFrame(frameDelta);
+	if (frameDelta > options.maxDeltaTime)
+		frameDelta = options.maxDeltaTime;
 
-		m_inputManager.endFrame();
-		updateFrameStats(frameDelta);
-		limitFrameRate(currentTime);
-	}
+	updateScene(frameDelta);
+	renderFrame(frameDelta);
+
+	m_inputManager.endFrame();
+	updateFrameStats(frameDelta);
+#ifndef __EMSCRIPTEN__
+	// rAF paces the browser; SDL_Delay-based capping would asyncify-sleep mid-tick.
+	limitFrameRate(currentTime);
+#endif
 }
 
 void GameEngine::processEvents()
@@ -440,6 +479,14 @@ void GameEngine::toggleFullscreen()
 
 void GameEngine::onWindowResize(int width, int height)
 {
+	// Zero-size events (minimized window; emscripten canvas before CSS layout) must
+	// not reconfigure the surface or render targets - WebGPU forbids empty textures.
+	if (width <= 0 || height <= 0)
+	{
+		spdlog::info("Ignoring zero-size window resize event ({}x{})", width, height);
+		return;
+	}
+
 	m_currentWidth = width;
 	m_currentHeight = height;
 	m_context->surfaceManager().updateIfNeeded(width, height);

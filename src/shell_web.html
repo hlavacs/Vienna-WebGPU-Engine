@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Vienna WebGPU Engine</title>
+	<link rel="stylesheet" href="web_theme.css">
+</head>
+
+<body class="shell">
+	<header>
+		<span class="wordmark">VIENNA WEBGPU ENGINE</span>
+		<span class="sep"></span>
+		<button class="linklike" id="fullscreenButton">fullscreen</button>
+	</header>
+
+	<main>
+		<canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+		<div id="overlay">
+			<div class="wordmark-big">VIENNA WEBGPU ENGINE</div>
+			<div id="bar-track"><div id="bar-fill"></div></div>
+			<div id="status-line">starting</div>
+			<div id="error-block">
+				<div class="err-title">webgpu unavailable</div>
+				<p id="error-text">This page needs a browser with WebGPU.
+					Recent Chrome and Edge have it out of the box &mdash;
+					<a href="https://caniuse.com/webgpu" target="_blank" rel="noreferrer">caniuse.com/webgpu</a>.</p>
+			</div>
+		</div>
+	</main>
+
+	<footer>
+		<details>
+			<summary>engine log</summary>
+			<textarea id="output" readonly></textarea>
+		</details>
+	</footer>
+
+	<script type="text/javascript">
+		var canvasElement = document.getElementById('canvas');
+		var outputElement = document.getElementById('output');
+		var overlayElement = document.getElementById('overlay');
+		var barFill = document.getElementById('bar-fill');
+		var statusLine = document.getElementById('status-line');
+		if (outputElement) outputElement.value = '';
+
+		function showError(html) {
+			document.getElementById('bar-track').style.display = 'none';
+			statusLine.style.display = 'none';
+			var block = document.getElementById('error-block');
+			block.style.display = 'block';
+			if (html) document.getElementById('error-text').innerHTML = html;
+			overlayElement.classList.remove('hidden');
+		}
+
+		if (!navigator.gpu) {
+			showError();
+		}
+
+		// Native element fullscreen on the canvas only: emscripten's
+		// Module.requestFullscreen drags page furniture along and restores badly.
+		// SDL3's resize observer follows the CSS size change in both directions.
+		document.getElementById('fullscreenButton').onclick = function () {
+			if (document.fullscreenElement)
+				document.exitFullscreen();
+			else if (canvasElement.requestFullscreen)
+				canvasElement.requestFullscreen();
+		};
+		document.addEventListener('fullscreenchange', function () {
+			try { Module.ccall('my_notify_fullscreen', null, [], []); } catch (e) { /* not exported */ }
+		});
+
+		// Batch log lines into the textarea: per-message DOM appends stall the
+		// tab at frame rate. Flush once per second and retain a bounded tail.
+		var logLines = [];
+		var LOG_MAX_LINES = 2000;
+		function pushLogLine(text) {
+			logLines.push(text);
+			if (logLines.length > LOG_MAX_LINES)
+				logLines.splice(0, logLines.length - LOG_MAX_LINES);
+		}
+		setInterval(function () {
+			if (!outputElement || !logLines.dirty) return;
+			logLines.dirty = false;
+			outputElement.value = logLines.join("\n") + "\n";
+			outputElement.scrollTop = outputElement.scrollHeight;
+		}, 1000);
+
+		var Module = {
+			canvas: canvasElement,
+			print(...args) {
+				console.log(...args);
+				pushLogLine(args.join(' '));
+				logLines.dirty = true;
+			},
+			printErr(...args) {
+				console.error(...args);
+				pushLogLine(args.join(' '));
+				logLines.dirty = true;
+			},
+			setStatus(text) {
+				Module.setStatus.last ??= { time: Date.now(), text: '' };
+				if (text === Module.setStatus.last.text) return;
+				var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+				var now = Date.now();
+				if (m && now - Module.setStatus.last.time < 30) return;
+				Module.setStatus.last.time = now;
+				Module.setStatus.last.text = text;
+				if (m) {
+					barFill.style.width = (100 * parseInt(m[2]) / parseInt(m[4])) + '%';
+					statusLine.textContent = m[1].trim().toLowerCase();
+				} else if (text) {
+					statusLine.textContent = text.toLowerCase();
+				} else {
+					// Empty status = the main loop is running; reveal the canvas.
+					barFill.style.width = '100%';
+					overlayElement.classList.add('hidden');
+				}
+			},
+			totalDependencies: 0,
+			monitorRunDependencies(left) {
+				this.totalDependencies = Math.max(this.totalDependencies, left);
+				Module.setStatus(left
+					? 'preparing (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')'
+					: 'download complete');
+			}
+		};
+
+		Module.setStatus('downloading');
+		window.onerror = (message) => {
+			showError('The engine hit an exception &mdash; see the browser console.<br>' + String(message));
+			Module.setStatus = (text) => { if (text) console.error('[post-exception status] ' + text); };
+		};
+
+	</script>
+	{{{ SCRIPT }}}
+</body>
+
+</html>

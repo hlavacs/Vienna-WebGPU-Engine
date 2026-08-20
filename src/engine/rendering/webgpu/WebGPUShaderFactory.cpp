@@ -137,7 +137,9 @@ BuiltBinding translateBinding(const refl::Binding &rb, const BindingMeta *meta, 
 		out.typed.size = rb.minBindingSize;
 		break;
 	case refl::BindingKind::Sampler:
-		out.entry.sampler.type = (meta && meta->samplerType) ? *meta->samplerType : wgpu::SamplerBindingType::Filtering;
+		out.entry.sampler.type = wgpu::SamplerBindingType::Filtering;
+		if (meta && meta->samplerType)
+			out.entry.sampler.type = *meta->samplerType;
 		out.typed.type = BindingType::Sampler;
 		break;
 	case refl::BindingKind::SamplerComparison:

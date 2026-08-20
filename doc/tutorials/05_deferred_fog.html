@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>03_shadow_mapping.md</title>
+<title>05_deferred_fog.md</title>
 <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
 
 <style>
@@ -227,9 +227,24 @@ pre code {
 </style>
 </head>
 <body>
-<h1 id="tutorial-03-has-moved">Tutorial 03 Has Moved</h1>
-<p>The planned shadow-mapping tutorial was replaced by <strong>Tutorial 03: A More Complex Shader - Glass with Transparency and Shadows</strong>, which covers shadow <em>receiving</em> (light-space projection, bias, PCF via the engine's shared <code>calculate_shadow()</code>) as part of a complete glass shader, together with transparency and the forward render path.</p>
-<p><strong>Go to the new tutorial:</strong> <a href="03_glass_shader.md">03_glass_shader.md</a></p>
-<p>This file is kept only so old links don't break. For the shadow <em>producing</em> side (how the engine renders shadow maps), see <code>src/engine/rendering/ShadowPass.cpp</code> and the shadow library at <code>resources/shaders/lib/shadow.wgsl</code>.</p>
+<h1 id="tutorial-05-fog-in-the-deferred-renderer">Tutorial 05: Fog in the Deferred Renderer</h1>
+<blockquote>
+<p><strong>Status:</strong> Planned - this tutorial is not written yet.</p>
+</blockquote>
+<p>This tutorial will add <strong>distance and height fog</strong> to the engine as a real, reusable
+feature - and use it to teach how the deferred pipeline actually works.</p>
+<p><strong>Planned topics:</strong>
+- What the G-buffer stores and why the engine reconstructs world position from depth
+  (<code>inverseViewProjectionMatrix</code> in the Frame uniforms, 32-byte MRT budget)
+- How the composition pass consumes per-pixel deferred data
+- Extending <code>EnvironmentUniforms</code> (Scene group) with fog parameters: color, density,
+  height falloff
+- Implementing the fog blend in <code>Composition_Deferred.wgsl</code>, including the horizon /
+  skybox interaction at far depth
+- Plumbing the parameters CPU-side so fog is configurable per scene</p>
+<p><strong>Until then:</strong>
+- Tutorial 04 teaches the render-pass side of the engine: <a href="04_postprocessing.md">04_postprocessing.md</a>
+- The deferred pass order lives in <code>Renderer::buildPerCameraGraph()</code>
+  (Shadow -&gt; GBuffer -&gt; ClusterCompute -&gt; Composition -&gt; Skybox -&gt; ForwardTransparency -&gt; Debug)</p>
 </body>
 </html>

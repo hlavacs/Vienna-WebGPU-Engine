@@ -113,6 +113,7 @@ class GameEngine
 	void physicsLoop();
 
 	void gameLoop();
+	void frameTick();
 	void processEvents();
 	void onWindowResize(int width, int height);
 
@@ -138,6 +139,7 @@ class GameEngine
 	std::shared_ptr<engine::ui::ImGuiManager> m_imguiManager;
 
 	std::shared_ptr<engine::scene::Scene> m_lastRenderedScene;
+	double m_loopPreviousTime = 0.0; ///< Frame-delta baseline for gameLoop/frameTick.
 
 	// Per-camera render collectors (cached across frames for bind group reuse)
 	std::unordered_map<uint64_t, engine::rendering::RenderCollector> m_cameraCollectors;

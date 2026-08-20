@@ -411,6 +411,20 @@ struct Material : public engine::core::Identifiable<Material>,
 	/**
 	 * @brief Check if this material is configured as transparent.
 	 */
+	/**
+	 * @brief True when this material must render in the forward pass.
+	 *
+	 * Two reasons: the material is transparent (blending needs back-to-front
+	 * forward rendering), or it is shaded by a custom shader - the deferred
+	 * G-buffer path runs a fixed shader and would ignore it. Opaque custom
+	 * materials still get depth-write + no blending from the pipeline factory,
+	 * so they render correctly in the forward pass.
+	 */
+	bool usesForwardShading() const
+	{
+		return isTransparent() || (!m_shader.empty() && m_shader != shader::defaults::PBR);
+	}
+
 	bool isTransparent() const
 	{
 		return (m_featureMask & MaterialFeature::Flag::Transparent) != MaterialFeature::Flag::None;

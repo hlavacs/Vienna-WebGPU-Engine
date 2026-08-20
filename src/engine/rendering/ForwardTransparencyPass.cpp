@@ -85,8 +85,10 @@ void ForwardTransparencyPass::render(FrameCache &frameCache)
 		if (!cpuMatOpt.has_value())
 			continue;
 
-		const auto features = cpuMatOpt.value()->getFeatureMask();
-		if (!MaterialFeature::hasFlag(features, MaterialFeature::Flag::Transparent))
+		// Transparent AND custom-shader (forward-opaque) materials render here;
+		// the latter keep depth-write + no blending, so drawing them in the same
+		// back-to-front order stays correct (depth test resolves, minor overdraw).
+		if (!cpuMatOpt.value()->usesForwardShading())
 			continue;
 
 		// Sort key uses object-origin (translation row), matching what

@@ -1,7 +1,10 @@
 #pragma once
 
+#include "engine/scene/nodes/CameraNode.h"
 #include "engine/scene/nodes/LightNode.h"
 #include "engine/scene/nodes/UpdateNode.h"
+
+#include <vector>
 
 #include <algorithm>
 #include <cmath>
@@ -43,6 +46,17 @@ class DayNightCycle : public engine::scene::nodes::UpdateNode
 			updateMoon();
 		if (m_ambientLight)
 			updateAmbient();
+		if (!m_cameras.empty())
+			updateIrradiance();
+	}
+
+	/// Cameras whose IBL (irradiance) intensity should follow the sun. The
+	/// environment maps are a daytime-sky bake - without this coupling the sky
+	/// light stays at full strength all night, washing out shadows and darkness.
+	void addCamera(const engine::scene::nodes::CameraNode::Ptr &camera)
+	{
+		if (camera)
+			m_cameras.push_back(camera);
 	}
 
 	void setHour(float h) { m_hour = glm::clamp(h, 0.0f, 24.0f); }
@@ -73,6 +87,7 @@ class DayNightCycle : public engine::scene::nodes::UpdateNode
 	engine::scene::nodes::LightNode::Ptr m_sunLight;
 	engine::scene::nodes::LightNode::Ptr m_moonLight;
 	engine::scene::nodes::LightNode::Ptr m_ambientLight;
+	std::vector<engine::scene::nodes::CameraNode::Ptr> m_cameras;
 
 	// --------------------------------------------------------
 	// PHYSICALLY BASED SUN/MOON POSITION
@@ -133,6 +148,15 @@ class DayNightCycle : public engine::scene::nodes::UpdateNode
 		const float maxAmbient = 1.0f;
 		float t = glm::clamp(std::sin(sunAltitudeRad), 0.0f, 1.0f);
 		return minAmbient + t * (maxAmbient - minAmbient);
+	}
+
+	float irradianceIntensityFromSun(float sunAltitudeRad) const
+	{
+		// Small floor keeps a hint of sky bounce at night without keeping the
+		// daytime bake alive; daytime returns full strength.
+		const float minIrradiance = 0.03f;
+		float t = glm::clamp(std::sin(sunAltitudeRad), 0.0f, 1.0f);
+		return minIrradiance + t * (1.0f - minIrradiance);
 	}
 
 	// --------------------------------------------------------
@@ -225,6 +249,16 @@ class DayNightCycle : public engine::scene::nodes::UpdateNode
 		aLight.intensity = intensity;
 
 		light.setData(aLight);
+	}
+
+	void updateIrradiance()
+	{
+		if (!m_sunLight)
+			return;
+		const float sunAlt = glm::asin(computeSunDirectionPhys(m_hour).y);
+		const float intensity = irradianceIntensityFromSun(sunAlt);
+		for (const auto &camera : m_cameras)
+			camera->setIrradianceIntensity(intensity);
 	}
 };
 

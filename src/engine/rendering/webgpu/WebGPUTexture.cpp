@@ -283,17 +283,14 @@ bool WebGPUTexture::beginReadback(WebGPUContext &context)
 	m_readbackSuccess = false;
 	m_readbackPending = true;
 
-	// wgpu-native v24: mapAsync takes BufferMapCallbackInfo and returns a Future.
-	wgpu::BufferMapCallbackInfo mapCbInfo{};
-	mapCbInfo.mode = wgpu::CallbackMode::AllowSpontaneous;
-	mapCbInfo.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void *ud1, void *)
-	{
-		auto *self = static_cast<WebGPUTexture *>(ud1);
-		self->m_readbackSuccess = (status == WGPUMapAsyncStatus_Success);
-		self->m_readbackMapped = true;
-	};
-	mapCbInfo.userdata1 = this;
-	m_readbackFuture = m_readbackStagingBuffer.mapAsync(wgpu::MapMode::Read, 0, bufferSize, mapCbInfo);
+	// v29 wrapper: mapAsync takes a lambda (heap-copied, freed on the exactly-once callback).
+	m_readbackFuture = m_readbackStagingBuffer.mapAsync(
+		wgpu::MapMode::Read, 0, bufferSize, wgpu::CallbackMode::AllowSpontaneous,
+		[this](wgpu::MapAsyncStatus status, wgpu::StringView)
+		{
+			m_readbackSuccess = (status == wgpu::MapAsyncStatus::Success);
+			m_readbackMapped = true;
+		});
 
 	return true;
 }
@@ -305,7 +302,7 @@ bool WebGPUTexture::pollReadback(WebGPUContext &context, std::shared_ptr<Texture
 		return false;
 
 	m_readbackPending = false;
-	m_readbackFuture = {};
+	m_readbackFuture = wgpu::Future{};
 
 	if (!m_readbackSuccess)
 	{

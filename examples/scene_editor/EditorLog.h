@@ -37,7 +37,9 @@ struct LogEntry
  *
  * Shared between the spdlog sink (writer, possibly a background thread) and the
  * editor's Log panel (reader, main thread). Oldest records are dropped once the
- * capacity is exceeded.
+ * capacity is exceeded. Trace/debug records live in their OWN smaller ring so
+ * per-frame debug spam cannot evict info/warn/error entries within seconds;
+ * copyInto merges both rings back into time (seq) order.
  */
 class LogStore
 {
@@ -46,29 +48,42 @@ class LogStore
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		entry.seq = m_nextSeq++;
-		m_entries.push_back(std::move(entry));
-		while (m_entries.size() > m_maxEntries)
-			m_entries.pop_front();
+		const bool noisy = entry.level < static_cast<int>(spdlog::level::info);
+		auto &ring = noisy ? m_noisyEntries : m_entries;
+		const std::size_t cap = noisy ? m_maxNoisyEntries : m_maxEntries;
+		ring.push_back(std::move(entry));
+		while (ring.size() > cap)
+			ring.pop_front();
 	}
 
 	void clear()
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_entries.clear();
+		m_noisyEntries.clear();
 	}
 
-	/// Copy the current records into @p out, reusing its capacity.
+	/// Copy the current records into @p out (merged, seq-ordered), reusing its capacity.
 	void copyInto(std::vector<LogEntry> &out) const
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
-		out.assign(m_entries.begin(), m_entries.end());
+		out.clear();
+		out.reserve(m_entries.size() + m_noisyEntries.size());
+		auto a = m_entries.begin();
+		auto b = m_noisyEntries.begin();
+		while (a != m_entries.end() && b != m_noisyEntries.end())
+			out.push_back(a->seq < b->seq ? *a++ : *b++);
+		out.insert(out.end(), a, m_entries.end());
+		out.insert(out.end(), b, m_noisyEntries.end());
 	}
 
   private:
 	mutable std::mutex m_mutex;
-	std::deque<LogEntry> m_entries;
+	std::deque<LogEntry> m_entries;      ///< info and above
+	std::deque<LogEntry> m_noisyEntries; ///< trace/debug (per-frame spam)
 	uint64_t m_nextSeq = 0;
 	std::size_t m_maxEntries = 5000;
+	std::size_t m_maxNoisyEntries = 1000;
 };
 
 /**
@@ -134,8 +149,12 @@ inline void installEditorLogSink(const std::shared_ptr<LogStore> &store)
 		if (!logger)
 			return;
 		logger->sinks().push_back(sink);
+#if !defined(__EMSCRIPTEN__)
+		// Desktop: capture everything; the panel filters by level. On the web,
+		// per-frame trace/debug must never be formatted at all (browser perf).
 		if (logger->level() != spdlog::level::trace)
 			logger->set_level(spdlog::level::trace);
+#endif
 	};
 
 	auto defaultLogger = spdlog::default_logger();

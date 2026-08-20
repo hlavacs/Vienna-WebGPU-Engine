@@ -154,11 +154,10 @@ void GBufferPass::render(FrameCache &frameCache)
 			continue;
 		}
 		const auto matFeatures = cpuMaterialOpt.value()->getFeatureMask();
-		// Transparent items belong to ForwardTransparencyPass - here they would
-		// either lose their alpha or write depth that occludes the forward pass.
-		if (engine::rendering::MaterialFeature::hasFlag(
-				matFeatures,
-				engine::rendering::MaterialFeature::Flag::Transparent))
+		// Forward-shaded items belong to ForwardTransparencyPass: transparents
+		// would lose their alpha here, and custom-shader materials would be
+		// silently drawn with the fixed G-buffer shader instead of their own.
+		if (cpuMaterialOpt.value()->usesForwardShading())
 		{
 			++skipped;
 			continue;

@@ -35,24 +35,12 @@ ClusterManager::ClusterManager(webgpu::WebGPUContext &context) :
 
 ClusterManager::~ClusterManager()
 {
-	for (auto &[cameraId, cached] : m_computeBindGroups)
-	{
-		if (cached.frameBindGroup)
-			cached.frameBindGroup.release();
-		if (cached.sceneBindGroup)
-			cached.sceneBindGroup.release();
-	}
+	cleanup();
 }
 
 bool ClusterManager::initialize()
 {
-	spdlog::info("Initializing ClusterManager ({}x{}x{} = {} clusters)", CLUSTER_GRID_DIM_X, CLUSTER_GRID_DIM_Y, CLUSTER_GRID_DIM_Z, CLUSTER_GRID_TOTAL);
-
-	if (!createClusterGridBuffer())
-	{
-		spdlog::error("ClusterManager: failed to create cluster grid buffer");
-		return false;
-	}
+	spdlog::info("Initializing ClusterManager ({}x{}x{} = {} clusters, per-camera storage)", CLUSTER_GRID_DIM_X, CLUSTER_GRID_DIM_Y, CLUSTER_GRID_DIM_Z, CLUSTER_GRID_TOTAL);
 
 	if (!createComputePipeline())
 	{
@@ -64,15 +52,21 @@ bool ClusterManager::initialize()
 	return true;
 }
 
-bool ClusterManager::createClusterGridBuffer()
+ClusterManager::CameraClusters *ClusterManager::getOrCreateCameraClusters(uint64_t cameraId)
 {
+	auto &clusters = m_cameraClusters[cameraId];
+	clusters.lastUsedFrame = m_frameCounter;
+	if (clusters.grid && clusters.indices)
+		return &clusters;
+
 	const size_t clusterStructBytes = 2 * sizeof(uint32_t); // offset + count
 	const size_t clusterGridBytes = CLUSTER_GRID_TOTAL * clusterStructBytes;
 	const size_t maxLightIndices = CLUSTER_GRID_TOTAL * MAX_LIGHTS_PER_CLUSTER;
 	const size_t lightIndicesBytes = maxLightIndices * sizeof(uint32_t);
 
 	spdlog::info(
-		"Cluster buffers: grid {} KB, light-indices {} MB",
+		"Cluster buffers for camera {}: grid {} KB, light-indices {} MB",
+		cameraId,
 		clusterGridBytes / 1024,
 		lightIndicesBytes / (1024 * 1024)
 	);
@@ -81,31 +75,89 @@ bool ClusterManager::createClusterGridBuffer()
 
 	// Wrapped buffers: factory owns the wgpu::Buffer lifetime via WebGPUBuffer,
 	// which destroys+releases on shared_ptr expiry. No manual cleanup needed here.
-	m_clusterGridBuffer = bufferFactory.createStorageBuffer(
-		"ClusterGrid.OffsetCount",
+	clusters.grid = bufferFactory.createStorageBuffer(
+		"ClusterGrid.OffsetCount." + std::to_string(cameraId),
 		0,
 		clusterGridBytes
 	);
-	m_clusterIndicesBuffer = bufferFactory.createStorageBuffer(
-		"ClusterGrid.LightIndices",
+	clusters.indices = bufferFactory.createStorageBuffer(
+		"ClusterGrid.LightIndices." + std::to_string(cameraId),
 		1,
 		lightIndicesBytes
 	);
-	if (!m_clusterGridBuffer || !m_clusterIndicesBuffer)
+	if (!clusters.grid || !clusters.indices)
 	{
-		spdlog::error("ClusterManager: failed to allocate storage buffers");
-		return false;
+		spdlog::error("ClusterManager: failed to allocate storage buffers for camera {}", cameraId);
+		m_cameraClusters.erase(cameraId);
+		return nullptr;
 	}
 
 	// Zero-init so the composition pass's "no lights in cluster" branch reads
 	// well-defined zero counts even before any compute dispatch has run.
 	const std::vector<uint32_t> zeroGrid(CLUSTER_GRID_TOTAL * 2, 0);
-	m_clusterGridBuffer->write(zeroGrid.data(), clusterGridBytes);
+	clusters.grid->write(zeroGrid.data(), clusterGridBytes);
 
 	// Renderer::updateSceneBindGroup reads cluster buffers directly via the
 	// getClusterGridBuffer / getClusterIndicesBuffer accessors and binds them
 	// into the consolidated Scene group at @binding(8/9). Nothing else to do.
-	return true;
+	return &clusters;
+}
+
+std::shared_ptr<webgpu::WebGPUBuffer> ClusterManager::getClusterGridBuffer(uint64_t cameraId)
+{
+	auto *clusters = getOrCreateCameraClusters(cameraId);
+	return clusters ? clusters->grid : nullptr;
+}
+
+std::shared_ptr<webgpu::WebGPUBuffer> ClusterManager::getClusterIndicesBuffer(uint64_t cameraId)
+{
+	auto *clusters = getOrCreateCameraClusters(cameraId);
+	return clusters ? clusters->indices : nullptr;
+}
+
+std::size_t ClusterManager::evictStale()
+{
+	if (m_maxIdleFrames == 0)
+		return 0;
+	std::size_t evicted = 0;
+	for (auto it = m_cameraClusters.begin(); it != m_cameraClusters.end();)
+	{
+		if (it->second.lastUsedFrame + m_maxIdleFrames < m_frameCounter)
+		{
+			const uint64_t cameraId = it->first;
+			auto bgIt = m_computeBindGroups.find(cameraId);
+			if (bgIt != m_computeBindGroups.end())
+			{
+				if (bgIt->second.frameBindGroup)
+					bgIt->second.frameBindGroup.release();
+				if (bgIt->second.sceneBindGroup)
+					bgIt->second.sceneBindGroup.release();
+				m_computeBindGroups.erase(bgIt);
+			}
+			m_dispatchFingerprints.erase(cameraId);
+			it = m_cameraClusters.erase(it);
+			++evicted;
+		}
+		else
+		{
+			++it;
+		}
+	}
+	return evicted;
+}
+
+void ClusterManager::cleanup()
+{
+	for (auto &[cameraId, cached] : m_computeBindGroups)
+	{
+		if (cached.frameBindGroup)
+			cached.frameBindGroup.release();
+		if (cached.sceneBindGroup)
+			cached.sceneBindGroup.release();
+	}
+	m_computeBindGroups.clear();
+	m_dispatchFingerprints.clear();
+	m_cameraClusters.clear();
 }
 
 bool ClusterManager::createComputePipeline()
@@ -130,7 +182,7 @@ bool ClusterManager::createComputePipeline()
 	//
 	// Frame @group(0) @binding(0): FrameUniforms uniform
 	// Zero-init, not wgpu::Default: v24 setDefault writes Undefined(1), now read as
-	// "used", which mis-types the entry. See doc/WebGPUv24Migration.md.
+	// "used", which mis-types the entry.
 	std::vector<wgpu::BindGroupLayoutEntry> frameEntries(1);
 	frameEntries[0].binding               = 0;
 	frameEntries[0].visibility            = wgpu::ShaderStage::Compute;
@@ -185,13 +237,14 @@ bool ClusterManager::createComputePipeline()
 
 const ClusterManager::CachedComputeBindGroup *ClusterManager::getOrCreateComputeBindGroups(
 	uint64_t cameraId,
+	const CameraClusters &clusters,
 	wgpu::Buffer frameBuffer,
 	wgpu::Buffer lightBuffer,
 	uint32_t lightCount)
 {
 	if (!m_computeFrameBindGroupLayout || !m_computeBindGroupLayout
 		|| !frameBuffer || !lightBuffer
-		|| !m_clusterGridBuffer || !m_clusterIndicesBuffer)
+		|| !clusters.grid || !clusters.indices)
 	{
 		return nullptr;
 	}
@@ -200,12 +253,14 @@ const ClusterManager::CachedComputeBindGroup *ClusterManager::getOrCreateCompute
 
 	const WGPUBuffer frameRaw = static_cast<WGPUBuffer>(frameBuffer);
 	const WGPUBuffer lightRaw = static_cast<WGPUBuffer>(lightBuffer);
+	const WGPUBuffer gridRaw  = static_cast<WGPUBuffer>(clusters.grid->getBuffer());
 
 	const bool valid =
 		cached.frameBindGroup &&
 		cached.sceneBindGroup &&
 		cached.frameBuffer == frameRaw &&
 		cached.lightBuffer == lightRaw &&
+		cached.gridBuffer == gridRaw &&
 		cached.lastLightCount == lightCount;
 
 	if (valid)
@@ -241,12 +296,12 @@ const ClusterManager::CachedComputeBindGroup *ClusterManager::getOrCreateCompute
 		entries[0].size    = WGPU_WHOLE_SIZE;
 
 		entries[1].binding = 1;
-		entries[1].buffer  = m_clusterGridBuffer->getBuffer();
+		entries[1].buffer  = clusters.grid->getBuffer();
 		entries[1].offset  = 0;
 		entries[1].size    = WGPU_WHOLE_SIZE;
 
 		entries[2].binding = 2;
-		entries[2].buffer  = m_clusterIndicesBuffer->getBuffer();
+		entries[2].buffer  = clusters.indices->getBuffer();
 		entries[2].offset  = 0;
 		entries[2].size    = WGPU_WHOLE_SIZE;
 
@@ -261,6 +316,7 @@ const ClusterManager::CachedComputeBindGroup *ClusterManager::getOrCreateCompute
 
 	cached.frameBuffer    = frameRaw;
 	cached.lightBuffer    = lightRaw;
+	cached.gridBuffer     = gridRaw;
 	cached.lastLightCount = lightCount;
 	return &cached;
 }
@@ -303,7 +359,14 @@ bool ClusterManager::assignLights(
 		return false;
 	}
 
-	const auto *cached = getOrCreateComputeBindGroups(cameraId, frameBuffer, lightBuffer, lightCount);
+	auto *clusters = getOrCreateCameraClusters(cameraId);
+	if (!clusters)
+	{
+		spdlog::warn("ClusterManager::assignLights: failed to allocate cluster buffers");
+		return false;
+	}
+
+	const auto *cached = getOrCreateComputeBindGroups(cameraId, *clusters, frameBuffer, lightBuffer, lightCount);
 	if (!cached)
 	{
 		spdlog::warn("ClusterManager::assignLights: failed to build compute bind groups");
@@ -312,10 +375,10 @@ bool ClusterManager::assignLights(
 
 	// Dispatch-skip fingerprint. Cluster grid output is a pure function of
 	// (viewProjection, light hash, light count); when all three match the
-	// previous invocation for this camera, the GPU buffer already holds the
-	// correct result and we elide both dispatches. Light hash comes from
-	// SceneLightBuffer's upload-time fingerprint — same hash means the GPU
-	// light buffer's contents are byte-identical to last frame's.
+	// previous invocation for this camera, this camera's own grid buffer
+	// already holds the correct result and we elide both dispatches. Light
+	// hash comes from SceneLightBuffer's upload-time fingerprint — same hash
+	// means the GPU light buffer's contents are byte-identical to last frame's.
 	auto       &fingerprint = m_dispatchFingerprints[cameraId];
 	const auto  currentHash = sceneLightBuffer->getLastUploadHash();
 	if (fingerprint.valid

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Vienna WebGPU Engine - Demos</title>
+	<link rel="stylesheet" href="web_theme.css">
+</head>
+
+<body class="landing">
+	<div class="page">
+		<h1>VIENNA WEBGPU ENGINE</h1>
+		<div class="sub">demos, running as WebAssembly on your browser's WebGPU</div>
+		<hr>
+		<table>
+			<tr>
+				<td class="name"><a href="main_demo/">main_demo</a></td>
+				<td class="desc">the full renderer on the SeaKeep scene: deferred shading,
+					clustered lights, shadows, IBL, day-night cycle. ~58 MB download.</td>
+			</tr>
+			<tr>
+				<td class="name"><a href="scene_editor/">scene_editor</a></td>
+				<td class="desc">the dockable scene editor. edits live in browser memory;
+					building a game and file dialogs need the desktop build.</td>
+			</tr>
+			<tr>
+				<td class="name"><a href="tutorial/">tutorial</a></td>
+				<td class="desc">the getting-started example: a small lit scene with a
+					free-fly camera.</td>
+			</tr>
+			<tr>
+				<td class="name"><a href="multi_view/">multi_view</a></td>
+				<td class="desc">several cameras rendering the same scene into split
+					viewports.</td>
+			</tr>
+		</table>
+		<div class="note">
+			needs a browser with <a href="https://caniuse.com/webgpu" target="_blank" rel="noreferrer">WebGPU</a>
+			(recent Chrome or Edge; Firefox 141+, Safari 26+).<br>
+			<span class="warn">first load downloads all assets</span> - subsequent loads come from cache.
+		</div>
+		<footer>
+			<a href="https://github.com/hlavacs/Vienna-WebGPU-Engine">source on github</a>
+			&nbsp;&middot;&nbsp; university of vienna
+		</footer>
+	</div>
+</body>
+
+</html>

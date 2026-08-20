@@ -196,12 +196,15 @@ if(EMSCRIPTEN)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWGPU_LOG=trace")
     endif()
 
-    # Base Emscripten link options that all consumers will need
+    # Base Emscripten link options that all consumers will need. WebGPU comes from
+    # the emdawnwebgpu port (via the webgpu target) - NOT the legacy -sUSE_WEBGPU.
     target_link_options(WebGPU_Engine_Lib INTERFACE
-        -sUSE_WEBGPU
         -sASYNCIFY
         -sALLOW_MEMORY_GROWTH
-        -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']
+        $<$<CONFIG:Debug>:-sASSERTIONS>
+        # UTF8ToString/stringToNewUTF8/FS/HEAPU8: used by EM_JS blocks (editor
+        # file picker + project zip download).
+        "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','stringToNewUTF8','FS','HEAPU8']"
     )
 endif()
 
@@ -224,36 +227,54 @@ function(add_engine_executable TARGET_NAME)
         $<$<CONFIG:Debug>:ASSETS_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}">
     )
 
-    # Set default shell file if not provided
+    # Set default shell file if not provided (shell_minimal.html is the bare reference)
     if(NOT ARG_SHELL_FILE)
-        set(ARG_SHELL_FILE "${ENGINE_ROOT_DIR}/src/shell_minimal.html")
+        set(ARG_SHELL_FILE "${ENGINE_ROOT_DIR}/src/shell_web.html")
     endif()
 
     if(EMSCRIPTEN)
         # Set HTML output
         set_target_properties(${TARGET_NAME} PROPERTIES SUFFIX ".html")
 
+        # Engine resources and the example's assets land in MEMFS where
+        # PathProvider expects them ("/resources", "/assets") in ALL configs.
+        target_link_options(${TARGET_NAME} PRIVATE
+            --shell-file "${ARG_SHELL_FILE}"
+            "SHELL:--preload-file \"${ENGINE_ROOT_DIR}/resources@/resources\""
+        )
+
+        # The shell links web_theme.css (shared with the landing page); ship it
+        # next to the generated html.
+        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${ENGINE_ROOT_DIR}/src/web_theme.css"
+            "$<TARGET_FILE_DIR:${TARGET_NAME}>/web_theme.css")
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+            target_link_options(${TARGET_NAME} PRIVATE
+                "SHELL:--preload-file \"${CMAKE_CURRENT_SOURCE_DIR}/assets@/assets\""
+            )
+        endif()
+
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             target_link_options(${TARGET_NAME} PRIVATE
-                --preload-file "${CMAKE_CURRENT_SOURCE_DIR}/resources"
-                --shell-file "${ARG_SHELL_FILE}"
                 -gsource-map
                 --source-map-base "http://localhost:8080/build/Emscripten/Debug/"
             )
 
-            # Copy source files for debugging
-            add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/src"
-                "$<TARGET_FILE_DIR:${TARGET_NAME}>/src")
-            add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/external"
-                "$<TARGET_FILE_DIR:${TARGET_NAME}>/external")
-        else()
-            target_link_options(${TARGET_NAME} PRIVATE
-                --shell-file "${ARG_SHELL_FILE}"
-            )
+            # Copy source dirs for source-map debugging (only where they exist -
+            # examples have neither src/ nor external/).
+            if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+                add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+                    "$<TARGET_FILE_DIR:${TARGET_NAME}>/src")
+            endif()
+            if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external")
+                add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${CMAKE_CURRENT_SOURCE_DIR}/external"
+                    "$<TARGET_FILE_DIR:${TARGET_NAME}>/external")
+            endif()
         endif()
 
         # Set shell file dependency

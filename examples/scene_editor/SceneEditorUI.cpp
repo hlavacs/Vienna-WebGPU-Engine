@@ -61,6 +61,13 @@
 #include "engine/scene/nodes/SpatialNode.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 
+#if defined(__EMSCRIPTEN__)
+#include <cstdlib>
+#include <emscripten.h>
+#include <fstream>
+#include "miniz.h" // vendored single-file (public domain), copy of SDL's - project zip round-trip
+#endif
+
 namespace editor
 {
 namespace
@@ -73,6 +80,34 @@ using namespace engine::scene;
 ImTextureID toImTextureID(const wgpu::TextureView &view)
 {
 	return reinterpret_cast<ImTextureID>(static_cast<WGPUTextureView>(view));
+}
+
+// Build Game needs the engine dev tree. Debug builds get it via DEBUG_ROOT_DIR;
+// Release builds run from examples/build/... so walk up from the exe to find it.
+std::filesystem::path findDevTreeRoot()
+{
+	namespace fs = std::filesystem;
+	const fs::path marker = fs::path("scripts") / "build-example.bat";
+	std::error_code ec;
+	if (fs::exists(engine::core::PathProvider::getLibraryRoot() / marker, ec))
+		return engine::core::PathProvider::getLibraryRoot();
+	fs::path dir = engine::core::PathProvider::getExecutableRoot();
+	for (int i = 0; i < 8 && !dir.empty(); ++i)
+	{
+		if (fs::exists(dir / marker, ec))
+			return dir;
+		const fs::path parent = dir.parent_path();
+		if (parent == dir)
+			break;
+		dir = parent;
+	}
+	return {};
+}
+
+std::filesystem::path runtimePlayerBuildDir(const std::filesystem::path &devRoot)
+{
+	// build-example.bat uses per-backend build dirs; the player is built Release WGPU.
+	return devRoot / "examples" / "build" / "runtime_player" / "Windows" / "Release-WGPU";
 }
 
 std::string nodeLabel(const engine::scene::nodes::Node &node)
@@ -396,8 +431,205 @@ bool searchableCombo(const char *label, const std::string &current, const std::v
 // Open a file in the OS default app or VS Code. Uses std::system so we need no
 // extra link dependency (ShellExecute would pull in shell32); the brief console
 // flash is acceptable for an editor tool.
+#if defined(__EMSCRIPTEN__)
+// Browser file picker: awaits the user's choice, copies the file into MEMFS
+// under /imported, and returns a malloc'd path string (0 on cancel). ASYNCIFY
+// suspends the C++ caller while the promise is pending.
+EM_ASYNC_JS(char *, editor_pick_file_js, (const char *acceptPatterns), {
+	const accept = UTF8ToString(acceptPatterns);
+	const picked = await new Promise((resolve) => {
+		const input = document.createElement('input');
+		input.type = 'file';
+		if (accept) input.accept = accept;
+		input.addEventListener('change', () => resolve(input.files[0] || null), { once: true });
+		input.addEventListener('cancel', () => resolve(null), { once: true });
+		input.click();
+	});
+	if (!picked) return 0;
+	const data = new Uint8Array(await picked.arrayBuffer());
+	try { FS.mkdir('/imported'); } catch (e) { /* exists */ }
+	const path = '/imported/' + picked.name;
+	FS.writeFile(path, data);
+	return stringToNewUTF8(path);
+});
+
+// Browser DIRECTORY picker: copies every file of the chosen folder into MEMFS
+// under /projects/<folder>/ and returns that root (malloc'd, 0 on cancel).
+EM_ASYNC_JS(char *, editor_pick_directory_js, (), {
+	const files = await new Promise((resolve) => {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.webkitdirectory = true;
+		input.addEventListener('change', () => resolve(Array.from(input.files || [])), { once: true });
+		input.addEventListener('cancel', () => resolve([]), { once: true });
+		input.click();
+	});
+	if (!files.length) return 0;
+	const rootName = files[0].webkitRelativePath.split('/')[0];
+	try { FS.mkdir('/projects'); } catch (e) { /* exists */ }
+	for (const f of files) {
+		const path = '/projects/' + f.webkitRelativePath;
+		FS.mkdirTree(path.substring(0, path.lastIndexOf('/')));
+		FS.writeFile(path, new Uint8Array(await f.arrayBuffer()));
+	}
+	return stringToNewUTF8('/projects/' + rootName);
+});
+
+// Synchronous name prompt (returns malloc'd string, 0 on cancel). Embedded
+// contexts (iframes, app webviews) may disable prompt(); fall back to the default.
+EM_JS(char *, editor_prompt_js, (const char *title, const char *def), {
+	let entered = null;
+	try {
+		entered = window.prompt(UTF8ToString(title), UTF8ToString(def));
+	} catch (e) {
+		entered = UTF8ToString(def) || 'project';
+		console.warn('prompt() unavailable in this context; using default name:', entered);
+	}
+	if (!entered) return 0;
+	return stringToNewUTF8(entered);
+});
+
+// Synchronous yes/no confirm; proceeds when confirm() is unavailable.
+EM_JS(int, editor_confirm_js, (const char *msg), {
+	try {
+		return window.confirm(UTF8ToString(msg)) ? 1 : 0;
+	} catch (e) {
+		console.warn('confirm() unavailable in this context; proceeding.');
+		return 1;
+	}
+});
+
+// Hand a MEMFS file to the user as a browser download.
+EM_JS(void, editor_download_file_js, (const char *pathUtf8), {
+	const path = UTF8ToString(pathUtf8);
+	try {
+		const data = FS.readFile(path);
+		const blob = new Blob([data]);
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = path.split('/').pop();
+		a.click();
+		setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+	} catch (e) { console.warn('download failed:', path, e); }
+});
+
+// Hand an in-memory byte range to the user as a browser download.
+EM_JS(void, editor_download_bytes_js, (const char *nameUtf8, const void *data, size_t size), {
+	const name = UTF8ToString(nameUtf8);
+	const bytes = new Uint8Array(HEAPU8.buffer, data, size).slice();
+	const blob = new Blob([bytes]);
+	const a = document.createElement('a');
+	a.href = URL.createObjectURL(blob);
+	a.download = name;
+	a.click();
+	setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+});
+
+// Client-side save: zip the project folder and hand it over as a download.
+void downloadProjectArchive(const std::filesystem::path &projectFile)
+{
+	namespace fs = std::filesystem;
+	const fs::path root = projectFile.parent_path();
+	mz_zip_archive zip{};
+	if (!mz_zip_writer_init_heap(&zip, 0, 1 << 20))
+	{
+		spdlog::error("Project export: zip writer init failed");
+		return;
+	}
+	std::error_code ec;
+	for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec))
+	{
+		std::error_code fileEc;
+		if (!it->is_regular_file(fileEc))
+			continue;
+		const std::string relative = fs::relative(it->path(), root, fileEc).generic_string();
+		std::ifstream in(it->path(), std::ios::binary);
+		std::vector<char> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		mz_zip_writer_add_mem(&zip, relative.c_str(), data.data(), data.size(), MZ_DEFAULT_COMPRESSION);
+	}
+	void *buffer = nullptr;
+	size_t size = 0;
+	if (mz_zip_writer_finalize_heap_archive(&zip, &buffer, &size) && buffer && size > 0)
+	{
+		const std::string zipName = root.filename().string() + ".zip";
+		editor_download_bytes_js(zipName.c_str(), buffer, size);
+	}
+	else
+	{
+		spdlog::error("Project export: finalizing archive failed");
+	}
+	mz_zip_writer_end(&zip);
+	if (buffer)
+		mz_free(buffer);
+}
+
+// Pick a whole project FOLDER from the user's disk (all files land in MEMFS)
+// and return the contained .vproj path ("" on cancel or when none exists).
+std::string pickProjectDirectoryWasm()
+{
+	namespace fs = std::filesystem;
+	char *root = editor_pick_directory_js();
+	if (!root)
+		return std::string();
+	const fs::path rootPath(root);
+	std::free(root);
+	std::error_code ec;
+	for (fs::directory_iterator it(rootPath, ec), end; it != end && !ec; it.increment(ec))
+		if (it->path().extension() == ".vproj")
+			return it->path().string();
+	for (fs::recursive_directory_iterator it(rootPath, ec), end; it != end && !ec; it.increment(ec))
+		if (it->path().extension() == ".vproj")
+			return it->path().string();
+	spdlog::error("Open Project: folder '{}' contains no .vproj", rootPath.generic_string());
+	return std::string();
+}
+
+// A picked .zip is a client-side project archive: extract it into
+// /projects/<name>/ and return the contained .vproj path ("" if none).
+std::string resolveProjectArchive(const std::string &picked)
+{
+	namespace fs = std::filesystem;
+	mz_zip_archive zip{};
+	if (!mz_zip_reader_init_file(&zip, picked.c_str(), 0))
+	{
+		spdlog::error("Project import: cannot open archive '{}'", picked);
+		return std::string();
+	}
+	const fs::path destRoot = fs::path("/projects") / fs::path(picked).stem();
+	std::error_code ec;
+	fs::create_directories(destRoot, ec);
+	std::string vprojPath;
+	const mz_uint fileCount = mz_zip_reader_get_num_files(&zip);
+	for (mz_uint i = 0; i < fileCount; ++i)
+	{
+		mz_zip_archive_file_stat stat;
+		if (!mz_zip_reader_file_stat(&zip, i, &stat) || mz_zip_reader_is_file_a_directory(&zip, i))
+			continue;
+		const fs::path outPath = destRoot / stat.m_filename;
+		fs::create_directories(outPath.parent_path(), ec);
+		if (!mz_zip_reader_extract_to_file(&zip, i, outPath.string().c_str(), 0))
+		{
+			spdlog::warn("Project import: failed to extract '{}'", stat.m_filename);
+			continue;
+		}
+		if (outPath.extension() == ".vproj")
+			vprojPath = outPath.string();
+	}
+	mz_zip_reader_end(&zip);
+	if (vprojPath.empty())
+		spdlog::error("Project import: archive '{}' contains no .vproj", picked);
+	return vprojPath;
+}
+#endif
+
 void openExternally(const std::filesystem::path &path, bool useVsCode)
 {
+#if defined(__EMSCRIPTEN__)
+	// No OS shell in the browser: hand the file over as a download instead.
+	(void)useVsCode;
+	editor_download_file_js(path.string().c_str());
+	return;
+#endif
 	const std::string quoted = "\"" + path.string() + "\"";
 #if defined(_WIN32)
 	// `explorer "file"` launches the file's default association reliably; a plain
@@ -414,6 +646,10 @@ void openExternally(const std::filesystem::path &path, bool useVsCode)
 // Reveal a file/folder in the OS file browser (highlighting the file).
 void showInExplorer(const std::filesystem::path &path)
 {
+#if defined(__EMSCRIPTEN__)
+	spdlog::info("Show in explorer is desktop-only (file lives in browser memory): {}", path.generic_string());
+	return;
+#endif
 	const std::string quoted = "\"" + path.string() + "\"";
 #if defined(_WIN32)
 	std::error_code ec;
@@ -467,6 +703,27 @@ struct FullscreenDialogGuard
 // @p defaultDir, if non-empty, is the directory the dialog opens in.
 std::string pickFile(const char *title, const std::vector<const char *> &patterns, const char *description, const std::string &defaultDir = "")
 {
+#if defined(__EMSCRIPTEN__)
+	// Browser file picker; the picked file is copied into MEMFS (/imported).
+	(void)title; (void)description; (void)defaultDir;
+	std::string acceptList;
+	for (const char *pattern : patterns)
+	{
+		std::string glob(pattern ? pattern : "");
+		if (glob.size() > 1 && glob[0] == '*')
+		{
+			if (!acceptList.empty())
+				acceptList += ",";
+			acceptList += glob.substr(1); // "*.vproj" -> ".vproj"
+		}
+	}
+	char *picked = editor_pick_file_js(acceptList.c_str());
+	if (!picked)
+		return std::string();
+	std::string result(picked);
+	std::free(picked);
+	return result;
+#else
 	const FullscreenDialogGuard dialogGuard;
 	// A trailing separator tells tinyfiledialogs to treat it as a start directory.
 	const std::string start = defaultDir.empty() ? std::string() : defaultDir + "/";
@@ -478,6 +735,7 @@ std::string pickFile(const char *title, const std::vector<const char *> &pattern
 		description,
 		0 /* single selection */);
 	return result ? std::string(result) : std::string();
+#endif
 }
 
 // Accept an ASSET_PATH drag-drop payload onto the last-submitted item. Writes the
@@ -554,6 +812,31 @@ bool pathInput(const char *id, std::string &buffer, const char *tooltip,
 // Native OS save-file dialog. Returns the chosen path, or empty if cancelled.
 std::string pickSaveFile(const char *title, const char *defaultName, const std::vector<const char *> &patterns, const char *description)
 {
+#if defined(__EMSCRIPTEN__)
+	// No save dialog in the browser: prompt for a name; the file lives in MEMFS
+	// under /projects (in-memory until exported/downloaded).
+	(void)description;
+	char *entered = editor_prompt_js(title, defaultName ? defaultName : "");
+	if (!entered)
+		return std::string();
+	std::string name(entered);
+	std::free(entered);
+	if (!patterns.empty() && patterns[0] && patterns[0][0] == '*')
+	{
+		const std::string extension = std::string(patterns[0]).substr(1); // "*.vproj" -> ".vproj"
+		if (name.size() < extension.size() || name.compare(name.size() - extension.size(), extension.size(), extension) != 0)
+			name += extension;
+	}
+	// Projects get their own folder (the folder IS the project and is what the
+	// zip export packs); other saves land flat under /exports.
+	const std::filesystem::path file(name);
+	const std::filesystem::path dir = (file.extension() == ".vproj")
+		? std::filesystem::path("/projects") / file.stem()
+		: std::filesystem::path("/exports");
+	std::error_code ec;
+	std::filesystem::create_directories(dir, ec);
+	return (dir / file).string();
+#else
 	const FullscreenDialogGuard dialogGuard;
 	const char *result = tinyfd_saveFileDialog(
 		title,
@@ -562,6 +845,7 @@ std::string pickSaveFile(const char *title, const char *defaultName, const std::
 		patterns.empty() ? nullptr : patterns.data(),
 		description);
 	return result ? std::string(result) : std::string();
+#endif
 }
 
 // Depth-first collect every CameraNode in the subtree, skipping @p excludeId
@@ -929,10 +1213,23 @@ void SceneEditorUI::drawWelcome()
 			newProject();
 		if (ImGui::Button("Open Project...", ImVec2(contentWidth, 0.0f)))
 		{
-			const std::string path = pickFile("Open Project", {"*.vproj"}, "Project");
+#if defined(__EMSCRIPTEN__)
+			// Browser: pick the whole project FOLDER (all files import at once).
+			const std::string path = pickProjectDirectoryWasm();
+#else
+			const std::string path = pickFile("Open Project", {"*.vproj", "*.zip"}, "Project");
+#endif
 			if (!path.empty())
 				openProject(path);
 		}
+#if defined(__EMSCRIPTEN__)
+		if (ImGui::Button("Open Project Zip...", ImVec2(contentWidth, 0.0f)))
+		{
+			const std::string path = pickFile("Open Project Zip", {"*.zip"}, "Project");
+			if (!path.empty())
+				openProject(path);
+		}
+#endif
 
 		if (!m_recentProjects.empty())
 		{
@@ -984,11 +1281,24 @@ void SceneEditorUI::drawMenuBar()
 		}
 		if (ImGui::MenuItem("Open Project...") && confirmDiscardIfDirty())
 		{
-			const std::string path = pickFile("Open Project", {"*.vproj"}, "Project",
+#if defined(__EMSCRIPTEN__)
+			// Browser: pick the whole project FOLDER (all files import at once).
+			const std::string path = pickProjectDirectoryWasm();
+#else
+			const std::string path = pickFile("Open Project", {"*.vproj", "*.zip"}, "Project",
 				engine::core::PathProvider::getAssetRoot().string());
+#endif
 			if (!path.empty())
 				openProject(path);
 		}
+#if defined(__EMSCRIPTEN__)
+		if (ImGui::MenuItem("Open Project Zip...") && confirmDiscardIfDirty())
+		{
+			const std::string path = pickFile("Open Project Zip", {"*.zip"}, "Project");
+			if (!path.empty())
+				openProject(path);
+		}
+#endif
 		// Pull a scene (and everything it uses) out of another project into this one.
 		if (ImGui::MenuItem("Import Scene from Project...", nullptr, false, !m_projectPath.empty()) && confirmDiscardIfDirty())
 		{
@@ -1134,10 +1444,10 @@ void SceneEditorUI::drawMenuBar()
 			ImGui::TextDisabled("  building... (see Log)");
 		if (ImGui::MenuItem("Open Build Folder", nullptr, false, !m_building))
 		{
-			const std::filesystem::path out =
-				engine::core::PathProvider::getLibraryRoot() / "examples" / "build" / "runtime_player" / "Windows" / "Release";
+			const std::filesystem::path devRoot = findDevTreeRoot();
+			const std::filesystem::path out = devRoot.empty() ? std::filesystem::path{} : runtimePlayerBuildDir(devRoot);
 			std::error_code ec;
-			if (std::filesystem::exists(out, ec))
+			if (!out.empty() && std::filesystem::exists(out, ec))
 				showInExplorer(out);
 			else
 				m_assetStatus = "No build yet - use Build Game first.";
@@ -2742,9 +3052,12 @@ void SceneEditorUI::drawShaders()
 				ImGui::Selectable(name.c_str(), false);
 				if (ImGui::BeginPopupContextItem("shaderctx"))
 				{
-					const std::filesystem::path wgsl =
-						engine::core::PathProvider::getResource("shaders/" + name + ".wgsl");
+					// User shaders live in the project's assets/shaders; engine ones in resources.
 					std::error_code ec;
+					std::filesystem::path wgsl =
+						engine::core::PathProvider::resolve("shaders") / (name + ".wgsl");
+					if (!std::filesystem::exists(wgsl, ec))
+						wgsl = engine::core::PathProvider::getResource("shaders/" + name + ".wgsl");
 					if (std::filesystem::exists(wgsl, ec))
 					{
 						if (ImGui::MenuItem("Open .wgsl"))
@@ -2776,9 +3089,12 @@ void SceneEditorUI::drawShaders()
 			// valid by construction; the user customizes from there.
 			const fs::path reference = engine::core::PathProvider::getResource(
 				material ? "shaders/PBR_Lit_Shader.wgsl" : "shaders/postprocess_vignette.wgsl");
-			const fs::path target = engine::core::PathProvider::getResource("shaders/" + m_newShaderName + ".wgsl");
+			// New shaders belong to the project (assets/shaders), not the engine's
+			// resources; includes still resolve against engine resources.
+			const fs::path target = engine::core::PathProvider::resolve("shaders") / (m_newShaderName + ".wgsl");
 
 			std::error_code ec;
+			fs::create_directories(target.parent_path(), ec);
 			fs::copy_file(reference, target, fs::copy_options::overwrite_existing, ec);
 			if (ec)
 			{
@@ -2805,12 +3121,13 @@ void SceneEditorUI::drawShaders()
 				}
 				else
 				{
-					// Post-process: input texture + sampler at @group(4).
+					// Post-process: input texture + sampler at @group(0), matching the
+					// vignette template WGSL (WebGPU allows groups 0..3 only).
 					desc.type = ShaderType::Unlit;
 					desc.vertexLayout = VertexLayout::None;
 					desc.enableDepth = false;
 					desc.cullBackFaces = false;
-					desc.groups[4] = {m_newShaderName + "_Input", BindGroupType::Custom, BindGroupReuse::PerFrame, {}};
+					desc.groups[0] = {m_newShaderName + "_Input", BindGroupType::Custom, BindGroupReuse::PerFrame, {}};
 				}
 
 				auto info = context->shaderFactory().buildFromDescriptor(desc);
@@ -3336,8 +3653,12 @@ bool SceneEditorUI::confirmDiscardIfDirty()
 {
 	if (!m_state.sceneDirty)
 		return true;
+#if defined(__EMSCRIPTEN__)
+	return editor_confirm_js("Discard unsaved changes to the current scene?") == 1;
+#else
 	const FullscreenDialogGuard dialogGuard;
 	return tinyfd_messageBox("Unsaved changes", "Discard unsaved changes to the current scene?", "yesno", "warning", 0) == 1;
+#endif
 }
 
 void SceneEditorUI::addRecentScene(const std::filesystem::path &path)
@@ -3521,6 +3842,31 @@ void SceneEditorUI::newProject()
 
 void SceneEditorUI::openProject(const std::filesystem::path &path)
 {
+#if defined(__EMSCRIPTEN__)
+	// A picked .zip is a client-side project archive: extract it, open its .vproj.
+	if (path.extension() == ".zip")
+	{
+		const std::string resolved = resolveProjectArchive(path.string());
+		if (resolved.empty())
+		{
+			m_assetStatus = "Archive contains no .vproj";
+			return;
+		}
+		openProject(resolved);
+		return;
+	}
+	// A bare .vproj picked from disk arrives alone - its assets/ folder cannot
+	// come along file-by-file. Refuse cleanly instead of failing per-asset.
+	{
+		std::error_code ec;
+		if (!std::filesystem::exists(path.parent_path() / "assets", ec))
+		{
+			m_assetStatus = "A .vproj alone has no assets in the browser - open the project's .zip export instead (Save Project downloads one).";
+			spdlog::error("Open Project: '{}' has no adjacent assets/ folder; open the project .zip instead.", path.generic_string());
+			return;
+		}
+	}
+#endif
 	// Guard against opening a scene file as a project (a scene has a node "root").
 	{
 		std::ifstream peek(path, std::ios::binary);
@@ -3683,6 +4029,11 @@ void SceneEditorUI::saveProject()
 	{
 		m_state.sceneDirty = false;
 		m_assetStatus = "Saved project to " + m_projectPath.string();
+#if defined(__EMSCRIPTEN__)
+		// Browser memory is wiped on reload: client-side save = zip download.
+		downloadProjectArchive(m_projectPath);
+		m_assetStatus += " (downloaded as zip - reopen it via Open Project)";
+#endif
 	}
 }
 
@@ -3706,9 +4057,15 @@ void SceneEditorUI::buildGame()
 void SceneEditorUI::runBuild(std::filesystem::path projectFile)
 {
 	namespace fs = std::filesystem;
-	const fs::path repoRoot = engine::core::PathProvider::getLibraryRoot();
+	const fs::path repoRoot = findDevTreeRoot();
+	if (repoRoot.empty())
+	{
+		spdlog::error("Build Game: engine dev tree not found (scripts/build-example.bat). Building requires a repo checkout.");
+		m_building = false;
+		return;
+	}
 	const fs::path script = repoRoot / "scripts" / "build-example.bat";
-	const fs::path outDir = repoRoot / "examples" / "build" / "runtime_player" / "Windows" / "Release";
+	const fs::path outDir = runtimePlayerBuildDir(repoRoot);
 
 	spdlog::info("Build Game: compiling the runtime player (Release)...");
 

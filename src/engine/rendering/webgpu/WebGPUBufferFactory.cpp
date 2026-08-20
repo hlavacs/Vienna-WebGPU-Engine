@@ -86,7 +86,7 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
 	size_t bufferSize = size > 0 ? size : static_cast<size_t>(entry->buffer.minBindingSize);
 
 	// Runtime-sized bindings report minBindingSize == 0; a zero-size buffer is
-	// invalid in v24, so use a placeholder. See doc/WebGPUv24Migration.md.
+	// invalid in v24, so use a placeholder.
 	if (bufferSize == 0)
 	{
 		spdlog::warn("[WebGPU] Auto-created buffer '{}' resolved to zero size (runtime-sized binding); using a 16-byte placeholder.", name);

@@ -42,7 +42,9 @@ bool CompositePass::initialize()
 	// Create pipeline using the pipeline manager
 	m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
 		m_shaderInfo,
-		m_context->surfaceManager().currentConfig().format,
+		// Render format, not the surface's base format: the surface may present
+		// through an sRGB view (viewFormats reinterpretation on D3D12).
+		m_context->getSwapChainFormat(),
 		wgpu::TextureFormat::Undefined, // No depth
 		Topology::Triangles,
 		wgpu::CullMode::None,

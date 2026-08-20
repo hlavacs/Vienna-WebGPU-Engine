@@ -292,6 +292,9 @@ int main(int argc, char **argv)
 	auto dayNightCycle = std::make_shared<demo::DayNightCycle>(sunLight, moonLight, ambientLight);
 	dayNightCycle->setCycleDuration(120.0f);
 	dayNightCycle->setHour(12.0f);
+	// IBL follows the sun: without this the daytime-sky irradiance stays at
+	// full strength all night (bright nights, washed-out shadows).
+	dayNightCycle->addCamera(seaKeepScene->getMainCamera());
 	seaKeepScene->getRoot()->addChild(dayNightCycle);
 
 	// Setup ImGui - get orbit controller from active scene dynamically

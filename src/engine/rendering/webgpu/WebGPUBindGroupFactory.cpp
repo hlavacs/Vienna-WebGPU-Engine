@@ -106,7 +106,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 		else
 		{
 			// No override: auto-create from the layout. Test != BindingNotUsed (v24),
-			// not != Undefined. See doc/WebGPUv24Migration.md.
+			// not != Undefined.
 			if (entryLayout.buffer.type != wgpu::BufferBindingType::BindingNotUsed)
 			{
 				auto buffer = m_context.bufferFactory().createBufferFromLayoutEntry(
