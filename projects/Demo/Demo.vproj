@@ -1,0 +1,34 @@
+{
+  "name": "Demo",
+  "materials": [
+    "asset://materials/FloorMat.mat.json",
+    "asset://materials/CubeMat.mat.json"
+  ],
+  "scenes": [
+    "asset://scenes/Demo/scene.vscene"
+  ],
+  "scripts": [
+    "scripts/Rotator.cpp"
+  ],
+  "settings": {
+    "enableAudio": true,
+    "enableHotReload": false,
+    "enableVSync": true,
+    "fixedDeltaTime": 0.01666666753590107,
+    "fullscreen": false,
+    "limitFrameRate": false,
+    "logSubsystemErrors": true,
+    "masterVolume": 1.0,
+    "maxDeltaTime": 0.06666667014360428,
+    "maxSubSteps": 5,
+    "msaaSampleCount": 4,
+    "resizableWindow": true,
+    "runPhysics": true,
+    "showFrameStats": false,
+    "targetFrameRate": 60.0,
+    "windowHeight": 900,
+    "windowWidth": 1600
+  },
+  "startupScene": "asset://scenes/Demo/scene.vscene",
+  "version": 1
+}

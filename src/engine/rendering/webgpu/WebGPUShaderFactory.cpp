@@ -7,11 +7,22 @@
 
 #include "engine/core/PathProvider.h"
 #include "engine/rendering/BindGroupEnums.h"
-#include "engine/rendering/RenderingConstants.h"
+#include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/reflection/WgslReflector.h"
+#include "engine/rendering/shaders/ShaderValidator.h"
+#include "engine/rendering/shaders/StructDescriptor.h"
+#include "engine/rendering/shaders/WgslIncludeResolver.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
+
+// Post-codegen validation runs in Debug/CI and is compiled out of Release (it
+// is a pure cross-check; the runtime never reads its result). CI can force it
+// on in a release config by defining ENGINE_SHADER_VALIDATION.
+#if !defined(NDEBUG) && !defined(ENGINE_SHADER_VALIDATION)
+#define ENGINE_SHADER_VALIDATION 1
+#endif
 
 namespace engine::rendering::webgpu
 {
@@ -20,450 +31,257 @@ WebGPUShaderFactory::WebGPUShaderFactory(WebGPUContext &context) : m_context(con
 {
 }
 
-WebGPUShaderFactory::WebGPUShaderBuilder WebGPUShaderFactory::begin(
-	const std::string &name,
-	ShaderType type,
-	const std::filesystem::path &shaderPath,
-	const std::string &vertexEntry,
-	const std::string &fragmentEntry,
-	engine::rendering::VertexLayout vertexLayout,
-	bool depthEnabled,
-	bool cullBackFaces
-)
+namespace
 {
-	return WebGPUShaderBuilder(
-		*this,
-		name,
-		type,
-		vertexEntry,
-		fragmentEntry,
-		vertexLayout,
-		depthEnabled,
-		cullBackFaces,
-		shaderPath
-	);
+namespace refl = engine::rendering::reflection;
+
+/// Validate the expanded WGSL against the codegen descriptors. Returns true to
+/// proceed. In validating builds a mismatch is fatal (returns false) so a
+/// drifted shader fails to load loudly instead of rendering wrong; in Release
+/// the check is compiled out and this always returns true.
+bool runShaderValidation(const std::string &expanded, const std::filesystem::path &path)
+{
+#ifdef ENGINE_SHADER_VALIDATION
+	auto diags = engine::rendering::shaders::validateExpandedWgsl(expanded, path);
+	for (const auto &d : diags)
+		spdlog::error("Shader validator [{}]: {}", d.file.filename().string(), d.message);
+	return diags.empty();
+#else
+	(void)expanded;
+	(void)path;
+	return true;
+#endif
 }
 
-WebGPUShaderFactory::WebGPUShaderBuilder::WebGPUShaderBuilder(
-	WebGPUShaderFactory &factory,
-	std::string name,
-	ShaderType type,
-	std::string vertexEntry,
-	std::string fragmentEntry,
-	engine::rendering::VertexLayout vertexLayout,
-	bool depthEnabled,
-	bool cullBackFaces,
-	std::filesystem::path shaderPath
-) : m_factory(factory),
-	m_name(std::move(name)),
-	m_type(type),
-	m_vertexEntry(std::move(vertexEntry)),
-	m_fragmentEntry(std::move(fragmentEntry)),
-	m_vertexLayout(vertexLayout),
-	m_shaderModule(nullptr),
-	m_depthEnabled(depthEnabled),
-	m_backFaceCullingEnabled(cullBackFaces),
-	m_shaderPath(std::move(shaderPath)),
-	m_lastBindGroupIndex(-1)
+wgpu::TextureViewDimension toViewDim(refl::TextureViewDim d)
 {
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addBindGroup(const std::string &name, BindGroupReuse reuse, BindGroupType type)
-{
-	uint32_t index = static_cast<uint32_t>(m_bindGroupsBuilder.size());
-	BindGroupBuilder group;
-	group.name = name;
-	group.type = type;
-	group.reuse = reuse;
-	m_bindGroupsBuilder[index] = std::move(group);
-	m_lastBindGroupIndex = index;
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addUniform(
-	const std::string &name,
-	size_t size,
-	uint32_t visibility
-)
-{
-	checkLastBindGroup();
-	ShaderBinding b{name, std::nullopt, BindingType::UniformBuffer, static_cast<uint32_t>(-1), size, 0, visibility, false};
-	m_bindGroupsBuilder[m_lastBindGroupIndex].bindings.push_back(b);
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addStorageBuffer(
-	const std::string &name,
-	size_t size,
-	bool readOnly,
-	uint32_t visibility
-)
-{
-	checkLastBindGroup();
-	ShaderBinding b{name, std::nullopt, BindingType::StorageBuffer, static_cast<uint32_t>(-1), size, 0, visibility, readOnly};
-	m_bindGroupsBuilder[m_lastBindGroupIndex].bindings.push_back(b);
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addTexture(
-	const std::string &name,
-	wgpu::TextureSampleType sampleType,
-	wgpu::TextureViewDimension viewDimension,
-	bool multisampled,
-	uint32_t visibility
-)
-{
-	checkLastBindGroup();
-	auto &binding = m_bindGroupsBuilder[m_lastBindGroupIndex].bindings;
-	ShaderBinding b{name, std::nullopt, BindingType::Texture, static_cast<uint32_t>(binding.size())};
-	b.textureSampleType = sampleType;
-	b.textureViewDimension = viewDimension;
-	b.textureMultisampled = multisampled;
-	b.visibility = visibility;
-	binding.push_back(b);
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addMaterialTexture(
-	const std::string &name,
-	const std::string &materialSlotName,
-	wgpu::TextureSampleType sampleType,
-	wgpu::TextureViewDimension viewDimension,
-	uint32_t visibility,
-	std::optional<glm::vec3> fallbackColor
-)
-{
-	checkLastBindGroup();
-	auto &binding = m_bindGroupsBuilder[m_lastBindGroupIndex].bindings;
-	ShaderBinding b{name, materialSlotName, BindingType::MaterialTexture, static_cast<uint32_t>(binding.size())};
-	b.textureSampleType = sampleType;
-	b.textureViewDimension = viewDimension;
-	b.visibility = visibility;
-	b.fallbackColor = fallbackColor;
-	binding.push_back(b);
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addSampler(
-	const std::string &name,
-	wgpu::SamplerBindingType samplerType,
-	uint32_t visibility
-)
-{
-	checkLastBindGroup();
-	auto &binding = m_bindGroupsBuilder[m_lastBindGroupIndex].bindings;
-	ShaderBinding b{name, "", BindingType::Sampler, static_cast<uint32_t>(binding.size())};
-	b.samplerType = samplerType;
-	b.visibility = visibility;
-	binding.push_back(b);
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addFrameBindGroup()
-{
-	uint32_t groupIndex = static_cast<uint32_t>(m_bindGroupsBuilder.size());
-	auto &bindGroupBuilder = m_bindGroupsBuilder[groupIndex];
-	bindGroupBuilder.isEngineDefault = true;
-	bindGroupBuilder.name = bindgroup::defaults::FRAME;
-	bindGroupBuilder.type = BindGroupType::Frame;
-	bindGroupBuilder.reuse = BindGroupReuse::PerFrame;
-
-	ShaderBinding buffer;
-	buffer.type = BindingType::UniformBuffer;
-	buffer.name = "frameUniforms";
-	buffer.binding = 0;
-	buffer.size = sizeof(engine::rendering::FrameUniforms);
-	buffer.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-	buffer.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-
-	bindGroupBuilder.bindings.push_back(buffer);
-	m_lastBindGroupIndex = groupIndex;
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addObjectBindGroup()
-{
-	uint32_t groupIndex = static_cast<uint32_t>(m_bindGroupsBuilder.size());
-	auto &bindGroupBuilder = m_bindGroupsBuilder[groupIndex];
-	bindGroupBuilder.isEngineDefault = true;
-	bindGroupBuilder.name = bindgroup::defaults::OBJECT;
-	bindGroupBuilder.type = BindGroupType::Object;
-	bindGroupBuilder.reuse = BindGroupReuse::PerObject;
-
-	ShaderBinding buffer;
-	buffer.type = BindingType::UniformBuffer;
-	buffer.name = "objectUniforms";
-	buffer.binding = 0;
-	buffer.size = sizeof(engine::rendering::ObjectUniforms);
-	buffer.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-	buffer.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-
-	bindGroupBuilder.bindings.push_back(buffer);
-	m_lastBindGroupIndex = groupIndex;
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addLightBindGroup()
-{
-	uint32_t groupIndex = static_cast<uint32_t>(m_bindGroupsBuilder.size());
-	auto &bindGroupBuilder = m_bindGroupsBuilder[groupIndex];
-	bindGroupBuilder.isEngineDefault = true;
-	bindGroupBuilder.name = bindgroup::defaults::LIGHT;
-	bindGroupBuilder.type = BindGroupType::Light;
-	bindGroupBuilder.reuse = BindGroupReuse::PerFrame;
-
-	size_t headerSize = sizeof(engine::rendering::LightsBuffer);
-	size_t lightArraySize = constants::MAX_LIGHTS * sizeof(engine::rendering::LightStruct);
-	size_t totalSize = headerSize + lightArraySize;
-
-	ShaderBinding buffer;
-	buffer.type = BindingType::StorageBuffer;
-	buffer.name = "lightUniforms";
-	buffer.binding = 0;
-	buffer.size = totalSize;
-	buffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
-	buffer.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-	buffer.readOnly = true;
-
-	bindGroupBuilder.bindings.push_back(buffer);
-	m_lastBindGroupIndex = groupIndex;
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addShadowBindGroup()
-{
-	uint32_t groupIndex = static_cast<uint32_t>(m_bindGroupsBuilder.size());
-	auto &bindGroupBuilder = m_bindGroupsBuilder[groupIndex];
-	bindGroupBuilder.isEngineDefault = true;
-	bindGroupBuilder.name = bindgroup::defaults::SHADOW;
-	bindGroupBuilder.type = BindGroupType::Shadow;
-	bindGroupBuilder.reuse = BindGroupReuse::PerFrame;
-
-	ShaderBinding samplerBinding;
-	samplerBinding.type = BindingType::Sampler;
-	samplerBinding.name = "shadowSampler";
-	samplerBinding.binding = 0;
-	samplerBinding.visibility = WGPUShaderStage_Fragment;
-	samplerBinding.samplerType = wgpu::SamplerBindingType::Comparison;
-	bindGroupBuilder.bindings.push_back(samplerBinding);
-
-	ShaderBinding shadowMaps2D;
-	shadowMaps2D.type = BindingType::Texture;
-	shadowMaps2D.name = "shadowMaps2D";
-	shadowMaps2D.binding = 1;
-	shadowMaps2D.visibility = WGPUShaderStage_Fragment;
-	shadowMaps2D.textureSampleType = wgpu::TextureSampleType::Depth;
-	shadowMaps2D.textureViewDimension = wgpu::TextureViewDimension::_2DArray;
-	shadowMaps2D.textureMultisampled = false;
-	bindGroupBuilder.bindings.push_back(shadowMaps2D);
-
-	ShaderBinding shadowMapsCube;
-	shadowMapsCube.type = BindingType::Texture;
-	shadowMapsCube.name = "shadowMapsCube";
-	shadowMapsCube.binding = 2;
-	shadowMapsCube.visibility = WGPUShaderStage_Fragment;
-	shadowMapsCube.textureSampleType = wgpu::TextureSampleType::Depth;
-	shadowMapsCube.textureViewDimension = wgpu::TextureViewDimension::CubeArray;
-	shadowMapsCube.textureMultisampled = false;
-	bindGroupBuilder.bindings.push_back(shadowMapsCube);
-
-	ShaderBinding shadowUniformBuffer;
-	shadowUniformBuffer.type = BindingType::StorageBuffer;
-	shadowUniformBuffer.name = "uShadows";
-	shadowUniformBuffer.binding = 3;
-	size_t maxUnifiedShadows = constants::MAX_SHADOW_MAPS_2D + constants::MAX_SHADOW_MAPS_CUBE;
-	shadowUniformBuffer.size = maxUnifiedShadows * sizeof(engine::rendering::ShadowUniform);
-	shadowUniformBuffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
-	shadowUniformBuffer.visibility = WGPUShaderStage_Fragment;
-	shadowUniformBuffer.readOnly = true;
-	bindGroupBuilder.bindings.push_back(shadowUniformBuffer);
-
-	m_lastBindGroupIndex = groupIndex;
-	return *this;
-}
-
-WebGPUShaderFactory::WebGPUShaderBuilder &WebGPUShaderFactory::WebGPUShaderBuilder::addCustomUniform(
-	const std::string &name,
-	size_t size,
-	uint32_t visibility
-)
-{
-	checkLastBindGroup();
-	auto &binding = m_bindGroupsBuilder[m_lastBindGroupIndex].bindings;
-
-	ShaderBinding b{name, std::nullopt, BindingType::UniformBuffer, static_cast<uint32_t>(-1), size, 0, visibility, false};
-
-	binding.push_back(b);
-	return *this;
-}
-
-void WebGPUShaderFactory::WebGPUShaderBuilder::checkLastBindGroup()
-{
-	if (m_lastBindGroupIndex < 0)
-		throw std::runtime_error("No bind group added! Add a bind group before adding bindings.");
-}
-
-std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::WebGPUShaderBuilder::build()
-{
-	wgpu::ShaderModule shaderModule = m_shaderModule;
-	if (!shaderModule && !m_shaderPath.empty())
+	switch (d)
 	{
-		shaderModule = m_factory.loadShaderModule(m_shaderPath.string());
-		if (!shaderModule)
-		{
-			spdlog::error("WebGPUShaderFactory::build() - Failed to load shader from '{}'", m_shaderPath.string());
-			return nullptr;
-		}
+	case refl::TextureViewDim::D1:        return wgpu::TextureViewDimension::_1D;
+	case refl::TextureViewDim::D2:        return wgpu::TextureViewDimension::_2D;
+	case refl::TextureViewDim::D2Array:   return wgpu::TextureViewDimension::_2DArray;
+	case refl::TextureViewDim::D3:        return wgpu::TextureViewDimension::_3D;
+	case refl::TextureViewDim::Cube:      return wgpu::TextureViewDimension::Cube;
+	case refl::TextureViewDim::CubeArray: return wgpu::TextureViewDimension::CubeArray;
+	case refl::TextureViewDim::Unknown:   return wgpu::TextureViewDimension::_2D;
 	}
+	return wgpu::TextureViewDimension::_2D;
+}
 
-	if (!shaderModule)
+wgpu::TextureSampleType toSampleType(const std::string &s)
+{
+	if (s == "depth") return wgpu::TextureSampleType::Depth;
+	if (s == "i32")   return wgpu::TextureSampleType::Sint;
+	if (s == "u32")   return wgpu::TextureSampleType::Uint;
+	return wgpu::TextureSampleType::Float;
+}
+
+/// Canonical name/type/reuse for an engine bind group, used when the descriptor
+/// does not override them. The structure of the group still comes from
+/// reflecting the included engine WGSL.
+BindGroupMeta defaultEngineMeta(uint32_t index)
+{
+	using namespace engine::rendering;
+	BindGroupMeta m;
+	switch (index)
 	{
-		spdlog::error("WebGPUShaderFactory::build() - No shader module set for shader '{}'", m_name);
+	case 0: m.name = bindgroup::defaults::FRAME;    m.type = BindGroupType::Frame;    m.reuse = BindGroupReuse::PerFrame;  break;
+	case 1: m.name = bindgroup::defaults::SCENE;    m.type = BindGroupType::Scene;    m.reuse = BindGroupReuse::PerFrame;  break;
+	case 2: m.name = bindgroup::defaults::MATERIAL; m.type = BindGroupType::Material; m.reuse = BindGroupReuse::PerObject; break;
+	case 3: m.name = bindgroup::defaults::OBJECT;   m.type = BindGroupType::Object;   m.reuse = BindGroupReuse::PerObject; break;
+	default: break;
+	}
+	return m;
+}
+
+struct BuiltBinding
+{
+	wgpu::BindGroupLayoutEntry entry{};
+	BindGroupBinding           typed{0, ""};
+};
+
+/// Translate one reflected binding into a GPU layout entry plus the engine's
+/// typed metadata, applying any per-binding override. Engine groups force a
+/// stable Vertex|Fragment visibility so the shared layout never varies by
+/// per-shader usage; custom groups take the reflected visibility.
+BuiltBinding translateBinding(const refl::Binding &rb, const BindingMeta *meta, bool engineGroup)
+{
+	BuiltBinding out;
+	out.entry.binding    = rb.bindingIndex;
+	out.entry.visibility = engineGroup
+		? (WGPUShaderStage_Vertex | WGPUShaderStage_Fragment)
+		: (rb.visibility != 0 ? rb.visibility : static_cast<uint32_t>(WGPUShaderStage_Fragment));
+
+	out.typed.bindingIndex = rb.bindingIndex;
+	out.typed.name         = rb.wgslName;
+	out.typed.visibility   = static_cast<WGPUShaderStage>(out.entry.visibility);
+
+	switch (rb.kind)
+	{
+	case refl::BindingKind::UniformBuffer:
+		out.entry.buffer.type = wgpu::BufferBindingType::Uniform;
+		out.entry.buffer.minBindingSize = rb.minBindingSize;
+		out.typed.type = BindingType::UniformBuffer;
+		out.typed.size = rb.minBindingSize;
+		break;
+	case refl::BindingKind::StorageBufferRO:
+		out.entry.buffer.type = wgpu::BufferBindingType::ReadOnlyStorage;
+		out.entry.buffer.minBindingSize = rb.minBindingSize;
+		out.typed.type = BindingType::StorageBuffer;
+		out.typed.size = rb.minBindingSize;
+		break;
+	case refl::BindingKind::StorageBufferRW:
+		out.entry.buffer.type = wgpu::BufferBindingType::Storage;
+		out.entry.buffer.minBindingSize = rb.minBindingSize;
+		out.typed.type = BindingType::StorageBuffer;
+		out.typed.size = rb.minBindingSize;
+		break;
+	case refl::BindingKind::Sampler:
+		out.entry.sampler.type = wgpu::SamplerBindingType::Filtering;
+		if (meta && meta->samplerType)
+			out.entry.sampler.type = *meta->samplerType;
+		out.typed.type = BindingType::Sampler;
+		break;
+	case refl::BindingKind::SamplerComparison:
+		out.entry.sampler.type = wgpu::SamplerBindingType::Comparison;
+		out.typed.type = BindingType::Sampler;
+		break;
+	case refl::BindingKind::Texture:
+		out.entry.texture.sampleType    = (meta && meta->textureSampleType) ? *meta->textureSampleType : toSampleType(rb.texture.sampleType);
+		out.entry.texture.viewDimension = toViewDim(rb.texture.viewDim);
+		out.entry.texture.multisampled  = rb.texture.multisampled;
+		if (meta && meta->materialSlot)
+		{
+			out.typed.type             = BindingType::MaterialTexture;
+			out.typed.materialSlotName = *meta->materialSlot;
+			out.typed.fallbackColor    = meta->fallbackColor;
+		}
+		else
+		{
+			out.typed.type = BindingType::Texture;
+		}
+		break;
+	case refl::BindingKind::StorageTexture:
+	case refl::BindingKind::Unknown:
+		out.entry.buffer.type = wgpu::BufferBindingType::Uniform;
+		out.typed.type = BindingType::UniformBuffer;
+		break;
+	}
+	return out;
+}
+
+} // namespace
+
+std::shared_ptr<WebGPUShaderInfo> WebGPUShaderFactory::buildFromDescriptor(const ShaderDescriptor &desc)
+{
+	std::string expanded = expandShaderSource(desc.path);
+	if (expanded.empty())
+	{
+		spdlog::error("WebGPUShaderFactory: could not read shader '{}' ({})", desc.name, desc.path.string());
 		return nullptr;
 	}
 
-	auto builtShaderInfo = std::make_shared<WebGPUShaderInfo>(
-		m_name,
-		m_shaderPath,
-		m_type,
-		shaderModule,
-		m_vertexEntry,
-		m_fragmentEntry,
-		m_vertexLayout,
-		engine::rendering::ShaderFeature::Flag(m_shaderFeatures),
-		m_depthEnabled,
-		m_backFaceCullingEnabled
+	if (!runShaderValidation(expanded, desc.path))
+		return nullptr;
+
+	auto module = createShaderModuleFromWgsl(expanded, desc.path);
+	if (!module)
+		return nullptr;
+
+	auto reflected = refl::reflectWgsl(expanded, desc.path.string());
+	for (const auto &diag : reflected.diagnostics)
+		spdlog::warn("Shader reflect [{}] line {}: {}", desc.name, diag.line, diag.message);
+
+	auto info = std::make_shared<WebGPUShaderInfo>(
+		desc.name, desc.path, desc.type, module, desc.vertexEntry, desc.fragmentEntry,
+		desc.vertexLayout, engine::rendering::ShaderFeature::Flag::None, desc.enableDepth, desc.cullBackFaces
 	);
+	info->setDepthCompare(desc.depthCompare);
+	info->setDepthWriteEnabled(desc.depthWrite);
+	if (!desc.colorTargetFormats.empty())
+		info->setColorTargetFormats(desc.colorTargetFormats);
 
-	m_factory.createBindGroupLayouts(builtShaderInfo, m_bindGroupsBuilder);
-
-	spdlog::info("WebGPUShaderFactory: Built shader '{}' with {} bind groups", builtShaderInfo->getName(), builtShaderInfo->getBindGroupLayouts().size());
-
-	return builtShaderInfo;
-}
-
-void WebGPUShaderFactory::createBindGroupLayouts(
-	std::shared_ptr<WebGPUShaderInfo> shaderInfo,
-	std::map<uint32_t, BindGroupBuilder> &bindGroupsBuilder
-)
-{
-	for (auto &[groupIndex, bindGroupBuilder] : bindGroupsBuilder)
+	for (const auto &bg : reflected.reflection.bindGroups)
 	{
-		if (bindGroupBuilder.reuse == BindGroupReuse::Global || bindGroupBuilder.isEngineDefault)
+		const uint32_t idx = bg.groupIndex;
+		auto           it  = desc.groups.find(idx);
+
+		// A named descriptor entry fully defines a custom group at any index;
+		// otherwise fall back to the canonical engine role for @group 0..3.
+		const bool    named         = (it != desc.groups.end() && !it->second.name.empty());
+		bool          engineManaged = false;
+		BindGroupMeta meta;
+		if (named)
 		{
-			auto existingLayout = m_context.bindGroupFactory().getGlobalBindGroupLayout(bindGroupBuilder.name);
-			if (existingLayout)
-			{
-				shaderInfo->addBindGroupLayout(groupIndex, existingLayout);
-				spdlog::debug("Reused existing global bind group layout for group {} with key '{}'", groupIndex, bindGroupBuilder.name);
-				continue;
-			}
+			meta = it->second;
 		}
-		// Create layout entries from bindings
-		std::vector<wgpu::BindGroupLayoutEntry> entries;
-		std::vector<BindGroupBinding> typedBindings;
-		auto bindings = bindGroupBuilder.bindings;
-		entries.reserve(bindings.size());
-		typedBindings.reserve(bindings.size());
-
-		auto bindingIndex = 0u;
-		for (const auto &binding : bindings)
+		else
 		{
-			wgpu::BindGroupLayoutEntry entry{};
-			entry.binding = binding.binding == static_cast<uint32_t>(-1) ? bindingIndex++ : binding.binding;
-			bindingIndex = std::max<uint32_t>(bindingIndex, static_cast<uint32_t>(entry.binding + 1u));
-			entry.visibility = binding.visibility;
-
-			// Configure entry based on binding type using WebGPUBindGroupFactory helpers
-			switch (binding.type)
+			if (idx < engine::rendering::shaders::kFirstCustomBindGroupIndex)
 			{
-			case BindingType::UniformBuffer:
-				entry.buffer.type = wgpu::BufferBindingType::Uniform;
-				entry.buffer.minBindingSize = binding.size;
-				entry.buffer.hasDynamicOffset = false;
-				break;
-
-			case BindingType::StorageBuffer:
-				entry.buffer.type = binding.readOnly ? wgpu::BufferBindingType::ReadOnlyStorage
-													 : wgpu::BufferBindingType::Storage;
-				entry.buffer.hasDynamicOffset = false;
-				entry.buffer.minBindingSize = binding.size;
-				break;
-
-			case BindingType::Texture:
-				entry.texture.sampleType = binding.textureSampleType;
-				entry.texture.viewDimension = binding.textureViewDimension;
-				entry.texture.multisampled = binding.textureMultisampled;
-				break;
-
-			case BindingType::MaterialTexture:
-				entry.texture.sampleType = binding.textureSampleType;
-				entry.texture.viewDimension = binding.textureViewDimension;
-				entry.texture.multisampled = false;
-				break;
-
-			case BindingType::Sampler:
-				entry.sampler.type = binding.samplerType;
-				break;
+				meta          = defaultEngineMeta(idx);
+				engineManaged = true;
 			}
-
-			entries.push_back(entry);
-
-			// Create typed binding metadata for WebGPUBindGroupLayoutInfo
-			BindGroupBinding typedBinding{entry.binding, binding.name};
-			typedBinding.visibility = static_cast<WGPUShaderStage>(entry.visibility);
-			typedBinding.type = binding.type;
-			if (binding.type == BindingType::UniformBuffer || binding.type == BindingType::StorageBuffer)
-			{
-				typedBinding.size = entry.buffer.minBindingSize;
-			}
-			else if (binding.type == BindingType::MaterialTexture)
-			{
-				typedBinding.materialSlotName = binding.materialSlotName;
-				typedBinding.fallbackColor = binding.fallbackColor;
-			}
-
-			typedBindings.push_back(typedBinding);
+			if (it != desc.groups.end()) meta.bindings = it->second.bindings;
+		}
+		if (meta.name.empty())
+		{
+			spdlog::error("Shader '{}' @group({}) has no metadata in its descriptor", desc.name, idx);
+			continue;
 		}
 
-		// Create the bind group layout descriptor
-		wgpu::BindGroupLayoutDescriptor layoutDesc{};
-		layoutDesc.entryCount = entries.size();
-		layoutDesc.entries = entries.data();
+		// Engine groups share a global layout by name (Material excepted);
+		// custom groups opt into sharing via Global reuse.
+		const bool shared = engineManaged ? (idx == 0 || idx == 1 || idx == 3)
+		                                  : (meta.reuse == BindGroupReuse::Global);
 
-		auto layoutInfo = m_context.bindGroupFactory().createBindGroupLayoutInfo(
-			bindGroupBuilder.name,
-			bindGroupBuilder.type,
-			bindGroupBuilder.reuse,
-			entries,
-			typedBindings
-		);
+		std::shared_ptr<WebGPUBindGroupLayoutInfo> layoutInfo;
+		if (shared)
+			layoutInfo = m_context.bindGroupFactory().getGlobalBindGroupLayout(meta.name);
 
-		if (bindGroupBuilder.reuse == BindGroupReuse::Global || bindGroupBuilder.isEngineDefault)
+		if (!layoutInfo)
 		{
-			m_context.bindGroupFactory().storeGlobalBindGroupLayout(bindGroupBuilder.name, layoutInfo);
+			std::vector<wgpu::BindGroupLayoutEntry> entries;
+			std::vector<BindGroupBinding>           typed;
+			entries.reserve(bg.bindings.size());
+			typed.reserve(bg.bindings.size());
+			for (const auto &rb : bg.bindings)
+			{
+				const BindingMeta *bmeta = nullptr;
+				if (auto bit = meta.bindings.find(rb.bindingIndex); bit != meta.bindings.end())
+					bmeta = &bit->second;
+				auto built = translateBinding(rb, bmeta, engineManaged);
+				entries.push_back(built.entry);
+				typed.push_back(built.typed);
+			}
+
+			layoutInfo = m_context.bindGroupFactory().createBindGroupLayoutInfo(
+				meta.name, meta.type, meta.reuse, std::move(entries), std::move(typed)
+			);
+			if (shared)
+				m_context.bindGroupFactory().storeGlobalBindGroupLayout(meta.name, layoutInfo);
 		}
 
-		shaderInfo->addBindGroupLayout(groupIndex, layoutInfo);
-
-		spdlog::debug("Created bind group layout '{}' for group {} with {} entries", layoutInfo->getName(), groupIndex, entries.size());
+		info->addBindGroupLayout(idx, layoutInfo);
 	}
+
+	spdlog::info("WebGPUShaderFactory: built '{}' from descriptor with {} bind groups", desc.name, info->getBindGroupLayouts().size());
+	return info;
 }
 
-wgpu::ShaderModule WebGPUShaderFactory::loadShaderModule(const std::filesystem::path &shaderPath)
+std::string WebGPUShaderFactory::expandShaderSource(const std::filesystem::path &shaderPath)
 {
 	if (shaderPath.empty())
 	{
-		spdlog::error("WebGPUShaderFactory::loadShaderModule() - No shader path specified");
-		return nullptr;
+		spdlog::error("WebGPUShaderFactory: no shader path specified");
+		return {};
 	}
 
-	// Use ResourceManager to load shader
 	std::ifstream file(shaderPath);
 	if (!file.is_open())
 	{
-		spdlog::error("WebGPUShaderFactory::loadShaderModule() - Failed to open shader file '{}'", shaderPath.string());
-		return nullptr;
+		spdlog::error("WebGPUShaderFactory: failed to open shader file '{}'", shaderPath.string());
+		return {};
 	}
 	file.seekg(0, std::ios::end);
 	size_t size = file.tellg();
@@ -471,25 +289,41 @@ wgpu::ShaderModule WebGPUShaderFactory::loadShaderModule(const std::filesystem::
 	file.seekg(0);
 	file.read(shaderSource.data(), size);
 
-	wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc;
+	// Expand `#include "..."` before the WGSL reaches wgpu or the reflector.
+	engine::rendering::shaders::WgslIncludeResolver resolver;
+	auto resolved = resolver.expand(shaderSource, shaderPath);
+	for (const auto &diag : resolved.errors)
+		spdlog::error("Shader include error in {} (line {}): {}", diag.file.string(), diag.line, diag.message);
+
+	return resolved.finalSource;
+}
+
+wgpu::ShaderModule WebGPUShaderFactory::createShaderModuleFromWgsl(const std::string &wgsl, const std::filesystem::path &path)
+{
+	// v24: ShaderModuleWGSLDescriptor -> ShaderSourceWGSL, StringView code, hints removed.
+	wgpu::ShaderSourceWGSL shaderCodeDesc;
 	shaderCodeDesc.chain.next = nullptr;
-	shaderCodeDesc.chain.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-	shaderCodeDesc.code = shaderSource.c_str();
+	shaderCodeDesc.chain.sType = wgpu::SType::ShaderSourceWGSL;
+	shaderCodeDesc.code = wgpu::StringView(wgsl.c_str());
 	wgpu::ShaderModuleDescriptor shaderDesc;
 	shaderDesc.nextInChain = &shaderCodeDesc.chain;
-#ifdef WEBGPU_BACKEND_WGPU
-	shaderDesc.hintCount = 0;
-	shaderDesc.hints = nullptr;
-#endif
 
 	auto shaderModule = m_context.getDevice().createShaderModule(shaderDesc);
-
 	if (!shaderModule)
-	{
-		spdlog::error("WebGPUShaderFactory::loadShaderModule() - Failed to load shader from '{}'", shaderPath.string());
-		return nullptr;
-	}
+		spdlog::error("WebGPUShaderFactory: failed to compile shader '{}'", path.string());
 	return shaderModule;
+}
+
+wgpu::ShaderModule WebGPUShaderFactory::loadShaderModule(const std::filesystem::path &shaderPath)
+{
+	std::string expanded = expandShaderSource(shaderPath);
+	if (expanded.empty())
+		return nullptr;
+
+	if (!runShaderValidation(expanded, shaderPath))
+		return nullptr;
+
+	return createShaderModuleFromWgsl(expanded, shaderPath);
 }
 
 bool WebGPUShaderFactory::reloadShader(std::shared_ptr<WebGPUShaderInfo> shaderInfo)
@@ -523,11 +357,17 @@ bool WebGPUShaderFactory::reloadShader(std::shared_ptr<WebGPUShaderInfo> shaderI
 		shaderInfo->isBackFaceCullingEnabled()
 	);
 
-	// Copy bind group layouts from old shader to new one
+	// Preserve post-construction state the builder populates separately - the
+	// constructor only takes the basics. Dropping any of these silently breaks
+	// pipelines after hot reload; e.g. losing colorTargetFormats made GBufferPass
+	// try to bind a 1-attachment pipeline against the 5-attachment G-buffer pass.
 	for (const auto &[groupIndex, layoutInfo] : shaderInfo->getBindGroupLayouts())
 	{
 		newShaderInfo->addBindGroupLayout(groupIndex, layoutInfo);
 	}
+	newShaderInfo->setColorTargetFormats(shaderInfo->getColorTargetFormats());
+	newShaderInfo->setDepthCompare(shaderInfo->getDepthCompare());
+	newShaderInfo->setDepthWriteEnabled(shaderInfo->isDepthWriteEnabled());
 
 	return m_context.shaderRegistry().registerShader(newShaderInfo, true);
 }

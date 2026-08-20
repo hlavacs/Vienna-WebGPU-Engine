@@ -34,6 +34,8 @@ struct RenderItemCPU
 	uint64_t objectID = 0; // Unique object ID for bind group caching
 	std::weak_ptr<engine::scene::nodes::Node> renderNode; // Source node for preRender() callback
 	bool isTransparent = false; // Cached transparency flag for efficient sorting
+	bool castsShadows = true;   // false = skipped by extractForPointLight / extractForLightFrustum
+								// so the item never appears in any shadow map
 
 	bool operator<(const RenderItemCPU &other) const
 	{
@@ -80,7 +82,8 @@ class RenderCollector
 		const glm::mat4 &transform,
 		uint32_t layer,
 		uint64_t objectID,
-		std::shared_ptr<engine::scene::nodes::Node> node = nullptr
+		std::shared_ptr<engine::scene::nodes::Node> node = nullptr,
+		bool castsShadows = true
 	);
 
 	/**

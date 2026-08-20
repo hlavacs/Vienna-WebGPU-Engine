@@ -1,10 +1,14 @@
 #!/bin/bash
 set -e
 
+# Args: example, build type, backend (WGPU | DAWN | EMDAWN; Emscripten = alias),
+#       compiler (clang/gcc), dawn mode (PREBUILT to try a release asset; DAWN
+#       builds from source by default here - the vendored prebuilt is Windows-only).
 EXAMPLE_NAME=${1:-main_demo}
 BUILDTYPE=${2:-Debug}
 WEBGPU_BACKEND=${3:-WGPU}
 COMPILER=${4:-clang}
+DAWN_MODE=${5:-}
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     PROFILE_HOST=Mac
@@ -12,9 +16,13 @@ else
     PROFILE_HOST=Linux
 fi
 
-if [[ ! "$WEBGPU_BACKEND" =~ ^(WGPU|DAWN|Emscripten)$ ]]; then
+if [[ "$WEBGPU_BACKEND" == "Emscripten" ]]; then
+    WEBGPU_BACKEND=EMDAWN
+fi
+
+if [[ ! "$WEBGPU_BACKEND" =~ ^(WGPU|DAWN|EMDAWN)$ ]]; then
     echo "Invalid WEBGPU_BACKEND: $WEBGPU_BACKEND"
-    echo "Must be WGPU, DAWN or Emscripten"
+    echo "Must be WGPU, DAWN or EMDAWN"
     exit 1
 fi
 
@@ -29,7 +37,7 @@ else
     export CXX="${COMPILER}++"
 fi
 
-if [[ "$WEBGPU_BACKEND" == "Emscripten" ]]; then
+if [[ "$WEBGPU_BACKEND" == "EMDAWN" ]]; then
     PROFILE_HOST=Emscripten
 fi
 
@@ -55,7 +63,15 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 EXAMPLES_DIR="$PROJECT_ROOT/examples"
 EXAMPLE_SOURCE_DIR="$EXAMPLES_DIR/$EXAMPLE_NAME"
+
+# Per-backend build dirs (mirrors build-example.bat). DAWN's default (from
+# source) keeps the legacy plain dir; WGPU and DAWN PREBUILT get suffixed dirs.
 BUILD_DIR="$EXAMPLES_DIR/build/$EXAMPLE_NAME/$PROFILE_HOST/$BUILDTYPE"
+if [[ "$WEBGPU_BACKEND" == "WGPU" ]]; then
+    BUILD_DIR="$EXAMPLES_DIR/build/$EXAMPLE_NAME/$PROFILE_HOST/$BUILDTYPE-WGPU"
+elif [[ "$WEBGPU_BACKEND" == "DAWN" && "$DAWN_MODE" == "PREBUILT" ]]; then
+    BUILD_DIR="$EXAMPLES_DIR/build/$EXAMPLE_NAME/$PROFILE_HOST/$BUILDTYPE-DAWN"
+fi
 
 if [[ ! -f "$EXAMPLE_SOURCE_DIR/CMakeLists.txt" ]]; then
     echo "[ERROR] Example '$EXAMPLE_NAME' not found or has no CMakeLists.txt"
@@ -82,9 +98,11 @@ fi
 echo "============================================"
 echo ""
 
-if [[ "$WEBGPU_BACKEND" == "Emscripten" ]]; then
-    echo "[BUILD] Emscripten build"
-    emcmake cmake -S "$EXAMPLE_SOURCE_DIR" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE="$BUILDTYPE"
+if [[ "$WEBGPU_BACKEND" == "EMDAWN" ]]; then
+    echo "[BUILD] emdawnwebgpu build"
+    emcmake cmake -S "$EXAMPLE_SOURCE_DIR" -B "$BUILD_DIR" -G Ninja \
+        -DCMAKE_BUILD_TYPE="$BUILDTYPE" \
+        -DWEBGPU_BACKEND=EMDAWN
     if [[ $? -ne 0 ]]; then
         echo "[ERROR] CMake configuration failed."
         exit 1
@@ -97,11 +115,17 @@ if [[ "$WEBGPU_BACKEND" == "Emscripten" ]]; then
     fi
 else
     if [[ "$WEBGPU_BACKEND" == "DAWN" ]]; then
-        echo "[BUILD] Dawn backend"
+        DAWN_FROM_SOURCE=ON
+        if [[ "$DAWN_MODE" == "PREBUILT" ]]; then
+            DAWN_FROM_SOURCE=OFF
+            echo "[BUILD] Dawn backend (prebuilt - note: only a windows-x64 asset is published)"
+        else
+            echo "[BUILD] Dawn backend (from source)"
+        fi
         cmake -S "$EXAMPLE_SOURCE_DIR" -B "$BUILD_DIR" -G Ninja \
             -DCMAKE_BUILD_TYPE="$BUILDTYPE" \
             -DWEBGPU_BACKEND=DAWN \
-            -DWEBGPU_BUILD_FROM_SOURCE=ON
+            -DWEBGPU_BUILD_FROM_SOURCE=$DAWN_FROM_SOURCE
     else
         echo "[BUILD] WGPU backend"
         cmake -S "$EXAMPLE_SOURCE_DIR" -B "$BUILD_DIR" -G Ninja \
@@ -127,7 +151,7 @@ echo ""
 echo "[SUCCESS] Example '$EXAMPLE_NAME' built successfully!"
 echo ""
 echo "Executable location: $BUILD_DIR"
-if [[ "$WEBGPU_BACKEND" == "Emscripten" ]]; then
+if [[ "$WEBGPU_BACKEND" == "EMDAWN" ]]; then
     echo ""
     echo "To run:"
     echo "  Start a web server in project root: python -m http.server 8080"

@@ -1,12 +1,37 @@
 #include "engine/rendering/webgpu/WebGPUContext.h"
 
 #include <cassert>
+#include <cstdlib>
 #include <iostream>
+#include <string>
 
+#include "engine/lighting/LightManager.h"
+#include "engine/rendering/ClusterManager.h"
+#include "engine/rendering/SceneLightBuffer.h"
 #include "engine/rendering/Vertex.h"
 
 namespace engine::rendering::webgpu
 {
+
+namespace
+{
+const char *presentModeName(wgpu::PresentMode mode)
+{
+	switch (mode)
+	{
+	case wgpu::PresentMode::Fifo:
+		return "Fifo (vsync)";
+	case wgpu::PresentMode::FifoRelaxed:
+		return "FifoRelaxed";
+	case wgpu::PresentMode::Immediate:
+		return "Immediate (uncapped)";
+	case wgpu::PresentMode::Mailbox:
+		return "Mailbox";
+	default:
+		return "unknown";
+	}
+}
+} // namespace
 
 template <typename T>
 T WebGPUContext::clampLimit(const char *name, T requested, T supported)
@@ -33,18 +58,57 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 	m_materialFactory = std::make_unique<WebGPUMaterialFactory>(*this);
 	m_bindGroupFactory = std::make_unique<WebGPUBindGroupFactory>(*this);
 	m_samplerFactory = std::make_unique<WebGPUSamplerFactory>(*this);
-	// m_swapChainFactory = std::make_unique<WebGPUSwapChainFactory>(*this);
 	m_depthTextureFactory = std::make_unique<WebGPUDepthTextureFactory>(*this);
 	m_modelFactory = std::make_unique<WebGPUModelFactory>(*this);
 	m_depthStencilStateFactory = std::make_unique<WebGPUDepthStencilStateFactory>();
 	m_renderPassFactory = std::make_unique<WebGPURenderPassFactory>(*this);
 	m_shaderFactory = std::make_unique<WebGPUShaderFactory>(*this);
 	m_pipelineManager = std::make_unique<WebGPUPipelineManager>(*this);
-#ifdef __EMSCRIPTEN__
-	m_instance = wgpu::wgpuCreateInstance(nullptr);
-#else
+
+	// Uniform registration: every factory now exposes the same cache
+	// lifecycle surface (cleanup / cacheSize / notifyFrame / evictStale /
+	// setMaxIdleFrames). The template wires all of it up — no per-factory
+	// boilerplate. Add a new factory in three lines: add cacheSize() +
+	// the eviction methods (BaseWebGPUFactory derivatives get them for
+	// free), construct it here, register it.
+	m_cacheRegistry.registerFactoryCache(*m_pipelineManager, "PipelineManager");
+	m_cacheRegistry.registerFactoryCache(*m_samplerFactory, "SamplerFactory");
+	m_cacheRegistry.registerFactoryCache(*m_textureFactory, "TextureFactory");
+	m_cacheRegistry.registerFactoryCache(*m_meshFactory, "MeshFactory");
+	m_cacheRegistry.registerFactoryCache(*m_materialFactory, "MaterialFactory");
+	m_cacheRegistry.registerFactoryCache(*m_modelFactory, "ModelFactory");
+
+	// Sensible defaults — values in frames; assume ~60fps target. The
+	// principle: cheaper-to-rebuild + smaller-resource caches keep stuff
+	// longer; bigger / more-expensive resources evict faster so memory
+	// doesn't accumulate.
+	//  - Pipelines (heavy to rebuild, but smallish per-instance): 10s
+	//  - Textures (huge memory per entry, fast to recreate from disk):  60s
+	//  - Meshes (largest GPU resource we own):                          60s
+	//  - Models (lightweight wrappers):                                 60s
+	//  - Materials (tiny structs):                                     120s
+	//  - Samplers (tiny wgpu handles, churn is wasteful):                0 (never evict)
+	//
+	// Override these per-scene from any caller via
+	// `context.cacheRegistry().setMaxIdleFramesFor("TextureFactory", N);`
+	// or apply a uniform window with `setMaxIdleFramesForAll(N)`.
+	m_cacheRegistry.setMaxIdleFramesFor("PipelineManager", 600);
+	m_cacheRegistry.setMaxIdleFramesFor("TextureFactory", 3600);
+	m_cacheRegistry.setMaxIdleFramesFor("MeshFactory", 3600);
+	m_cacheRegistry.setMaxIdleFramesFor("ModelFactory", 3600);
+	m_cacheRegistry.setMaxIdleFramesFor("MaterialFactory", 7200);
+	m_cacheRegistry.setMaxIdleFramesFor("SamplerFactory", 0);
+
+	m_lightManager = std::make_shared<engine::lighting::LightManager>();
+	m_clusterManager = std::make_shared<engine::rendering::ClusterManager>(*this);
+	// Per-camera cluster buffers ride the shared eviction system: a camera
+	// idle for the window (disabled / destroyed) drops its ~11 MB of storage.
+	m_cacheRegistry.registerFactoryCache(*m_clusterManager, "ClusterManager");
+	m_cacheRegistry.setMaxIdleFramesFor("ClusterManager", 300);
+
+	// emdawnwebgpu accepts a descriptor like native backends; the old
+	// -sUSE_WEBGPU null-descriptor special case is gone.
 	m_instance = wgpu::createInstance(wgpu::InstanceDescriptor{});
-#endif
 	if (!m_instance)
 	{
 		spdlog::critical("[WebGPU] Failed to create WebGPU instance.");
@@ -58,9 +122,27 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 
 	// Initialize ShaderRegistry after device is ready
 	m_shaderRegistry = std::make_unique<ShaderRegistry>(*this);
-	if(!m_shaderRegistry->initializeDefaultShaders())
+	if (!m_shaderRegistry->initializeDefaultShaders())
 	{
 		spdlog::critical("[WebGPU] Failed to initialize default shaders.");
+		assert(false);
+	}
+	// Register the shader cache too. ShaderRegistry exposes the same
+	// six-method surface as every other factory now that it sits on
+	// SlotCache, so the debug overlay can list it alongside the
+	// Pipeline/Sampler/Texture caches and the global "soft clear" UI flow
+	// reaches it through a single iteration.
+	m_cacheRegistry.registerFactoryCache(*m_shaderRegistry, "ShaderRegistry");
+	m_cacheRegistry.setMaxIdleFramesFor("ShaderRegistry", 0);
+
+	// SceneLightBuffer depends on the light bind group layout that is registered
+	// during shader initialization, so create it after the shader registry is ready.
+	m_sceneLightBuffer = std::make_shared<engine::lighting::SceneLightBuffer>(*this);
+
+	// Initialize ClusterManager for clustered light assignment
+	if (!m_clusterManager->initialize())
+	{
+		spdlog::critical("[WebGPU] Failed to initialize ClusterManager.");
 		assert(false);
 	}
 
@@ -70,13 +152,22 @@ void WebGPUContext::initialize(void *windowHandle, bool enableVSync, const std::
 	SDL_GetWindowSizeInPixels(sdlWindow, &width, &height);
 
 	WebGPUSurfaceManager::Config config;
-	config.format = getSwapChainFormat();
+	config.format = m_surfaceFormat;
+	if (m_swapChainFormat != m_surfaceFormat)
+		config.viewFormats.push_back(m_swapChainFormat);
 	config.width = width;
 	config.height = height;
-	config.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
+	// Mailbox (uncapped) > Immediate > Fifo. Dawn compat offers no Mailbox and
+	// ignores Immediate (present is ~vsync either way — measured ~40 FPS with both,
+	// it's compat render overhead, not a bypassable block), so use FifoRelaxed
+	// there: the adaptive-vsync mode Dawn actually honors.
+	config.presentMode = enableVSync ? wgpu::PresentMode::Fifo
+									 : (m_mailboxSupported ? wgpu::PresentMode::Mailbox
+									 : ((m_compatibilityMode && m_fifoRelaxedSupported) ? wgpu::PresentMode::FifoRelaxed
+									 : (m_immediateSupported ? wgpu::PresentMode::Immediate : wgpu::PresentMode::Fifo)));
 	m_surfaceManager->reconfigure(config);
 
-	spdlog::info("[WebGPU] Initialized. Surface {}x{}, vsync: {}.", width, height, enableVSync);
+	spdlog::info("[WebGPU] Initialized. Surface {}x{}, vsync: {}, present mode: {}.", width, height, enableVSync, presentModeName(config.presentMode));
 }
 
 void WebGPUContext::initSurface(void *windowHandle)
@@ -105,7 +196,30 @@ void WebGPUContext::initAdapter()
 {
 	wgpu::RequestAdapterOptions adapterOpts{};
 	adapterOpts.compatibleSurface = m_surface;
+#ifdef WEBGPU_BACKEND_DAWN
+	// Desktop Dawn defaults to Core (compat's ~40 FPS is render overhead, not a
+	// present block; Core gives Mailbox + lifts cube-array/depth restrictions).
+	// DAWN_COMPAT=1 forces the Compatibility profile for local WASM-parity testing.
+	if (const char *v = std::getenv("DAWN_COMPAT"); v && std::string(v) == "1")
+		m_preferCompatibility = true;
+	adapterOpts.featureLevel = m_preferCompatibility ? WGPUFeatureLevel_Compatibility : WGPUFeatureLevel_Core;
+	m_compatibilityMode = m_preferCompatibility;
+#if defined(_WIN32)
+	// Dawn's Vulkan swapchain paces presents to vblank on Windows by design; D3D12
+	// carries the chromium/7871 ALLOW_TEARING fix, so prefer it (fallback below).
+	adapterOpts.backendType = wgpu::BackendType::D3D12;
+#endif
+#endif
 	m_adapter = m_instance.requestAdapter(adapterOpts);
+
+#if defined(WEBGPU_BACKEND_DAWN) && defined(_WIN32)
+	if (!m_adapter)
+	{
+		spdlog::warn("[WebGPU] No D3D12 adapter; falling back to any backend.");
+		adapterOpts.backendType = wgpu::BackendType::Undefined;
+		m_adapter = m_instance.requestAdapter(adapterOpts);
+	}
+#endif
 
 	if (!m_adapter)
 	{
@@ -113,22 +227,57 @@ void WebGPUContext::initAdapter()
 		assert(false);
 	}
 
-	spdlog::info("[WebGPU] Adapter acquired.");
+	wgpu::AdapterInfo adapterInfo{};
+	if (m_adapter.getInfo(&adapterInfo) == wgpu::Status::Success)
+	{
+		const auto viewToString = [](const WGPUStringView &view)
+		{
+			if (!view.data)
+				return std::string();
+			return view.length == WGPU_STRLEN ? std::string(view.data) : std::string(view.data, view.length);
+		};
+		const auto backendName = [](WGPUBackendType type)
+		{
+			switch (type)
+			{
+			case WGPUBackendType_D3D11: return "D3D11";
+			case WGPUBackendType_D3D12: return "D3D12";
+			case WGPUBackendType_Metal: return "Metal";
+			case WGPUBackendType_Vulkan: return "Vulkan";
+			case WGPUBackendType_OpenGL: return "OpenGL";
+			case WGPUBackendType_OpenGLES: return "OpenGLES";
+			default: return "Other";
+			}
+		};
+		spdlog::info("[WebGPU] Adapter acquired: '{}' ({}), backend {}", viewToString(adapterInfo.device), viewToString(adapterInfo.description), backendName(adapterInfo.backendType));
+		adapterInfo.freeMembers();
+	}
+	else
+	{
+		spdlog::info("[WebGPU] Adapter acquired.");
+	}
 }
 
 void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 {
 	// --------------- Query supported limits ---------------
-	wgpu::SupportedLimits supportedLimits{};
-#ifdef WEBGPU_BACKEND_WGPU
-	m_adapter.getLimits(&supportedLimits);
-#else
-	supportedLimits.limits.minStorageBufferOffsetAlignment = 256;
-	supportedLimits.limits.minUniformBufferOffsetAlignment = 256;
+	wgpu::Limits supportedLimits{};
+#ifdef WEBGPU_BACKEND_DAWN
+	// 7871+: per-stage compat limits live in a chained struct; without querying and
+	// re-requesting them, compat devices get maxStorageBuffersInVertexStage=0.
+	WGPUCompatibilityModeLimits compatStageLimits = WGPU_COMPATIBILITY_MODE_LIMITS_INIT;
+	supportedLimits.nextInChain = &compatStageLimits.chain;
 #endif
+	m_adapter.getLimits(&supportedLimits);
+	supportedLimits.nextInChain = nullptr;
+
+	spdlog::info("[WebGPU] Adapter limits: maxBindGroups={}, maxBindingsPerBindGroup={}, maxSampledTexturesPerShaderStage={}", supportedLimits.maxBindGroups, supportedLimits.maxBindingsPerBindGroup, supportedLimits.maxSampledTexturesPerShaderStage);
 
 	// --------------- Clamp requested limits against hardware ---------------
-	wgpu::RequiredLimits requiredLimits = wgpu::Default;
+	// Start from the adapter's full supported set so every limit (incl. Dawn's
+	// granular per-stage limits, which default to 0) is requested; applyTo then
+	// caps the engine's tuned subset.
+	wgpu::Limits requiredLimits = supportedLimits;
 	const DeviceLimitsConfig resolved = limits
 											? limits->clamped(supportedLimits)
 											: DeviceLimitsConfig::fromSupported(supportedLimits);
@@ -136,18 +285,85 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	resolved.applyTo(requiredLimits);
 
 	// Alignment limits are hardware-fixed — must always use the adapter's value
-	requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
-	requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
+	requiredLimits.minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment;
+	requiredLimits.minStorageBufferOffsetAlignment = supportedLimits.minStorageBufferOffsetAlignment;
+
+	// Request the adapter's supported max (Dawn honors it; wgpu-native reports 0
+	// here and caps MRT at 32 regardless).
+	requiredLimits.maxColorAttachmentBytesPerSample = supportedLimits.maxColorAttachmentBytesPerSample;
+	requiredLimits.maxColorAttachments = supportedLimits.maxColorAttachments;
 
 	// Store what was actually resolved for later inspection via resolvedLimits()
-	m_resolvedLimits = requiredLimits.limits;
+	m_resolvedLimits = requiredLimits;
+
+#ifdef WEBGPU_BACKEND_DAWN
+	// Request the adapter-supported per-stage compat limits (filled by getLimits above).
+	requiredLimits.nextInChain = &compatStageLimits.chain;
+#endif
+
+	// --------------- Optional features ---------------
+	// timestamp-query enables wgpu::QuerySet of type Timestamp + encoder.writeTimestamp(),
+	// which the FrameProfiler uses for real per-pass GPU times. Falls back to
+	// CPU-only timing on adapters that don't advertise the feature.
+	std::vector<WGPUFeatureName> requiredFeatures;
+	m_supportsTimestampQuery = m_adapter.hasFeature(wgpu::FeatureName::TimestampQuery);
+#ifdef __EMSCRIPTEN__
+	// Browsers removed encoder.writeTimestamp from the WebGPU JS API (only
+	// pass-level timestampWrites exist), so the FrameProfiler's GPU timing is off.
+	m_supportsTimestampQuery = false;
+#endif
+	if (m_supportsTimestampQuery)
+	{
+		requiredFeatures.push_back(WGPUFeatureName_TimestampQuery);
+#ifdef WEBGPU_BACKEND_WGPU
+		// v24 gates encoder.writeTimestamp behind this native feature; require it
+		// when available, else disable GPU timing.
+		const auto insideEncoders = static_cast<WGPUFeatureName>(WGPUNativeFeature_TimestampQueryInsideEncoders);
+		if (m_adapter.hasFeature(static_cast<wgpu::FeatureName>(insideEncoders)))
+			requiredFeatures.push_back(insideEncoders);
+		else
+			m_supportsTimestampQuery = false;
+#endif
+	}
 
 	// --------------- Request device ---------------
 	wgpu::DeviceDescriptor deviceDesc{};
-	deviceDesc.label = "WebGPUContext Device";
-	deviceDesc.requiredFeatureCount = 0;
+	deviceDesc.label = wgpu::StringView("WebGPUContext Device");
+	deviceDesc.requiredFeatureCount = static_cast<uint32_t>(requiredFeatures.size());
+	deviceDesc.requiredFeatures = requiredFeatures.empty() ? nullptr : requiredFeatures.data();
 	deviceDesc.requiredLimits = &requiredLimits;
-	deviceDesc.defaultQueue.label = "Default Queue";
+	deviceDesc.defaultQueue.label = wgpu::StringView("Default Queue");
+
+	// v24: uncaptured-error callback goes in the descriptor (captureless fn ptr).
+	deviceDesc.uncapturedErrorCallbackInfo.callback =
+		[](WGPUDevice const *, WGPUErrorType type, WGPUStringView message, void *, void *)
+	{
+		spdlog::error("[WebGPU] Device error (type {}): {}", static_cast<int>(type), message.data ? std::string(message.data, message.length) : std::string("unknown"));
+	};
+
+	// v24: device-lost callback goes in the descriptor. Logs the reason so a
+	// driver-level device loss (AMD TDR, OOM) is diagnosable instead of silent.
+	deviceDesc.deviceLostCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+	deviceDesc.deviceLostCallbackInfo.callback =
+		[](WGPUDevice const *, WGPUDeviceLostReason reason, WGPUStringView message, void *, void *)
+	{
+		const auto lvl = (reason == WGPUDeviceLostReason_Destroyed || reason == WGPUDeviceLostReason_CallbackCancelled)
+							 ? spdlog::level::info
+							 : spdlog::level::critical;
+		spdlog::log(lvl, "[WebGPU] Device lost (reason {}): {}", static_cast<int>(reason), message.data ? std::string(message.data, message.length) : std::string("unknown"));
+	};
+
+#ifdef WEBGPU_BACKEND_DAWN
+	// Dawn gates encoder.writeTimestamp behind an unsafe-API toggle; enable it so
+	// the FrameProfiler's per-pass GPU timers work.
+	const char *const dawnEnabledToggles[] = {"allow_unsafe_apis"};
+	WGPUDawnTogglesDescriptor dawnToggles{};
+	dawnToggles.chain.sType = WGPUSType_DawnTogglesDescriptor;
+	dawnToggles.enabledToggleCount = 1;
+	dawnToggles.enabledToggles = dawnEnabledToggles;
+	deviceDesc.nextInChain = &dawnToggles.chain;
+#endif
+
 	m_device = m_adapter.requestDevice(deviceDesc);
 
 	if (!m_device)
@@ -157,11 +373,8 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	}
 
 	// --------------- Error callback ---------------
-	static std::unique_ptr<wgpu::ErrorCallback> errorCallback;
-	errorCallback = m_device.setUncapturedErrorCallback(
-		[](wgpu::ErrorType type, char const *message)
-		{ spdlog::error("[WebGPU] Device error (type {}): {}", static_cast<int>(type), message ? message : "unknown"); }
-	);
+	// Registered via DeviceDescriptor::uncapturedErrorCallbackInfo in the
+	// requestDevice block above (wgpu-native v24 removed setUncapturedErrorCallback).
 
 	// --------------- Queue ---------------
 	m_queue = m_device.getQueue();
@@ -172,25 +385,77 @@ void WebGPUContext::initDevice(const std::optional<DeviceLimitsConfig> &limits)
 	}
 
 	// --------------- Swap chain format ---------------
-#ifdef WEBGPU_BACKEND_WGPU
-	m_swapChainFormat = m_surface.getPreferredFormat(m_adapter);
-#else
-	m_swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
-#endif
+	// Prefer an sRGB surface so the composite's linear output is gamma-encoded on
+	// present. Dawn's compat surface lists linear RGBA8Unorm first (looked dark vs
+	// wgpu-native); flag when none exists so the composite can encode gamma itself.
+	wgpu::SurfaceCapabilities caps{};
+	m_surface.getCapabilities(m_adapter, &caps);
+
+	m_swapChainFormat = wgpu::TextureFormat::Undefined;
+	for (size_t i = 0; i < caps.formatCount; ++i)
+	{
+		const auto format = static_cast<wgpu::TextureFormat>(caps.formats[i]);
+		if (format == wgpu::TextureFormat::RGBA8UnormSrgb || format == wgpu::TextureFormat::BGRA8UnormSrgb)
+		{
+			m_swapChainFormat = format;
+			break;
+		}
+	}
+
+	m_surfaceIsSrgb = (m_swapChainFormat != wgpu::TextureFormat::Undefined);
+	m_surfaceFormat = m_swapChainFormat;
+	if (!m_surfaceIsSrgb && caps.formatCount > 0)
+	{
+		// No native sRGB surface (D3D12/DXGI never offers one). Configure the base
+		// format and render through an sRGB view via viewFormats reinterpretation.
+		m_surfaceFormat = static_cast<wgpu::TextureFormat>(caps.formats[0]);
+		auto srgbVariant = wgpu::TextureFormat::Undefined;
+		if (m_surfaceFormat == wgpu::TextureFormat::RGBA8Unorm)
+			srgbVariant = wgpu::TextureFormat::RGBA8UnormSrgb;
+		else if (m_surfaceFormat == wgpu::TextureFormat::BGRA8Unorm)
+			srgbVariant = wgpu::TextureFormat::BGRA8UnormSrgb;
+
+		if (srgbVariant != wgpu::TextureFormat::Undefined)
+		{
+			m_swapChainFormat = srgbVariant;
+			m_surfaceIsSrgb = true;
+		}
+		else
+		{
+			m_swapChainFormat = m_surfaceFormat; // Truly no sRGB path: composite must encode gamma.
+		}
+	}
+	// Record non-Fifo present support. Prefer Mailbox (low-latency, no tearing,
+	// non-blocking) then Immediate, else Fifo. Dawn's D3D12 surface often ignores
+	// Immediate (it then blocks ~vsync -> ~40 FPS), so Mailbox is what uncaps it.
+	for (size_t i = 0; i < caps.presentModeCount; ++i)
+	{
+		const auto m = static_cast<wgpu::PresentMode>(caps.presentModes[i]);
+		spdlog::info("[WebGPU] Surface present mode available: {}", presentModeName(m));
+		if (m == wgpu::PresentMode::Mailbox)
+			m_mailboxSupported = true;
+		if (m == wgpu::PresentMode::Immediate)
+			m_immediateSupported = true;
+		if (m == wgpu::PresentMode::FifoRelaxed)
+			m_fifoRelaxedSupported = true;
+	}
+	caps.freeMembers();
 
 	if (m_swapChainFormat == wgpu::TextureFormat::Undefined)
 	{
 		spdlog::critical("[WebGPU] Could not determine swap chain format.");
 		assert(false);
 	}
+	spdlog::info("[WebGPU] Surface format {} render format {} (sRGB present: {})",
+	             static_cast<int>(m_surfaceFormat), static_cast<int>(m_swapChainFormat), m_surfaceIsSrgb);
 
 	m_adapter.release();
 	spdlog::info("[WebGPU] Device created successfully.");
 }
 
-wgpu::SupportedLimits WebGPUContext::getHardwareLimits() const
+wgpu::Limits WebGPUContext::getHardwareLimits() const
 {
-	wgpu::SupportedLimits limits{};
+	wgpu::Limits limits{};
 	wgpuDeviceGetLimits(m_device, &limits);
 	return limits;
 }
@@ -204,8 +469,12 @@ void WebGPUContext::updatePresentMode(bool enableVSync)
 	}
 
 	auto currentConfig = m_surfaceManager->currentConfig();
-	currentConfig.presentMode = enableVSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate;
+	currentConfig.presentMode = enableVSync ? wgpu::PresentMode::Fifo
+											: (m_mailboxSupported ? wgpu::PresentMode::Mailbox
+											: ((m_compatibilityMode && m_fifoRelaxedSupported) ? wgpu::PresentMode::FifoRelaxed
+											: (m_immediateSupported ? wgpu::PresentMode::Immediate : wgpu::PresentMode::Fifo)));
 	m_surfaceManager->reconfigure(currentConfig);
+	spdlog::info("[WebGPU] Present mode updated: vsync: {}, present mode: {}.", enableVSync, presentModeName(currentConfig.presentMode));
 }
 
 void WebGPUContext::terminateSurface()
@@ -290,15 +559,10 @@ WebGPUBindGroupFactory &WebGPUContext::bindGroupFactory()
 	return *m_bindGroupFactory;
 }
 
-/* Todo: Implement WebGPUSwapChainFactory
-WebGPUSwapChainFactory &WebGPUContext::swapChainFactory()
+WebGPUPipelineFactory &WebGPUContext::pipelineFactory()
 {
-	if (!m_swapChainFactory)
-	{
-		throw std::runtime_error("WebGPUSwapChainFactory not initialized!");
-	}
-	return *m_swapChainFactory;
-}*/
+	return pipelineManager().factory();
+}
 
 WebGPUModelFactory &WebGPUContext::modelFactory()
 {
@@ -361,5 +625,41 @@ WebGPUPipelineManager &WebGPUContext::pipelineManager()
 		throw std::runtime_error("WebGPUPipelineManager not initialized!");
 	}
 	return *m_pipelineManager;
+}
+
+engine::rendering::cache::CacheRegistry &WebGPUContext::cacheRegistry()
+{
+	// Default-constructed at WebGPUContext construction; no init guard needed.
+	return m_cacheRegistry;
+}
+
+std::shared_ptr<engine::lighting::LightManager> WebGPUContext::lightManager() const
+{
+	if (!m_lightManager)
+	{
+		spdlog::warn("LightManager not initialized!");
+		return nullptr;
+	}
+	return m_lightManager;
+}
+
+std::shared_ptr<engine::lighting::SceneLightBuffer> WebGPUContext::sceneLightBuffer() const
+{
+	if (!m_sceneLightBuffer)
+	{
+		spdlog::warn("SceneLightBuffer not initialized!");
+		return nullptr;
+	}
+	return m_sceneLightBuffer;
+}
+
+std::shared_ptr<engine::rendering::ClusterManager> WebGPUContext::clusterManager() const
+{
+	if (!m_clusterManager)
+	{
+		spdlog::warn("ClusterManager not initialized!");
+		return nullptr;
+	}
+	return m_clusterManager;
 }
 } // namespace engine::rendering::webgpu

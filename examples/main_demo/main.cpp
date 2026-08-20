@@ -30,14 +30,25 @@ std::shared_ptr<demo::OrbitCameraController> setupCamera(std::shared_ptr<engine:
 
 		// Configure HDR environment map for skybox + diffuse irradiance.
 		auto environmentTexture = resourceManager->m_textureManager->createTextureFromFile(
-			PathProvider::getResource("skybox.hdr")
+			PathProvider::getAssets("skybox.hdr")
 		);
 		if (environmentTexture.has_value())
 		{
 			mainCamera->setEnvironmentTexture(environmentTexture.value()->getHandle());
 			mainCamera->setSkyboxEnabled(true);
-			mainCamera->setIrradianceEnabled(true);
-			mainCamera->setIrradianceIntensity(1.0f);
+			// IBL off by default. The SeaKeep scene has its own ambient
+			// light for the interior fill; the env-driven specular on top
+			// reads "too shiny" on rough stone with the raw HDR equirect.
+			// Toggle on in the UI to A/B against direct + ambient lighting.
+			mainCamera->setIrradianceEnabled(false);
+			// Scales diffuse IBL + visible skybox uniformly. Raw HDR
+			// equirects routinely peak at 10–50× linear; without taming
+			// the background tonemaps flat-white. 0.5 keeps the sky in
+			// the readable midtones and the diffuse ambient strong enough
+			// that surfaces don't go flat. Specular IBL has its own
+			// IBL_SPEC_SCALE in the shaders (currently 0.15) for the
+			// rough-material specular floor — tune the two independently.
+			mainCamera->setIrradianceIntensity(0.5f);
 		}
 		else
 		{
@@ -58,7 +69,11 @@ std::shared_ptr<demo::OrbitCameraController> setupCamera(std::shared_ptr<engine:
 void setupComplexLighting(std::shared_ptr<engine::scene::Scene> scene, std::shared_ptr<engine::scene::nodes::LightNode> &ambientLight, std::shared_ptr<engine::scene::nodes::LightNode> &sunLight, std::shared_ptr<engine::scene::nodes::LightNode> &moonLight)
 {
 	auto rootNode = scene->getRoot();
-	// Ambient light
+	// Ambient light: the SeaKeep model has deep stone interiors and overhangs
+	// that the sun/moon directional shadows fully occlude; without a small
+	// ambient fill those surfaces render as pure black silhouettes. IBL would
+	// also do this job but is off by default for this scene (see camera
+	// setup) because the raw HDR-driven specular looked too shiny.
 	ambientLight = std::make_shared<engine::scene::nodes::LightNode>();
 	engine::rendering::AmbientLight ambientData;
 	ambientData.color = glm::vec3(0.2f, 0.2f, 0.2f);
@@ -104,13 +119,10 @@ void setupSimpleLighting(std::shared_ptr<engine::scene::Scene> scene)
 {
 	auto rootNode = scene->getRoot();
 
-	// Ambient light
-	auto ambientLight = std::make_shared<engine::scene::nodes::LightNode>();
-	engine::rendering::AmbientLight ambientData;
-	ambientData.color = glm::vec3(0.3f, 0.3f, 0.3f);
-	ambientData.intensity = 1.0f;
-	ambientLight->getLight().setData(ambientData);
-	rootNode->addChild(ambientLight->asNode());
+	// No ambient light: the Demo scene's single ground plane has no
+	// self-occluded geometry, so the directional + point + spot lights
+	// reach every visible surface. Removing the flat ambient lets the
+	// directional shadows + spot cone read with real falloff.
 
 	// Directional light
 	auto directionalLight = std::make_shared<engine::scene::nodes::LightNode>();
@@ -159,20 +171,20 @@ bool setupScene1(std::shared_ptr<engine::scene::Scene> scene)
 
 	// Use lazy loading constructor - models will load during scene initialization
 	auto modelNode1 = std::make_shared<engine::scene::nodes::ModelRenderNode>(
-		PathProvider::getResource("fourareen.obj")
+		PathProvider::getAssets("fourareen.obj")
 	);
 	modelNode1->getTransform().setLocalPosition(glm::vec3(0.0f, 1.0f, 0.0f));
 	scene->getRoot()->addChild(modelNode1);
 
 	auto modelNode2 = std::make_shared<engine::scene::nodes::ModelRenderNode>(
-		PathProvider::getResource("fourareen.obj")
+		PathProvider::getAssets("fourareen.obj")
 	);
 	modelNode2->getTransform().setLocalPosition(glm::vec3(0.0f, 3.0f, 0.4f));
 	scene->getRoot()->addChild(modelNode2);
 
 	// Create floor plane with custom PBR material (use immediate loading)
 	auto maybeModelPlane = resourceManager->m_modelManager->createModel(
-		PathProvider::getResource("plane.obj"),
+		PathProvider::getAssets("plane.obj"),
 		"Floor_Plane"
 	);
 	if (!maybeModelPlane.has_value())
@@ -188,10 +200,10 @@ bool setupScene1(std::shared_ptr<engine::scene::Scene> scene)
 	// Load textures for PBR material
 	auto floorPBRProperties = engine::rendering::PBRProperties();
 	auto diffuseTexture = resourceManager->m_textureManager->createTextureFromFile(
-		PathProvider::getResource("cobblestone_floor_08_diff_2k.jpg")
+		PathProvider::getAssets("cobblestone_floor_08_diff_2k.jpg")
 	);
 	auto normalTexture = resourceManager->m_textureManager->createTextureFromFile(
-		PathProvider::getResource("cobblestone_floor_08_nor_gl_2k.png")
+		PathProvider::getAssets("cobblestone_floor_08_nor_gl_2k.png")
 	);
 
 	// Create material with both diffuse and normal maps
@@ -227,67 +239,13 @@ bool setupScene2(std::shared_ptr<engine::scene::Scene> scene)
 	return true;
 }
 
-void setupImGui(std::shared_ptr<engine::ui::ImGuiManager> imguiManager, std::shared_ptr<demo::MainDemoImGuiUI> mainDemoUI, std::shared_ptr<demo::DayNightCycle> dayNightCycle)
+void setupImGui(std::shared_ptr<engine::ui::ImGuiManager> imguiManager, std::shared_ptr<demo::MainDemoImGuiUI> mainDemoUI)
 {
+	// Single entry point: MainDemoImGuiUI draws the menu bar + every panel.
+	// Performance / Pass Controls / Shadow Maps / Day-Night and the scene
+	// picker are all toggled from the menu bar now.
 	imguiManager->addFrame([mainDemoUI]()
-					   { mainDemoUI->render(sceneManager); });
-
-	imguiManager->addFrame([mainDemoUI]()
-					   { mainDemoUI->renderPerformanceWindow(); });
-
-	imguiManager->addFrame([mainDemoUI]()
-					   { mainDemoUI->renderShadowDebugWindow(); });
-
-	imguiManager->addFrame([]()
-	{
-		ImGui::Begin("Scene Controls");
-		
-		auto activeScene = sceneManager->getActiveScene();
-		if (activeScene)
-		{
-			ImGui::Text("Current Scene: %s", sceneManager->getActiveSceneName().c_str());
-			ImGui::Separator();
-		}
-		
-		if (ImGui::Button("Next Scene"))
-		{
-			auto currentName = sceneManager->getActiveSceneName();
-			if (currentName == "Demo")
-			{
-				sceneManager->loadSceneAsync("SeaKeep");
-			}
-			else
-			{
-				sceneManager->loadSceneAsync("Demo");
-			}
-		}
-		
-		ImGui::End();
-	});
-
-imguiManager->addFrame([dayNightCycle]()
-						   {
-		ImGui::Begin("Day-Night Cycle Controls");
-		
-		float hour = dayNightCycle->getHour();
-		if (ImGui::SliderFloat("Hour of Day", &hour, 0.0f, 24.0f))
-		{
-			dayNightCycle->setHour(hour);
-		}
-		
-		bool paused = dayNightCycle->isPaused();
-		if (ImGui::Checkbox("Pause Cycle", &paused))
-		{
-			dayNightCycle->setPaused(paused);
-		}
-		
-		float cycleDuration = dayNightCycle->getCycleDuration();
-		if (ImGui::SliderFloat("Cycle Duration (seconds)", &cycleDuration, 10.0f, 600.0f))
-		{
-			dayNightCycle->setCycleDuration(cycleDuration);
-		}
-		
-		ImGui::End(); });
+						   { mainDemoUI->render(sceneManager); });
 }
 
 int main(int argc, char **argv)
@@ -325,7 +283,7 @@ int main(int argc, char **argv)
 		spdlog::error("Failed to setup sea keep scene");
 		return -1;
 	}
-	
+
 	// Setup complex lighting with day-night cycle
 	std::shared_ptr<engine::scene::nodes::LightNode> ambientLight, sunLight, moonLight;
 	setupComplexLighting(seaKeepScene, ambientLight, sunLight, moonLight);
@@ -334,6 +292,9 @@ int main(int argc, char **argv)
 	auto dayNightCycle = std::make_shared<demo::DayNightCycle>(sunLight, moonLight, ambientLight);
 	dayNightCycle->setCycleDuration(120.0f);
 	dayNightCycle->setHour(12.0f);
+	// IBL follows the sun: without this the daytime-sky irradiance stays at
+	// full strength all night (bright nights, washed-out shadows).
+	dayNightCycle->addCamera(seaKeepScene->getMainCamera());
 	seaKeepScene->getRoot()->addChild(dayNightCycle);
 
 	// Setup ImGui - get orbit controller from active scene dynamically
@@ -347,14 +308,13 @@ int main(int argc, char **argv)
 		auto controllers = root->getChildrenOfType<demo::OrbitCameraController>();
 		return controllers.empty() ? nullptr : controllers[0];
 	};
-	
 
 	// Load demo scene first (async) and wait for it to complete
-	auto load = sceneManager->loadScene("Demo");
+	auto load = sceneManager->loadScene("SeaKeep");
 
-	auto mainDemoUI = std::make_shared<demo::MainDemoImGuiUI>(engine);
-	setupImGui(imguiManager, mainDemoUI, dayNightCycle);
-	
+	auto mainDemoUI = std::make_shared<demo::MainDemoImGuiUI>(engine, dayNightCycle, getOrbitController());
+	setupImGui(imguiManager, mainDemoUI);
+
 	// Run engine
 	engine.run();
 	return 0;

@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>03_glass_shader.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+</head>
+<body>
+<h1 id="tutorial-03-a-more-complex-shader-glass-with-transparency-and-shadows">Tutorial 03: A More Complex Shader - Glass with Transparency and Shadows</h1>
+<blockquote>
+<p><strong>⚠️ Build issues?</strong> See <a href="#troubleshooting">Troubleshooting</a> at the end of this tutorial for help reading build errors from the terminal.</p>
+</blockquote>
+<p>In Tutorials 01 and 02 you wrote an unlit shader and extended it with a custom bind group. Now you'll write a shader that actually interacts with the scene: a <strong>glass shader</strong> that blends with the background, catches a specular glint from the sun, brightens at its silhouette like real glass, and <strong>receives shadows</strong> from the objects around it.</p>
+<p>Along the way you'll learn how the engine decides <em>which render pass</em> draws a material - and why transparent and custom-shader materials take a different path through the frame than the opaque PBR objects.</p>
+<p><strong>What you'll learn:</strong>
+- The Scene bind group (<code>@group(1)</code>): lights, shadow maps, and how to <code>#include</code> them
+- View-vector math: fresnel-style rim lighting from the camera position
+- A Blinn-Phong specular highlight from the directional light
+- Sampling shadows with the engine's shared <code>calculate_shadow()</code> (cascades, bias, PCF)
+- Transparency: alpha output, the <code>Transparent</code> feature flag, and alpha blending
+- Why transparent and custom-shader materials render in the <strong>forward pass</strong>, sorted back-to-front</p>
+<p><strong>What's provided:</strong>
+- The complete glass shader at <code>examples/tutorial/assets/shaders/glass.wgsl</code> - unlike Tutorial 01 there is nothing to type in; this tutorial walks through the finished file section by section (the <code>// Tutorial 03 - Step N</code> markers match the steps below)
+- The C++ setup in <code>examples/tutorial/main.cpp</code> (<code>Tutorial 03 Glass Shader</code> region): shader registration, glass material, and a second boat model
+- One commented-out material assignment you'll uncomment at the end (Step 12)</p>
+<hr />
+<h2 id="step-1-introduction-two-render-paths">Step 1: Introduction - Two Render Paths</h2>
+<p>Before touching the shader, understand where it will run.</p>
+<p>The engine renders opaque geometry through a <strong>deferred</strong> pipeline: the <code>GBufferPass</code> writes surface attributes (albedo, normals, roughness...) into a set of textures, and the <code>CompositionPass</code> computes lighting once per pixel from those textures. This is fast, but it has two hard limitations:</p>
+<ol>
+<li><strong>The G-buffer stores exactly one surface per pixel.</strong> A transparent surface needs the background <em>behind</em> it to already be shaded so it can blend with it - there is no slot for "the surface and also what's behind it".</li>
+<li><strong>The G-buffer path runs one fixed shader.</strong> Your custom WGSL never executes there; the pass only knows how to write the standard attribute layout.</li>
+</ol>
+<p>So the engine routes two kinds of materials through the <strong>forward</strong> path instead (<code>ForwardTransparencyPass</code>, which runs <em>after</em> the deferred composition and the skybox, when the lit background image already exists):</p>
+<pre><code class="language-cpp">// include/engine/rendering/Material.h
+bool usesForwardShading() const
+{
+    return isTransparent() || (!m_shader.empty() &amp;&amp; m_shader != shader::defaults::PBR);
+}
+</code></pre>
+<ul>
+<li><strong>Transparent materials</strong> - blending needs the shaded background underneath.</li>
+<li><strong>Custom-shader materials</strong> (any shader that isn't the default <code>PBR_Lit_Shader</code>) - the deferred path would ignore their shader. Opaque custom materials still get depth writes and no blending, so they render correctly; they just draw in the forward pass.</li>
+</ul>
+<p>Our glass material is <strong>both</strong>: it uses a custom shader <em>and</em> it is transparent. <code>GBufferPass</code> skips it (<code>GBufferPass.cpp</code>, the <code>usesForwardShading()</code> check) and <code>ForwardTransparencyPass</code> picks it up.</p>
+<p><strong>Why back-to-front?</strong> Alpha blending is order-dependent: each blended surface mixes with whatever is already in the framebuffer. The pass sorts its draw candidates by squared distance to the camera and draws the farthest first (<code>ForwardTransparencyPass.cpp</code>, the <code>DrawCandidate</code> sort), so nearer glass composites over farther glass over the opaque background.</p>
+<h3 id="building-the-project">Building the Project</h3>
+<pre><code class="language-bash"># Windows (Dawn backend - same as the VS Code tasks)
+scripts\build-example.bat tutorial Debug DAWN
+
+# Linux
+bash scripts/build-example.sh tutorial Debug DAWN
+</code></pre>
+<p><strong>Where the build lands:</strong> the build script uses <strong>per-backend build directories</strong> on Windows. <code>DAWN</code> (vendored prebuilt, recommended) builds into <code>examples\build\tutorial\Windows\Debug-DAWN</code>, <code>WGPU</code> into <code>...\Debug-WGPU</code>, and Dawn built from source (<code>DAWN ... SOURCE</code>) into the plain <code>...\Debug</code> folder. On Linux/Mac the directory is always <code>examples/build/tutorial/&lt;Linux|Mac&gt;/Debug</code>.</p>
+<p>Build once now. Even before Step 12 the program runs: you'll see the familiar scene plus a <strong>second fourareen boat</strong> behind the first one - still rendered with its regular PBR material, because the glass material assignment is commented out.</p>
+<hr />
+<h2 id="step-2-engine-bind-groups-via-include">Step 2: Engine Bind Groups via <code>#include</code></h2>
+<p>Open <code>examples/tutorial/assets/shaders/glass.wgsl</code> and find <code>// Tutorial 03 - Step 2</code>.</p>
+<pre><code class="language-wgsl">#include &quot;engine://core/frame_uniforms.wgsl&quot;
+#include &quot;engine://core/scene_bindings.wgsl&quot;
+#include &quot;engine://core/object_uniforms.wgsl&quot;
+
+#include &quot;engine://lib/shadow.wgsl&quot;
+</code></pre>
+<p>Frame (<code>@group(0)</code>, <code>u_frame</code>) and Object (<code>@group(3)</code>, <code>u_object</code>) are the same includes you used in Tutorials 01 and 02. Two includes are new:</p>
+<p><strong><code>engine://core/scene_bindings.wgsl</code></strong> - the <strong>Scene bind group at <code>@group(1)</code></strong>, the slot the unlit shader left empty. It is auto-generated (like the Frame/Object structs) and declares, among others:</p>
+<table>
+<thead>
+<tr>
+<th>Binding</th>
+<th>Name</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td><code>u_lights</code></td>
+<td>Storage buffer with every light in the scene (<code>LightStruct</code> array + count)</td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>shadow_sampler</code></td>
+<td>A <strong>comparison sampler</strong> - the GPU compares a reference depth against the shadow map for you</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>shadow_maps_2d</code></td>
+<td>Depth texture array holding the directional/spot shadow maps (CSM cascades are slices)</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>u_shadows</code></td>
+<td>Per-shadow uniforms: light-space matrix, bias values, PCF kernel size, cascade split</td>
+</tr>
+<tr>
+<td>5-12</td>
+<td>environment, clusters, IBL</td>
+<td>Used by the PBR shader; declared but unused here</td>
+</tr>
+</tbody>
+</table>
+<p>Including it is <strong>all the wiring shadows need on the shader side</strong>. The engine builds and binds the Scene group once per frame for every forward-pass draw (<code>ForwardTransparencyPass.cpp</code> passes it to the <code>BindGroupBinder</code> alongside Object and Material) - your shader just declares that it wants it.</p>
+<p><strong><code>engine://lib/shadow.wgsl</code></strong> - a hand-written <strong>library</strong> include (note <code>lib/</code>, not <code>core/</code>): shared shadow-sampling functions, most importantly <code>calculate_shadow()</code>. This is the <em>exact same code</em> <code>PBR_Lit_Shader.wgsl</code> and the deferred composition use. Reusing it means your glass gets pixel-identical shadows to the PBR objects next to it - and when someone improves the cascade math later, glass improves with it. It pulls in <code>engine://lib/lighting.wgsl</code> itself (the include resolver deduplicates repeated includes, so shaders can include both without conflicts).</p>
+<hr />
+<h2 id="step-3-vertex-structures-passing-world-space-data">Step 3: Vertex Structures - Passing World-Space Data</h2>
+<p>Find <code>// Tutorial 03 - Step 3</code>:</p>
+<pre><code class="language-wgsl">struct VertexInput {
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) texCoord: vec2f,
+}
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) worldPosition: vec3f,
+    @location(1) worldNormal: vec3f,
+}
+</code></pre>
+<p>Tutorial 01's unlit shader only forwarded UVs. Glass needs <strong>world-space position and normal</strong> in the fragment shader, because every effect in this tutorial is world-space math:</p>
+<ul>
+<li>The <strong>view vector</strong> (fresnel) is <code>cameraWorldPosition - worldPosition</code></li>
+<li>The <strong>specular</strong> half-vector combines the view vector with the world-space light direction</li>
+<li>The <strong>shadow lookup</strong> projects the world position into the light's clip space</li>
+</ul>
+<p>The rasterizer interpolates both across each triangle, so every fragment knows where it sits in the world and which way it faces.</p>
+<hr />
+<h2 id="step-4-glass-material-uniforms-at-group2">Step 4: Glass Material Uniforms at <code>@group(2)</code></h2>
+<p>Find <code>// Tutorial 03 - Step 4</code>:</p>
+<pre><code class="language-wgsl">struct GlassMaterialUniforms {
+    // rgb = glass tint, a = base opacity when looking straight through
+    color: vec4f,
+    // x = fresnel strength, y = specular shininess (Blinn-Phong exponent),
+    // z = specular strength, w = shadow dimming (0 = shadows invisible,
+    // 1 = shadowed glass goes fully dark)
+    params: vec4f,
+}
+
+@group(2) @binding(0)
+var&lt;uniform&gt; glassMaterialUniforms: GlassMaterialUniforms;
+</code></pre>
+<p>Like the unlit material in Tutorial 01, the Material group is declared <strong>by hand</strong> - this shader has its own parameter set, not the engine's PBR material. Unlike Tutorial 01 there are no texture bindings: the glass look comes entirely from these eight floats.</p>
+<p>The C++ counterpart lives at the top of <code>main.cpp</code>:</p>
+<pre><code class="language-cpp">// Tutorial 03 - Step 4: GPU-facing properties for the glass shader.
+struct GlassProperties
+{
+    glm::vec4 color{0.55f, 0.75f, 0.9f, 0.3f};
+    glm::vec4 params{1.0f, 64.0f, 1.0f, 0.6f};
+};
+static_assert(sizeof(GlassProperties) % 16 == 0, &quot;uniform data must stay 16-byte aligned&quot;);
+</code></pre>
+<p><strong>The two must match byte for byte</strong> (32 bytes: two <code>vec4f</code>). The engine sizes the GPU buffer from the <em>shader's</em> reflected struct and uploads the <em>C++</em> struct's bytes into it (<code>WebGPUMaterial.cpp</code> writes <code>getPropertiesData()</code> / <code>getPropertiesSize()</code> into the material bind group) - a size mismatch means silently truncated or garbage parameters.</p>
+<hr />
+<h2 id="step-5-the-vertex-shader">Step 5: The Vertex Shader</h2>
+<p>Find <code>// Tutorial 03 - Step 5</code>:</p>
+<pre><code class="language-wgsl">@vertex
+fn vs_main(input: VertexInput) -&gt; VertexOutput {
+    var output: VertexOutput;
+
+    let worldPosition = u_object.modelMatrix * vec4f(input.position, 1.0);
+    output.position = u_frame.viewProjectionMatrix * worldPosition;
+    output.worldPosition = worldPosition.xyz;
+    // w = 0.0 marks a direction: directions must not receive translation.
+    output.worldNormal = normalize((u_object.normalMatrix * vec4f(input.normal, 0.0)).xyz);
+
+    return output;
+}
+</code></pre>
+<p>Same matrix pipeline as Tutorial 01, with two differences:</p>
+<ul>
+<li>We keep the intermediate <strong>world-space position</strong> instead of discarding it after projection (this time using the combined <code>viewProjectionMatrix</code> for the clip-space output).</li>
+<li>The normal is transformed by the <strong>normal matrix</strong>, not the model matrix, and with <code>w = 0.0</code>. A normal is a direction: translation must not move it, and under non-uniform scaling the model matrix would bend it away from the true surface direction - the normal matrix (inverse-transpose) corrects for that.</li>
+</ul>
+<hr />
+<h2 id="step-6-fresnel-style-rim-view-vector-math">Step 6: Fresnel-Style Rim - View-Vector Math</h2>
+<p>Find <code>// Tutorial 03 - Step 6</code> in the fragment shader:</p>
+<pre><code class="language-wgsl">    let normal = normalize(input.worldNormal);
+
+    let viewDirection = normalize(u_frame.cameraWorldPosition - input.worldPosition);
+    let facingAmount = max(dot(normal, viewDirection), 0.0);
+    let fresnel = glassMaterialUniforms.params.x * pow(1.0 - facingAmount, 5.0);
+</code></pre>
+<p>First: <strong>re-normalize the normal</strong>. Interpolating unit vectors across a triangle produces vectors slightly shorter than 1, which would subtly darken every dot product.</p>
+<p>The <strong>view vector</strong> points from the surface toward the camera - this is why <code>u_frame.cameraWorldPosition</code> exists in the Frame uniforms. The dot product with the normal measures how directly the surface faces you:</p>
+<ul>
+<li><code>dot ≈ 1</code> - you look straight through the glass: it transmits, rim ≈ 0</li>
+<li><code>dot ≈ 0</code> - the surface curves away at the silhouette: it reflects, rim ≈ max</li>
+</ul>
+<p>That behavior - reflectance rising steeply at grazing angles - is the <strong>Fresnel effect</strong>, and it's the single strongest visual cue that a material is glass. <code>pow(1 - dot, 5.0)</code> is <strong>Schlick's approximation</strong> of the physical curve; it is the same fifth-power term the engine's PBR pipeline uses inside <code>fresnel_schlick()</code> (<code>resources/shaders/lib/lighting.wgsl</code>), just simplified to a scalar with <code>F0 = 0</code>.</p>
+<hr />
+<h2 id="step-7-finding-the-sun-a-specular-highlight">Step 7: Finding the Sun - A Specular Highlight</h2>
+<p>Find <code>// Tutorial 03 - Step 7</code>:</p>
+<pre><code class="language-wgsl">    var lightDirection = vec3f(0.0, 1.0, 0.0);
+    var lightRadiance = vec3f(0.0);
+    var shadowVisibility = 1.0;
+    for (var i = 0u; i &lt; u_lights.count; i = i + 1u) {
+        if (i &gt;= arrayLength(&amp;u_lights.lights)) {
+            break;
+        }
+        let light = u_lights.lights[i];
+        if (light.light_type != 1u) {
+            continue;
+        }
+
+        lightDirection = get_direction_from_transform(light.transform);
+        lightRadiance = light.color * light.intensity;
+
+        shadowVisibility = calculate_shadow(input.worldPosition, normal, light);
+        break;
+    }
+</code></pre>
+<p><code>u_lights</code> (from the Scene include) holds <strong>every</strong> light. The PBR shader accumulates all of them through a clustered lookup; glass deliberately keeps it simple and scans for the <strong>first directional light</strong> (<code>light_type == 1</code>, matching <code>engine::rendering::LightType</code>) - the sun is what produces the readable glint and the shadow. The <code>arrayLength</code> guard exists because <code>lights</code> is a runtime-sized array: a count that outran the buffer must never read out of bounds.</p>
+<p><code>get_direction_from_transform()</code> (from <code>lib/lighting.wgsl</code>) extracts the light's forward axis from its transform and returns the vector <strong>toward</strong> the light - the sign convention all engine lighting helpers share.</p>
+<p>The highlight itself (right below the loop):</p>
+<pre><code class="language-wgsl">    let halfVector = normalize(viewDirection + lightDirection);
+    let specular = pow(max(dot(normal, halfVector), 0.0), glassMaterialUniforms.params.y)
+        * glassMaterialUniforms.params.z
+        * shadowVisibility;
+</code></pre>
+<p>This is <strong>Blinn-Phong</strong>: the half vector sits halfway between the view and light directions, and the more the normal aligns with it, the closer the surface is to mirror-reflecting the light into your eye. The exponent (<code>params.y</code>, 64 by default) controls tightness - higher means a smaller, sharper glint. It's cheaper and easier to reason about than the PBR GGX lobe, which makes it the classic teaching model. Multiplying by <code>shadowVisibility</code> kills the glint in shadow: a specular highlight is a direct reflection of the light source, and a shadowed point has no line of sight to it.</p>
+<hr />
+<h2 id="step-8-received-shadows-what-calculate_shadow-does">Step 8: Received Shadows - What <code>calculate_shadow()</code> Does</h2>
+<p>The single call in Step 7's loop is the whole shadow integration:</p>
+<pre><code class="language-wgsl">        shadowVisibility = calculate_shadow(input.worldPosition, normal, light);
+</code></pre>
+<p>It returns <code>1.0</code> for fully lit, <code>0.0</code> for fully occluded, and fractional values at PCF-softened edges. You get the engine's full shadow feature set for free, because <code>lib/shadow.wgsl</code> is the same code the PBR shader runs. What happens inside (worth reading at <code>resources/shaders/lib/shadow.wgsl</code>):</p>
+<ol>
+<li><strong>Cascade selection</strong> - directional lights use cascaded shadow maps (CSM): several shadow maps at increasing distances. <code>select_cascade()</code> compares the fragment's view-space depth against each cascade's split distance and picks the matching slice of <code>shadow_maps_2d</code>.</li>
+<li><strong>Light-space projection</strong> - the world position is multiplied by the cascade's <code>viewProj</code> matrix (from <code>u_shadows</code>), giving the fragment's position <em>as the light sees it</em>: XY become shadow-map UVs, Z the depth to compare.</li>
+<li><strong>Bias</strong> - a small depth offset prevents <em>shadow acne</em> (a surface shadowing itself through depth quantization). The bias is <strong>slope-scaled</strong>: surfaces at grazing angles to the light (low <code>dot(normal, lightDirection)</code>) get more bias, which is why <code>calculate_shadow</code> takes the normal.</li>
+<li><strong>PCF filtering</strong> - instead of one binary lit/shadowed test, a small kernel of neighboring texels is sampled through the <strong>comparison sampler</strong> (<code>textureSampleCompareLevel</code> - the hardware performs <code>depth &lt; storedDepth</code> per sample) and averaged. That average is what makes shadow edges soft instead of aliased staircases.</li>
+</ol>
+<p><strong>A limitation to know about:</strong> the glass <em>receives</em> correct shadows, but it also still <em>casts</em> a fully opaque one. The shadow pass renders casters into a depth-only map - depth has no concept of alpha, so from the sun's perspective the glass boat is as solid as any other mesh. Handling translucent casters (colored/partial shadows) requires additional machinery that is out of scope here.</p>
+<hr />
+<h2 id="step-9-composing-transparency">Step 9: Composing Transparency</h2>
+<p>Find <code>// Tutorial 03 - Step 9</code>:</p>
+<pre><code class="language-wgsl">    let litFactor = mix(1.0 - glassMaterialUniforms.params.w, 1.0, shadowVisibility);
+    let bodyColor = glassMaterialUniforms.color.rgb * litFactor;
+    let rimColor = vec3f(1.0) * fresnel * litFactor;
+    let specularColor = lightRadiance * specular;
+
+    let alpha = clamp(glassMaterialUniforms.color.a + fresnel + specular, 0.0, 1.0);
+
+    return vec4f(bodyColor + rimColor + specularColor, alpha);
+</code></pre>
+<p>Three decisions worth understanding:</p>
+<p><strong>Shadow dimming instead of blackout.</strong> Glass in shadow still transmits the background - it shouldn't turn into a black cutout. So the shadow scales the glass's <em>own</em> contribution (tint + rim) down to <code>1 - shadowDimming</code> (default 0.6 → 40% brightness) instead of multiplying everything toward zero. The background showing through is untouched; it was already shaded, shadows included, by the deferred passes.</p>
+<p><strong>Alpha rises at the rim and under the highlight.</strong> The alpha you return feeds the blend equation <code>result = shaderColor × alpha + background × (1 − alpha)</code>. Physically, glass at grazing angles reflects more and transmits less - so the fresnel term raises opacity toward the silhouette. The specular term is added too so the glint doesn't get washed out by the blend. (The PBR shader solves this exactly with a fresnel-corrected effective alpha - see the derivation comment at the end of <code>PBR_Lit_Shader.wgsl</code>; ours is the simplified version of the same idea.)</p>
+<p><strong>Where does the blending come from?</strong> Not from the shader - WGSL cannot express blend state. It comes from the pipeline, which brings us to the C++ side.</p>
+<hr />
+<h2 id="step-10-register-the-glass-shader">Step 10: Register the Glass Shader</h2>
+<p>Open <code>examples/tutorial/main.cpp</code> and find <code>// Tutorial 03 - Step 10</code> (already in place):</p>
+<pre><code class="language-cpp">engine::rendering::webgpu::ShaderDescriptor glassShader;
+glassShader.name         = &quot;glass&quot;;
+glassShader.type         = engine::rendering::ShaderType::Custom;
+glassShader.path         = PathProvider::getShaders(&quot;glass.wgsl&quot;);
+glassShader.vertexLayout = engine::rendering::VertexLayout::PositionNormalUV;
+shaderRegistry.registerShader(shaderFactory.buildFromDescriptor(glassShader));
+</code></pre>
+<p>Compare this to Tutorial 01's unlit descriptor: this one is even smaller - <strong>no <code>groups</code> metadata at all</strong>. Reflection recovers everything:</p>
+<ul>
+<li>Frame (<code>@group(0)</code>), Scene (<code>@group(1)</code>) and Object (<code>@group(3)</code>) come from the engine <code>#include</code>s and fall back to their canonical engine roles automatically</li>
+<li>The Material group (<code>@group(2)</code>) is a single uniform buffer with no texture slots, so there are no texture-slot bindings to describe (the unlit shader needed metadata only to map its texture binding to the DIFFUSE slot)</li>
+</ul>
+<p>When you run, the log confirms it: <code>WebGPUShaderFactory: built 'glass' from descriptor with 4 bind groups</code>.</p>
+<hr />
+<h2 id="step-11-create-the-material-and-set-the-transparent-flag">Step 11: Create the Material and Set the Transparent Flag</h2>
+<p>Find <code>// Tutorial 03 - Step 11</code>:</p>
+<pre><code class="language-cpp">auto glassProperties = GlassProperties{};
+auto maybeGlassMaterial = resourceManager-&gt;m_materialManager-&gt;createMaterial(
+    &quot;Glass_Material&quot;,
+    glassProperties,
+    &quot;glass&quot;,
+    {} // no textures - the look comes entirely from the uniform parameters
+);
+...
+auto glassMaterial = maybeGlassMaterial.value();
+glassMaterial-&gt;setFeatureMask(glassMaterial-&gt;getFeatureMask() | engine::rendering::MaterialFeature::Flag::Transparent);
+</code></pre>
+<p><code>createMaterial()</code> is the same call Tutorial 01 used - the properties struct is your own <code>GlassProperties</code>, the shader name is <code>"glass"</code>, and the texture map is empty.</p>
+<p>The new part is the <strong>feature mask</strong>. <code>MaterialFeature::Flag</code> (see <code>include/engine/rendering/MaterialFeatureMask.h</code>) is a bitmask describing material traits; <code>createMaterial</code> derives texture-related flags automatically, but <em>transparency is a deliberate choice you make</em>, so you set it yourself - OR-ing it into the existing mask rather than overwriting.</p>
+<p><strong>What the flag actually does</strong> - follow it through the engine:</p>
+<ol>
+<li><code>Material::isTransparent()</code> checks the flag, so <code>usesForwardShading()</code> returns true → <code>GBufferPass</code> skips the material, <code>ForwardTransparencyPass</code> draws it (Step 1).</li>
+<li>When the forward pass asks the pipeline manager for a pipeline (<code>WebGPUPipelineManager::getOrCreatePipeline(mesh, material, passContext)</code>), it translates the flag into <code>blendEnabled = true</code> for the pipeline key.</li>
+<li>The pipeline factory (<code>WebGPUPipelineFactory::createRenderPipeline</code>) then builds the pipeline with <strong><code>SrcAlpha / OneMinusSrcAlpha</code> color blending</strong> and - critically - <strong>depth writes off</strong>. Depth <em>testing</em> stays on (glass hidden behind an opaque wall is still culled), but a translucent surface must not write depth: it would occlude other translucent surfaces drawn after it, breaking the back-to-front alpha math.</li>
+</ol>
+<p>One pipeline per (shader, mesh topology, cull mode, blend, formats) combination is created once and cached - subsequent frames reuse it.</p>
+<hr />
+<h2 id="step-12-the-glass-boat-assign-and-run">Step 12: The Glass Boat - Assign and Run</h2>
+<p>Find <code>// Tutorial 03 - Step 12</code>:</p>
+<pre><code class="language-cpp">auto maybeGlassModel = resourceManager-&gt;m_modelManager-&gt;createModel(
+    PathProvider::getAssets(&quot;fourareen.obj&quot;),
+    &quot;fourareen_glass&quot;
+);
+</code></pre>
+<p><strong>Why the explicit name?</strong> <code>ModelManager::createModel</code> dedups by name, and the name defaults to the file path - without <code>"fourareen_glass"</code> you'd get the <em>same</em> model instance the PBR boat uses, and assigning the glass material would repaint both boats.</p>
+<p>Now uncomment the material assignment:</p>
+<pre><code class="language-cpp">// Uncomment this line:
+glassModel-&gt;getSubmeshes()[0].material = glassMaterial-&gt;getHandle();
+</code></pre>
+<p>(<code>[0]</code> because fourareen has a single submesh, same as Tutorial 01's plane.)</p>
+<p>The node below places the glass boat at <code>(1.2, 1.0, -2.0)</code> - behind the PBR boat relative to the sun, so the opaque boat's shadow falls <strong>across the glass</strong>, which is exactly where you can watch the received shadow dim it.</p>
+<h2 id="rebuild-and-run">Rebuild and Run</h2>
+<pre><code class="language-bash">scripts\build-example.bat tutorial Debug DAWN
+examples\build\tutorial\Windows\Debug-DAWN\Tutorial.exe
+</code></pre>
+<p>(If you built with the <code>WGPU</code> backend instead, the executable is in <code>examples\build\tutorial\Windows\Debug-WGPU\</code>.)</p>
+<p><strong>VS Code shortcuts:</strong>
+- Press <code>F5</code> to build and run with debugger
+- Or open <strong>Run and Debug</strong> panel (<code>Ctrl+Shift+D</code>) → select <strong>"Tutorial (Debug) - Windows"</strong> (or your platform)</p>
+<h2 id="expected-result">Expected Result</h2>
+<ul>
+<li>✅ <strong>A translucent blue-tinted boat</strong> behind the PBR boat - the floor and background show through it</li>
+<li>✅ <strong>Bright silhouette edges</strong> where the hull curves away from the camera (fresnel rim); fly the camera around it (WASD + mouse) and watch the rim follow the silhouette</li>
+<li>✅ <strong>A specular glint</strong> from the sun on surfaces angled between camera and light</li>
+<li>✅ <strong>Dimmed glass where the opaque boat's shadow crosses it</strong> - the tint and rim darken while the background keeps showing through</li>
+<li>✅ The glass boat still <strong>casts</strong> a regular opaque shadow on the floor (see the limitation note in Step 8)</li>
+</ul>
+<p>In the log you should find:</p>
+<pre><code>WebGPUShaderFactory: built 'glass' from descriptor with 4 bind groups
+Registered shader 'glass'
+</code></pre>
+<p>and with debug logging (<code>spdlog::set_level(spdlog::level::debug)</code>), each frame reports:</p>
+<pre><code>ForwardTransparencyPass: drew 2 transparent items (0 skipped)
+</code></pre>
+<p>(2, not 1: your Tutorial 02 floor uses the custom <code>unlit</code> shader, so <code>usesForwardShading()</code> routes it through the forward pass too - the glass boat is the second item.)</p>
+<hr />
+<h2 id="understanding-what-we-built">Understanding What We Built</h2>
+<p><strong>The material decides the render path.</strong> No pass list to edit, no flags on the node - the routing is a pure function of the material: <code>usesForwardShading()</code> = transparent OR custom shader. The same predicate excludes the item from the G-buffer and includes it in the forward pass, so an object can never be drawn twice or not at all.</p>
+<p><strong>The frame, from the glass boat's perspective:</strong></p>
+<pre><code>1. ShadowPass        - renders casters (including the glass boat - depth only)
+                       into the shadow map slices
+2. GBufferPass       - skips the glass (usesForwardShading), draws everything
+                       opaque into the G-buffer
+3. CompositionPass   - shades the opaque scene, shadows included -&gt; lit HDR image
+4. SkyboxPass        - fills the background
+5. ForwardTransparencyPass
+   ├─ collects items whose material usesForwardShading()
+   ├─ sorts them back-to-front by camera distance
+   ├─ gets/creates a pipeline per material (blend + no depth-write from
+   │  the Transparent flag)
+   ├─ binds Frame, Scene (lights + shadow maps), Material, Object
+   └─ draws - your glass.wgsl runs here, over the finished background
+</code></pre>
+<p><strong>One shadow implementation, everywhere.</strong> The Scene bind group and <code>lib/shadow.wgsl</code> mean a custom shader opts into engine shadows with one include and one function call - and stays correct when the engine's shadow internals change.</p>
+<hr />
+<h2 id="experiments-to-try">Experiments to Try</h2>
+<p><strong>1. Tint and opacity</strong> - in <code>main.cpp</code>:</p>
+<pre><code class="language-cpp">glm::vec4 color{0.9f, 0.3f, 0.3f, 0.15f};  // barely-there red glass
+</code></pre>
+<p><strong>2. Frosted vs polished</strong> - lower the shininess for a broad soft sheen, raise it for a hard glint:</p>
+<pre><code class="language-cpp">glm::vec4 params{1.0f, 8.0f, 0.5f, 0.6f};   // frosted
+glm::vec4 params{1.0f, 256.0f, 2.0f, 0.6f}; // polished
+</code></pre>
+<p><strong>3. Exaggerate the shadow</strong> - set shadow dimming (<code>params.w</code>) to <code>1.0</code> and the shadowed glass goes fully dark; set it to <code>0.0</code> and shadows stop affecting the glass entirely - toggle between them to convince yourself the shadow sampling works.</p>
+<p><strong>4. Visualize the fresnel term</strong> - temporarily return it as a color to see the rim mask in isolation:</p>
+<pre><code class="language-wgsl">return vec4f(vec3f(fresnel), 1.0);
+</code></pre>
+<p><strong>5. Animate the tint</strong> - <code>u_frame.time</code> is right there:</p>
+<pre><code class="language-wgsl">let pulse = 0.5 + 0.5 * sin(u_frame.time);
+let bodyColor = glassMaterialUniforms.color.rgb * litFactor * pulse;
+</code></pre>
+<hr />
+<h2 id="key-takeaways">Key Takeaways</h2>
+<ul>
+<li>✅ <strong>Scene bind group</strong> - <code>#include "engine://core/scene_bindings.wgsl"</code> brings lights + shadow maps into any shader at <code>@group(1)</code></li>
+<li>✅ <strong>Shared shadow code</strong> - <code>calculate_shadow()</code> from <code>engine://lib/shadow.wgsl</code> = the PBR shader's cascades, bias, and PCF for free</li>
+<li>✅ <strong>View-vector math</strong> - fresnel rim from <code>cameraWorldPosition</code>, Blinn-Phong glint from the half vector</li>
+<li>✅ <strong>Transparent flag</strong> - one material bit → alpha blending + depth-write-off in the pipeline</li>
+<li>✅ <strong>Forward routing</strong> - transparent and custom-shader materials draw in <code>ForwardTransparencyPass</code>, back-to-front, over the finished deferred image</li>
+<li>✅ <strong>Struct contract</strong> - the C++ properties struct and the WGSL material struct must match byte for byte</li>
+</ul>
+<hr />
+<h2 id="whats-next">What's Next?</h2>
+<p>In <strong>Tutorial 04</strong>, you'll move from writing shaders to writing a <strong>render pass</strong>: implementing a post-processing vignette effect, recording its commands, and integrating it into the renderer's frame graph.</p>
+<p><strong>Next Tutorial:</strong> <a href="04_postprocessing.md">04_postprocessing.md</a></p>
+<p><strong>Previous Tutorial:</strong> <a href="02_custom_bindgroup.md">02_custom_bindgroup.md</a></p>
+<hr />
+<h2 id="further-reading">Further Reading</h2>
+<ul>
+<li><a href="https://www.w3.org/TR/WGSL/">WebGPU WGSL Specification</a></li>
+<li><a href="../BindGroupSystem.md">Engine Bind Group System</a></li>
+<li>Engine shadow library: <code>resources/shaders/lib/shadow.wgsl</code></li>
+<li>Forward pass source: <code>src/engine/rendering/ForwardTransparencyPass.cpp</code></li>
+<li><a href="https://eliemichel.github.io/LearnWebGPU/">LearnWebGPU Tutorial</a></li>
+</ul>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="build-failures-reading-terminal-output">Build Failures - Reading Terminal Output</h3>
+<p><strong>⚠️ Important:</strong> When using <code>scripts\build-example.bat</code> (directly or via the VS Code task), the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
+<p><strong>What to look for in terminal:</strong>
+1. Scroll to the <strong>very end</strong> of the terminal output
+2. Look for <code>[SUCCESS] Example 'tutorial' built successfully!</code> - if this appears, build succeeded
+3. If you see <code>[ERROR] Build failed.</code> - the build failed regardless of task status</p>
+<p><strong>Common build issues:</strong>
+- <strong>CMake cache</strong> - Delete the example's build folder (<code>examples\build\tutorial</code>) then rebuild clean
+- <strong>C++ errors around the feature mask</strong> - the OR must combine two <code>MaterialFeature::Flag</code> values; make sure you kept <code>glassMaterial-&gt;getFeatureMask() | ...</code> rather than assigning the flag alone</p>
+<h3 id="shader-issues">Shader Issues</h3>
+<p>Shader errors surface at <strong>runtime</strong>, not compile time - the shader is loaded, include-expanded, validated and reflected when the program starts. Check the console / <code>run_out.log</code>; in Debug builds the validator fails fast with the offending line and column.</p>
+<p><strong>"could not read shader 'glass'"</strong>
+- The path must be <code>PathProvider::getShaders("glass.wgsl")</code> and the file must be in <code>examples/tutorial/assets/shaders/</code> - the build copies the assets folder next to the executable</p>
+<p><strong>Redeclaration errors mentioning <code>LightStruct</code>, <code>FrameUniforms</code>, or shadow functions</strong>
+- Don't hand-write structs the includes already provide, and don't paste code from <code>lib/shadow.wgsl</code> into your shader - include it</p>
+<p><strong>Glass renders but is fully opaque</strong>
+- The <code>Transparent</code> feature flag wasn't set: without it the pipeline builds with blending off. Verify the <code>setFeatureMask</code> line runs <em>after</em> <code>createMaterial</code> (which overwrites the mask with texture-derived flags)</p>
+<p><strong>Glass is invisible</strong>
+- Alpha may be composing to ~0: check <code>color.a</code> isn't 0 with <code>fresnelStrength</code> also 0
+- Verify the material assignment (Step 12) is uncommented and the model was created with the distinct <code>"fourareen_glass"</code> name</p>
+<p><strong>Both boats turned to glass</strong>
+- The second <code>createModel</code> call is missing its explicit name, so it returned the cached first model - see Step 12</p>
+<p><strong>No shadow visible on the glass</strong>
+- The glass boat must sit in another object's shadow; move it (or the sun) so the opaque boat's shadow crosses it
+- Set <code>params.w</code> (shadow dimming) closer to <code>1.0</code> to make the effect unmistakable</p>
+<p><strong>Wrong or garbage parameter values in the shader</strong>
+- <code>GlassProperties</code> (C++) and <code>GlassMaterialUniforms</code> (WGSL) sizes diverged - both must be exactly two vec4 (32 bytes)</p>
+<h3 id="debug-strategy">Debug Strategy</h3>
+<p><strong>If errors are unclear:</strong>
+1. Run the tutorial - include expansion, reflection, validation and pipeline creation all happen at load time and log with line/column
+2. Add <code>spdlog::set_level(spdlog::level::debug);</code> after <code>engine.initialize(options);</code> to see per-frame pass output like <code>ForwardTransparencyPass: drew 2 transparent items (0 skipped)</code>
+3. Put a breakpoint in <code>ForwardTransparencyPass::render()</code> (<code>src/engine/rendering/ForwardTransparencyPass.cpp</code>) and inspect the draw candidates - if the glass item never appears, the material flag or shader name is wrong; if it's skipped, pipeline creation failed (see the log)</p>
+</body>
+</html>

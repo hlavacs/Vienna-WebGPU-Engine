@@ -5,8 +5,11 @@
 #include <vector>
 #include <webgpu/webgpu.hpp>
 
+#include <spdlog/spdlog.h>
+
 #include "engine/rendering/Vertex.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUShaderFactory.h"
 
 #ifdef None
 #undef None
@@ -25,8 +28,14 @@ WebGPUPipelineFactory::WebGPUPipelineFactory(WebGPUContext &context) :
 	m_defaultBlendState = wgpu::BlendState{};
 	m_defaultBlendState.alpha = wgpu::BlendComponent{};
 	m_defaultBlendState.color = wgpu::BlendComponent{};
-	m_defaultBlendState.alpha.srcFactor = wgpu::BlendFactor::One;
-	m_defaultBlendState.alpha.dstFactor = wgpu::BlendFactor::Zero;
+	// Preserve the destination's alpha instead of overwriting it with the
+	// source's. Transparent forward draws land on the lit HDR target whose
+	// alpha is 1 (opaque coverage); writing the material's blend alpha into
+	// it (One/Zero) punched per-pixel holes that the alpha-blended composite
+	// blit then mixed with the swapchain clear color, visibly darkening every
+	// transparent surface at present time (and in editor viewport textures).
+	m_defaultBlendState.alpha.srcFactor = wgpu::BlendFactor::Zero;
+	m_defaultBlendState.alpha.dstFactor = wgpu::BlendFactor::One;
 	m_defaultBlendState.alpha.operation = wgpu::BlendOperation::Add;
 	m_defaultBlendState.color.srcFactor = wgpu::BlendFactor::SrcAlpha;
 	m_defaultBlendState.color.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
@@ -61,12 +70,33 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	std::vector<wgpu::VertexAttribute> vertexAttributes;
 	auto vertexBufferLayout = createVertexLayoutFromEnum(vertexLayout, vertexAttributes);
 
-	// Fragment state
+	// Fragment state.
+	//
+	// Two sources of truth for color attachment formats:
+	//   1. shaderInfo->getColorTargetFormats() - from ShaderDescriptor::colorTargetFormats
+	//      for shaders that write to multiple targets or need a fixed format
+	//      (e.g. G-buffer geometry). Wins when non-empty.
+	//   2. colorFormat parameter - the single-target fallback used by every
+	//      plain forward / post-process pipeline.
 	wgpu::ColorTargetState colorTarget{};
 	wgpu::FragmentState fragmentState{};
+	std::vector<wgpu::ColorTargetState> multiTargets;
 	if (hasFragment)
 	{
-		if (hasColor)
+		const auto &declaredFormats = shaderInfo->getColorTargetFormats();
+		if (!declaredFormats.empty())
+		{
+			multiTargets.resize(declaredFormats.size());
+			for (size_t i = 0; i < declaredFormats.size(); ++i)
+			{
+				multiTargets[i].format = declaredFormats[i];
+				multiTargets[i].blend = blendEnabled ? &m_defaultBlendState : nullptr;
+				multiTargets[i].writeMask = wgpu::ColorWriteMask::All;
+			}
+			fragmentState.targets = multiTargets.data();
+			fragmentState.targetCount = static_cast<uint32_t>(multiTargets.size());
+		}
+		else if (hasColor)
 		{
 			colorTarget.format = colorFormat;
 			colorTarget.blend = blendEnabled ? &m_defaultBlendState : nullptr;
@@ -75,15 +105,16 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 			fragmentState.targetCount = 1;
 		}
 		fragmentState.module = shaderInfo->getModule();
-		fragmentState.entryPoint = shaderInfo->getFragmentEntryPoint().c_str();
+		fragmentState.entryPoint = wgpu::StringView(shaderInfo->getFragmentEntryPoint().c_str());
 	}
 
 	// Pipeline descriptor
 	wgpu::RenderPipelineDescriptor desc{};
+	desc.label = wgpu::StringView(shaderInfo->getName().c_str());
 
 	// Vertex stage
 	desc.vertex.module = shaderInfo->getModule();
-	desc.vertex.entryPoint = shaderInfo->getVertexEntryPoint().c_str();
+	desc.vertex.entryPoint = wgpu::StringView(shaderInfo->getVertexEntryPoint().c_str());
 	if (vertexLayout != engine::rendering::VertexLayout::None)
 	{
 		desc.vertex.bufferCount = 1;
@@ -107,19 +138,28 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 	if (hasFragment)
 		desc.fragment = &fragmentState;
 
-	// Depth-stencil (optional)
+	// Depth-stencil (optional). depthCompare / depthWriteEnabled come from the
+	// shader info so passes that need LessEqual + read-only depth (skybox after
+	// the geometry pass is the canonical example) can opt in without touching
+	// the factory's signature. Additionally: any pipeline with alpha blending
+	// enabled must NOT write depth - otherwise translucent surfaces occlude
+	// other translucent surfaces drawn later and the alpha math breaks.
 	wgpu::DepthStencilState depthStencil{};
 	if (hasDepth)
 	{
 		depthStencil.format = depthFormat;
-		depthStencil.depthWriteEnabled = true;
-		depthStencil.depthCompare = wgpu::CompareFunction::Less;
+		depthStencil.depthWriteEnabled = (blendEnabled ? false : shaderInfo->isDepthWriteEnabled())
+			? WGPUOptionalBool_True : WGPUOptionalBool_False;
+		depthStencil.depthCompare = shaderInfo->getDepthCompare();
 		depthStencil.stencilFront = {wgpu::CompareFunction::Always, wgpu::StencilOperation::Keep, wgpu::StencilOperation::Keep, wgpu::StencilOperation::Keep};
 		depthStencil.stencilBack = depthStencil.stencilFront;
 		desc.depthStencil = &depthStencil;
 	}
 
-	// Bind group layouts
+	// Bind group layouts. Slots between the highest declared group and a custom
+	// @group(20)+ are filled with a shared empty layout — wgpu requires a real
+	// (non-null) BindGroupLayout at every index up to the highest one the shader
+	// uses, even if the shader doesn't sample that slot.
 	auto layouts = shaderInfo->getBindGroupLayoutVector();
 	std::vector<wgpu::BindGroupLayout> layoutArray;
 	layoutArray.reserve(layouts.size());
@@ -128,7 +168,7 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createRenderPipeline(
 		if (layoutInfo)
 			layoutArray.push_back(layoutInfo->getLayout());
 		else
-			layoutArray.push_back(nullptr); // Preserve index for unused bind groups
+			layoutArray.push_back(getOrCreateEmptyBindGroupLayout());
 	}
 
 	wgpu::PipelineLayout layout = createPipelineLayout(layoutArray.data(), static_cast<uint32_t>(layoutArray.size()));
@@ -165,6 +205,59 @@ wgpu::PipelineLayout WebGPUPipelineFactory::createPipelineLayout(const wgpu::Bin
 	return m_context.getDevice().createPipelineLayout(layoutDesc);
 }
 
+wgpu::ComputePipeline WebGPUPipelineFactory::createComputePipeline(
+	wgpu::PipelineLayout layout,
+	wgpu::ShaderModule module,
+	const char *entryPoint,
+	const char *label
+)
+{
+	wgpu::ComputePipelineDescriptor desc{};
+	desc.label                 = wgpu::StringView(label ? label : "");
+	desc.layout                = layout;
+	desc.compute.module        = module;
+	desc.compute.entryPoint    = wgpu::StringView(entryPoint ? entryPoint : "");
+	desc.compute.constantCount = 0;
+	desc.compute.constants     = nullptr;
+	return m_context.getDevice().createComputePipeline(desc);
+}
+
+wgpu::RenderPipeline WebGPUPipelineFactory::createRenderPipeline(const wgpu::RenderPipelineDescriptor &desc)
+{
+	return m_context.getDevice().createRenderPipeline(desc);
+}
+
+wgpu::BindGroupLayout WebGPUPipelineFactory::getOrCreateEmptyBindGroupLayout()
+{
+	// Single device-wide empty layout reused as a placeholder for every
+	// unused bind-group slot in every pipeline. wgpu refuses null entries in
+	// the pipeline layout array, so a shader that skips an engine slot still
+	// needs a real BindGroupLayout there. Sharing one instance
+	// keeps the GPU memory footprint at one descriptor.
+	if (!m_emptyBindGroupLayout)
+	{
+		wgpu::BindGroupLayoutDescriptor desc{};
+		desc.entryCount = 0;
+		desc.entries    = nullptr;
+		m_emptyBindGroupLayout = m_context.getDevice().createBindGroupLayout(desc);
+	}
+	return m_emptyBindGroupLayout;
+}
+
+wgpu::BindGroup WebGPUPipelineFactory::getOrCreateEmptyBindGroup()
+{
+	if (!m_emptyBindGroup)
+	{
+		auto layout = getOrCreateEmptyBindGroupLayout();
+		wgpu::BindGroupDescriptor desc{};
+		desc.layout     = layout;
+		desc.entryCount = 0;
+		desc.entries    = nullptr;
+		m_emptyBindGroup = m_context.getDevice().createBindGroup(desc);
+	}
+	return m_emptyBindGroup;
+}
+
 wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engine::rendering::VertexLayout layout, std::vector<wgpu::VertexAttribute> &attributes) const
 {
 	// Handle None layout (procedural vertex generation)
@@ -178,52 +271,42 @@ wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engin
 		return emptyLayout;
 	}
 
+	// Attribute offsets must match the *packed* layout produced by
+	// Vertex::repackVertices() - not offsetof() into the (padded) C++ struct.
+	// repackVertices writes attributes back-to-back in this fixed order:
+	//   Position -> Normal -> UV -> Tangent -> Color
+	// We mirror that order here and accumulate the offset as we go.
 	engine::rendering::VertexAttribute attribs = engine::rendering::Vertex::requiredAttributes(layout);
-	size_t arrayStride = 0;
+	const size_t arrayStride = engine::rendering::Vertex::getStride(layout);
+
+	size_t cursor = 0;
+	auto pushAttr = [&](wgpu::VertexFormat fmt, size_t fieldBytes)
+	{
+		wgpu::VertexAttribute a{};
+		a.format = fmt;
+		a.offset = cursor;
+		attributes.push_back(a);
+		cursor += fieldBytes;
+	};
+
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Position))
-	{
-		wgpu::VertexAttribute positionAttr{};
-		positionAttr.format = wgpu::VertexFormat::Float32x3;
-		positionAttr.offset = offsetof(engine::rendering::Vertex, position);
-		attributes.push_back(positionAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::position);
-	}
+		pushAttr(wgpu::VertexFormat::Float32x3, sizeof(engine::rendering::Vertex::position));
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Normal))
-	{
-		wgpu::VertexAttribute normalAttr{};
-		normalAttr.format = wgpu::VertexFormat::Float32x3;
-		normalAttr.offset = offsetof(engine::rendering::Vertex, normal);
-		attributes.push_back(normalAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::normal);
-	}
-	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Color))
-	{
-		wgpu::VertexAttribute colorAttr{};
-		colorAttr.format = wgpu::VertexFormat::Float32x4;
-		colorAttr.offset = offsetof(engine::rendering::Vertex, color);
-		attributes.push_back(colorAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::color);
-	}
+		pushAttr(wgpu::VertexFormat::Float32x3, sizeof(engine::rendering::Vertex::normal));
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::UV))
-	{
-		wgpu::VertexAttribute uvAttr{};
-		uvAttr.format = wgpu::VertexFormat::Float32x2;
-		uvAttr.offset = offsetof(engine::rendering::Vertex, uv);
-		attributes.push_back(uvAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::uv);
-	}
+		pushAttr(wgpu::VertexFormat::Float32x2, sizeof(engine::rendering::Vertex::uv));
 	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Tangent))
-	{
-		wgpu::VertexAttribute tangentAttr{};
-		tangentAttr.format = wgpu::VertexFormat::Float32x3;
-		tangentAttr.offset = offsetof(engine::rendering::Vertex, tangent);
-		attributes.push_back(tangentAttr);
-		arrayStride += sizeof(engine::rendering::Vertex::tangent);
-	}
+		pushAttr(wgpu::VertexFormat::Float32x4, sizeof(engine::rendering::Vertex::tangent));
+	if (engine::rendering::Vertex::has(attribs, engine::rendering::VertexAttribute::Color))
+		pushAttr(wgpu::VertexFormat::Float32x3, sizeof(engine::rendering::Vertex::color));
+
+	// Sanity: the accumulated offsets must add up to the same stride that
+	// repackVertices/getStride agreed on, otherwise the GPU would read past
+	// the end of each vertex.
+	assert(cursor == arrayStride && "Packed vertex offsets disagree with Vertex::getStride()");
+
 	for (auto i = 0; i < attributes.size(); ++i)
-	{
 		attributes[i].shaderLocation = static_cast<uint32_t>(i);
-	}
 
 	wgpu::VertexBufferLayout vertexLayout{};
 	vertexLayout.stepMode = wgpu::VertexStepMode::Vertex;
@@ -232,4 +315,90 @@ wgpu::VertexBufferLayout WebGPUPipelineFactory::createVertexLayoutFromEnum(engin
 	vertexLayout.attributes = attributes.data();
 	return vertexLayout;
 }
+
+std::shared_ptr<WebGPUPipeline> WebGPUPipelineFactory::createFullscreenPipeline(
+	const std::filesystem::path &shaderPath,
+	const wgpu::BindGroupLayout *bindGroupLayouts,
+	uint32_t                     bindGroupLayoutCount,
+	wgpu::TextureFormat          targetFormat,
+	const char                  *label
+)
+{
+	wgpu::ShaderModule module = m_context.shaderFactory().loadShaderModule(shaderPath);
+	if (!module)
+	{
+		spdlog::error("createFullscreenPipeline: failed to load shader '{}'", shaderPath.string());
+		return nullptr;
+	}
+
+	wgpu::PipelineLayout layout = createPipelineLayout(bindGroupLayouts, bindGroupLayoutCount);
+
+	wgpu::ColorTargetState colorTarget{};
+	colorTarget.format    = targetFormat;
+	colorTarget.writeMask = wgpu::ColorWriteMask::All;
+	colorTarget.blend     = nullptr;
+
+	wgpu::FragmentState fragState{};
+	fragState.module        = module;
+	fragState.entryPoint    = wgpu::StringView("fs_main");
+	fragState.constantCount = 0;
+	fragState.constants     = nullptr;
+	fragState.targetCount   = 1;
+	fragState.targets       = &colorTarget;
+
+	wgpu::RenderPipelineDescriptor pipeDesc{};
+	pipeDesc.label               = wgpu::StringView(label ? label : "");
+	pipeDesc.layout              = layout;
+	pipeDesc.vertex.module       = module;
+	pipeDesc.vertex.entryPoint   = wgpu::StringView("vs_main");
+	pipeDesc.vertex.bufferCount  = 0;
+	pipeDesc.vertex.buffers      = nullptr;
+	pipeDesc.primitive.topology  = wgpu::PrimitiveTopology::TriangleList;
+	pipeDesc.primitive.frontFace = wgpu::FrontFace::CCW;
+	pipeDesc.primitive.cullMode  = wgpu::CullMode::None;
+	pipeDesc.depthStencil        = nullptr;
+	pipeDesc.multisample.count   = 1;
+	pipeDesc.multisample.mask    = ~0u;
+	pipeDesc.fragment            = &fragState;
+
+	wgpu::RenderPipeline pipeline = createRenderPipeline(pipeDesc);
+	if (!pipeline)
+	{
+		spdlog::error("createFullscreenPipeline: failed to create pipeline '{}'", label);
+		if (layout) layout.release();
+		module.release();
+		return nullptr;
+	}
+
+	return std::make_shared<WebGPUPipeline>(pipeline, layout, module);
+}
+
+void WebGPUPipelineFactory::recordFullscreenPass(
+	wgpu::CommandEncoder &encoder,
+	wgpu::TextureView     targetView,
+	wgpu::RenderPipeline  pipeline,
+	wgpu::BindGroup       bindGroup,
+	const char           *label
+)
+{
+	wgpu::RenderPassColorAttachment colorAttach{};
+	colorAttach.view       = targetView;
+	colorAttach.loadOp     = wgpu::LoadOp::Clear;
+	colorAttach.storeOp    = wgpu::StoreOp::Store;
+	colorAttach.clearValue = wgpu::Color{0.0, 0.0, 0.0, 0.0};
+	colorAttach.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED; // 2D target: Dawn rejects a concrete slice index
+
+	wgpu::RenderPassDescriptor rpDesc{};
+	rpDesc.label                  = wgpu::StringView(label ? label : "");
+	rpDesc.colorAttachmentCount   = 1;
+	rpDesc.colorAttachments       = &colorAttach;
+	rpDesc.depthStencilAttachment = nullptr;
+
+	wgpu::RenderPassEncoder pass = encoder.beginRenderPass(rpDesc);
+	pass.setPipeline(pipeline);
+	if (bindGroup) pass.setBindGroup(0, bindGroup, 0, nullptr);
+	pass.draw(3, 1, 0, 0); // fullscreen triangle from vertex_index
+	pass.end();
+}
+
 } // namespace engine::rendering::webgpu

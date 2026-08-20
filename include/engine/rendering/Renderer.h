@@ -1,29 +1,31 @@
 #pragma once
 
 #include <functional>
+#include <limits>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 #include <webgpu/webgpu.hpp>
 
+#include "engine/rendergraph/RenderGraph.h"
 #include "engine/rendering/ClearFlags.h"
+#include "engine/rendering/cache/BindGroupSignature.h"
 #include "engine/rendering/CompositePass.h"
+#include "engine/rendering/CompositionPass.h"
 #include "engine/rendering/DebugPass.h"
 #include "engine/rendering/DebugRenderCollector.h"
+#include "engine/rendering/ForwardTransparencyPass.h"
 #include "engine/rendering/FrameCache.h"
-#include "engine/rendering/FrameUniforms.h"
-#include "engine/rendering/LightUniforms.h"
-#include "engine/rendering/MeshPass.h"
-#include "engine/rendering/Model.h"
-#include "engine/rendering/PostProcessingPass.h"
-// #include "engine/rendering/RenderPassManager.h" ToDo: future use
-#include "engine/rendering/RenderingConstants.h"
+#include "engine/rendering/FrameProfiler.h"
+#include "engine/rendering/GBufferPass.h"
+#include "engine/rendering/ibl/BRDFLut.h"
+#include "engine/rendering/ibl/IrradianceMap.h"
+#include "engine/rendering/ibl/PrefilteredEnv.h"
 #include "engine/rendering/ShadowPass.h"
 #include "engine/rendering/SkyboxPass.h"
 #include "engine/rendering/Texture.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
-#include "engine/rendering/webgpu/WebGPUModel.h"
-#include "engine/rendering/webgpu/WebGPUPipelineManager.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 
 namespace engine
@@ -100,16 +102,39 @@ class Renderer
 	ShadowPass &getShadowPass() { return *m_shadowPass; }
 
 	/**
-	 * @brief Get the MeshPass instance.
-	 * @return Reference to MeshPass.
+	 * @brief Get the GBufferPass instance (deferred rendering).
+	 * @return Reference to GBufferPass.
 	 */
-	MeshPass &getMeshPass() { return *m_meshPass; }
+	GBufferPass *getGBufferPass() { return m_gBufferPass.get(); }
 
 	/**
 	 * @brief Get the CompositePass instance.
 	 * @return Reference to CompositePass.
 	 */
 	CompositePass &getCompositePass() { return *m_compositePass; }
+
+	/**
+	 * @brief Snapshot of every owned pass, in canonical render order.
+	 *
+	 * Returns raw pointers (non-owning) — the Renderer keeps the unique_ptrs.
+	 * Used by the debug UI to drive per-pass enable/disable toggles without
+	 * needing a getter per concrete pass type. The order matches the order
+	 * passes execute in `renderToTexture` / `compositeTexturesToSurface`,
+	 * so the UI can render them top-to-bottom and have it match the
+	 * pipeline.
+	 */
+	std::vector<RenderPass *> getAllPasses();
+
+	/**
+	 * @brief Get the final rendered color texture for a camera this frame.
+	 *
+	 * Returns the offscreen texture the camera's view was composited into
+	 * (post tone-map), or nullptr if that camera has not rendered. Intended for
+	 * an editor that displays a camera marked offscreenOnly inside a UI viewport
+	 * via ImGui::Image. Valid from the UI callback through end of frame.
+	 * @param cameraId The camera whose output to fetch.
+	 */
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUTexture> getCameraOutputTexture(uint64_t cameraId) const;
 
   private:
 	// ========================================
@@ -157,10 +182,38 @@ class Renderer
 	void updateFrameBindGroup(const RenderTarget &target, float time);
 
 	/**
-	 * @brief Updates per-camera environment bind group (irradiance texture/uniforms).
-	 * @param target Camera render target containing environment settings.
+	 * @brief Updates the per-camera bind group used by the skybox pass.
+	 *        Cached in @c m_skyboxBindGroups keyed by camera id.
+	 *        SKYBOX and ENVIRONMENT layouts have the same binding shape but
+	 *        come from different shaders, so the bind groups must be built
+	 *        separately even though the underlying texture/sampler/uniform
+	 *        data is identical.
 	 */
-	void updateEnvironmentBindGroup(const RenderTarget &target);
+	void updateSkyboxBindGroup(const RenderTarget &target);
+
+	/**
+	 * @brief Shared core of the two helpers above: build a bind group whose
+	 *        layout matches the (sampler, environment texture, vec4 uniform)
+	 *        triplet that both skybox and PBR environment use.
+	 */
+	std::shared_ptr<webgpu::WebGPUBindGroup> buildEnvironmentBindGroup(
+		const std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> &layoutInfo,
+		const RenderTarget &target,
+		const char *debugLabel
+	);
+
+	/**
+	 * @brief Build / refresh the consolidated Scene bind group for the given camera.
+	 *
+	 * Ten bindings: lights buffer (0), shadow comparison sampler (1),
+	 * shadow 2D-array (2), shadow cube-array (3), shadow uniforms (4),
+	 * environment uniforms (5), environment sampler (6), environment HDR
+	 * equirect texture (7), cluster grid (8), cluster light indices (9).
+	 * Resources are sourced from ShadowPass / SceneLightBuffer / ClusterManager;
+	 * the env uniform UBO is owned per-camera in @c m_sceneEnvironmentBuffers
+	 * and written here. Cached in @c m_sceneBindGroups keyed by camera id.
+	 */
+	void updateSceneBindGroup(const RenderTarget &target);
 
 	/**
 	 * @brief Creates or resizes render target textures.
@@ -179,36 +232,209 @@ class Renderer
 		const std::optional<Texture::Handle> &cpuTarget,
 		const math::Rect &viewport,
 		wgpu::TextureFormat format,
-		wgpu::TextureUsage usageFlags
+		wgpu::TextureUsage usageFlags,
+		const std::optional<glm::uvec2> &renderSize = std::nullopt
 	);
 
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
-	// std::unique_ptr<RenderPassManager> m_renderPassManager; // ToDo: future use
 	std::unique_ptr<ShadowPass> m_shadowPass;
 	std::unique_ptr<SkyboxPass> m_skyboxPass;
-	std::unique_ptr<MeshPass> m_meshPass;
+	std::unique_ptr<GBufferPass> m_gBufferPass;
 	std::unique_ptr<DebugPass> m_debugPass;
+	std::unique_ptr<CompositionPass> m_compositionPass;
+	std::unique_ptr<ForwardTransparencyPass> m_transparencyPass;
 	std::unique_ptr<CompositePass> m_compositePass;
-	std::unique_ptr<PostProcessingPass> m_postProcessingPass;
 
+	/// Per-camera RenderGraph that drives the deferred pass order
+	/// (Shadow → GBuffer → ClusterCompute → Composition → Skybox →
+	/// ForwardTransparency → Debug). Built lazily on the first
+	/// `renderToTexture` from declared resource dependencies; each pass's
+	/// `execute()` lambda captures `this` and reads per-camera state from
+	/// @ref m_currentCamera. Shadow is the graph's first pass (it writes the
+	/// shadow maps the Composition pass samples). Composite is NOT here — it
+	/// runs once per frame after every camera and lives in @ref m_frameGraph.
+	engine::rendergraph::RenderGraph                          m_perCameraGraph;
+	bool                                                       m_perCameraGraphReady = false;
+
+	/// Per-camera state the graph's pass lambdas read. Populated by
+	/// `renderToTexture` *before* calling `m_perCameraGraph.execute(ctx)`,
+	/// so the lambdas only need to capture `this` to reach everything
+	/// the legacy hand-coded sequence had in scope.
+	struct PerCameraContext
+	{
+		RenderTarget                                       *renderTarget   = nullptr;
+		std::shared_ptr<webgpu::WebGPUTexture>              renderTexture;
+		std::vector<size_t>                                 visibleIndices;
+		const DebugRenderCollector                         *debugCollector = nullptr;
+	};
+	PerCameraContext m_currentCamera;
+
+	/// Build the per-camera graph. Called once on first `renderToTexture`
+	/// invocation (initialize() runs before m_passes have their shaders
+	/// resolved; deferring to first frame keeps construction simple).
+	void buildPerCameraGraph();
+
+	/// Frame-level RenderGraph for the two once-per-frame stages: CameraViews
+	/// (runs the per-camera graph for every camera) → Composite (tonemaps +
+	/// blits the camera targets into the surface and draws UI). Composite
+	/// genuinely runs after ALL cameras, so it can't live in the per-camera
+	/// graph; this graph is its home. Built once in `initialize()`; its
+	/// lambdas read frame-wide state from @ref m_currentFrame.
+	engine::rendergraph::RenderGraph                                 m_frameGraph;
+	bool                                                             m_frameGraphReady = false;
+
+	/// Frame-wide state the frame graph's pass lambdas read. Populated by
+	/// `renderFrame` *before* calling `m_frameGraph.execute(ctx)`, so the
+	/// lambdas only need to capture `this`. Mirrors @ref m_currentCamera.
+	struct FrameContext
+	{
+		const RenderCollector                       *collector       = nullptr;
+		const DebugRenderCollector                  *debugCollector  = nullptr;
+		const std::vector<BindGroupDataProvider>    *customProviders = nullptr;
+		std::function<void(wgpu::RenderPassEncoder)> uiCallback;
+	};
+	FrameContext m_currentFrame;
+
+	/// Build the frame-level graph (CameraViews → Composite). Called once
+	/// from `initialize()`.
+	void buildFrameGraph();
+
+	FrameProfiler m_profiler;
+
+public:
+	/// Read-only access to the frame profiler for UI display.
+	[[nodiscard]] const FrameProfiler &getProfiler() const { return m_profiler; }
+
+	/// The baked BRDF integration LUT used by IBL specular. nullptr until
+	/// Renderer::initialize() bakes it. Sampled in WGSL via
+	/// `vec2(NdotV, roughness)` to get the split-sum (scale, bias) terms.
+	[[nodiscard]] const engine::rendering::ibl::BRDFLut &getBRDFLut() const { return m_brdfLut; }
+
+	/// The pre-filtered environment mip chain used by IBL specular. Baked
+	/// from whatever env texture the engine is using; rebakes lazily when
+	/// the env source changes via prefilterEnvironment(). nullptr until
+	/// the first successful bake. The IBL specular tap is:
+	///   `textureSampleLevel(prefilteredEnv, smp, uv, roughness * maxMip)`.
+	[[nodiscard]] const engine::rendering::ibl::PrefilteredEnv &getPrefilteredEnv() const { return m_prefilteredEnv; }
+
+	/// (Re)bake the prefiltered environment from @p sourceEquirect. Called
+	/// by the env-loading path when the scene's env texture changes.
+	/// Idempotent for the same source — cheap to call.
+	void prefilterEnvironment(const std::shared_ptr<webgpu::WebGPUTexture> &sourceEquirect);
+
+	/// The Lambertian diffuse irradiance map. Sampled at the surface normal
+	/// to get the radiometrically-correct diffuse IBL term — no clamp or
+	/// hand-rolled hemisphere convolution at the shader call site.
+	[[nodiscard]] const engine::rendering::ibl::IrradianceMap &getIrradianceMap() const { return m_irradianceMap; }
+
+	/// Drop every Renderer-side resource that references a factory-cached
+	/// object. Use this together with `cacheRegistry().clearAll()`: when
+	/// caches are dropped, the wgpu IDs they handed out get released, but
+	/// our cached scene / skybox bind groups still hold those dead IDs
+	/// inside their internal descriptors — the very next draw crashes with
+	/// "Sampler[Id] does not exist" or similar. This drops the bind groups
+	/// + env-source markers so the next frame rebuilds them from the
+	/// re-baked factory state.
+	///
+	/// Does NOT touch the IBL textures themselves (they're owned here, not
+	/// in the factory cache), but clearing the env-source marker forces
+	/// prefilterEnvironment() to re-bake on next call.
+	void resetCachedBindings();
+
+	/// Full shader hot-reload entry point: reload every shader source, rebuild
+	/// pipelines, AND reset cached bind groups. The bind-group reset is the
+	/// critical part — a pipeline-only reload leaves the renderer's cached
+	/// scene/skybox/object/material bind groups bound to the previous shader
+	/// layouts, so deferred-rendered meshes (e.g. the SeaKeep building) render
+	/// wrong until a scene change resets them. Prefer this over poking
+	/// pipelineManager().reloadAllPipelines() directly.
+	void reloadShaders();
+
+private:
 	FrameCache m_frameCache{};
+
+	// Counts frames since last CacheRegistry::cleanAll() — the renderer
+	// pumps notifyFrameAll() every frame but only runs the heavier
+	// cleanAll() sweep every kCacheCleanInterval frames.
+	uint32_t m_cacheCleanTick = 0;
+
+	// Split-sum BRDF LUT — baked once during initialize(), sampled by the
+	// IBL specular term in the deferred composition + PBR forward shaders.
+	engine::rendering::ibl::BRDFLut m_brdfLut;
+
+	// Pre-filtered env mip chain — baked from whatever env texture the
+	// scene is using. The "source texture identity" we baked from is tracked
+	// so we don't re-prefilter unnecessarily when the same env is supplied
+	// twice in a row (scene reload, ImGui touch, ...).
+	engine::rendering::ibl::PrefilteredEnv m_prefilteredEnv;
+	WGPUTexture                            m_prefilteredEnvSource = nullptr;
+
+	// Cosine-weighted diffuse irradiance map. Same per-env lifetime as
+	// PrefilteredEnv — we bake both off the same source whenever the env
+	// changes, and share the "did the source change" check.
+	engine::rendering::ibl::IrradianceMap m_irradianceMap;
+
+	// A baked IBL set (specular prefilter + diffuse irradiance) for one source
+	// environment. Both are cheap value wrappers around a shared_ptr texture.
+	struct IblSet
+	{
+		engine::rendering::ibl::PrefilteredEnv prefiltered;
+		engine::rendering::ibl::IrradianceMap irradiance;
+	};
+	// Memoized bakes keyed by source-texture handle. Multiple cameras (editor +
+	// scene) can supply different environments on alternating calls within a
+	// frame; caching keeps each environment's expensive bake to once, not per
+	// frame. Bounded so trying many skyboxes cannot grow it without limit.
+	std::unordered_map<WGPUTexture, IblSet> m_iblCache;
 
 	std::shared_ptr<webgpu::WebGPUTexture> m_surfaceTexture;
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_depthBuffers;
-	struct PostProcessTextures // This would be used if we have multiple intermediate textures for post-processing (e.g., ping-ponging between two textures for multi-pass effects)
-	{
-		std::shared_ptr<webgpu::WebGPUTexture> a;
-		std::shared_ptr<webgpu::WebGPUTexture> b;
-	};
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUTexture>> m_postProcessTextures; ///< Cache of intermediate textures for post-processing per camera (key: cameraId)
-	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_environmentBindGroups;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_skyboxBindGroups;
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_sceneBindGroups;
+	/// Per-camera identity-signature of the resources baked into the cached
+	/// Scene / Skybox bind groups. Each frame, `updateSceneBindGroup` /
+	/// `updateSkyboxBindGroup` recomputes the current signature from the
+	/// live constituents (lights buffer, shadow textures, env texture, etc.)
+	/// and rebuilds the bind group only if it differs. Replaces the
+	/// historical "rebuild every frame for every camera" leak — wgpu
+	/// internally refcounts every bind group's resources, so freshly
+	/// allocating one per frame held the entire previous frame's GPU state
+	/// alive until the GC eventually ran.
+	std::unordered_map<uint64_t, engine::rendering::cache::BindGroupSignature> m_sceneBindGroupSignatures;
+	std::unordered_map<uint64_t, engine::rendering::cache::BindGroupSignature> m_skyboxBindGroupSignatures;
+	/// Per-camera environment-uniforms buffer (vec4 params) injected into the
+	/// Scene bind group at @binding(5). Cached so its identity is stable
+	/// across frames — the bind group keeps it valid and we can write env
+	/// params directly via the wgpu queue.
+	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBuffer>> m_sceneEnvironmentBuffers;
 
+	/// Per-camera cached frustum-cull result. Skip the O(N items) cull when
+	/// the camera matrix AND the collector's item count both match the
+	/// previous frame's. Idle / paused / scripted-view frames pay zero
+	/// CPU for visibility determination. The fingerprint deliberately does
+	/// NOT include per-item transforms — that would scale with item count
+	/// just like the cull itself does — so the rare case of "object moves
+	/// while camera is locked and item count is stable" reuses last frame's
+	/// visibility set for one frame. For typical scene-motion velocities
+	/// the slip is invisible.
+	struct CullCache
+	{
+		glm::mat4           lastViewProjection{};
+		std::size_t         lastItemsCount = 0;
+		std::vector<size_t> visibleIndices;
+		bool                valid          = false;
+	};
+	std::unordered_map<uint64_t, CullCache> m_cullCaches;
+
+	// Cross-frame cache of the last frame's render targets. Distinct from
+	// m_frameCache.renderTargets (which is cleared between frames) because
+	// onResize fires between frames and needs the camera viewport info to
+	// resize depth buffers.
 	std::unordered_map<uint64_t, RenderTarget> m_renderTargets;
 
 	std::shared_ptr<webgpu::WebGPUBindGroupLayoutInfo> m_frameBindGroupLayout;
-	// Note: m_environmentBindGroupLayout is not cached. It's fetched fresh from the PBR shader in updateEnvironmentBindGroup()
-	// to ensure we always use the current shader state.
 	std::shared_ptr<webgpu::WebGPUTexture> m_defaultEnvironmentTexture;
+	uint32_t m_lastUploadedLightCount = std::numeric_limits<uint32_t>::max();
 };
 
 } // namespace engine::rendering

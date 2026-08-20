@@ -69,6 +69,34 @@ class WebGPURenderPassFactory
 		const wgpu::RenderPassDescriptor &descriptor
 	);
 
+	/**
+	 * @brief Creates a render pass with N color attachments + 1 depth attachment.
+	 *
+	 * Convenience wrapper for multi-render-target passes (e.g. deferred
+	 * G-buffer) where every attachment uses Clear-then-Store with the same
+	 * clear color. Builds the attachment descriptors internally so callers
+	 * don't have to assemble @c wgpu::RenderPassColorAttachment by hand.
+	 *
+	 * Use @ref createCustom when you need per-attachment overrides
+	 * (different clear values, mix of Load/Clear, stencil aspect, etc.).
+	 *
+	 * @param label Debug label for the render pass.
+	 * @param colorTextures One texture per fragment-shader @location output.
+	 *                      Must contain at least one entry.
+	 * @param depthTexture  Depth target. Required; pass a depth-only target
+	 *                      if you want to disable stencil.
+	 * @param clearColor    Clear color applied to every color attachment.
+	 * @param depthClear    Clear value for the depth aspect (default 1.0).
+	 * @return Shared render pass context ready to be passed to a command encoder.
+	 */
+	std::shared_ptr<WebGPURenderPassContext> createMultiTarget(
+		const char *label,
+		const std::vector<std::shared_ptr<WebGPUTexture>> &colorTextures,
+		const std::shared_ptr<WebGPUTexture> &depthTexture,
+		const glm::vec4 &clearColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
+		float depthClear = 1.0f
+	);
+
   private:
 	WebGPUContext &m_context;
 };

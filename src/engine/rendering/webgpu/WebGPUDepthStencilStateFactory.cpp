@@ -11,7 +11,8 @@ wgpu::DepthStencilState WebGPUDepthStencilStateFactory::createDefault(wgpu::Text
 {
 	DepthStencilState depthStencilState = Default;
 	depthStencilState.format = format;
-	depthStencilState.depthWriteEnabled = enableDepth;
+	// wgpu-native v24: depthWriteEnabled is now WGPUOptionalBool, not bool.
+	depthStencilState.depthWriteEnabled = enableDepth ? WGPUOptionalBool_True : WGPUOptionalBool_False;
 	depthStencilState.depthCompare = CompareFunction::Less;
 	depthStencilState.stencilFront.compare = CompareFunction::Always;
 	depthStencilState.stencilFront.depthFailOp = StencilOperation::Keep;
@@ -38,7 +39,7 @@ wgpu::DepthStencilState WebGPUDepthStencilStateFactory::create(
 {
 	DepthStencilState depthStencilState = Default;
 	depthStencilState.format = format;
-	depthStencilState.depthWriteEnabled = depthWriteEnabled;
+	depthStencilState.depthWriteEnabled = depthWriteEnabled ? WGPUOptionalBool_True : WGPUOptionalBool_False;
 	depthStencilState.depthCompare = depthCompare;
 	depthStencilState.stencilReadMask = stencilReadMask;
 	depthStencilState.stencilWriteMask = stencilWriteMask;

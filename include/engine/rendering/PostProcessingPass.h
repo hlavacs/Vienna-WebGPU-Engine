@@ -1,6 +1,8 @@
 #pragma once
 
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/ResourceSlot.h"
+#include "engine/rendering/webgpu/WebGPUSampler.h"
 
 #include <memory>
 #include <unordered_map>
@@ -52,6 +54,8 @@ class PostProcessingPass : public RenderPass
 	 * @brief Initialize the pass (get shader, create pipeline, sampler).
 	 * @return True if initialization succeeded, false otherwise.
 	 */
+	[[nodiscard]] const char *name() const override { return "PostProcessing"; }
+
 	bool initialize() override;
 
 	/**
@@ -96,7 +100,7 @@ class PostProcessingPass : public RenderPass
 	 * using the shader info and render pass context. Caches the pipeline for future use.
 	 * @return Shared pointer to the render pipeline.
 	 */
-	std::shared_ptr<webgpu::WebGPUPipeline> getOrCreatePipeline();
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> getOrCreatePipeline();
 
 	/**
 	 * @brief Record and submit GPU commands for the post-processing pass.
@@ -128,7 +132,7 @@ class PostProcessingPass : public RenderPass
 	uint64_t m_cameraId = 0;
 
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
-	wgpu::Sampler m_sampler = nullptr;
+	std::shared_ptr<webgpu::WebGPUSampler> m_sampler;
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 	std::shared_ptr<webgpu::WebGPUTexture> m_inputTexture;
 	std::weak_ptr<webgpu::WebGPUPipeline> m_pipeline;

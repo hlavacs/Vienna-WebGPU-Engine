@@ -7,8 +7,11 @@
 
 #include "engine/core/Handle.h"
 #include "engine/rendering/Material.h"
+#include "engine/rendering/cache/BindGroupSignature.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
+#include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 #include "engine/rendering/webgpu/WebGPUSyncObject.h"
 
 namespace engine::rendering::webgpu
@@ -136,6 +139,35 @@ class WebGPUMaterial : public WebGPUSyncObject<engine::rendering::Material>, pub
 	 * @brief The material bind group.
 	 */
 	std::shared_ptr<WebGPUBindGroup> m_materialBindGroup;
+
+	/**
+	 * @brief Identity signature of the resources baked into m_materialBindGroup.
+	 *
+	 * Records the bind-group layout pointer AND the shader-slot's monotonic
+	 * version (via the Handle<WebGPUShaderInfo> we hold). Catches both:
+	 *  - shader-name swap (different layout pointer)
+	 *  - in-place shader reload via SlotCache::replace, even when the new
+	 *    layout happens to reuse the same allocation (version bump)
+	 *
+	 * Compared each `syncFromCPU` call; mismatch triggers a rebuild.
+	 */
+	engine::rendering::cache::BindGroupSignature m_bindGroupSignature;
+
+	/**
+	 * @brief Versioned slot handle for the currently-bound shader.
+	 *
+	 * Acquired lazily on syncFromCPU when the shader name changes. Held
+	 * alongside the cached bind group so subsequent frames can read the
+	 * shader's current version() without re-querying ShaderRegistry.
+	 */
+	engine::rendering::cache::Handle<WebGPUShaderInfo> m_shaderHandle;
+
+	/// Shader slot version captured at the last syncFromCPU(). needsSync()
+	/// compares the live shader version against this so an in-place shader
+	/// hot-reload — which bumps the shader slot version via SlotCache::replace
+	/// but leaves the CPU material version untouched — still triggers a re-sync
+	/// and material bind-group rebuild.
+	uint32_t m_lastSyncedShaderVersion = 0;
 };
 
 } // namespace engine::rendering::webgpu

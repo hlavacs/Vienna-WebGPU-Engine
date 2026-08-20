@@ -121,23 +121,33 @@ MaterialManager::createMaterial(const tinyobj::material_t &objMat, const std::st
 	if (!objMat.roughness_texname.empty())
 		features |= MaterialFeature::Flag::UsesRoughnessMap;
 
-	// --- Alpha handling ---
-	if (!objMat.alpha_texname.empty())
+	// OBJ has no native alphaMode / alphaCutoff fields, so we derive both from
+	// the alpha texture + dissolve and pick GLTF-equivalent defaults.
+	if (!objMat.alpha_texname.empty() && objMat.dissolve >= 1.0f)
 	{
-		if (objMat.dissolve < 1.0f)
-			features |= MaterialFeature::Flag::Transparent;
-		else
-			features |= MaterialFeature::Flag::AlphaTest;
+		features |= MaterialFeature::Flag::AlphaTest;
+		props.alphaCutoff = 0.5f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Mask);
 	}
-	else if (objMat.dissolve < 1.0f)
+	else if (objMat.dissolve < 1.0f || !objMat.alpha_texname.empty())
 	{
 		features |= MaterialFeature::Flag::Transparent;
+		props.alphaCutoff = 0.0f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Blend);
 	}
+	else
+	{
+		props.alphaCutoff = 0.0f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Opaque);
+	}
+	mat->setProperties(props);
 
 	mat->setFeatureMask(features);
 
 	// --- Shader ---
-	mat->setShader(engine::rendering::shader::defaults ::PBR);
+	// Materials store the PBR shader: render passes (forward/transparency) bind it
+	// directly, the deferred geometry pass swaps in the G-buffer shader on the fly.
+	mat->setShader(engine::rendering::shader::defaults::PBR);
 
 	using engine::core::unwrapOrHandle;
 
@@ -223,6 +233,39 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	props.roughness = static_cast<float>(gltfMat.pbrMetallicRoughness.roughnessFactor);
 	props.normalTextureScale = gltfMat.normalTexture.scale;
 
+	// KHR_materials_ior: per-material refractive index. Default 1.5 (window
+	// glass). Drives the dielectric F0 and the refract() bend angle in the
+	// PBR shader's IBL block.
+	if (gltfMat.extensions.count("KHR_materials_ior") != 0)
+	{
+		const auto &ext = gltfMat.extensions.at("KHR_materials_ior");
+		if (ext.Has("ior"))
+			props.ior = static_cast<float>(ext.Get("ior").GetNumberAsDouble());
+	}
+
+	// KHR_materials_transmission: fraction of refracted light that passes
+	// through (vs being absorbed and re-emitted as diffuse). The transmission
+	// factor lives in .a; the tint stays white so the shader's per-channel
+	// multiply doesn't darken anything unless an asset also opts in to
+	// KHR_materials_volume.attenuationColor (not parsed yet — follow-up).
+	bool hasTransmission = false;
+	if (gltfMat.extensions.count("KHR_materials_transmission") != 0)
+	{
+		const auto &ext = gltfMat.extensions.at("KHR_materials_transmission");
+		if (ext.Has("transmissionFactor"))
+		{
+			const float factor = static_cast<float>(ext.Get("transmissionFactor").GetNumberAsDouble());
+			if (factor > 0.0f)
+			{
+				props.transmittance[0] = 1.0f;
+				props.transmittance[1] = 1.0f;
+				props.transmittance[2] = 1.0f;
+				props.transmittance[3] = factor;
+				hasTransmission = true;
+			}
+		}
+	}
+
 	// Emission
 	if (gltfMat.emissiveFactor.size() == 3)
 	{
@@ -232,7 +275,8 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 		props.emission[3] = 1.0f;
 	}
 
-	mat->setProperties(props);
+	// setProperties is deferred to after the alphaMode block so it doesn't
+	// overwrite the alpha fields with the (incomplete) earlier props.
 	mat->setName(gltfMat.name);
 
 	MaterialFeature::Flag features = MaterialFeature::Flag::None;
@@ -286,14 +330,43 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createMaterial(
 	if (gltfMat.doubleSided)
 		features |= MaterialFeature::Flag::DoubleSided;
 
+	// Trust the artist's alphaMode tag. BLEND-but-actually-opaque exports
+	// (the Blender / Sketchfab quirk) are fixed at the GLTF source, not
+	// papered over here - any per-fragment compensation would also kill
+	// the genuinely translucent materials sharing the scene.
 	if (gltfMat.alphaMode == "MASK")
+	{
 		features |= MaterialFeature::Flag::AlphaTest;
+		props.alphaCutoff = static_cast<float>(gltfMat.alphaCutoff);
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Mask);
+	}
 	else if (gltfMat.alphaMode == "BLEND")
+	{
+		features |= MaterialFeature::Flag::Transparent;
+		props.alphaCutoff = 0.0f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Blend);
+	}
+	else
+	{
+		props.alphaCutoff = 0.0f;
+		props.alphaMode = static_cast<uint32_t>(engine::rendering::AlphaMode::Opaque);
+	}
+
+	// KHR_materials_transmission spec: transmissive materials are tagged
+	// alphaMode=OPAQUE because the transmission factor — not the base color
+	// alpha — drives the see-through look. They still need to render in the
+	// forward-transparent pass because the deferred G-buffer path skips the
+	// PBR fragment shader (where the refract/IBL block lives). Upgrade them
+	// here so the renderer routes them correctly without changing alphaMode
+	// (which would let the per-pixel cutout discard kick in).
+	if (hasTransmission)
 		features |= MaterialFeature::Flag::Transparent;
 
 	mat->setFeatureMask(features);
+	mat->setProperties(props);
 
-	// Default shader
+	// PBR is the material's "logical" shader. Forward and transparency passes
+	// bind it directly; GBufferPass ignores this and binds the GBUFFER shader.
 	mat->setShader(engine::rendering::shader::defaults::PBR);
 
 	auto handleOpt = add(mat);
@@ -354,6 +427,8 @@ std::optional<MaterialManager::MaterialPtr> MaterialManager::createPBRMaterial(
 	mat->setFeatureMask(features);
 
 	// Default shader
+	// Materials store the PBR shader: render passes (forward/transparency) bind it
+	// directly, the deferred geometry pass swaps in the G-buffer shader on the fly.
 	mat->setShader(engine::rendering::shader::defaults::PBR);
 
 	auto handleOpt = add(mat);
@@ -392,7 +467,7 @@ MaterialManager::MaterialHandle MaterialManager::getDefaultMaterial() const
 
 	mat->setProperties(props);
 	mat->setName("Default_Magenta");
-	mat->setShader(engine::rendering::shader::defaults ::PBR); // ToDo: Unlit shader?
+	mat->setShader(engine::rendering::shader::defaults::PBR); // ToDo: Unlit shader?
 
 	if (m_textureManager)
 	{

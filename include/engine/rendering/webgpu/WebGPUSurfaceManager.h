@@ -128,10 +128,6 @@ class WebGPUSurfaceManager
 
 	Config m_config{};			  ///< Current surface configuration
 	Config m_lastAppliedConfig{}; ///< Last applied surface configuration
-
-#ifndef WEBGPU_BACKEND_WGPU
-	wgpu::SwapChain m_swapChain; ///< Swap-chain for non-WGPU backends
-#endif
 };
 
 } // namespace engine::rendering::webgpu

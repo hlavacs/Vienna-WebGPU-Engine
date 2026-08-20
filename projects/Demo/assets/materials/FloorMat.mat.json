@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "name": "FloorMat",
+  "shader": "PBR_Lit_Shader",
+  "type": "PBR",
+  "properties": {
+    "diffuse": [1.0, 1.0, 1.0, 1.0],
+    "roughness": 0.85,
+    "metallic": 0.0
+  },
+  "textures": {
+    "diffuse": { "path": "asset://textures/cobblestone_floor_08_diff_2k.jpg", "colorSpace": "sRGB" },
+    "normal": { "path": "asset://textures/cobblestone_floor_08_nor_gl_2k.png", "colorSpace": "Linear" }
+  }
+}

@@ -137,18 +137,17 @@ WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window* window) {
         if (!hwnd) return NULL;
         HINSTANCE hinstance = GetModuleHandle(NULL);
 
-        // Patched for this project's pinned webgpu (wgpu-v0.19.4.1): the old
-        // surface API uses WGPUSurfaceDescriptorFromWindowsHWND + a const char*
-        // label, not the newer WGPUSurfaceSource* / WGPUStringView types.
-        WGPUSurfaceDescriptorFromWindowsHWND fromWindowsHWND;
-        fromWindowsHWND.chain.sType = WGPUSType_SurfaceDescriptorFromWindowsHWND;
+        // wgpu-native v24 surface API: WGPUSurfaceSourceWindowsHWND +
+        // WGPUStringView label (matches the X11/Wayland/Cocoa blocks).
+        WGPUSurfaceSourceWindowsHWND fromWindowsHWND;
+        fromWindowsHWND.chain.sType = WGPUSType_SurfaceSourceWindowsHWND;
         fromWindowsHWND.chain.next = NULL;
         fromWindowsHWND.hinstance = hinstance;
         fromWindowsHWND.hwnd = hwnd;
 
         WGPUSurfaceDescriptor surfaceDescriptor;
         surfaceDescriptor.nextInChain = &fromWindowsHWND.chain;
-        surfaceDescriptor.label = NULL;
+        surfaceDescriptor.label = (WGPUStringView){ NULL, WGPU_STRLEN };
 
         return wgpuInstanceCreateSurface(instance, &surfaceDescriptor);
     }
@@ -162,11 +161,11 @@ WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window* window) {
         fromCanvasHTMLSelector.chain.sType = WGPUSType_SurfaceDescriptorFromCanvasHTMLSelector;
 #  endif
         fromCanvasHTMLSelector.chain.next = NULL;
-        fromCanvasHTMLSelector.selector = "canvas";
+        fromCanvasHTMLSelector.selector = (WGPUStringView){ "canvas", WGPU_STRLEN };
 
         WGPUSurfaceDescriptor surfaceDescriptor;
         surfaceDescriptor.nextInChain = &fromCanvasHTMLSelector.chain;
-        surfaceDescriptor.label = NULL;
+        surfaceDescriptor.label = (WGPUStringView){ NULL, WGPU_STRLEN };
 
         return wgpuInstanceCreateSurface(instance, &surfaceDescriptor);
     }  

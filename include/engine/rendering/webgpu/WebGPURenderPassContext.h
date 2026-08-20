@@ -50,6 +50,8 @@ struct WebGPURenderPassContext : public engine::core::Identifiable<WebGPURenderP
 		for (size_t i = 0; i < m_renderPassDesc.colorAttachmentCount; ++i)
 		{
 			m_colorAttachmentCopies[i] = m_renderPassDesc.colorAttachments[i];
+			// 2D color targets only: Dawn rejects a concrete depthSlice on non-3D attachments.
+			m_colorAttachmentCopies[i].depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 		}
 		m_renderPassDesc.colorAttachments = m_colorAttachmentCopies.data();
 

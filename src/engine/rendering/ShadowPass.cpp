@@ -6,12 +6,14 @@
 #include "engine/math/Frustum.h"
 #include "engine/rendering/BindGroupBinder.h"
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/Light.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/RenderItemGPU.h"
 #include "engine/rendering/RenderingConstants.h"
 #include "engine/rendering/ShadowRequest.h"
 #include "engine/rendering/ShadowUniforms.h"
+#include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPURenderPassContext.h"
@@ -87,13 +89,12 @@ bool ShadowPass::initialize()
 		);
 	}
 
-	auto shadowLayout = m_context->bindGroupFactory().getGlobalBindGroupLayout(bindgroup::defaults::SHADOW);
-	if (!shadowLayout)
-	{
-		spdlog::error("Failed to get shadow bind group layout");
-		return false;
-	}
-
+	// The Shadow_BindGroup layout used to come from the PBR shader; after the
+	// Scene consolidation puts shadow resources inside Scene_BindGroup at
+	// @binding(1..4); the standalone Shadow_BindGroup is gone. Shadow
+	// resources (sampler, textures, uniforms buffer) are still owned here and
+	// exposed via accessors so Renderer::updateSceneBindGroup can pack them
+	// into the Scene instance.
 	m_shadowSampler = m_context->samplerFactory().getShadowComparisonSampler();
 	m_shadow2DArray = m_context->textureFactory().createShadowMap2DArray(
 		constants::DEFAULT_SHADOW_MAP_SIZE,
@@ -103,15 +104,17 @@ bool ShadowPass::initialize()
 		constants::DEFAULT_CUBE_SHADOW_MAP_SIZE,
 		constants::MAX_SHADOW_MAPS_CUBE
 	);
-
-	m_shadowBindGroup = m_context->bindGroupFactory().createBindGroup(
-		shadowLayout,
-		{{{4, 0}, webgpu::BindGroupResource(m_shadowSampler)},
-		 {{4, 1}, webgpu::BindGroupResource(m_shadow2DArray)},
-		 {{4, 2}, webgpu::BindGroupResource(m_shadowCubeArray)}},
-		nullptr,
-		"Shadow Maps"
+	m_shadowUniformBuffer = m_context->bufferFactory().createStorageBuffer(
+		"uShadows",
+		3,
+		(sizeof(ShadowUniform) * (constants::MAX_SHADOW_MAPS_2D + constants::MAX_SHADOW_MAPS_CUBE))
 	);
+	if (!m_shadowUniformBuffer)
+	{
+		spdlog::error("Failed to create shadow uniform buffer");
+		return false;
+	}
+
 
 	DEBUG_SHADOW_2D_ARRAY = m_context->textureFactory().createShadowMap2DArray(
 		constants::DEFAULT_SHADOW_MAP_SIZE,
@@ -298,15 +301,11 @@ void ShadowPass::render(FrameCache &frameCache)
 		}
 	}
 
-	if (!frameCache.shadowUniforms.empty())
+	if (!frameCache.shadowUniforms.empty() && m_shadowUniformBuffer)
 	{
-		m_shadowBindGroup->updateBuffer(
-			3,
-			frameCache.shadowUniforms.data(),
-			frameCache.shadowUniforms.size() * sizeof(ShadowUniform),
-			0,
-			m_context->getQueue()
-		);
+		// The buffer is referenced by Scene_BindGroup at @binding(4), which
+		// rebuilds per camera and always picks up the latest data.
+		m_shadowUniformBuffer->write(frameCache.shadowUniforms.data(), frameCache.shadowUniforms.size() * sizeof(ShadowUniform));
 	}
 }
 
@@ -318,7 +317,7 @@ void ShadowPass::renderShadow2D(
 )
 {
 	ShadowPass2DUniforms uniforms{shadowUniform.viewProj, shadowUniform.lightPos, shadowUniform.far};
-	m_shadowPass2DBindGroup->updateBuffer(0, &uniforms, sizeof(uniforms), 0, m_context->getQueue());
+	m_shadowPass2DBindGroup->updateBuffer(0, &uniforms, sizeof(uniforms), 0);
 
 	uint32_t size = m_shadow2DArray->getWidth();
 	auto ctx = m_isDebugMode
@@ -326,6 +325,8 @@ void ShadowPass::renderShadow2D(
 				   : m_context->renderPassFactory().createDepthOnly(m_shadow2DArray, arrayLayer);
 
 	auto encoder = m_context->createCommandEncoder("Shadow 2D");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Shadow", encoder);
 	wgpu::RenderPassEncoder pass = encoder.beginRenderPass(ctx->getRenderPassDescriptor());
 	pass.setViewport(0, 0, size, size, 0, 1);
 	pass.setScissorRect(0, 0, size, size);
@@ -333,6 +334,8 @@ void ShadowPass::renderShadow2D(
 	renderItems(pass, frameCache, indicesToRender, false);
 
 	ctx->end(pass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Shadow", encoder);
 	m_context->submitCommandEncoder(encoder, "Shadow 2D");
 }
 
@@ -346,6 +349,8 @@ void ShadowPass::renderShadowCube(
 	uint32_t size = m_shadowCubeArray->getWidth();
 	glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, shadowUniform.far);
 	auto encoder = m_context->createCommandEncoder("Shadow Cube");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Shadow", encoder);
 
 	for (const auto &face : CUBE_FACES)
 	{
@@ -355,7 +360,7 @@ void ShadowPass::renderShadowCube(
 			shadowUniform.far
 		};
 
-		m_shadowPassCubeBindGroup[face.faceIndex]->updateBuffer(0, &uniforms, sizeof(uniforms), 0, m_context->getQueue());
+		m_shadowPassCubeBindGroup[face.faceIndex]->updateBuffer(0, &uniforms, sizeof(uniforms), 0);
 
 		uint32_t layer = cubeIndex * 6 + face.faceIndex;
 		auto ctx = m_isDebugMode
@@ -371,30 +376,28 @@ void ShadowPass::renderShadowCube(
 		ctx->end(pass);
 	}
 
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Shadow", encoder);
 	m_context->submitCommandEncoder(encoder, "Shadow Cube");
 }
 
-std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(Topology::Type topology, bool isCube)
+engine::rendering::cache::Handle<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(Topology::Type topology, bool isCube)
 {
 	int key = static_cast<int>(topology) + (m_isDebugMode ? 1000 : 0);
 	auto &cache = isCube ? m_cubePipelineCache : m_pipelineCache;
 
 	auto it = cache.find(key);
-	if (it != cache.end())
-	{
-		if (auto p = it->second.lock(); p && p->isValid())
-			return p;
-		cache.erase(it);
-	}
+	if (it != cache.end() && it->second.valid())
+		return it->second;
 
 	auto shader = m_context->shaderRegistry().getShader(
 		isCube ? shader::defaults::SHADOW_PASS_CUBE : shader::defaults::SHADOW_PASS_2D
 	);
 
 	if (!shader || !shader->isValid())
-		return nullptr;
+		return {};
 
-	auto pipeline = m_context->pipelineManager().getOrCreatePipeline(
+	auto handle = m_context->pipelineManager().getOrCreatePipeline(
 		shader,
 		m_isDebugMode ? wgpu::TextureFormat::RGBA8Unorm : wgpu::TextureFormat::Undefined,
 		wgpu::TextureFormat::Depth32Float,
@@ -404,10 +407,10 @@ std::shared_ptr<webgpu::WebGPUPipeline> ShadowPass::getOrCreatePipeline(Topology
 		1
 	);
 
-	if (pipeline && pipeline->isValid())
-		cache[key] = pipeline;
+	if (handle.valid())
+		cache[key] = handle;
 
-	return pipeline;
+	return handle;
 }
 
 void ShadowPass::renderItems(
@@ -422,7 +425,9 @@ void ShadowPass::renderItems(
 		return;
 
 	BindGroupBinder binder(&frameCache);
-	std::shared_ptr<webgpu::WebGPUPipeline> pipeline;
+	binder.setContext(m_context.get());
+	std::shared_ptr<webgpu::WebGPUPipeline> pipeline;  // pinned snapshot
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> pipelineHandle;
 	const webgpu::WebGPUMesh *mesh = nullptr;
 
 	auto shadowBG = isCube ? m_shadowPassCubeBindGroup[faceIdx] : m_shadowPass2DBindGroup;
@@ -443,7 +448,8 @@ void ShadowPass::renderItems(
 
 		if (item.gpuMesh != mesh)
 		{
-			pipeline = getOrCreatePipeline(cpuMesh.value()->getTopology(), isCube);
+			pipelineHandle = getOrCreatePipeline(cpuMesh.value()->getTopology(), isCube);
+			pipeline = pipelineHandle.lock();
 			if (!pipeline || !pipeline->isValid())
 				continue;
 

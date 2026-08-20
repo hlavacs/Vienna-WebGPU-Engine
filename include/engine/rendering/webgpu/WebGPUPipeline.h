@@ -66,6 +66,19 @@ class WebGPUPipeline
 	}
 
 	/**
+	 * @brief Construct a minimal one-shot render pipeline (e.g. a fullscreen IBL
+	 * bake) that owns its shader module and has no associated WebGPUShaderInfo
+	 * or vertex inputs. These never participate in the per-frame pipeline cache.
+	 */
+	WebGPUPipeline(wgpu::RenderPipeline pipeline, wgpu::PipelineLayout layout, wgpu::ShaderModule ownedModule) :
+		m_pipeline(pipeline),
+		m_layout(layout),
+		m_ownedModule(ownedModule)
+	{
+		assert(m_pipeline && "Pipeline must be valid");
+	}
+
+	/**
 	 * @brief Destructor that cleans up WebGPU resources.
 	 *
 	 * Releases the pipeline and layout to prevent memory leaks.
@@ -79,6 +92,10 @@ class WebGPUPipeline
 		if (m_layout)
 		{
 			m_layout.release();
+		}
+		if (m_ownedModule)
+		{
+			m_ownedModule.release();
 		}
 		if (!m_vertexAttributes.empty())
 		{
@@ -96,14 +113,17 @@ class WebGPUPipeline
 		  m_layout(other.m_layout),
 		  m_descriptor(other.m_descriptor),
 		  m_vertexAttributes(std::move(other.m_vertexAttributes)),
+		  m_vertexLayout(other.m_vertexLayout),
+		  m_shaderInfo(std::move(other.m_shaderInfo)),
+		  m_ownedModule(other.m_ownedModule),
 		  m_vertexBufferLayout(std::move(other.m_vertexBufferLayout)),
 		  m_colorTarget(std::move(other.m_colorTarget)),
 		  m_depthStencil(std::move(other.m_depthStencil)),
-		  m_fragmentState(std::move(other.m_fragmentState)),
-		  m_vertexLayout(other.m_vertexLayout)
+		  m_fragmentState(std::move(other.m_fragmentState))
 	{
 		other.m_pipeline = nullptr;
 		other.m_layout = nullptr;
+		other.m_ownedModule = nullptr;
 	}
 
 	WebGPUPipeline &operator=(WebGPUPipeline &&other) noexcept
@@ -119,6 +139,10 @@ class WebGPUPipeline
 			{
 				m_layout.release();
 			}
+			if (m_ownedModule)
+			{
+				m_ownedModule.release();
+			}
 			m_vertexAttributes.clear();
 
 			// Move from other
@@ -131,10 +155,13 @@ class WebGPUPipeline
 			m_depthStencil = std::move(other.m_depthStencil);
 			m_fragmentState = std::move(other.m_fragmentState);
 			m_vertexLayout = other.m_vertexLayout;
+			m_shaderInfo = std::move(other.m_shaderInfo);
+			m_ownedModule = other.m_ownedModule;
 
 			// Clear source
 			other.m_pipeline = nullptr;
 			other.m_layout = nullptr;
+			other.m_ownedModule = nullptr;
 		}
 		return *this;
 	}
@@ -187,6 +214,9 @@ class WebGPUPipeline
 	std::vector<wgpu::VertexAttribute> m_vertexAttributes;
 	engine::rendering::VertexLayout m_vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor;
 	std::shared_ptr<WebGPUShaderInfo> m_shaderInfo;
+	/// Owned only for one-shot pipelines built without a WebGPUShaderInfo; the
+	/// main path keeps the module alive via m_shaderInfo instead. nullptr there.
+	wgpu::ShaderModule m_ownedModule = nullptr;
 
 	wgpu::VertexBufferLayout m_vertexBufferLayout = {};
 	wgpu::ColorTargetState m_colorTarget = {};

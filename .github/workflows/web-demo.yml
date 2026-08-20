@@ -1,0 +1,89 @@
+# Builds every example as an EMDAWN (emdawnwebgpu) web build and publishes them as
+# live GitHub Pages demos behind src/web_index.html. Runs on tagged commits or on
+# demand; the CI runner needs no GPU (WebGPU comes from the visitor's browser).
+# See doc/WebShipping.md.
+name: Web Demos
+
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # runtime_player is excluded: it ships no assets (it plays a project staged
+        # by the editor's Build Game), so a standalone web build shows nothing.
+        example: [main_demo, scene_editor, tutorial, multi_view]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      # Pinned to the emsdk release the vendored emdawnwebgpu pkg is tested against.
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 5.0.6
+
+      - name: Configure
+        run: >
+          emcmake cmake -S examples/${{ matrix.example }} -B build-web -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DWEBGPU_BACKEND=EMDAWN
+
+      - name: Build
+        run: cmake --build build-web
+
+      - name: Stage demo
+        run: |
+          mkdir -p "demo/${{ matrix.example }}"
+          cp build-web/*.js build-web/*.wasm build-web/web_theme.css "demo/${{ matrix.example }}/"
+          if ls build-web/*.data >/dev/null 2>&1; then cp build-web/*.data "demo/${{ matrix.example }}/"; fi
+          html=$(ls build-web/*.html | head -n1)
+          cp "$html" "demo/${{ matrix.example }}/index.html"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-${{ matrix.example }}
+          path: demo
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: src
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: demo-*
+          merge-multiple: true
+          path: site
+
+      - name: Add landing page
+        run: cp src/web_index.html site/index.html && cp src/web_theme.css site/web_theme.css
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

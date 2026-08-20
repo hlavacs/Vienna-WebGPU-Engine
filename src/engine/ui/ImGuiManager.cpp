@@ -46,13 +46,16 @@ bool ImGuiManager::initialize(SDL_Window *window, std::shared_ptr<engine::render
 	// platform layer with the generic InitForOther entry point.
 	ImGui_ImplSDL3_InitForOther(window);
 
-	// Setup WebGPU backend
+	// Setup WebGPU backend. ImGui 1.92 replaced the 4-arg Init with an
+	// ImGui_ImplWGPU_InitInfo struct.
 	wgpu::Device device = context->getDevice();
-	WGPUDevice wgpuDevice = device;
-	WGPUTextureFormat rtFormat = static_cast<WGPUTextureFormat>(context->getSwapChainFormat());
-	WGPUTextureFormat depthFormat = WGPUTextureFormat_Undefined; // No depth for UI rendering
+	ImGui_ImplWGPU_InitInfo initInfo;
+	initInfo.Device = device;
+	initInfo.NumFramesInFlight = 3;
+	initInfo.RenderTargetFormat = static_cast<WGPUTextureFormat>(context->getSwapChainFormat());
+	initInfo.DepthStencilFormat = WGPUTextureFormat_Undefined; // No depth for UI rendering
 
-	ImGui_ImplWGPU_Init(wgpuDevice, 3, rtFormat, depthFormat);
+	ImGui_ImplWGPU_Init(&initInfo);
 
 	m_initialized = true;
 	spdlog::info("ImGuiManager initialized");

@@ -141,7 +141,7 @@ wgpu::TextureView WebGPUTexture::get2DArrayLayerView(uint32_t layerIndex, const 
 	}
 
 	wgpu::TextureViewDescriptor viewDesc{};
-	viewDesc.label = label ? label : "2D Array Layer View";
+	viewDesc.label = wgpu::StringView(label ? label : "2D Array Layer View");
 	viewDesc.format = m_textureDesc.format;
 	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
 	viewDesc.baseMipLevel = 0;
@@ -176,7 +176,7 @@ wgpu::TextureView WebGPUTexture::getCubeMapView(uint32_t cubeIndex, const char *
 		return nullptr;
 	}
 	wgpu::TextureViewDescriptor viewDesc{};
-	viewDesc.label = label ? label : "Texture Cube View";
+	viewDesc.label = wgpu::StringView(label ? label : "Texture Cube View");
 	viewDesc.format = m_textureDesc.format;
 	viewDesc.dimension = wgpu::TextureViewDimension::Cube;
 	viewDesc.baseMipLevel = 0;
@@ -225,7 +225,7 @@ wgpu::TextureView WebGPUTexture::getCubeMapFace(uint32_t cubeIndex, uint32_t fac
 		return nullptr;
 	}
 	wgpu::TextureViewDescriptor viewDesc{};
-	viewDesc.label = label ? label : "Texture Cube Face View";
+	viewDesc.label = wgpu::StringView(label ? label : "Texture Cube Face View");
 	viewDesc.format = m_textureDesc.format;
 	viewDesc.dimension = wgpu::TextureViewDimension::_2D;
 	viewDesc.baseMipLevel = 0;
@@ -262,38 +262,35 @@ bool WebGPUTexture::beginReadback(WebGPUContext &context)
 	wgpu::BufferDescriptor bufferDesc{};
 	bufferDesc.size = bufferSize;
 	bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
-	m_readbackStagingBuffer = context.getDevice().createBuffer(bufferDesc);
+	m_readbackStagingBuffer = context.bufferFactory().createBuffer(bufferDesc);
 
-	wgpu::CommandEncoder encoder = context.getDevice().createCommandEncoder();
+	wgpu::CommandEncoder encoder = context.createCommandEncoder("WebGPUTexture.Readback");
 
-	wgpu::ImageCopyTexture src{};
+	wgpu::TexelCopyTextureInfo src{};
 	src.texture = m_texture;
 	src.mipLevel = 0;
 	src.origin = {0, 0, 0};
 
-	wgpu::ImageCopyBuffer dst{};
+	wgpu::TexelCopyBufferInfo dst{};
 	dst.buffer = m_readbackStagingBuffer;
 	dst.layout.bytesPerRow = m_readbackBytesPerRow;
 	dst.layout.rowsPerImage = m_readbackHeight;
 	dst.layout.offset = 0;
 	encoder.copyTextureToBuffer(src, dst, {m_readbackWidth, m_readbackHeight, 1});
-	wgpu::CommandBuffer commands = encoder.finish();
-	context.getQueue().submit(1, &commands);
+	context.submitCommandEncoder(encoder, "WebGPUTexture.Readback");
 
 	m_readbackMapped = false;
 	m_readbackSuccess = false;
 	m_readbackPending = true;
 
-	m_readbackCallback = m_readbackStagingBuffer.mapAsync(
-		wgpu::MapMode::Read,
-		0,
-		bufferSize,
-		[this](WGPUBufferMapAsyncStatus status)
+	// v29 wrapper: mapAsync takes a lambda (heap-copied, freed on the exactly-once callback).
+	m_readbackFuture = m_readbackStagingBuffer.mapAsync(
+		wgpu::MapMode::Read, 0, bufferSize, wgpu::CallbackMode::AllowSpontaneous,
+		[this](wgpu::MapAsyncStatus status, wgpu::StringView)
 		{
-			m_readbackSuccess = (status == WGPUBufferMapAsyncStatus_Success);
+			m_readbackSuccess = (status == wgpu::MapAsyncStatus::Success);
 			m_readbackMapped = true;
-		}
-	);
+		});
 
 	return true;
 }
@@ -305,7 +302,7 @@ bool WebGPUTexture::pollReadback(WebGPUContext &context, std::shared_ptr<Texture
 		return false;
 
 	m_readbackPending = false;
-	m_readbackCallback = nullptr;
+	m_readbackFuture = wgpu::Future{};
 
 	if (!m_readbackSuccess)
 	{

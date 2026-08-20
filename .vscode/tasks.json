@@ -8,17 +8,17 @@
 			"group": "build",
 			"windows": {
 				"command": "${workspaceFolder}/scripts/build.bat",
-				"args": ["Debug", "WGPU"],
+				"args": ["Debug", "DAWN"],
 				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			},
 			"osx": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build.sh", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			}
 		},
@@ -28,17 +28,17 @@
 			"group": "build",
 			"windows": {
 				"command": "${workspaceFolder}/scripts/build.bat",
-				"args": ["Release", "WGPU"],
+				"args": ["Release", "DAWN"],
 				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "DAWN"],
 				"problemMatcher": "$gcc"
 			},
 			"osx": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build.sh", "Release", "DAWN"],
 				"problemMatcher": "$gcc"
 			}
 		},
@@ -89,17 +89,17 @@
 			"group": "build",
 			"windows": {
 				"command": "${workspaceFolder}/scripts/build-example.bat",
-				"args": ["tutorial", "Debug", "WGPU"],
+				"args": ["tutorial", "Debug", "DAWN"],
 				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "tutorial", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "tutorial", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			},
 			"osx": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "tutorial", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "tutorial", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			}
 		},
@@ -109,17 +109,17 @@
 			"group": "build",
 			"windows": {
 				"command": "${workspaceFolder}/scripts/build-example.bat",
-				"args": ["main_demo", "Debug", "WGPU"],
+				"args": ["main_demo", "Debug", "DAWN"],
 				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			},
 			"osx": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			}
 		},
@@ -129,17 +129,17 @@
 			"group": "build",
 			"windows": {
 				"command": "${workspaceFolder}/scripts/build-example.bat",
-				"args": ["main_demo", "Release", "WGPU"],
+				"args": ["main_demo", "Release", "DAWN"],
 				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Release", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Release", "DAWN"],
 				"problemMatcher": "$gcc"
 			},
 			"osx": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Release", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "main_demo", "Release", "DAWN"],
 				"problemMatcher": "$gcc"
 			}
 		},
@@ -149,17 +149,17 @@
 			"group": "build",
 			"windows": {
 				"command": "${workspaceFolder}/scripts/build-example.bat",
-				"args": ["multi_view", "Debug", "WGPU"],
+				"args": ["multi_view", "Debug", "DAWN"],
 				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "multi_view", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "multi_view", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			},
 			"osx": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "multi_view", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "multi_view", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			}
 		},
@@ -169,17 +169,17 @@
 			"group": "build",
 			"windows": {
 				"command": "${workspaceFolder}/scripts/build-example.bat",
-				"args": ["scene_editor", "Debug", "WGPU"],
+				"args": ["scene_editor", "Debug", "DAWN"],
 				"problemMatcher": "$msCompile"
 			},
 			"linux": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "scene_editor", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "scene_editor", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			},
 			"osx": {
 				"command": "bash",
-				"args": ["${workspaceFolder}/scripts/build-example.sh", "scene_editor", "Debug", "WGPU"],
+				"args": ["${workspaceFolder}/scripts/build-example.sh", "scene_editor", "Debug", "DAWN"],
 				"problemMatcher": "$gcc"
 			}
 		},

@@ -29,6 +29,7 @@ struct hash<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, uint32_t, uint32_t>>
 
 #include "engine/rendering/ColorSpace.h"
 #include "engine/rendering/Texture.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 #include "engine/rendering/webgpu/BaseWebGPUFactory.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
@@ -85,11 +86,44 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	 * @brief Create a WebGPUTexture from explicit descriptors.
 	 * @param textureDesc Texture descriptor.
 	 * @param viewDesc Texture view descriptor.
+	 * @param type Logical texture type (Image, Depth, DepthStencil, RenderTarget, ...).
+	 *             Used by WebGPUTexture for correct cleanup and behavior switches
+	 *             (e.g. depth textures skip color attachment helpers).
 	 * @return Shared pointer to WebGPUTexture.
 	 */
 	std::shared_ptr<WebGPUTexture> createFromDescriptors(
 		const wgpu::TextureDescriptor &textureDesc,
-		const wgpu::TextureViewDescriptor &viewDesc
+		const wgpu::TextureViewDescriptor &viewDesc,
+		engine::rendering::Texture::Type type = engine::rendering::Texture::Type::Image
+	);
+
+	/**
+	 * @brief Create a 2D color render-target texture in one call.
+	 *
+	 * Convenience wrapper for the common "single mip, single layer, render
+	 * attachment + texture binding" pattern used by G-buffer slots, HDR
+	 * intermediates, and post-processing targets. Skips the cache used by
+	 * @ref createRenderTarget, so the caller owns the resulting shared_ptr
+	 * directly - useful when the texture's lifetime is tied to an owning
+	 * container (e.g. @ref GBuffer ) rather than a stable integer id.
+	 *
+	 * @param label  Debug label assigned to both the texture and its view.
+	 * @param width  Width in pixels (must be > 0).
+	 * @param height Height in pixels (must be > 0).
+	 * @param format Pixel format.
+	 * @param usage  Usage flags. Defaults to
+	 *               @c RenderAttachment | @c TextureBinding which is what
+	 *               every render-then-sample workflow needs.
+	 * @return Owned shared pointer to the new WebGPUTexture.
+	 */
+	// Parameter is the raw flag bitfield (matches wgpu::TextureDescriptor::usage's
+	// underlying type) so callers can OR enum values together without casts.
+	std::shared_ptr<WebGPUTexture> createColorRenderTarget(
+		const char *label,
+		uint32_t width,
+		uint32_t height,
+		wgpu::TextureFormat format,
+		WGPUTextureUsage usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding
 	);
 
 	/**
@@ -156,11 +190,29 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	void cleanup() override
 	{
 		m_whiteTexture.reset();
+		m_blackTexture.reset();
 		m_defaultNormalTexture.reset();
 		m_colorTextureCache.clear();
 		m_renderTargetCache.clear();
 
 		BaseWebGPUFactory::cleanup();
+	}
+
+	/// Soft-clear override: in addition to dropping the SlotCache's
+	/// resources, drop the extra caches this factory owns (default
+	/// textures, color-cache, render-target-cache). All five rebuild on
+	/// their respective next get / createFromColor / createRenderTarget
+	/// call. Consumer-held shared_ptrs from previous calls keep their
+	/// textures alive across this — that's why soft-clear is safe to
+	/// invoke mid-frame.
+	void softClear()
+	{
+		m_whiteTexture.reset();
+		m_blackTexture.reset();
+		m_defaultNormalTexture.reset();
+		m_colorTextureCache.clear();
+		m_renderTargetCache.clear();
+		BaseWebGPUFactory::softClear();
 	}
 
 	/**
@@ -183,17 +235,17 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	 */
 	std::shared_ptr<WebGPUTexture> createFromHandle(
 		const engine::rendering::Texture::Handle &handle,
-		const WebGPUTextureOptions &options
+		const WebGPUTextureOptions               &options
 	)
 	{
-		auto it = m_cache.find(handle);
-		if (it != m_cache.end())
-		{
-			return it->second;
-		}
-		auto product = createFromHandleUncached(handle, options);
-		m_cache[handle] = product;
-		return product;
+		// SlotCache captures the build_fn by value; subsequent rebuild
+		// after eviction or softClear() will rerun the same lambda — same
+		// handle, same options. (If a future caller wants a different
+		// options-set for the same handle, the right answer is to fold
+		// options into the cache key, not to mutate the slot's build_fn.)
+		return m_cache.getOrCreate(handle, [this, handle, options]() {
+			return createFromHandleUncached(handle, options);
+		}).lock();
 	}
 
   protected:
@@ -215,9 +267,9 @@ class WebGPUTextureFactory : public BaseWebGPUFactory<engine::rendering::Texture
 	/**
 	 * @brief Get or create a mipmap generation pipeline for a specific texture format.
 	 * @param format Texture format for the mipmap pipeline.
-	 * @return Shared pointer to the mipmap pipeline.
+	 * @return Handle to the mipmap pipeline (lock() for a snapshot during use).
 	 */
-	std::shared_ptr<WebGPUPipeline> getOrCreateMipmapPipeline(wgpu::TextureFormat format);
+	engine::rendering::cache::Handle<WebGPUPipeline> getOrCreateMipmapPipeline(wgpu::TextureFormat format);
 
   private:
 	std::shared_ptr<WebGPUTexture> m_whiteTexture;

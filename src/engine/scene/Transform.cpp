@@ -142,9 +142,14 @@ glm::mat4 Transform::getLocalMatrix() const
 
 glm::mat4 Transform::getWorldMatrix() const
 {
-	if (m_dirtyWorld)
-		updateWorldMatrix();
+	ensureWorldMatrix();
 	return m_worldMatrixCache;
+}
+
+uint64_t Transform::getWorldVersion() const
+{
+	ensureWorldMatrix();
+	return m_worldVersion;
 }
 
 void Transform::updateRotationFromEuler() const
@@ -175,21 +180,33 @@ void Transform::updateLocalMatrix() const
 	m_dirtyLocal = false;
 }
 
-void Transform::updateWorldMatrix() const
+void Transform::ensureWorldMatrix() const
 {
-	if (m_dirtyLocal)
-		updateLocalMatrix();
-
 	if (m_parent)
 	{
-		m_worldMatrixCache = m_parent->getWorldMatrix() * m_localMatrixCache;
+		// Recurse first so the parent's world matrix and world version reflect
+		// any change further up the chain. We can then trust m_parent's cached
+		// fields below (same class, so direct private access is allowed).
+		m_parent->ensureWorldMatrix();
+
+		if (m_dirtyWorld || m_cachedParentWorldVersion != m_parent->m_worldVersion)
+		{
+			if (m_dirtyLocal)
+				updateLocalMatrix();
+			m_worldMatrixCache = m_parent->m_worldMatrixCache * m_localMatrixCache;
+			m_cachedParentWorldVersion = m_parent->m_worldVersion;
+			m_dirtyWorld = false;
+			++m_worldVersion;
+		}
 	}
-	else
+	else if (m_dirtyWorld)
 	{
+		if (m_dirtyLocal)
+			updateLocalMatrix();
 		m_worldMatrixCache = m_localMatrixCache;
+		m_dirtyWorld = false;
+		++m_worldVersion;
 	}
-	m_dirtyWorld = false;
-	// Note: Children propagation is handled by SpatialNode hierarchy
 }
 
 glm::vec3 Transform::forward() const

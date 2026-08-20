@@ -151,10 +151,15 @@ void CameraNode::onDebugDraw(engine::rendering::DebugRenderCollector& collector)
 
 void CameraNode::updateMatrices() const
 {
-	if (!m_dirtyView && !m_dirtyProjection && m_lastTransformVersion == m_transform.getVersion())
+	// World version (not local) so the view matrix also rebuilds when an
+	// ancestor moves the camera, not only when the camera's own local transform
+	// changes.
+	const auto worldVersion = m_transform.getWorldVersion();
+
+	if (!m_dirtyView && !m_dirtyProjection && m_lastTransformVersion == worldVersion)
 		return;
 
-	if (m_dirtyView || m_lastTransformVersion != m_transform.getVersion())
+	if (m_dirtyView || m_lastTransformVersion != worldVersion)
 	{
 		glm::vec3 pos = m_transform.getPosition();
 		m_viewMatrix = glm::lookAt(
@@ -165,7 +170,7 @@ void CameraNode::updateMatrices() const
 		m_dirtyView = false;
 	}
 
-	if (m_dirtyProjection|| m_lastTransformVersion != m_transform.getVersion())
+	if (m_dirtyProjection || m_lastTransformVersion != worldVersion)
 	{
 		if (m_isPerspective)
 		{
@@ -192,7 +197,7 @@ void CameraNode::updateMatrices() const
 		m_dirtyProjection = false;
 	}
 
-	m_lastTransformVersion = m_transform.getVersion();
+	m_lastTransformVersion = worldVersion;
 	m_viewProjectionMatrix = m_projectionMatrix * m_viewMatrix;
 }
 

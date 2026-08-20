@@ -5,6 +5,7 @@
 #include <webgpu/webgpu.hpp>
 
 #include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/cache/CacheRegistry.h"
 #include "engine/rendering/webgpu/DeviceLimitsConfig.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
@@ -23,6 +24,19 @@
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
 #include <sdl3webgpu.h>
+
+// Forward declarations
+namespace engine::lighting
+{
+class LightManager;
+class SceneLightBuffer;
+} // namespace engine::lighting
+
+namespace engine::rendering
+{
+class ClusterManager;
+class FrameProfiler;
+} // namespace engine::rendering
 
 namespace engine::rendering::webgpu
 {
@@ -53,6 +67,15 @@ class WebGPUContext
 	 */
 	void updatePresentMode(bool enableVSync);
 
+	/// True when the device runs in WebGPU compatibility mode (Dawn's restricted
+	/// profile: no cube-array views, no single-2D-layer views of arrays, comparison-
+	/// only depth samplers, ...). Always false on wgpu-native (no compat profile).
+	[[nodiscard]] bool isCompatibilityMode() const { return m_compatibilityMode; }
+
+	/// Request Compatibility vs Core feature level. Dawn-only; call before
+	/// initialize(). Core lifts the compat restrictions listed above.
+	void setPreferCompatibility(bool prefer) { m_preferCompatibility = prefer; }
+
 	/**
 	 * @brief Releases and nulls the surface. Safe to call multiple times.
 	 */
@@ -68,15 +91,32 @@ class WebGPUContext
 	[[nodiscard]] wgpu::Device getDevice() const { return m_device; }
 	/** @brief Returns the WebGPU queue. */
 	[[nodiscard]] wgpu::Queue getQueue() const { return m_queue; }
-	/** @brief Returns the swap chain format. */
+	/** @brief Returns the format render pipelines target on the surface. When the
+	 *  surface itself cannot be sRGB (D3D12/DXGI), this is the sRGB view format the
+	 *  surface texture is reinterpreted as; otherwise it equals the surface format. */
 	[[nodiscard]] wgpu::TextureFormat getSwapChainFormat() const { return m_swapChainFormat; }
+	/** @brief Returns the format the surface swap chain is actually configured with. */
+	[[nodiscard]] wgpu::TextureFormat getSurfaceFormat() const { return m_surfaceFormat; }
+	/** @brief True if presents gamma-encode (native sRGB surface or sRGB view
+	 *  reinterpretation). If false, the composite must encode gamma itself. */
+	[[nodiscard]] bool isSurfaceSrgb() const { return m_surfaceIsSrgb; }
 
 	/** @brief Returns the hardware limits of the device. */
-	[[nodiscard]] wgpu::SupportedLimits getHardwareLimits() const;
+	[[nodiscard]] wgpu::Limits getHardwareLimits() const;
 	/** @brief Returns the resolved device limits. */
 	[[nodiscard]] const wgpu::Limits &resolvedLimits() const { return m_resolvedLimits; }
 	/** @brief Returns the device limits configuration. */
 	[[nodiscard]] const DeviceLimitsConfig &limitsConfig() const { return m_limitsConfig; }
+
+	/** @brief True iff the device was created with the `timestamp-query` feature.
+	 *  FrameProfiler checks this before allocating its query set. */
+	[[nodiscard]] bool supportsTimestampQuery() const { return m_supportsTimestampQuery; }
+
+	/** @brief Renderer-owned FrameProfiler (set during Renderer::initialize).
+	 *  Passes use this to write GPU timestamps without taking a profiler
+	 *  reference themselves. Null until Renderer wires it up. */
+	void setFrameProfiler(engine::rendering::FrameProfiler *profiler) { m_frameProfiler = profiler; }
+	[[nodiscard]] engine::rendering::FrameProfiler *frameProfiler() const { return m_frameProfiler; }
 
 	/** @brief Returns the surface manager. */
 	[[nodiscard]] WebGPUSurfaceManager &surfaceManager();
@@ -92,7 +132,6 @@ class WebGPUContext
 	[[nodiscard]] WebGPUBufferFactory &bufferFactory();
 	/** @brief Returns the bind group factory. */
 	[[nodiscard]] WebGPUBindGroupFactory &bindGroupFactory();
-	// [[nodiscard]] WebGPUSwapChainFactory &swapChainFactory();
 	/** @brief Returns the depth texture factory. */
 	[[nodiscard]] WebGPUDepthTextureFactory &depthTextureFactory();
 	/** @brief Returns the depth-stencil state factory. */
@@ -107,6 +146,20 @@ class WebGPUContext
 	[[nodiscard]] ShaderRegistry &shaderRegistry();
 	/** @brief Returns the pipeline manager. */
 	[[nodiscard]] WebGPUPipelineManager &pipelineManager();
+	/** @brief Returns the pipeline factory for low-level / uncached pipeline
+	 *  creation (compute pipelines, one-shot bakes). Prefer pipelineManager()
+	 *  for cached render pipelines. */
+	[[nodiscard]] WebGPUPipelineFactory &pipelineFactory();
+	/** @brief Central registry for every factory's resource cache. Renderer
+	 *  pumps notifyFrameAll() each frame and clearAll() on resize/scene
+	 *  reload; factories register themselves on construction. */
+	[[nodiscard]] engine::rendering::cache::CacheRegistry &cacheRegistry();
+	/** @brief Returns the light manager. */
+	[[nodiscard]] std::shared_ptr<engine::lighting::LightManager> lightManager() const;
+	/** @brief Returns the scene light buffer. */
+	[[nodiscard]] std::shared_ptr<engine::lighting::SceneLightBuffer> sceneLightBuffer() const;
+	/** @brief Returns the cluster manager for deferred rendering. */
+	[[nodiscard]] std::shared_ptr<engine::rendering::ClusterManager> clusterManager() const;
 
 	/**
 	 * @brief Create a command encoder with an optional label.
@@ -116,8 +169,21 @@ class WebGPUContext
 	wgpu::CommandEncoder createCommandEncoder(const char *label = nullptr)
 	{
 		wgpu::CommandEncoderDescriptor desc{};
-		desc.label = label;
+		desc.label = wgpu::StringView(label ? label : "");
 		return getDevice().createCommandEncoder(desc);
+	}
+
+	/**
+	 * @brief Create a query set (e.g. GPU timestamp queries for profiling).
+	 *
+	 * A query set has no cached identity, so it lives as a context helper
+	 * alongside createCommandEncoder rather than getting its own factory.
+	 * @param desc Query set descriptor.
+	 * @return Created query set.
+	 */
+	wgpu::QuerySet createQuerySet(const wgpu::QuerySetDescriptor &desc)
+	{
+		return getDevice().createQuerySet(desc);
 	}
 
 	/**
@@ -128,7 +194,7 @@ class WebGPUContext
 	void submitCommandEncoder(wgpu::CommandEncoder &encoder, const char *label = nullptr)
 	{
 		wgpu::CommandBufferDescriptor cmdDesc{};
-		cmdDesc.label = label;
+		cmdDesc.label = wgpu::StringView(label ? label : "");
 		wgpu::CommandBuffer cmdBuffer = encoder.finish(cmdDesc);
 		encoder.release();
 		getQueue().submit(cmdBuffer);
@@ -148,13 +214,32 @@ class WebGPUContext
 	wgpu::Adapter m_adapter = nullptr;
 	wgpu::Device m_device = nullptr;
 	wgpu::Queue m_queue = nullptr;
-	wgpu::TextureFormat m_swapChainFormat = wgpu::TextureFormat::Undefined;
+	wgpu::TextureFormat m_swapChainFormat = wgpu::TextureFormat::Undefined; ///< Format pipelines render in (sRGB view format when reinterpreting).
+	wgpu::TextureFormat m_surfaceFormat = wgpu::TextureFormat::Undefined;   ///< Format the swap chain is configured with.
+	bool m_surfaceIsSrgb = false; ///< Presents gamma-encode (native sRGB surface or sRGB view reinterpretation).
 	wgpu::Sampler m_defaultSampler = nullptr;
 
 	wgpu::Limits m_resolvedLimits{};
+	bool m_supportsTimestampQuery = false;
+	bool m_immediateSupported = false;
+	bool m_mailboxSupported = false;
+	bool m_fifoRelaxedSupported = false;
+	bool m_compatibilityMode = false;
+#ifdef WEBGPU_BACKEND_DAWN
+	bool m_preferCompatibility = false;	///< Desktop Dawn defaults to Core; DAWN_COMPAT=1 forces compat (WASM parity).
+#else
+	bool m_preferCompatibility = false; ///< wgpu-native has no compatibility profile
+#endif
+	engine::rendering::FrameProfiler *m_frameProfiler = nullptr;
 	DeviceLimitsConfig m_limitsConfig{};
 
 	void *m_lastWindowHandle = nullptr;
+
+	// Declared BEFORE the factories so it outlives them — factories register
+	// (and may unregister on destruction) CacheViews with the registry, and
+	// C++ destroys fields in reverse declaration order. The registry must
+	// still exist while factories are tearing down.
+	engine::rendering::cache::CacheRegistry m_cacheRegistry;
 
 	// Surface manager
 	std::unique_ptr<WebGPUSurfaceManager> m_surfaceManager;
@@ -166,7 +251,6 @@ class WebGPUContext
 	std::unique_ptr<WebGPUSamplerFactory> m_samplerFactory;
 	std::unique_ptr<WebGPUBufferFactory> m_bufferFactory;
 	std::unique_ptr<WebGPUBindGroupFactory> m_bindGroupFactory;
-	// std::unique_ptr<WebGPUSwapChainFactory> m_swapChainFactory;
 	std::unique_ptr<WebGPUDepthTextureFactory> m_depthTextureFactory;
 	std::unique_ptr<WebGPUDepthStencilStateFactory> m_depthStencilStateFactory;
 	std::unique_ptr<WebGPURenderPassFactory> m_renderPassFactory;
@@ -174,6 +258,13 @@ class WebGPUContext
 	std::unique_ptr<WebGPUShaderFactory> m_shaderFactory;
 	std::unique_ptr<ShaderRegistry> m_shaderRegistry;
 	std::unique_ptr<WebGPUPipelineManager> m_pipelineManager;
+
+	// Light management
+	std::shared_ptr<engine::lighting::LightManager> m_lightManager;
+	std::shared_ptr<engine::lighting::SceneLightBuffer> m_sceneLightBuffer;
+
+	// Deferred rendering
+	std::shared_ptr<engine::rendering::ClusterManager> m_clusterManager;
 };
 
 } // namespace engine::rendering::webgpu

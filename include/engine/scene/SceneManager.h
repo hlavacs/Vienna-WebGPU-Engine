@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace engine
 {
@@ -83,6 +84,20 @@ class SceneManager
 	 * @return Scene name or empty string if none
 	 */
 	[[nodiscard]] const std::string &getActiveSceneName() const { return m_activeSceneName; }
+
+	/**
+	 * @brief Names of all registered scenes, in sorted order (for scene
+	 *        pickers / dropdowns). Cheap snapshot — copies the keys.
+	 */
+	[[nodiscard]] std::vector<std::string> getSceneNames() const
+	{
+		std::lock_guard<std::mutex> lock(m_sceneMutex);
+		std::vector<std::string> names;
+		names.reserve(m_scenes.size());
+		for (const auto &[name, scene] : m_scenes)
+			names.push_back(name);
+		return names;
+	}
 
 	/**
 	 * @brief Get a scene by name (without making it active)

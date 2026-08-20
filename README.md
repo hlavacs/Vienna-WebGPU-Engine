@@ -1,10 +1,13 @@
 # Vienna-WebGPU-Engine
 
-> **Version:** v0.5-alpha | **Status:** Active Development
+> **Version:** v0.6-beta | **Status:** Active Development
+
+> **Thesis snapshot:** the engine state this work builds on is preserved unchanged on the
+> [`thesis`](https://github.com/hlavacs/Vienna-WebGPU-Engine/tree/thesis) branch.
 
 A **cross-platform, WebGPU-based game engine** designed for educational purposes. Built with modern graphics APIs, it provides hands-on learning in game engine development using the WebGPU standard.
 
-> **What's new in v0.5-alpha:** windowing, input, and Dear ImGui integration were migrated from **SDL2 to SDL3** (3.4.x). Surface creation now uses the vendored `sdl3webgpu` helper (SDL3 dropped `SDL_GetWindowWMInfo` in favour of the window-properties API), and Dear ImGui was updated to 1.91.9.
+> **What's new in v0.6-beta:** the WebGPU stack moved to **wgpu-native v29.0.1.1 and Dawn chromium/7871** on a shared header generation, with the backend freely selectable (`WGPU`, `DAWN`, `EMDAWN`). Every example now also builds for the **browser** (live demos below), the scene editor runs fully client-side on the web, lighting gained per-camera light clustering, and the tutorial suite was rewritten (unlit forward shading, custom bind groups, glass with reflections and shadows, post-processing).
 
 ## Platform Support
 
@@ -13,9 +16,24 @@ A **cross-platform, WebGPU-based game engine** designed for educational purposes
 | **Windows** | ✅ Working | MSVC 2019+ | Primary development platform |
 | **macOS** | ✅ Working | Clang (Xcode CLT) | Tested on Apple Silicon |
 | **Linux** | ✅ Working | Clang | Tested on Arch Linux Hyperland |
-| **Web** | 🚧 In Progress | Emscripten | Build system exists, not functional |
+| **Web** | ✅ Working | Emscripten (emdawnwebgpu) | `WEBGPU_BACKEND=EMDAWN`, see [doc/WebShipping.md](doc/WebShipping.md) |
 
 *Working = Actively developed and tested. Untested = May require fixes.*
+
+## Live Demos
+
+Every example runs in the browser as WebAssembly on WebGPU (recent Chrome/Edge;
+Firefox 141+, Safari 26+). Built and published by the
+[Web Demos workflow](.github/workflows/web-demo.yml) on tagged commits.
+
+| Demo | Link | What it shows |
+|------|------|---------------|
+| Main Demo | [live](https://hlavacs.github.io/Vienna-WebGPU-Engine/main_demo/) | Deferred renderer on the SeaKeep scene: clustered lights, shadows, IBL, day-night cycle (~58 MB download) |
+| Scene Editor | [live](https://hlavacs.github.io/Vienna-WebGPU-Engine/scene_editor/) | The dockable editor; edits live in browser memory |
+| Tutorial | [live](https://hlavacs.github.io/Vienna-WebGPU-Engine/tutorial/) | The getting-started example scene |
+| Multi View | [live](https://hlavacs.github.io/Vienna-WebGPU-Engine/multi_view/) | Several cameras in split viewports |
+
+All demos: **[hlavacs.github.io/Vienna-WebGPU-Engine](https://hlavacs.github.io/Vienna-WebGPU-Engine/)**
 
 ## Features
 
@@ -25,7 +43,7 @@ A **cross-platform, WebGPU-based game engine** designed for educational purposes
 - 🔄 Resource hot-reloading
 - 📦 Factory pattern for GPU resource management
 - 📐 Model loading: OBJ (stable), GLTF/GLB (Animations WIP)
-- 📚 Tutorial series (4 tutorials: shaders, bind groups, shadows (WIP), post-processing)
+- 📚 Tutorial series (4 tutorials: shaders, bind groups, glass shader with transparency & shadows, post-processing)
 
 ## Quick Start
 
@@ -91,10 +109,11 @@ chmod +x scripts/build-example.sh
 ./scripts/build-example.sh tutorial Debug WGPU
 ```
 
-**Output:**
-- **Windows:** `examples/build/<name>/Windows/Debug/`
-- **macOS:** `examples/build/<name>/Mac/Debug/`
-- **Linux:** `examples/build/<name>/Linux/Debug/`
+**Output** (per-backend build directories):
+- **Windows:** `examples/build/<name>/Windows/Debug-WGPU/` (WGPU), `Debug-DAWN/` (Dawn prebuilt), `Debug/` (Dawn from source via the `SOURCE` arg)
+- **macOS:** `examples/build/<name>/Mac/Debug-WGPU/` (WGPU), `Debug/` (Dawn, built from source)
+- **Linux:** `examples/build/<name>/Linux/Debug-WGPU/` (WGPU), `Debug/` (Dawn, built from source)
+- **Web:** `examples/build/<name>/Emscripten/Debug/` (`EMDAWN` backend, see [doc/WebShipping.md](doc/WebShipping.md))
 
 ### Option 3: IDE Setup
 
@@ -116,16 +135,21 @@ Select example scheme, press `⌘+R` to run.
 
 ### Getting Started
 - **[Getting Started Guide](doc/GettingStarted.md)** - Build your first application
-- **[Tutorial Series](doc/tutorials/01_unlit_shader.md)** - 4-part hands-on tutorials:
+- **[Tutorial Series](doc/tutorials/01_unlit_shader.md)** - hands-on tutorials:
   1. Custom Shaders
   2. Bind Groups & Uniforms
-  3. Shadow Mapping (WIP)
+  3. Glass Shader (Transparency & Shadows)
   4. Post-Processing Effects
+  5. Fog in the Deferred Renderer (planned)
 
 ### Technical Reference
 - **[Engine Architecture](doc/EngineArchitecture.md)** - Design patterns and systems
 - **[Bind Group System](doc/BindGroupSystem.md)** - Rendering pipeline details
 - **[Core Principles](doc/CorePrinciples.md)** - Design philosophy and best practices
+
+### Tools
+- **[Scene Editor](doc/SceneEditor.md)** - Dockable editor: scenes, projects, settings, and compiling a project into a standalone game
+- **[Node Type System](doc/NodeTypeSystem.md)** - Custom node types and graceful missing-type handling
 
 ## Path Management
 

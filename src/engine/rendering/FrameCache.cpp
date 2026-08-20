@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include "engine/rendering/BindGroupDataProvider.h"
+#include "engine/rendering/CacheStats.h"
 #include "engine/rendering/ObjectUniforms.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/ShaderRegistry.h"
@@ -42,13 +43,7 @@ bool FrameCache::processBindGroupProviders(
 		{
 			// Bind group found in cache - just update the data
 			auto &bindGroup = it->second;
-			bindGroup->updateBuffer(
-				0,							// binding index
-				provider.data.data(),		// data pointer
-				provider.dataSize,			// data size
-				0,							// offset
-				context->getQueue()
-			);
+			bindGroup->updateBuffer(0, provider.data.data(), provider.dataSize, 0);
 			continue; // Skip to next provider
 		}
 
@@ -135,13 +130,7 @@ bool FrameCache::processBindGroupProviders(
 		}
 
 		// Update buffer with initial data
-		bindGroup->updateBuffer(
-			0,							// binding index
-			provider.data.data(),		// data pointer
-			provider.dataSize,			// data size
-			0,							// offset
-			context->getQueue()
-		);
+		bindGroup->updateBuffer(0, provider.data.data(), provider.dataSize, 0);
 
 		// Cache bind group for future use
 		customBindGroupCache[cacheKey] = bindGroup;
@@ -173,14 +162,84 @@ bool FrameCache::prepareGPUResources(
 		return false;
 	}
 
+
 	const auto &cpuItems = collector.getRenderItems();
 	for (size_t idx : indicesToPrepare)
 	{
-		// Skip if already prepared
-		if (gpuRenderItems[idx].has_value())
-			continue;
-
 		const auto &cpuItem = cpuItems[idx];
+		auto       &slot    = gpuRenderItems[idx];
+
+		// Fast path: this slot already holds a GPU bundle for the same
+		// object as the CPU side. Refresh whatever CPU-side state moved,
+		// skip the factory + bind-group rebuild.
+		//
+		// The objectID match is the identity check — collector indices are
+		// reused across frames as the visible set churns, so a `has_value()`
+		// alone isn't enough; the slot might hold a different object's
+		// bundle. Same idea for the model+material handles, which catch
+		// the rare case where two render items share an objectID but
+		// reference different model/material (theoretically impossible by
+		// engine convention but cheap to guard).
+		if (slot.has_value()
+			&& slot.value().objectID == cpuItem.objectID
+			&& slot.value().objectID != 0
+			&& slot.value().gpuModel
+			&& slot.value().gpuMaterial)
+		{
+			auto &gpuItem = slot.value();
+
+			// A material swap (the editor reassigns submesh.material to a
+			// different Material, or loads a model that resolves a new one)
+			// changes the handle without moving the objectID, so the fast path
+			// must re-fetch the GPU material - otherwise the draw keeps binding
+			// the previous material. createFromHandle is cached, so unchanged
+			// handles are a cheap lookup.
+			if (gpuItem.submesh.material.id() != cpuItem.submesh.material.id())
+			{
+				if (auto gpuMaterial = context->materialFactory().createFromHandle(cpuItem.submesh.material))
+					gpuItem.gpuMaterial = gpuMaterial;
+			}
+
+			// syncIfNeeded calls are version-checked internally — they're
+			// no-ops when the CPU side hasn't moved since the last sync.
+			// Calling them every frame is cheap; they're the path the
+			// model/mesh/material use to push CPU edits (e.g. animated
+			// vertex data, material property tweaks) into GPU memory.
+			gpuItem.gpuModel->syncIfNeeded();
+			gpuItem.gpuMesh->syncIfNeeded();
+			gpuItem.gpuMaterial->syncIfNeeded();
+
+			// Object uniform buffer: only re-upload when the transform
+			// actually moved. Static scenes (the common case) skip the
+			// queue.writeBuffer entirely. mat4 equality is 16 floats =
+			// 64 B, which the compiler unrolls / vectorises — much
+			// cheaper than the queue submission it replaces.
+			if (gpuItem.worldTransform != cpuItem.worldTransform)
+			{
+				gpuItem.worldTransform = cpuItem.worldTransform;
+				const ObjectUniforms objectUniforms{
+					cpuItem.worldTransform,
+					glm::inverseTranspose(cpuItem.worldTransform)
+				};
+				gpuItem.objectBindGroup->updateBuffer(
+					0, &objectUniforms, sizeof(ObjectUniforms), 0
+				);
+				CacheStats::objectTransformWrites.fetch_add(1, std::memory_order_relaxed);
+			}
+
+			// Submesh / render-layer can change without the objectID
+			// moving (LOD swap, layer reassignment). Refresh the cheap
+			// scalars from the CPU side every frame.
+			gpuItem.submesh     = cpuItem.submesh;
+			gpuItem.renderLayer = cpuItem.renderLayer;
+			CacheStats::objectsFastPath.fetch_add(1, std::memory_order_relaxed);
+			continue;
+		}
+		CacheStats::objectsSlowPath.fetch_add(1, std::memory_order_relaxed);
+
+		// Slow path: first-frame prep, or the slot was holding a
+		// different object. Full rebuild.
+		slot.reset();
 
 		// Create GPU model (factory caches internally)
 		auto gpuModel = context->modelFactory().createFromHandle(cpuItem.modelHandle);
@@ -229,11 +288,7 @@ bool FrameCache::prepareGPUResources(
 
 		auto objectUniforms = ObjectUniforms{cpuItem.worldTransform, glm::inverseTranspose(cpuItem.worldTransform)};
 		objectBindGroup->updateBuffer(
-			0,
-			&objectUniforms,
-			sizeof(ObjectUniforms),
-			0,
-			context->getQueue()
+			0, &objectUniforms, sizeof(ObjectUniforms), 0
 		);
 
 		// Fill GPU render item
@@ -247,7 +302,7 @@ bool FrameCache::prepareGPUResources(
 		gpuItem.renderLayer = cpuItem.renderLayer;
 		gpuItem.objectID = cpuItem.objectID;
 
-		gpuRenderItems[idx] = gpuItem;
+		slot = gpuItem;
 	}
 
 	spdlog::debug(

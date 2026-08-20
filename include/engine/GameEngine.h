@@ -63,6 +63,9 @@ class GameEngine
 	// Can also be called at runtime to update options (VSync, window size, etc.)
 	void setOptions(const GameEngineOptions &options);
 
+	// Read the current engine options (e.g. for an editor settings panel).
+	const GameEngineOptions &getOptions() const { return options; }
+
 	// Initialize the engine (creates window, WebGPU context, renderer, ImGui)
 	// Call this before run() if you need to access ImGuiManager or other subsystems
 	// @param opts Optional engine options. If not provided, uses previously set options via setOptions()
@@ -110,8 +113,14 @@ class GameEngine
 	void physicsLoop();
 
 	void gameLoop();
+	void frameTick();
 	void processEvents();
 	void onWindowResize(int width, int height);
+
+	/// Toggle exclusive fullscreen at the desktop display mode. Bypasses the
+	/// windowed compositor (DWM) so a vsync-off / Immediate present mode can run
+	/// uncapped. Bound to F11. Surface resize is handled by the normal resize path.
+	void toggleFullscreen();
 	void updateScene(float deltaTime);
 	void renderFrame(float deltaTime);
 	void updateFrameStats(float frameDelta);
@@ -122,6 +131,7 @@ class GameEngine
   private:
 	// Core subsystems
 	SDL_Window *m_window = nullptr;
+	bool m_isFullscreen = false;
 	std::shared_ptr<engine::rendering::webgpu::WebGPUContext> m_context;
 	std::shared_ptr<engine::resources::ResourceManager> m_resourceManager;
 	std::shared_ptr<engine::scene::SceneManager> m_sceneManager;
@@ -129,6 +139,7 @@ class GameEngine
 	std::shared_ptr<engine::ui::ImGuiManager> m_imguiManager;
 
 	std::shared_ptr<engine::scene::Scene> m_lastRenderedScene;
+	double m_loopPreviousTime = 0.0; ///< Frame-delta baseline for gameLoop/frameTick.
 
 	// Per-camera render collectors (cached across frames for bind group reuse)
 	std::unordered_map<uint64_t, engine::rendering::RenderCollector> m_cameraCollectors;

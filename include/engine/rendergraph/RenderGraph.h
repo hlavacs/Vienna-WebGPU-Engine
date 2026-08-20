@@ -1,0 +1,338 @@
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+#include <webgpu/webgpu.hpp>
+
+namespace engine::rendergraph
+{
+
+/**
+ * @brief Type of a render-graph resource.
+ *
+ * Mirrors what the renderer can wire up to a pass. Buffer + ColorTexture +
+ * DepthTexture cover everything the current engine passes touch; expand
+ * here when a new pass needs e.g. a storage texture or cube map.
+ */
+enum class ResourceType : uint8_t
+{
+	ColorTexture,
+	DepthTexture,
+	StorageTexture,
+	Buffer,
+};
+
+/**
+ * @brief Descriptor for a transient resource the graph allocates on
+ *        compile. External resources (swapchain texture, persistent
+ *        buffers) are imported by name + handle instead.
+ */
+struct ResourceDesc
+{
+	std::string         name;
+	ResourceType        type   = ResourceType::ColorTexture;
+	uint32_t            width  = 0;
+	uint32_t            height = 0;
+	wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
+	std::size_t         size   = 0;  ///< Buffer types only.
+};
+
+/// Opaque handle for a resource within a RenderGraph. 0 = invalid.
+struct ResourceHandle
+{
+	uint32_t id = 0;
+	bool valid() const { return id != 0; }
+	bool operator==(const ResourceHandle &o) const { return id == o.id; }
+	bool operator!=(const ResourceHandle &o) const { return id != o.id; }
+};
+
+/// Opaque handle for a pass within a RenderGraph. 0 = invalid.
+struct PassHandle
+{
+	uint32_t id = 0;
+	bool valid() const { return id != 0; }
+	bool operator==(const PassHandle &o) const { return id == o.id; }
+	bool operator!=(const PassHandle &o) const { return id != o.id; }
+};
+
+class RenderGraph;
+
+/**
+ * @brief Builder a Pass receives during its `setup()` call.
+ *
+ * Use it to declare read/write dependencies on already-imported or
+ * already-created resources, and to create new transient resources
+ * that subsequent passes can read. Declarations are how the graph
+ * computes the execution order — `pass A writes X; pass B reads X`
+ * implies A runs before B.
+ */
+class PassBuilder
+{
+  public:
+	PassBuilder(RenderGraph &graph, PassHandle ownerPass);
+
+	/// Mark @p resource as read by this pass. The graph ensures any
+	/// upstream writer runs first.
+	void read(ResourceHandle resource);
+
+	/// Mark @p resource as written by this pass. Subsequent passes that
+	/// read it will be scheduled after this one.
+	void write(ResourceHandle resource);
+
+	/// Register a transient resource descriptor with the graph. The pass
+	/// that calls create() is recorded as the implicit writer for
+	/// scheduling. No GPU resource is allocated by the graph today — the
+	/// caller's pass execute() is still responsible for actual allocation;
+	/// this just buys the handle for use in subsequent declarations.
+	ResourceHandle create(const ResourceDesc &desc);
+
+  private:
+	RenderGraph &m_graph;
+	PassHandle   m_pass;
+};
+
+/**
+ * @brief Per-frame context handed to a Pass's `execute()` call.
+ *
+ * Carries the wgpu encoder so passes can record their commands. The
+ * `textures` and `buffers` maps are caller-populated: the graph's
+ * execute() does NOT allocate or resolve transient resources today, it
+ * just iterates the compiled order and invokes each pass. The maps are
+ * here so a caller that DOES manage resources externally (the current
+ * Renderer migration path) has a place to publish them under
+ * ResourceHandle ids, and so a future executor that does transient
+ * allocation can fill them in without changing the Pass interface.
+ */
+struct RenderContext
+{
+	wgpu::CommandEncoder *encoder = nullptr;
+	std::unordered_map<uint32_t, wgpu::Texture> textures;
+	std::unordered_map<uint32_t, wgpu::Buffer>  buffers;
+};
+
+/**
+ * @brief Base type for every pass in a render graph.
+ *
+ * Lifecycle:
+ *   1. Constructor — store any per-pass config (shader, format, etc.)
+ *   2. `setup(builder)` — declare resource dependencies. Called once when
+ *      the graph compiles.
+ *   3. `execute(ctx)` — record GPU commands. Called once per frame from
+ *      the graph's executor, in the compile-determined order.
+ */
+class Pass
+{
+  public:
+	virtual ~Pass() = default;
+
+	virtual const char *name() const = 0;
+	virtual void setup(PassBuilder &builder) = 0;
+	virtual void execute(RenderContext &ctx) = 0;
+};
+
+/**
+ * @brief Adapter that wraps a lambda + a list of declared reads/writes as
+ *        a Pass. Lets the renderer migrate to a graph-driven order without
+ *        rewriting every pass into its own subclass — the lambda holds
+ *        whatever orchestration the legacy code path did.
+ *
+ * Typical use:
+ * @code
+ *   auto colorTarget = graph.addImported("Backbuffer", ResourceType::ColorTexture);
+ *   graph.addPass(std::make_unique<FunctionPass>(
+ *       "Skybox",
+ *       std::vector<ResourceHandle>{},                 // reads
+ *       std::vector<ResourceHandle>{ colorTarget },    // writes
+ *       [&](RenderContext &) {
+ *           m_skyboxPass->render(m_frameCache);
+ *       }));
+ * @endcode
+ */
+class FunctionPass : public Pass
+{
+  public:
+	using ExecuteFn = std::function<void(RenderContext &)>;
+
+	FunctionPass(std::string                 name,
+	             std::vector<ResourceHandle> reads,
+	             std::vector<ResourceHandle> writes,
+	             ExecuteFn                   exec) :
+		m_name(std::move(name)),
+		m_reads(std::move(reads)),
+		m_writes(std::move(writes)),
+		m_exec(std::move(exec)) {}
+
+	const char *name() const override { return m_name.c_str(); }
+
+	void setup(PassBuilder &b) override
+	{
+		for (auto r : m_reads)  if (r.valid()) b.read(r);
+		for (auto w : m_writes) if (w.valid()) b.write(w);
+	}
+
+	void execute(RenderContext &ctx) override
+	{
+		if (m_exec) m_exec(ctx);
+	}
+
+  private:
+	std::string                 m_name;
+	std::vector<ResourceHandle> m_reads;
+	std::vector<ResourceHandle> m_writes;
+	ExecuteFn                   m_exec;
+};
+
+/**
+ * @brief Container of passes + resources with a compile pass that orders
+ *        them by dependency.
+ *
+ * Workflow:
+ *   1. addPass / addImported to register passes and external resources
+ *   2. compile() — runs setup() on every pass, builds the read/write
+ *      dependency graph, topologically sorts the passes
+ *   3. execute(ctx) — iterates the compiled order, calling each pass's
+ *      execute(). RenderContext is opaque to the graph — passes use
+ *      whatever the caller put in it (encoder, resource maps).
+ *
+ * Compiling is deterministic but cheap: re-running it after a window
+ * resize / pipeline change just re-walks the existing reads/writes. The
+ * intended pattern is compile-on-config-change, execute-per-frame.
+ */
+class RenderGraph
+{
+  public:
+	/// Import an external resource (e.g. the swapchain backbuffer, a
+	/// persistent UBO). The graph treats it as both readable and
+	/// writable — pass declarations against it form the dependency
+	/// constraints. Returns the handle to use in connect() calls.
+	ResourceHandle addImported(const std::string &name, ResourceType type);
+
+	/// Add a pass; the graph takes ownership. Returns the pass's handle
+	/// (useful for diagnostics; not needed for normal flow since edges
+	/// are inferred from setup()'s resource declarations).
+	PassHandle addPass(std::unique_ptr<Pass> pass);
+
+	/// Compile: run every pass's setup() to gather its reads/writes, build
+	/// the dependency graph (edge from the last writer of each resource to
+	/// every subsequent reader), and topologically sort. Cycles fail loud
+	/// in CompileResult::error. Write-after-write with no intermediate
+	/// reader is NOT rejected — the second writer silently shadows the
+	/// first; downstream readers depend on the most-recent writer only.
+	struct CompileResult
+	{
+		bool        success = false;
+		std::string error;
+	};
+	CompileResult compile();
+
+	/// Iterate the compiled order, calling each pass's execute(@p ctx).
+	/// No-op if compile() hasn't succeeded yet. Passes whose enabled flag
+	/// is false (see setPassEnabled) are skipped — the dependency graph
+	/// still treats them as if they ran, so downstream readers may see
+	/// stale data in the target texture from the previous frame.
+	void execute(RenderContext &ctx);
+
+	/// Toggle a pass on or off. Cheap — flips a flag, no recompile needed.
+	/// Disabling does NOT remove the pass from the scheduled order; later
+	/// passes that read its outputs will see whatever was in those
+	/// resources before the disable (stale data from prior frames). Use
+	/// for debug toggles and "compare with/without" workflows. Imported
+	/// resources don't get cleared between frames so disabling a producer
+	/// just freezes its output until you re-enable it.
+	void setPassEnabled(PassHandle pass, bool enabled);
+	[[nodiscard]] bool isPassEnabled(PassHandle pass) const;
+
+	/// Look up the resources a registered pass writes — used by debug
+	/// previews that want to blit "the GBuffer normal" or "the lit HDR
+	/// before composite" to the screen. Returns an empty span when the
+	/// pass id is unknown.
+	[[nodiscard]] std::vector<ResourceHandle> getPassWrites(PassHandle pass) const;
+
+	/// Look up a pass by its declared name. Returns an invalid PassHandle
+	/// when no match is found. Names are matched verbatim — the same string
+	/// the Pass's name() method returned during setup. First match wins
+	/// when two passes share a name (the registry doesn't enforce
+	/// uniqueness, but the convention is "one pass per name").
+	[[nodiscard]] PassHandle findPassByName(const std::string &name) const;
+
+	/// Reset compile state before re-running compile(): clears the cached
+	/// execution order, drops the read/write declarations on every
+	/// registered pass (so setup() will repopulate them), and drops any
+	/// transient resources (imported resources are preserved). Use after a
+	/// window resize / pass reconfiguration.
+	void resetCompileState();
+
+	// Internal hooks for PassBuilder — public so the builder can call
+	// them without a friend declaration but not part of the user-facing
+	// API. Don't call directly.
+	void _recordRead (PassHandle pass, ResourceHandle resource);
+	void _recordWrite(PassHandle pass, ResourceHandle resource);
+	ResourceHandle _recordCreate(PassHandle pass, const ResourceDesc &desc);
+
+	[[nodiscard]] std::size_t passCount()     const { return m_passes.size(); }
+	[[nodiscard]] std::size_t resourceCount() const { return m_resources.size(); }
+	[[nodiscard]] bool isCompiled() const { return m_compiled; }
+
+	/// Pass names in compiled execution order. Useful for logging the
+	/// graph's decision so the renderer can confirm "this matches the
+	/// hand-coded sequence I'm migrating from" or print the order in a
+	/// debug overlay. Returns empty until compile() succeeds.
+	[[nodiscard]] std::vector<std::string> compiledOrder() const;
+
+  private:
+	// One pass entry as the graph stores it — pass instance + the resource
+	// dependencies its setup() declared. Public-by-virtue-of-nesting so
+	// .cpp-local helpers can take references without friend gymnastics.
+	struct StoredPass
+	{
+		std::unique_ptr<Pass>         pass;
+		std::vector<ResourceHandle>   reads;
+		std::vector<ResourceHandle>   writes;
+		bool                          enabled = true;
+	};
+
+	struct StoredResource
+	{
+		ResourceDesc desc;
+		bool         imported = false;
+	};
+
+	// Dependency-graph builder result — successors per pass + remaining
+	// in-degree count. Built by buildDependencyEdges, consumed by Kahn's.
+	struct DependencyEdges
+	{
+		std::unordered_map<uint32_t, std::unordered_set<uint32_t>> successors;
+		std::unordered_map<uint32_t, uint32_t>                     inDegree;
+	};
+
+	/// Pass ids sorted by registration order. Stable across hash-map churn.
+	static std::vector<PassHandle> sortedRegistrationOrder(
+		const std::unordered_map<uint32_t, StoredPass> &passes);
+
+	/// Build the read/write dependency graph using the "edge from last writer
+	/// of R to every reader of R" rule.
+	static DependencyEdges buildDependencyEdges(
+		const std::unordered_map<uint32_t, StoredPass> &passes,
+		const std::vector<PassHandle>                  &registrationOrder);
+
+	/// Kahn's topological sort with FIFO + sorted-successors tie-breaking.
+	static std::vector<PassHandle> kahnTopologicalOrder(
+		const std::vector<PassHandle> &registrationOrder,
+		DependencyEdges               &edges);
+
+	std::unordered_map<uint32_t, StoredPass>     m_passes;
+	std::unordered_map<uint32_t, StoredResource> m_resources;
+	std::vector<PassHandle>                      m_executionOrder;
+
+	uint32_t m_nextPassId     = 1;
+	uint32_t m_nextResourceId = 1;
+	bool     m_compiled       = false;
+};
+
+} // namespace engine::rendergraph

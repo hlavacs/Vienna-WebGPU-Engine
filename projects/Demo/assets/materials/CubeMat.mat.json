@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "CubeMat",
+  "shader": "PBR_Lit_Shader",
+  "type": "PBR",
+  "properties": {
+    "diffuse": [0.95, 0.45, 0.10, 1.0],
+    "roughness": 0.35,
+    "metallic": 0.1
+  },
+  "textures": {}
+}

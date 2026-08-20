@@ -3,6 +3,7 @@
 #include "engine/rendering/Mesh.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include <filesystem>
 #include <memory>
 
 namespace engine::rendering::webgpu
@@ -27,6 +28,66 @@ class WebGPUPipelineFactory
 
 	// Helper to create a pipeline layout from bind group layouts
 	wgpu::PipelineLayout createPipelineLayout(const wgpu::BindGroupLayout *layouts, uint32_t layoutCount);
+
+	/// Build a compute pipeline from a pre-built pipeline layout + a shader
+	/// module entry point. The single factory chokepoint for compute pipelines
+	/// (the render path's getOrCreatePipeline is render-only), so consumers like
+	/// ClusterManager don't call device.createComputePipeline directly.
+	wgpu::ComputePipeline createComputePipeline(
+		wgpu::PipelineLayout layout,
+		wgpu::ShaderModule module,
+		const char *entryPoint,
+		const char *label = nullptr
+	);
+
+	/// Raw render-pipeline passthrough for one-off pipelines whose descriptor is
+	/// hand-built and doesn't fit the shaderInfo + formats overload above. Keeps
+	/// device.createRenderPipeline confined to the factory layer.
+	wgpu::RenderPipeline createRenderPipeline(const wgpu::RenderPipelineDescriptor &desc);
+
+	/**
+	 * @brief Build a fullscreen-triangle pipeline for a one-shot bake (IBL).
+	 *
+	 * Loads @p shaderPath via the shader factory, builds the pipeline layout
+	 * from @p bindGroupLayouts (may be empty), and assembles a minimal
+	 * vertex-buffer-less pipeline with one color target. Returns a
+	 * @ref WebGPUPipeline that owns its shader module; null on failure. These
+	 * shaders bake once and never hot-reload, so they sit outside the registry
+	 * and the per-frame pipeline cache.
+	 */
+	[[nodiscard]] std::shared_ptr<WebGPUPipeline> createFullscreenPipeline(
+		const std::filesystem::path &shaderPath,
+		const wgpu::BindGroupLayout *bindGroupLayouts,
+		uint32_t                     bindGroupLayoutCount,
+		wgpu::TextureFormat          targetFormat,
+		const char                  *label
+	);
+
+	/**
+	 * @brief Encode one fullscreen-triangle pass (@p pipeline + optional
+	 * @p bindGroup at @group(0)) targeting @p targetView. Companion to
+	 * @ref createFullscreenPipeline; the caller owns the encoder + submit.
+	 */
+	void recordFullscreenPass(
+		wgpu::CommandEncoder &encoder,
+		wgpu::TextureView     targetView,
+		wgpu::RenderPipeline  pipeline,
+		wgpu::BindGroup       bindGroup,
+		const char           *label
+	);
+
+	/// Shared empty `wgpu::BindGroupLayout`, lazily created on first request.
+	/// Used to fill holes in a sparse pipeline layout (e.g. the shadow pass
+	/// declares @group(0) + @group(3), so slots 1..2 need a non-null layout;
+	/// wgpu refuses null entries).
+	wgpu::BindGroupLayout getOrCreateEmptyBindGroupLayout();
+
+	/// Shared empty `wgpu::BindGroup` paired with the empty layout above.
+	/// Render passes must bind something at every pipeline slot the shader's
+	/// pipeline layout declares — a shader that leaves an engine slot unused
+	/// (e.g. shadow's slots 1..2) still needs an empty bind group there to
+	/// satisfy wgpu's "bind group at index N is unbound" validation.
+	wgpu::BindGroup getOrCreateEmptyBindGroup();
 
 	/**
 	 * @brief Converts engine::rendering::Topology::Type to wgpu::PrimitiveTopology.
@@ -57,6 +118,8 @@ class WebGPUPipelineFactory
   private:
 	WebGPUContext &m_context;
 	wgpu::BlendState m_defaultBlendState;
+	wgpu::BindGroupLayout m_emptyBindGroupLayout = nullptr;
+	wgpu::BindGroup       m_emptyBindGroup       = nullptr;
 };
 
 } // namespace engine::rendering::webgpu

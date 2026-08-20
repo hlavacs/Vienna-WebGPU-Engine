@@ -140,7 +140,7 @@ class WebGPUTexture
 	 * @brief Checks if a GPU-to-CPU readback has been requested but not yet initiated.
 	 * @return True if a readback request is pending, false otherwise.
 	 */
-	bool WebGPUTexture::isReadbackPending() const
+	bool isReadbackPending() const
 	{
 		return m_readbackPending;
 	}
@@ -151,7 +151,7 @@ class WebGPUTexture
 	 * @param context The WebGPU context for command submission.
 	 * @return True if the readback was successfully initiated, false otherwise.
 	 */
-	bool WebGPUTexture::beginReadback(WebGPUContext &context);
+	bool beginReadback(WebGPUContext &context);
 
 	/**
 	 * @brief Polls the status of an ongoing GPU-to-CPU readback operation and retrieves the result if complete.
@@ -161,7 +161,7 @@ class WebGPUTexture
 	 * @param outTexture The CPU-side texture to write the readback result into. Must have matching width/height/format.
 	 * @return True if readback completed successfully and data was written to outTexture, false if readback failed or is not complete.
 	  */
-	bool WebGPUTexture::pollReadback(WebGPUContext &context, std::shared_ptr<Texture> outTexture);
+	bool pollReadback(WebGPUContext &context, std::shared_ptr<Texture> outTexture);
 
 	/**
 	 * @brief Resizes the texture to the new dimensions if needed.
@@ -350,7 +350,7 @@ class WebGPUTexture
 	uint32_t m_readbackBytesPerRow = 0;
 	uint32_t m_readbackBPP = 0;
 	bool m_readbackPending = false;
-	std::unique_ptr<wgpu::BufferMapCallback> m_readbackCallback;
+	wgpu::Future m_readbackFuture{}; ///< wgpu-native v24: mapAsync returns a Future (callback is captureless fn + userdata).
 	bool m_readbackMapped = false;
 	bool m_readbackSuccess = false;
 };

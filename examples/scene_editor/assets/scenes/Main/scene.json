@@ -1,0 +1,186 @@
+{
+  "root": {
+    "children": [
+      {
+        "children": [],
+        "enabled": true,
+        "main": true,
+        "name": "Main Camera",
+        "props": {
+          "background": [
+            0.03829389810562134,
+            0.240116685628891,
+            0.2879580855369568,
+            1.0
+          ],
+          "far": 100.0,
+          "fov": 45.0,
+          "irradiance": false,
+          "irradianceIntensity": 1.0,
+          "near": 0.10000000149011612,
+          "orthographicSize": 5.0,
+          "perspective": true,
+          "skybox": false
+        },
+        "scripts": [],
+        "transform": {
+          "euler": [
+            -149.49600219726563,
+            86.81199645996094,
+            -120.6510009765625
+          ],
+          "position": [
+            0.0,
+            3.4513046741485596,
+            0.0
+          ],
+          "scale": [
+            0.9999985694885254,
+            0.9999992251396179,
+            0.9999986886978149
+          ]
+        },
+        "type": "Camera"
+      },
+      {
+        "children": [],
+        "enabled": true,
+        "name": "Sun",
+        "props": {
+          "cascadeCount": 4,
+          "castShadows": true,
+          "color": [
+            1.0,
+            0.9826627373695374,
+            0.7528795599937439
+          ],
+          "intensity": 3.049999952316284,
+          "lightType": "Directional",
+          "range": 50.0,
+          "shadowBias": 0.0020000000949949026,
+          "shadowMapSize": 2048,
+          "shadowNormalBias": 0.30000001192092896,
+          "shadowPCFKernel": 2,
+          "splitLambda": 0.699999988079071
+        },
+        "scripts": [],
+        "transform": {
+          "euler": [
+            50.0,
+            -36.0,
+            0.0
+          ],
+          "position": [
+            -4.0,
+            6.0,
+            4.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "type": "Light"
+      },
+      {
+        "children": [],
+        "enabled": true,
+        "name": "Ambient",
+        "props": {
+          "color": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "intensity": 0.8999999761581421,
+          "lightType": "Ambient"
+        },
+        "scripts": [],
+        "transform": {
+          "euler": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "type": "Light"
+      },
+      {
+        "children": [],
+        "enabled": true,
+        "name": "Floor",
+        "props": {
+          "layer": 0,
+          "material": "Default_Magenta",
+          "path": "asset://plane.obj"
+        },
+        "scripts": [],
+        "transform": {
+          "euler": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            10.0,
+            1.0,
+            10.0
+          ]
+        },
+        "type": "Model"
+      },
+      {
+        "children": [],
+        "enabled": true,
+        "name": "cube",
+        "props": {
+          "layer": 0,
+          "material": "Default_Magenta",
+          "path": "resource://cube.obj"
+        },
+        "scripts": [],
+        "transform": {
+          "euler": [
+            19.0,
+            -0.0,
+            19.5
+          ],
+          "position": [
+            -4.900000095367432,
+            2.7179999351501465,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "type": "Model"
+      }
+    ],
+    "enabled": true,
+    "name": "A",
+    "props": {},
+    "scripts": [],
+    "type": "Node"
+  },
+  "scene": "scene",
+  "version": 2
+}

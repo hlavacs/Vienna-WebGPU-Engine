@@ -1,5 +1,14 @@
 // Tutorial 02 - Complete this shader step by step
 // Follow the guide in doc/tutorials/02_custom_bindgroup.md
+//
+// The engine's Frame (@group(0)) and Object (@group(3)) uniform structs are
+// auto-generated from C++ via the codegen pipeline. Pulling them in by URI
+// keeps this tutorial in lockstep with whatever the engine actually binds —
+// no risk of the inline struct drifting from the C++ side. WebGPU allows only
+// 4 bind groups (indices 0..3); a custom group takes a slot whose engine role
+// this shader does not use — here @group(1), since there is no Scene group.
+#include "engine://core/frame_uniforms.wgsl"
+#include "engine://core/object_uniforms.wgsl"
 
 struct VertexInput {
     @location(0) position: vec3f,
@@ -12,32 +21,17 @@ struct VertexOutput {
     @location(0) texCoord: vec2f,
 }
 
-struct FrameUniforms {
-    viewMatrix: mat4x4f,
-    projectionMatrix: mat4x4f,
-    viewProjectionMatrix: mat4x4f,
-    cameraPosition: vec3f,
-    time: f32,
-}
-
-struct ObjectUniforms {
-    modelMatrix: mat4x4f,
-    normalMatrix: mat4x4f,
-}
-
 struct UnlitMaterialUniforms {
     color: vec4f,
 }
 
 // Tutorial 02 - Step 3: Add TileUniforms struct
+struct TileUniforms
+{
+    tileOffset: vec2f,
+    tileSize: vec2f,
+}
 
-
-
-@group(0) @binding(0)
-var<uniform> frameUniforms: FrameUniforms;
-
-@group(1) @binding(0)
-var<uniform> objectUniforms: ObjectUniforms;
 
 @group(2) @binding(0)
 var<uniform> unlitMaterialUniforms: UnlitMaterialUniforms;
@@ -46,14 +40,18 @@ var textureSampler: sampler;
 @group(2) @binding(2)
 var baseColorTexture: texture_2d<f32>;
 
-// Tutorial 02 - Step 4: Declare custom bind group
+// Tutorial 02 - Step 4: Declare custom bind group (use a slot in 0..3 that
+// this shader's engine roles do not occupy - here @group(1), since this
+// shader has no Scene group)
+@group(1) @binding(0)
+var<uniform> tileUniforms: TileUniforms;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    let worldPos = objectUniforms.modelMatrix * vec4f(input.position, 1.0);
-    let viewPos = frameUniforms.viewMatrix * worldPos;
-    output.position = frameUniforms.projectionMatrix * viewPos;
+    let worldPos = u_object.modelMatrix * vec4f(input.position, 1.0);
+    let viewPos = u_frame.viewMatrix * worldPos;
+    output.position = u_frame.projectionMatrix * viewPos;
     output.texCoord = input.texCoord;
     return output;
 }
@@ -61,7 +59,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     // Tutorial 02 - Step 5: Modify fragment shader to use TileUniforms
-    let textureColor = textureSample(baseColorTexture, textureSampler, input.texCoord);
+    // Apply tiling and offset to UV coordinates
+    let tiledUV = input.texCoord * tileUniforms.tileSize + tileUniforms.tileOffset;
+
+    // Sample texture with modified UVs
+    let textureColor = textureSample(baseColorTexture, textureSampler, tiledUV);
     let finalColor = textureColor * unlitMaterialUniforms.color;
     return finalColor;
 }
