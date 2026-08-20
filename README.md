@@ -1,10 +1,13 @@
 # Vienna-WebGPU-Engine
 
-> **Version:** v0.5-alpha | **Status:** Active Development
+> **Version:** v0.6-beta | **Status:** Active Development
+
+> **Thesis snapshot:** the engine state this work builds on is preserved unchanged on the
+> [`thesis`](https://github.com/hlavacs/Vienna-WebGPU-Engine/tree/thesis) branch.
 
 A **cross-platform, WebGPU-based game engine** designed for educational purposes. Built with modern graphics APIs, it provides hands-on learning in game engine development using the WebGPU standard.
 
-> **What's new in v0.5-alpha:** windowing, input, and Dear ImGui integration were migrated from **SDL2 to SDL3** (3.4.x). Surface creation now uses the vendored `sdl3webgpu` helper (SDL3 dropped `SDL_GetWindowWMInfo` in favour of the window-properties API), and Dear ImGui was updated to 1.91.9.
+> **What's new in v0.6-beta:** the WebGPU stack moved to **wgpu-native v29.0.1.1 and Dawn chromium/7871** on a shared header generation, with the backend freely selectable (`WGPU`, `DAWN`, `EMDAWN`). Every example now also builds for the **browser** (live demos below), the scene editor runs fully client-side on the web, lighting gained per-camera light clustering, and the tutorial suite was rewritten (unlit forward shading, custom bind groups, glass with reflections and shadows, post-processing).
 
 ## Platform Support
 

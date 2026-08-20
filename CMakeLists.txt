@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 set(ENGINE_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE INTERNAL "Engine root directory")
 
-project(WebGPU_Engine VERSION 0.1.0 LANGUAGES C CXX)
+project(WebGPU_Engine VERSION 0.6.0 LANGUAGES C CXX)
 
 include(utils.cmake)
 
