@@ -1,134 +1,173 @@
 #pragma once
+
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <type_traits>
 
 #include "engine/core/Identifiable.h"
+#include "engine/rendering/cache/SlotCache.h"
 
 namespace engine::rendering::webgpu
 {
 class WebGPUContext;
 
 /**
- * @brief Templated base class for all WebGPU factories.
- * @tparam SourceT Type used to create the GPU resource.
- * @tparam ProductT GPU resource type produced by the factory.
+ * @brief Templated base class for every WebGPU asset factory.
+ *
+ * Backed by `cache::SlotCache<Handle, Product>`. The cache stores one slot
+ * per source handle; each slot carries a `build_fn` lambda that calls
+ * `createFromHandleUncached` on demand. This single substrate gives every
+ * factory the same shape:
+ *
+ *  - **Get-or-create:** `createFromHandle(handle)` looks up the slot, runs
+ *    the build_fn on miss, returns a materialised `shared_ptr<Product>`.
+ *    Subsequent calls with the same handle hand out the cached pointer
+ *    (cheap — one map lookup + one shared_ptr copy).
+ *  - **Auto-rebuild after eviction:** the build_fn lives on the slot
+ *    forever, so `evictStale()` (age-based) and `softClear()` (UI-driven)
+ *    can drop the resource pointer and have the next access transparently
+ *    rebuild from the same source handle. No call site has to refetch.
+ *  - **CacheRegistry surface:** `notifyFrame`, `evictStale`, `cacheSize`,
+ *    `cleanup`, `setMaxIdleFrames`/`maxIdleFrames`, plus a new
+ *    `softClear` for the "drop resources, keep slots" semantic the Clear
+ *    All button wants. All one-liner delegates to the SlotCache member.
+ *  - **Visible "Clear All":** `softClear()` is what the UI should call —
+ *    it drops every resource pointer (so GPU memory and downstream
+ *    bind groups release their refs) but leaves the slots alive. Next
+ *    consumer call rebuilds via the captured build_fn. Hard `cleanup()`
+ *    is reserved for shutdown / device loss; using it on a live engine
+ *    leaves outstanding handles with no path to rebuild.
+ *
+ * **Public API contract preserved** — callers still get `shared_ptr<Product>`
+ * from `createFromHandle` / `createFrom` / `get`, so adopting this new
+ * backing requires zero changes outside the factory implementations.
+ *
+ * @tparam SourceT  Logical source type. Must derive from
+ *                  `engine::core::Identifiable<SourceT>` so its `Handle`
+ *                  is a stable, hashable key.
+ * @tparam ProductT GPU-side product type held as `std::shared_ptr<ProductT>`.
  */
 template <typename SourceT, typename ProductT>
 class BaseWebGPUFactory
 {
   public:
-	/**
-	 * @brief Construct a factory with a WebGPU context.
-	 * @param context The WebGPU context used for resource creation.
-	 */
+	using HandleT       = typename SourceT::Handle;
+	using ProductPtr    = std::shared_ptr<ProductT>;
+	using ResourceCache = engine::rendering::cache::SlotCache<HandleT, ProductT, std::hash<HandleT>>;
+	using ResourceHandle = engine::rendering::cache::Handle<ProductT>;
+
 	explicit BaseWebGPUFactory(WebGPUContext &context) :
 		m_context(context)
 	{
-		// Static assert that SourceT is derived from Identifiable<SourceT>
-		static_assert(std::is_base_of_v<engine::core::Identifiable<SourceT>, SourceT>, "SourceT must derive from engine::core::Identifiable<SourceT>");
+		static_assert(
+			std::is_base_of_v<engine::core::Identifiable<SourceT>, SourceT>,
+			"SourceT must derive from engine::core::Identifiable<SourceT>");
 	}
+
 	virtual ~BaseWebGPUFactory()
 	{
+		// SlotCache::cleanup() (also called by its destructor) resets every
+		// captured build_fn before the slot dies, so any outstanding Handle
+		// that lock()s after this factory is destroyed safely returns
+		// nullptr instead of dereferencing a dead `this`.
 		cleanup();
-	};
-
-	/**
-	 * @brief Get a GPU resource from a source handle if it exists.
-	 * @param handle Handle to the source object.
-	 * @return Shared pointer to the GPU resource, or nullptr if not found.
-	 * @note This does not create the resource if it does not exist; it only retrieves from cache.
-	 */
-	std::shared_ptr<ProductT> get(const typename SourceT::Handle &handle)
-	{
-		auto it = m_cache.find(handle);
-		if (it != m_cache.end())
-		{
-			return it->second;
-		}
-		return nullptr;
 	}
 
 	/**
-	 * @brief Check if a GPU resource exists for the given source handle.
-	 * @param handle Handle to the source object.
-	 * @return True if the resource exists in the cache, false otherwise.
+	 * @brief Lookup-only: returns the cached product or nullptr. Does NOT
+	 *        build on miss. Refreshes the slot's last-access stamp on hit,
+	 *        so age-eviction's idle timer restarts.
 	 */
-	bool has(const typename SourceT::Handle &handle)
+	ProductPtr get(const HandleT &handle)
 	{
-		return m_cache.find(handle) != m_cache.end();
+		auto h = m_cache.find(handle);
+		return h ? h.lock() : nullptr;
+	}
+
+	/// True iff a slot exists for @p handle (regardless of whether its
+	/// resource is currently materialised).
+	bool has(const HandleT &handle)
+	{
+		return static_cast<bool>(m_cache.find(handle));
 	}
 
 	/**
-	 * @brief Get or create a GPU resource from a source object.
-	 * @param source The source object to create from.
-	 * @return Shared pointer to the created GPU resource.
-	 * @note This automatically creates a handle from the source and calls createFromHandle.
-	 * If handle creation is not possible, it throws an error.
-	 * This means there cannot be a GPU resource without a valid handle.
+	 * @brief Convenience: build a Handle from a Source, then forward to
+	 *        createFromHandle.
+	 *
+	 * @throws std::runtime_error if @p source has no registered handle.
 	 */
-	std::shared_ptr<ProductT> createFrom(const SourceT &source)
+	ProductPtr createFrom(const SourceT &source)
 	{
-		typename engine::core::Identifiable<SourceT>::HandleType handle{};
+		HandleT handle{};
 		try
 		{
-			const engine::core::Identifiable<SourceT> &identifiable = static_cast<const engine::core::Identifiable<SourceT> &>(source);
+			const engine::core::Identifiable<SourceT> &identifiable =
+				static_cast<const engine::core::Identifiable<SourceT> &>(source);
 			handle = identifiable.getHandle();
 		}
 		catch (const std::exception &e)
 		{
-			throw std::runtime_error(std::string("Could not create handle: ") + e.what() + "\nA valid handle is required. Make sure the source object is registered.");
+			throw std::runtime_error(
+				std::string("Could not create handle: ") + e.what()
+				+ "\nA valid handle is required. Make sure the source object is registered.");
 		}
 		return createFromHandle(handle);
 	}
 
 	/**
-	 * @brief Get or create a GPU resource from a source handle.
-	 * @param handle Handle to the source object.
-	 * @return Shared pointer to the GPU resource.
-	 * @note This uses an internal cache to avoid duplicate creations.
+	 * @brief Get-or-create the GPU product for @p handle.
+	 *
+	 * Cache hit returns the existing shared_ptr. Cache miss calls the
+	 * captured build_fn (which delegates to `createFromHandleUncached`) and
+	 * stores the result. Returns nullptr only if the build fails.
 	 */
-	virtual std::shared_ptr<ProductT> createFromHandle(const typename SourceT::Handle &handle)
+	virtual ProductPtr createFromHandle(const HandleT &handle)
 	{
-		auto it = m_cache.find(handle);
-		if (it != m_cache.end())
-		{
-			return it->second;
-		}
-		auto product = createFromHandleUncached(handle);
-		m_cache[handle] = product;
-		return product;
+		return m_cache.getOrCreate(handle, [this, handle]() {
+			return createFromHandleUncached(handle);
+		}).lock();
 	}
 
 	/**
-	 * @brief Clear the internal cache of created resources.
-	 * Careful: this does not delete the resources themselves if they are still referenced elsewhere.
-	 * @note Override this method in derived classes if additional cleanup is needed.
-	 * @warning If used it might lead to dangling pointers in existing resources!
+	 * @brief Drop every slot AND every build_fn.
+	 *
+	 * Outstanding consumer shared_ptrs keep their resources alive via RAII;
+	 * outstanding Handles to slots-no-longer-in-the-cache lock() to nullptr
+	 * (no build_fn left). Use only on shutdown / device loss.
 	 */
-	virtual void cleanup()
-	{
-		m_cache.clear();
-	}
+	virtual void cleanup() { m_cache.cleanup(); }
+
+	/**
+	 * @brief Drop every slot's resource but keep slots + build_fns alive.
+	 *
+	 * This is the verb the "Clear All" UI wants: visible GPU memory
+	 * pressure drops, downstream bind groups release their refs, and the
+	 * next consumer call rebuilds the resource lazily via the captured
+	 * build_fn. Consumer-held shared_ptrs from earlier calls keep working
+	 * until they're dropped, which is what makes this safe to invoke
+	 * mid-frame.
+	 */
+	void softClear() { m_cache.clearResources(); }
+
+	// --- CacheRegistry surface -----------------------------------------------
+	[[nodiscard]] std::size_t cacheSize() const { return m_cache.cacheSize(); }
+	[[nodiscard]] std::size_t aliveCount() const { return m_cache.aliveCount(); }
+	void                       notifyFrame() { m_cache.notifyFrame(); }
+	std::size_t                evictStale() { return m_cache.evictStale(); }
+	void                       setMaxIdleFrames(uint32_t frames) { m_cache.setMaxIdleFrames(frames); }
+	[[nodiscard]] uint32_t     maxIdleFrames() const { return m_cache.maxIdleFrames(); }
 
   protected:
-	/**
-	 * @brief Create a GPU resource from a handle to a source object.
-	 * @param handle Handle to the source object.
-	 * @return Shared pointer to the created GPU resource.
-	 */
-	virtual std::shared_ptr<ProductT> createFromHandleUncached(const typename SourceT::Handle &handle) = 0;
+	/// Subclasses implement the actual GPU-side construction. Called by the
+	/// slot's build_fn on cache miss and after eviction; the result is
+	/// stored in a new slot (initial build) or replaces the current
+	/// resource (after eviction-then-lock).
+	virtual ProductPtr createFromHandleUncached(const HandleT &handle) = 0;
 
-  protected:
-	/**
-	 * @brief Reference to the WebGPU context for resource creation.
-	 */
 	WebGPUContext &m_context;
-
-	/**
-	 * @brief Cache mapping source handles to created GPU resources.
-	 */
-	std::unordered_map<typename SourceT::Handle, std::shared_ptr<ProductT>> m_cache;
+	ResourceCache  m_cache;
 };
 
 } // namespace engine::rendering::webgpu

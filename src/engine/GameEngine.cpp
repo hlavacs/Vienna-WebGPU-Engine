@@ -16,8 +16,16 @@
 #include <iostream>
 #include <sdl3webgpu.h>
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+#include <vector>
 
 #include "engine/core/PathProvider.h"
+#include "engine/scene/NodeTypeRegistry.h"
 #include "engine/rendering/FrameUniforms.h"
 #include "engine/rendering/RenderCollector.h"
 #include "engine/rendering/Renderer.h"
@@ -30,7 +38,30 @@ namespace engine
 GameEngine::GameEngine() :
 	running(false)
 {
-#if defined(DEBUG_ROOT_DIR) && defined(ASSETS_ROOT_DIR)
+	// Dual logging: colored console + a flushed "engine.log" in the working dir, so
+	// the log survives a crash and can be read directly (no stdout capture needed).
+	try
+	{
+		std::vector<spdlog::sink_ptr> sinks{
+			std::make_shared<spdlog::sinks::stdout_color_sink_mt>(),
+			std::make_shared<spdlog::sinks::basic_file_sink_mt>("engine.log", true)};
+		auto logger = std::make_shared<spdlog::logger>("engine", sinks.begin(), sinks.end());
+		logger->flush_on(spdlog::level::info);
+		spdlog::set_default_logger(logger);
+	}
+	catch (const spdlog::spdlog_ex &)
+	{
+		// Fall back to the default stdout logger if the file can't be opened.
+	}
+
+#if defined(__EMSCRIPTEN__)
+	// MEMFS root; --preload-file maps resources/ and assets/ under "/" (host
+	// paths from ASSETS_ROOT_DIR/DEBUG_ROOT_DIR are meaningless in the browser).
+	engine::core::PathProvider::initialize("/", "/");
+	// Per-frame trace/debug spam must never reach the browser console or the
+	// page's log panel - console.log + DOM appends at frame rate stall the tab.
+	spdlog::set_level(spdlog::level::info);
+#elif defined(DEBUG_ROOT_DIR) && defined(ASSETS_ROOT_DIR)
 	engine::core::PathProvider::initialize(ASSETS_ROOT_DIR, DEBUG_ROOT_DIR);
 #elif defined(DEBUG_ROOT_DIR)
 	engine::core::PathProvider::initialize("", DEBUG_ROOT_DIR);
@@ -177,6 +208,10 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 		options = opts.value();
 	}
 
+	// Register built-in node types so scenes can (de)serialize them. Idempotent
+	// re-registration is harmless; projects add their custom types after this.
+	engine::scene::registerBuiltinNodeTypes();
+
 	// Tell SDL we're handling main ourselves
 	SDL_SetMainReady();
 
@@ -213,6 +248,7 @@ bool GameEngine::initialize(std::optional<GameEngineOptions> opts)
 		return false;
 	}
 
+	m_isFullscreen = options.fullscreen;
 	SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
 	m_context->initialize(m_window, options.enableVSync, options.overrideDeviceLimits);
@@ -284,8 +320,13 @@ void GameEngine::run()
 	running = true;
 
 	// Launch physics thread if enabled
+#if defined(__EMSCRIPTEN__)
+	if (options.runPhysics)
+		spdlog::warn("Physics thread unavailable in the wasm build (no pthreads); physics is disabled.");
+#else
 	if (options.runPhysics)
 		physicsThread = std::thread(&GameEngine::physicsLoop, this);
+#endif
 
 	// Main/game logic loop (runs on main thread)
 	gameLoop();
@@ -331,26 +372,49 @@ void GameEngine::physicsLoop()
 
 void GameEngine::gameLoop()
 {
-	double previousTime = getCurrentTime();
+	m_loopPreviousTime = getCurrentTime();
 	onWindowResize(options.windowWidth, options.windowHeight);
+#if defined(__EMSCRIPTEN__)
+	// The browser owns the loop: one engine frame per requestAnimationFrame tick.
+	// A while() here never yields and freezes the tab. This call unwinds gameLoop.
+	emscripten_set_main_loop_arg(
+		[](void *arg)
+		{
+			auto *self = static_cast<GameEngine *>(arg);
+			if (!self->running)
+			{
+				emscripten_cancel_main_loop();
+				return;
+			}
+			self->frameTick();
+		},
+		this, 0, true);
+#else
 	while (running)
-	{
-		processEvents();
+		frameTick();
+#endif
+}
 
-		const double currentTime = getCurrentTime();
-		float frameDelta = static_cast<float>(currentTime - previousTime);
-		previousTime = currentTime;
+void GameEngine::frameTick()
+{
+	processEvents();
 
-		if (frameDelta > options.maxDeltaTime)
-			frameDelta = options.maxDeltaTime;
+	const double currentTime = getCurrentTime();
+	float frameDelta = static_cast<float>(currentTime - m_loopPreviousTime);
+	m_loopPreviousTime = currentTime;
 
-		updateScene(frameDelta);
-		renderFrame(frameDelta);
+	if (frameDelta > options.maxDeltaTime)
+		frameDelta = options.maxDeltaTime;
 
-		m_inputManager.endFrame();
-		updateFrameStats(frameDelta);
-		limitFrameRate(currentTime);
-	}
+	updateScene(frameDelta);
+	renderFrame(frameDelta);
+
+	m_inputManager.endFrame();
+	updateFrameStats(frameDelta);
+#ifndef __EMSCRIPTEN__
+	// rAF paces the browser; SDL_Delay-based capping would asyncify-sleep mid-tick.
+	limitFrameRate(currentTime);
+#endif
 }
 
 void GameEngine::processEvents()
@@ -364,10 +428,14 @@ void GameEngine::processEvents()
 		if (m_imguiManager)
 			ImGui_ImplSDL3_ProcessEvent(&event);
 
+		// Forward input to the game/editor InputManager unless ImGui is capturing
+		// TEXT input (an active text field). Gating on WantCaptureKeyboard/Mouse was
+		// too aggressive: hovering or focusing any ImGui window (e.g. an editor's
+		// render-to-texture viewport panel) set those flags and starved viewport
+		// navigation (WASD / right-mouse look) of input. WantTextInput is true only
+		// while editing a text field, so keystrokes still never leak while typing.
 		ImGuiIO &io = ImGui::GetIO();
-		const bool imguiWantsInput = io.WantCaptureMouse || io.WantCaptureKeyboard;
-
-		if (!imguiWantsInput)
+		if (!io.WantTextInput)
 			m_inputManager.processEvent(event);
 
 		if (event.type == SDL_EVENT_QUIT)
@@ -378,11 +446,47 @@ void GameEngine::processEvents()
 		{
 			onWindowResize(event.window.data1, event.window.data2);
 		}
+		else if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F11)
+		{
+			toggleFullscreen();
+		}
 	}
+}
+
+void GameEngine::toggleFullscreen()
+{
+	if (!m_window)
+		return;
+
+	m_isFullscreen = !m_isFullscreen;
+	if (m_isFullscreen)
+	{
+		// Pin a real display mode (non-null = exclusive fullscreen in SDL3, as
+		// opposed to borderless desktop) so the present path can bypass the
+		// windowed compositor and a vsync-off Immediate swapchain can run
+		// uncapped. The follow-up SDL resize event reconfigures the surface.
+		SDL_DisplayID display = SDL_GetDisplayForWindow(m_window);
+		if (const SDL_DisplayMode *mode = SDL_GetDesktopDisplayMode(display))
+			SDL_SetWindowFullscreenMode(m_window, mode);
+		SDL_SetWindowFullscreen(m_window, true);
+	}
+	else
+	{
+		SDL_SetWindowFullscreen(m_window, false);
+	}
+	spdlog::info("F11: exclusive fullscreen {}", m_isFullscreen ? "ON" : "OFF");
 }
 
 void GameEngine::onWindowResize(int width, int height)
 {
+	// Zero-size events (minimized window; emscripten canvas before CSS layout) must
+	// not reconfigure the surface or render targets - WebGPU forbids empty textures.
+	if (width <= 0 || height <= 0)
+	{
+		spdlog::info("Ignoring zero-size window resize event ({}x{})", width, height);
+		return;
+	}
+
 	m_currentWidth = width;
 	m_currentHeight = height;
 	m_context->surfaceManager().updateIfNeeded(width, height);
@@ -427,9 +531,11 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 
 	scene->preRender();
 
+	// An empty camera set is NOT an early-out: the renderer must still run its
+	// composite + UI pass and present, otherwise the surface acquired in
+	// startFrame() is never presented and the next acquireNextTexture()
+	// deadlocks - which froze the editor whenever the active camera was disabled.
 	auto cameras = scene->getActiveCameras();
-	if (cameras.empty())
-		return;
 
 	// Sort cameras by depth (lower depth renders first)
 	std::sort(cameras.begin(), cameras.end(), [](const auto &a, const auto &b)
@@ -468,10 +574,13 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 		target.clearFlags = camera->getClearFlags();
 		target.backgroundColor = camera->getBackgroundColor();
 		target.cpuTarget = camera->getRenderTarget();
+		target.hdr = camera->isHDREnabled();
 		target.environmentTexture = camera->getEnvironmentTexture();
 		target.skyboxEnabled = camera->isSkyboxEnabled();
 		target.irradianceEnabled = camera->isIrradianceEnabled();
 		target.irradianceIntensity = camera->getIrradianceIntensity();
+		target.offscreenOnly = camera->isOffscreenOnly();
+		target.renderSize = camera->getRenderSize();
 		target.gpuTexture = nullptr; // Will be set by renderer
 
 		renderTargets.push_back(target);
@@ -482,6 +591,8 @@ void GameEngine::renderFrame(float /* deltaTime*/)
 		renderTargets.end(),
 		[](const engine::rendering::RenderTarget &a, const engine::rendering::RenderTarget &b)
 		{
+			// ToDo: Implement proper alpha blending sorting based on camera distance for transparent objects.
+			// Proboply need to separate opaque and transparent render targets and sort transparents by distance from camera.
 			return a.depth < b.depth;
 		}
 	);

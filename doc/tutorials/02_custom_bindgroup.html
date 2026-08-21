@@ -225,187 +225,40 @@ pre code {
 }
 
 </style>
-
-<style>
-/* Tomorrow Theme */
-/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
-/* Original theme - https://github.com/chriskempson/tomorrow-theme */
-
-/* Tomorrow Comment */
-.hljs-comment,
-.hljs-quote {
-	color: #8e908c;
-}
-
-/* Tomorrow Red */
-.hljs-variable,
-.hljs-template-variable,
-.hljs-tag,
-.hljs-name,
-.hljs-selector-id,
-.hljs-selector-class,
-.hljs-regexp,
-.hljs-deletion {
-	color: #c82829;
-}
-
-/* Tomorrow Orange */
-.hljs-number,
-.hljs-built_in,
-.hljs-builtin-name,
-.hljs-literal,
-.hljs-type,
-.hljs-params,
-.hljs-meta,
-.hljs-link {
-	color: #f5871f;
-}
-
-/* Tomorrow Yellow */
-.hljs-attribute {
-	color: #eab700;
-}
-
-/* Tomorrow Green */
-.hljs-string,
-.hljs-symbol,
-.hljs-bullet,
-.hljs-addition {
-	color: #718c00;
-}
-
-/* Tomorrow Blue */
-.hljs-title,
-.hljs-section {
-	color: #4271ae;
-}
-
-/* Tomorrow Purple */
-.hljs-keyword,
-.hljs-selector-tag {
-	color: #8959a8;
-}
-
-.hljs {
-	display: block;
-	overflow-x: auto;
-	color: #4d4d4c;
-	padding: 0.5em;
-}
-
-.hljs-emphasis {
-	font-style: italic;
-}
-
-.hljs-strong {
-	font-weight: bold;
-}
-</style>
-
-<style>
-/*
- * Markdown PDF CSS
- */
-
- body {
-	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
-	padding: 0 12px;
-}
-
-pre {
-	background-color: #f8f8f8;
-	border: 1px solid #cccccc;
-	border-radius: 3px;
-	overflow-x: auto;
-	white-space: pre-wrap;
-	overflow-wrap: break-word;
-}
-
-pre:not(.hljs) {
-	padding: 23px;
-	line-height: 19px;
-}
-
-blockquote {
-	background: rgba(127, 127, 127, 0.1);
-	border-color: rgba(0, 122, 204, 0.5);
-}
-
-.emoji {
-	height: 1.4em;
-}
-
-code {
-	font-size: 14px;
-	line-height: 19px;
-}
-
-/* for inline code */
-:not(pre):not(.hljs) > code {
-	color: #C9AE75; /* Change the old color so it seems less like an error */
-	font-size: inherit;
-}
-
-/* Page Break : use <div class="page"/> to insert page break
--------------------------------------------------------- */
-.page {
-	page-break-after: always;
-}
-
-</style>
-
-<script src="https://unpkg.com/mermaid@9.4.0/dist/mermaid.min.js"></script>
 </head>
 <body>
-  <script>
-    mermaid.initialize({
-      startOnLoad: true,
-      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
-          ? 'dark'
-          : 'default'
-    });
-  </script>
 <h1 id="tutorial-02-custom-bind-groups-for-per-object-data">Tutorial 02: Custom Bind Groups for Per-Object Data</h1>
 <blockquote>
-<p><strong>💡 Tip:</strong> It's recommended using the <a href="02_custom_bindgroup.html">02_custom_bindgroup.html</a> version of this tutorial as copying code works best there regarding padding and formatting.</p>
-</blockquote>
-<blockquote>
+<p><strong>💡 Tip:</strong> It's recommended using the <a href="02_custom_bindgroup.html">02_custom_bindgroup.html</a> version of this tutorial as copying code works best there regarding padding and formatting. Note that the generated .html/.pdf versions can lag behind this .md file - the .md is the source of truth.</p>
 <p><strong>⚠️ Build issues?</strong> See <a href="#troubleshooting">Troubleshooting</a> at the end of this tutorial for help reading build errors from the terminal.</p>
 </blockquote>
-<p>In Tutorial 01, you learned the three standard bind groups (Frame, Object, Material) that the engine provides. Now you'll learn how to add your own custom bind groups to pass additional data to shaders.</p>
-<p><strong>What you'll learn:</strong></p>
-<ul>
-<li>Creating custom bind groups beyond Frame/Object/Material</li>
-<li>Registering custom bind groups in shader reflection</li>
-<li>Implementing <code>preRender()</code> to provide per-frame data</li>
-<li>Using <code>BindGroupDataProvider</code> to send data to GPU</li>
-<li>Texture tiling and offset manipulation in shaders</li>
-</ul>
+<p>In Tutorial 01, you learned the engine bind groups (Frame, Scene, Material, Object) that occupy <code>@group(0..3)</code>. Now you'll learn how to add your own custom bind group - at <code>@group(1)</code>, a slot this shader's engine roles leave free - to pass additional data to a shader, and that the engine discovers it for you by <strong>reflecting the WGSL</strong>, so you only name it on the C++ side.</p>
+<p><strong>What you'll learn:</strong>
+- Adding a custom bind group in a free slot (WebGPU allows only 4 bind groups per pipeline; a custom group takes an index whose engine role your shader does not use)
+- How the engine reflects a custom group out of your WGSL - no hand-written binding layout
+- Naming the group on the <code>ShaderDescriptor</code> so per-object data can target it
+- Implementing <code>preRender()</code> to provide per-object data via <code>BindGroupDataProvider</code>
+- Texture tiling and offset manipulation in shaders</p>
 <p><strong>What you'll build:</strong>
 A tiled floor with controllable tiling and offset, perfect for scrolling textures or adjusting texture scale per object.</p>
-<p><strong>What's provided:</strong></p>
-<ul>
-<li>Working unlit shader from Tutorial 01</li>
-<li>Tutorial project with scene setup</li>
-<li>Empty <code>CustomRenderNode.h</code> class to implement</li>
-</ul>
-<hr>
+<p><strong>What's provided:</strong>
+- Working unlit shader from Tutorial 01
+- Tutorial project with scene setup
+- Empty <code>CustomRenderNode.h</code> class to implement</p>
+<hr />
 <h2 id="understanding-custom-bind-groups">Understanding Custom Bind Groups</h2>
 <p><strong>Why add custom bind groups?</strong></p>
-<p>The engine's standard bind groups cover common cases:</p>
-<ul>
-<li>Group 0: Camera data (same for all objects)</li>
-<li>Group 1: Transform data (unique per object)</li>
-<li>Group 2: Material data (shared by objects with same material)</li>
-</ul>
-<p>But what if you want per-object data that's NOT a transform or material? Examples:</p>
-<ul>
-<li>Scrolling water at different speeds</li>
-<li>Individual object animations</li>
-<li>Per-object effects or parameters</li>
-</ul>
-<p><strong>Custom bind groups solve this:</strong> They let you add Group 3, 4, 5... with your own data structures.</p>
-<hr>
+<p>The engine reserves <code>@group(0..3)</code> for its own roles:
+- Group 0: <strong>Frame</strong> - camera matrices, time (once per frame)
+- Group 1: <strong>Scene</strong> - lights, shadows, environment, clusters (once per frame)
+- Group 2: <strong>Material</strong> - textures, colors, properties (per material)
+- Group 3: <strong>Object</strong> - transform (per object)</p>
+<p>But what if you want per-object data that's NOT a transform or material? Examples:
+- Scrolling water at different speeds
+- Individual object animations
+- Per-object effects or parameters</p>
+<p><strong>Custom bind groups solve this:</strong> WebGPU limits a pipeline to <strong>4 bind groups</strong> (indices 0..3 - the spec default, and Dawn's hard maximum), so there is no fifth slot for custom data. Instead, your custom group takes over an index whose engine role your shader does not use. This tutorial's unlit shader pulls in Frame (0), Material (2) and Object (3) but no Scene group, so <strong><code>@group(1)</code></strong> is free. You declare the group in WGSL and the engine reflects it - it reads the bindings, types and sizes straight out of your shader. On the C++ side you only give the group a name and a reuse policy; naming the slot in the descriptor is what tells the engine it is a custom group rather than the default engine role.</p>
+<hr />
 <h2 id="step-1-understanding-the-project-structure">Step 1: Understanding the Project Structure</h2>
 <p>This tutorial builds directly on Tutorial 01. You should have completed the unlit shader first.</p>
 <h3 id="files-youll-modify">Files You'll Modify:</h3>
@@ -416,223 +269,201 @@ A tiled floor with controllable tiling and offset, perfect for scrolling texture
 </ol>
 <h3 id="starting-point">Starting Point:</h3>
 <p>The <code>main.cpp</code> has one commented line (similar to Tutorial 01) if it was not modified previously:</p>
-<pre class="hljs"><code><div><span class="hljs-comment">// floorModel-&gt;getSubmeshes()[0].material = floorMaterial-&gt;getHandle();</span>
-</div></code></pre>
+<pre><code class="language-cpp">// floorModel-&gt;getSubmeshes()[0].material = floorMaterial-&gt;getHandle();
+</code></pre>
 <p>You'll uncomment this at the end once everything is ready.</p>
-<hr>
+<hr />
 <h2 id="step-2-open-the-shader-file">Step 2: Open the Shader File</h2>
-<p>Open <code>examples/tutorial/assets/shaders/unlit_custom.wgsl</code>.</p>
-<p>This file already contains the complete unlit shader from Tutorial 01:</p>
-<ul>
-<li>VertexInput and VertexOutput structs</li>
-<li>Frame, Object, and Material bind groups (Groups 0-2)</li>
-<li>Vertex shader (vs_main) and fragment shader (fs_main)</li>
-</ul>
-<p>You'll extend this by adding a custom bind group (Group 3) for tiling parameters.</p>
-<hr>
+<p>Open <code>examples/tutorial/assets/shaders/unlit_custom.wgsl</code>. </p>
+<p>This file already contains the complete unlit shader from Tutorial 01:
+- VertexInput and VertexOutput structs
+- Frame (<code>@group(0)</code>) and Object (<code>@group(3)</code>) uniforms, pulled in via <code>#include "engine://core/frame_uniforms.wgsl"</code> and <code>#include "engine://core/object_uniforms.wgsl"</code>
+- Material bind group (<code>@group(2)</code>) declared inline
+- Vertex shader (vs_main) and fragment shader (fs_main)</p>
+<p>You'll extend this by adding a custom bind group at <code>@group(1)</code> - the slot this shader's unused Scene role leaves free - for tiling parameters.</p>
+<hr />
 <h2 id="step-3-add-tileuniforms-struct-to-shader">Step 3: Add TileUniforms Struct to Shader</h2>
 <p><strong>Your Task:</strong></p>
 <p>Open <code>examples/tutorial/assets/shaders/unlit_custom.wgsl</code> and find the comment: <code>// Tutorial 02 - Step 3</code></p>
 <p>Add this code:</p>
-<pre class="hljs"><code><div>struct TileUniforms
+<pre><code class="language-wgsl">struct TileUniforms
 {
     tileOffset: vec2f,
     tileSize: vec2f,
 }
-</div></code></pre>
-<p><strong>What it contains:</strong></p>
-<ul>
-<li><code>tileOffset</code> - UV offset (for scrolling or shifting texture)</li>
-<li><code>tileSize</code> - UV scale (how many times to repeat texture)</li>
-</ul>
+</code></pre>
+<p><strong>What it contains:</strong>
+- <code>tileOffset</code> - UV offset (for scrolling or shifting texture)
+- <code>tileSize</code> - UV scale (how many times to repeat texture)</p>
 <p><strong>WebGPU alignment:</strong>
 Each <code>vec2f</code> is 8 bytes, so total is 16 bytes - perfect for uniform buffer alignment (must be multiple of 16).</p>
-<hr>
+<hr />
 <div style="page-break-after: always;"></div>
+
 <h2 id="step-4-declare-custom-bind-group">Step 4: Declare Custom Bind Group</h2>
 <p><strong>Your Task:</strong></p>
 <p>In <code>unlit_custom.wgsl</code>, find the comment: <code>// Tutorial 02 - Step 4</code></p>
 <p>Add this code:</p>
-<pre class="hljs"><code><div>@group(3) @binding(0)
+<pre><code class="language-wgsl">@group(1) @binding(0)
 var&lt;uniform&gt; tileUniforms: TileUniforms;
-</div></code></pre>
-<p><strong>Important:</strong> Group numbers don't have to be sequential - the engine finds bind groups by name, not by order. The only hard requirement is <strong>Group 0 must be FrameUniforms</strong> if used. You could use <code>@group(5)</code> or <code>@group(10)</code> for custom bind groups; the number just needs to match between shader and registration.</p>
-<p><strong>WebGPU bind group slots:</strong></p>
-<ul>
-<li>Group 0: <strong>Must</strong> be FrameUniforms (if your shader needs camera data)</li>
-<li>Groups 1-2: Typically Object, Light, Material, something like this</li>
-<li>Groups 3+: Custom bind groups (any index you choose)</li>
-</ul>
+</code></pre>
+<p><strong>Important:</strong> WebGPU allows at most <strong>4 bind groups</strong> per pipeline (indices 0..3) - the spec default limit, and the hard maximum on Dawn. The indices only <em>default</em> to the engine roles (Frame, Scene, Material, Object); a slot whose role your shader does not pull in is free for custom data. This unlit shader uses Frame (0), Material (2) and Object (3) but no Scene group, so <code>@group(1)</code> is available. A custom group at an index the shader already uses (here 0, 2 or 3) would collide with that engine group, and an index of 4 or higher fails pipeline creation (<code>bindGroupLayoutCount (5) is larger than the maximum allowed (4)</code>). If a shader needed all four engine roles, there would be no free slot - fold the extra data into the material group instead. The engine reflects whatever you declare here.</p>
+<p><strong>Bind group slots:</strong>
+- Group 0: <strong>Frame</strong> (engine role) - pulled in via <code>#include</code> when your shader needs camera data
+- Group 1: <strong>Scene</strong> (engine role) - <em>unused by this shader</em>, so our custom <code>TileUniforms</code> takes it
+- Group 2: <strong>Material</strong>, Group 3: <strong>Object</strong> (engine roles this shader uses)</p>
 <p>Each group can have multiple bindings (0, 1, 2...) for different resources within that group.</p>
-<hr>
+<hr />
 <h2 id="step-5-modify-fragment-shader-to-use-tileuniforms">Step 5: Modify Fragment Shader to Use TileUniforms</h2>
 <p><strong>Your Task:</strong></p>
 <p>In <code>unlit_custom.wgsl</code>, find the comment: <code>// Tutorial 02 - Step 5</code></p>
 <p>Update the fragment shader to apply tiling before texture sampling:</p>
-<pre class="hljs"><code><div>@fragment
+<pre><code class="language-wgsl">@fragment
 fn fs_main(input: VertexOutput) -&gt; @location(0) vec4f {
     // Apply tiling and offset to UV coordinates
     let tiledUV = input.texCoord * tileUniforms.tileSize + tileUniforms.tileOffset;
-    
+
     // Sample texture with modified UVs
     let textureColor = textureSample(baseColorTexture, textureSampler, tiledUV);
     let finalColor = textureColor * unlitMaterialUniforms.color;
     return finalColor;
 }
-</div></code></pre>
-<p><strong>What this does:</strong></p>
-<ol>
-<li><code>input.texCoord</code> - Original UV from mesh (0-1 range)</li>
-<li><code>* tileUniforms.tileSize</code> - Scale UV (e.g., ×4 = repeat texture 4 times)</li>
-<li><code>+ tileUniforms.tileOffset</code> - Shift UV (e.g., +0.5 = scroll halfway)</li>
-<li>Sample texture at modified coordinates</li>
-</ol>
-<p><strong>Example values:</strong></p>
-<ul>
-<li><code>tileSize = (2, 2)</code> - Texture repeats 2×2 times across surface</li>
-<li><code>tileOffset = (0.5, 0)</code> - Texture shifted 50% to the right</li>
-</ul>
-<hr>
+</code></pre>
+<p><strong>What this does:</strong>
+1. <code>input.texCoord</code> - Original UV from mesh (0-1 range)
+2. <code>* tileUniforms.tileSize</code> - Scale UV (e.g., ×4 = repeat texture 4 times)
+3. <code>+ tileUniforms.tileOffset</code> - Shift UV (e.g., +0.5 = scroll halfway)
+4. Sample texture at modified coordinates</p>
+<p><strong>Example values:</strong>
+- <code>tileSize = (2, 2)</code> - Texture repeats 2×2 times across surface
+- <code>tileOffset = (0.5, 0)</code> - Texture shifted 50% to the right</p>
+<hr />
 <h2 id="step-6-register-shader-with-custom-bind-group">Step 6: Register Shader with Custom Bind Group</h2>
 <p><strong>Your Task:</strong></p>
 <p>Open <code>examples/tutorial/main.cpp</code> and find the comment: <code>// Tutorial 02 - Step 6</code></p>
-<p><strong>⚠️ Important:</strong> You don't need to copy the entire registration code. Just:</p>
+<p>The shader is registered with a <code>ShaderDescriptor</code> - a small declaration the engine fills out by reflecting the WGSL. You don't list bindings or sizes; reflection recovers them from the <code>@group(1)</code> block you wrote. You only have to do two things:</p>
 <ol>
-<li>Change the shader <strong>file path</strong> to use the new shader</li>
-<li>Add the custom bind group code at the very end</li>
+<li>Point the descriptor at the new shader file</li>
+<li>Name the custom group so per-object data can target it</li>
 </ol>
-<h3 id="change-the-shader-path-only">Change the Shader Path Only:</h3>
-<p>In the <code>.begin()</code> call, change ONE line:</p>
-<pre class="hljs"><code><div>PathProvider::getShaders(<span class="hljs-string">"unlit_custom.wgsl"</span>),  <span class="hljs-comment">// Change "unlit.wgsl" → "unlit_custom.wgsl"</span>
-</div></code></pre>
-<p>Everything else in the <code>.begin()</code> call stays the same (frame, object bind groups, material, sampler, texture remain).</p>
-<h3 id="add-custom-bind-group-at-the-end">Add Custom Bind Group at the End:</h3>
-<p>After the <code>.addMaterialTexture()</code> call and <strong>before</strong> <code>.build()</code>, add:</p>
-<pre class="hljs"><code><div>        .addBindGroup(
-            <span class="hljs-string">"TileUniforms"</span>,                                    <span class="hljs-comment">// Bind group name</span>
-            engine::rendering::BindGroupReuse::PerObject,      <span class="hljs-comment">// Cache per object</span>
-            engine::rendering::BindGroupType::Custom           <span class="hljs-comment">// Mark as custom</span>
-        )
-        .addCustomUniform(
-            <span class="hljs-string">"tileUniforms"</span>,                                    <span class="hljs-comment">// Variable name in shader</span>
-            <span class="hljs-keyword">sizeof</span>(demo::CustomRenderNode::TileUniforms),      <span class="hljs-comment">// 16 bytes (2 × vec2f)</span>
-            WGPUShaderStage_Fragment                           <span class="hljs-comment">// Used in fragment shader</span>
-        )
-        .build();
-
-shaderRegistry.registerShader(shaderInfo);
-</div></code></pre>
-<p><strong>What you're telling the engine:</strong></p>
-<ul>
-<li>Group name: <code>&quot;TileUniforms&quot;</code> (matches <code>@group(3)</code> in shader)</li>
-<li>Uniform struct size: 16 bytes</li>
-<li>Used in fragment shader stage</li>
-</ul>
-<p><strong>How the Binding Happens:</strong></p>
+<h3 id="point-the-descriptor-at-the-new-shader">Point the Descriptor at the New Shader:</h3>
+<p>In the descriptor, change the path line to the tiling shader:</p>
+<pre><code class="language-cpp">unlitShader.path = PathProvider::getShaders(&quot;unlit_custom.wgsl&quot;); // was &quot;unlit.wgsl&quot;
+</code></pre>
+<p>The Frame, Material and Object groups are still discovered automatically (Frame/Object from the <code>#include</code>s, Material from the structs the shader declares), so nothing else about those changes.</p>
+<h3 id="name-the-custom-group">Name the Custom Group:</h3>
+<p>Right after the <code>material</code> group is assigned, add the custom group entry:</p>
+<pre><code class="language-cpp">unlitShader.groups[1] = {
+    &quot;TileUniforms&quot;,                                 // Group name (targeted from preRender)
+    engine::rendering::BindGroupType::Custom,       // Mark as a custom group
+    engine::rendering::BindGroupReuse::PerObject,   // Cache one per object
+    {}                                              // No per-binding overrides - reflection fills these
+};
+</code></pre>
+<p>Naming the entry is what claims the slot: an unnamed <code>@group(1)</code> would fall back to the engine's Scene role, but a named descriptor entry defines a custom group at any index.</p>
+<p>The registration call below it is already in place and stays the same:</p>
+<pre><code class="language-cpp">shaderRegistry.registerShader(shaderFactory.buildFromDescriptor(unlitShader));
+</code></pre>
+<p><strong>What you're telling the engine:</strong>
+- The group at <code>@group(1)</code> is called <code>"TileUniforms"</code> (your <code>preRender()</code> will target this name)
+- It's a custom group, cached per object
+- The empty <code>{}</code> means "no overrides" - the binding, its type and its size all come from reflecting the shader</p>
+<p><strong>How the binding happens:</strong></p>
 <blockquote>
-<p><strong>📝 Note:</strong> The complex binding logic happens in the <code>build()</code> method. When you call <code>.addBindGroup()</code> and <code>.addCustomUniform()</code>, you're specifying exactly how bind groups should be created. The engine then uses this specification to create bind group layouts, allocate GPU buffers, and manage resource binding.</p>
-<p><strong>Advanced Readers:</strong> Check out <a href="#file:WebGPUBindGroupFactory.cpp">WebGPUBindGroupFactory.cpp</a> to see how the factories handle bind group creation and resource allocation. The <code>WebGPUShaderFactory::build()</code> method orchestrates the whole process.</p>
+<p><strong>📝 Note:</strong> <code>buildFromDescriptor()</code> expands the <code>#include</code>s, reflects the resulting WGSL, and builds the bind group layouts from what it finds. For <code>@group(1)</code> it reads your <code>TileUniforms</code> declaration directly - the binding index, the fact that it's a uniform, and its 16-byte size all come from the shader. The descriptor only supplies the things WGSL can't express: the engine-facing name and the reuse policy.</p>
+<p><strong>Advanced Readers:</strong> See <a href="../../src/engine/rendering/reflection/WgslReflector.cpp">WgslReflector.cpp</a> for the reflection pass and <a href="../../src/engine/rendering/webgpu/WebGPUShaderFactory.cpp">WebGPUShaderFactory.cpp</a> (<code>buildFromDescriptor</code>) for how the reflected groups become bind group layouts.</p>
 </blockquote>
-<p><strong>Why explicit registration?</strong></p>
-<ul>
-<li><strong>No WGSL Reflection</strong>: WebGPU doesn't provide official shader reflection APIs, and there are no mature third-party tools for WGSL parsing</li>
-<li><strong>Practical Necessity</strong>: Without automatic reflection, you must explicitly tell the engine what bind groups and uniforms exist</li>
-<li><strong>Educational</strong>: You see exactly what bind groups exist and their purposes</li>
-<li><strong>Control</strong>: Fine-grained control over resource allocation and caching</li>
-<li><strong>Debugging</strong>: Easy to see which bind groups are used by which shaders</li>
-</ul>
-<hr>
+<p><strong>Why reflection instead of hand-listing bindings?</strong>
+- <strong>The shader is the source of truth</strong>: you declared <code>TileUniforms</code> once in WGSL; reflection reuses that rather than making you restate the size and bindings in C++ (which could drift)
+- <strong>Less to get wrong</strong>: no manual byte counts or stage flags for the custom group
+- <strong>Still explicit where it matters</strong>: you choose the group name and reuse policy, which are engine concepts the shader can't express</p>
+<hr />
 <h2 id="step-7-implement-customrendernode">Step 7: Implement CustomRenderNode</h2>
 <p><strong>Your Task:</strong></p>
 <p>Open <code>examples/tutorial/CustomRenderNode.h</code> and find the comment: <code>// Tutorial 02 - Step 7</code></p>
 <p>The struct is already defined:</p>
-<pre class="hljs"><code><div><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">TileUniforms</span>
-{</span>
+<pre><code class="language-cpp">struct TileUniforms
+{
     glm::vec2 tileOffset;
     glm::vec2 tileSize;
 };
-</div></code></pre>
+</code></pre>
 <div style="page-break-after: always;"></div>
+
 <p>Implement the <code>preRender()</code> method:</p>
-<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">preRender</span><span class="hljs-params">(<span class="hljs-built_in">std</span>::<span class="hljs-built_in">vector</span>&lt;engine::rendering::BindGroupDataProvider&gt; &amp;outProviders)</span> <span class="hljs-keyword">override</span>
-</span>{
-    <span class="hljs-keyword">auto</span> dataProvider = engine::rendering::BindGroupDataProvider::create(
-        <span class="hljs-string">"unlit"</span>,      <span class="hljs-comment">// Shader name (must match registration)</span>
-        <span class="hljs-string">"TileUniforms"</span>,      <span class="hljs-comment">// Bind group name (must match shader .addBindGroup())</span>
-        tileUniforms,        <span class="hljs-comment">// Uniform data (struct instance)</span>
-        engine::rendering::BindGroupReuse::PerObject,  <span class="hljs-comment">// Cache per object</span>
-        getId()              <span class="hljs-comment">// Instance ID (node's unique ID)</span>
+<pre><code class="language-cpp">virtual void preRender(std::vector&lt;engine::rendering::BindGroupDataProvider&gt; &amp;outProviders) override
+{
+    auto dataProvider = engine::rendering::BindGroupDataProvider::create(
+        &quot;unlit&quot;,      // Shader name (must match registration)
+        &quot;TileUniforms&quot;,      // Bind group name (must match groups[1] in registration)
+        tileUniforms,        // Uniform data (struct instance)
+        engine::rendering::BindGroupReuse::PerObject,  // Cache per object
+        getId()              // Instance ID (node's unique ID)
     );
     outProviders.push_back(dataProvider);
 }
-</div></code></pre>
+</code></pre>
 <p><strong>Understanding preRender():</strong></p>
 <p>This method is called by the scene graph before rendering each frame. It's your opportunity to provide updated data to the GPU.</p>
-<p><strong>BindGroupDataProvider::create() parameters:</strong></p>
-<ol>
-<li><strong>Shader name</strong> - Which shader needs this data</li>
-<li><strong>Bind group name</strong> - Which bind group in that shader (from <code>.addBindGroup()</code>)</li>
-<li><strong>Data</strong> - Actual uniform data (will be copied to GPU)</li>
-<li><strong>Reuse policy</strong> - When to rebind (PerObject means cache per unique object)</li>
-<li><strong>Instance ID</strong> - Unique identifier for caching (use node ID for per-object)</li>
-</ol>
+<p><strong>BindGroupDataProvider::create() parameters:</strong>
+1. <strong>Shader name</strong> - Which shader needs this data
+2. <strong>Bind group name</strong> - Which bind group in that shader (the name you gave <code>groups[1]</code>)
+3. <strong>Data</strong> - Actual uniform data (will be copied to GPU)
+4. <strong>Reuse policy</strong> - When to rebind (PerObject means cache per unique object)
+5. <strong>Instance ID</strong> - Unique identifier for caching (use node ID for per-object)</p>
 <p><strong>Why PerObject reuse?</strong>
 If you have 10 floor tiles with different tiling, each gets its own cached bind group. The renderer only rebinds when switching between different objects.</p>
-<hr>
+<hr />
 <h2 id="step-8-create-customrendernode-instance">Step 8: Create CustomRenderNode Instance</h2>
 <p><strong>Your Task:</strong></p>
 <p>Open <code>main.cpp</code> and find the comment: <code>// Tutorial 02 - Step 8</code></p>
 <p>Update the code to use CustomRenderNode:</p>
-<pre class="hljs"><code><div><span class="hljs-comment">// Change from ModelRenderNode to CustomRenderNode</span>
-<span class="hljs-keyword">auto</span> floorNode = <span class="hljs-built_in">std</span>::make_shared&lt;demo::CustomRenderNode&gt;(floorModel);
-floorNode-&gt;tileUniforms.tileOffset = glm::vec2(<span class="hljs-number">0.2f</span>, <span class="hljs-number">0.0f</span>);
-floorNode-&gt;tileUniforms.tileSize = glm::vec2(<span class="hljs-number">4.0f</span>, <span class="hljs-number">4.0f</span>);
-floorNode-&gt;getTransform().setLocalScale(glm::vec3(<span class="hljs-number">10.0f</span>, <span class="hljs-number">1.0f</span>, <span class="hljs-number">10.0f</span>));
+<pre><code class="language-cpp">// Change from ModelRenderNode to CustomRenderNode
+auto floorNode = std::make_shared&lt;demo::CustomRenderNode&gt;(floorModel);
+floorNode-&gt;tileUniforms.tileOffset = glm::vec2(0.2f, 0.0f);
+floorNode-&gt;tileUniforms.tileSize = glm::vec2(4.0f, 4.0f);
+floorNode-&gt;getTransform().setLocalScale(glm::vec3(10.0f, 1.0f, 10.0f));
 rootNode-&gt;addChild(floorNode);
-</div></code></pre>
-<p><strong>What this does:</strong></p>
-<ul>
-<li>Creates custom node with floor model</li>
-<li>Sets tileOffset to shift texture 20% to the right</li>
-<li>Sets tileSize to 4×4 (repeat texture 16 times total)</li>
-<li>Scales floor physically to 10×10 units</li>
-</ul>
-<hr>
+</code></pre>
+<p><strong>What this does:</strong>
+- Creates custom node with floor model
+- Sets tileOffset to shift texture 20% to the right
+- Sets tileSize to 4×4 (repeat texture 16 times total)
+- Scales floor physically to 10×10 units</p>
+<hr />
 <h2 id="step-9-uncomment-material-assignment">Step 9: Uncomment Material Assignment</h2>
 <p><strong>Your Task:</strong></p>
 <p>Open <code>main.cpp</code> and find the comment: <code>// Tutorial 02 - Step 9</code></p>
 <p>Uncomment the material assignment line:</p>
-<pre class="hljs"><code><div><span class="hljs-comment">// Uncomment this line:</span>
-floorModel-&gt;getSubmeshes()[<span class="hljs-number">0</span>].material = floorMaterial-&gt;getHandle();
-</div></code></pre>
+<pre><code class="language-cpp">// Uncomment this line:
+floorModel-&gt;getSubmeshes()[0].material = floorMaterial-&gt;getHandle();
+</code></pre>
 <p><strong>Why uncomment now?</strong>
 Now that the shader is complete and registered, the engine can create the render pipeline successfully.</p>
-<hr>
+<hr />
 <h2 id="step-10-build-and-run">Step 10: Build and Run</h2>
-<pre class="hljs"><code><div><span class="hljs-comment"># Windows</span>
+<pre><code class="language-bash"># Windows
 scripts\build-example.bat tutorial Debug WGPU
 
-<span class="hljs-comment"># Linux  </span>
+# Linux  
 bash scripts/build-example.sh tutorial Debug WGPU
-</div></code></pre>
+</code></pre>
 <p><strong>VS Code:</strong> Press <code>F5</code> to build and run.</p>
+<p><strong>Where the executable lands:</strong> build directories are per backend. On Windows a <code>WGPU</code> build goes to <code>examples\build\tutorial\Windows\Debug-WGPU</code> (a <code>DAWN</code> build uses <code>Debug-DAWN</code>; only a Dawn-from-source build - fourth argument <code>SOURCE</code> - uses the plain <code>Debug</code> folder, and Emscripten/<code>EMDAWN</code> builds go under <code>Emscripten\Debug</code>). On Linux/Mac the build directory is <code>examples/build/tutorial/&lt;Linux|Mac&gt;/Debug</code>.</p>
 <h2 id="expected-result">Expected Result</h2>
-<p>You should see:</p>
-<ul>
-<li>✅ <strong>Floor</strong> with tiled cobblestone (4×4 repetitions)</li>
-<li>✅ <strong>Texture slightly offset</strong> to the right (20% shift)</li>
-<li>✅ <strong>Fourareen object</strong> with PBR lighting (unchanged)</li>
-</ul>
-<p><strong>Compare to Tutorial 01:</strong></p>
-<ul>
-<li>Tutorial 01: Texture stretched across entire floor (1×1)</li>
-<li>Tutorial 02: Texture repeated 4×4 times with smaller tiles</li>
-</ul>
-<hr>
+<p>You should see:
+- ✅ <strong>Floor</strong> with tiled cobblestone (4×4 repetitions)
+- ✅ <strong>Texture slightly offset</strong> to the right (20% shift)
+- ✅ <strong>Fourareen object</strong> with PBR lighting (unchanged)</p>
+<p><strong>Compare to Tutorial 01:</strong>
+- Tutorial 01: Texture stretched across entire floor (1×1)
+- Tutorial 02: Texture repeated 4×4 times with smaller tiles</p>
+<hr />
 <div style="page-break-after: always;"></div>
+
 <h2 id="understanding-the-data-flow">Understanding the Data Flow</h2>
 <p><strong>Lifecycle of custom bind group data:</strong></p>
-<pre class="hljs"><code><div>1. Scene graph traversal:
+<pre><code>1. Scene graph traversal:
    └─ Scene calls preRender() on each node
 
 2. CustomRenderNode::preRender():
@@ -651,24 +482,23 @@ bash scripts/build-example.sh tutorial Debug WGPU
 5. During rendering:
    ├─ BindGroupBinder::bind() checks cache
    ├─ Finds cached bind group by instanceId
-   └─ Binds to correct (in this case @group(3)) in shader
+   └─ Binds it at the correct index (in this case @group(1)) in the shader
 
 6. Shader execution:
    └─ Fragment shader reads tileUniforms.tileOffset and tileSize
-</div></code></pre>
+</code></pre>
 <p><strong>Key insight:</strong> You provide data in <code>preRender()</code>, the engine handles caching and GPU upload automatically.</p>
 <p><strong>Why preRender() Works - The Timing:</strong></p>
-<p>Remember WebGPU's command recording model:</p>
-<ol>
-<li><strong>Scene Traversal</strong>: Scene calls <code>preRender()</code> on all nodes \u2192 Collects bind group providers</li>
-<li><strong>GPU Upload</strong>: Engine processes providers \u2192 Creates buffers \u2192 Writes data with <code>queue.writeBuffer()</code></li>
-<li><strong>Command Recording</strong>: Engine records draw commands \u2192 Binds groups \u2192 Issues <code>draw()</code></li>
-<li><strong>Submission</strong>: Complete command buffer sent to GPU queue</li>
-<li><strong>GPU Execution</strong>: Commands execute, reading the fresh data you provided</li>
-</ol>
+<p>Remember WebGPU's command recording model:
+1. <strong>Scene Traversal</strong>: Scene calls <code>preRender()</code> on all nodes \u2192 Collects bind group providers
+2. <strong>GPU Upload</strong>: Engine processes providers \u2192 Creates buffers \u2192 Writes data with <code>queue.writeBuffer()</code>
+3. <strong>Command Recording</strong>: Engine records draw commands \u2192 Binds groups \u2192 Issues <code>draw()</code>
+4. <strong>Submission</strong>: Complete command buffer sent to GPU queue
+5. <strong>GPU Execution</strong>: Commands execute, reading the fresh data you provided</p>
 <p>This is why updating <code>tileUniforms</code> in <code>preRender()</code> works - the data reaches the GPU before the draw command executes!</p>
-<hr>
+<hr />
 <div style="page-break-after: always;"></div>
+
 <h2 id="understanding-bindgroupreuse-policies">Understanding BindGroupReuse Policies</h2>
 <p><strong>Why PerObject for TileUniforms?</strong></p>
 <p>The reuse policy determines when bind groups are cached and rebound:</p>
@@ -703,62 +533,58 @@ bash scripts/build-example.sh tutorial Debug WGPU
 </tr>
 </tbody>
 </table>
-<p><strong>For custom bind groups:</strong></p>
-<ul>
-<li>Use <code>PerObject</code> when data is unique per object instance (like our tiling)</li>
-<li>Use <code>PerFrame</code> if data updates every frame but is shared (like a global animation time)</li>
-<li>Use <code>PerMaterial</code> if data is shared by objects with same material</li>
-</ul>
-<p><strong>Performance impact:</strong></p>
-<ul>
-<li><code>PerObject</code> with unique data = creates many bind groups (one per object)</li>
-<li><code>PerObject</code> with shared data = reuses cached bind groups automatically</li>
-</ul>
-<p>The engine's <code>BindGroupBinder</code> handles all caching - you just specify the policy.</p>
-<hr>
+<p><strong>For custom bind groups:</strong>
+- Use <code>PerObject</code> when data is unique per object instance (like our tiling)
+- Use <code>PerFrame</code> if data updates every frame but is shared (like a global animation time)
+- Use <code>PerMaterial</code> if data is shared by objects with same material</p>
+<p><strong>Performance impact:</strong>
+- <code>PerObject</code> with unique data = creates many bind groups (one per object)
+- <code>PerObject</code> with shared data = reuses cached bind groups automatically</p>
+<p>The engine's <code>FrameCache</code> handles the caching and <code>BindGroupBinder</code> the binding - you just specify the policy.</p>
+<hr />
 <h2 id="experiments-to-try">Experiments to Try</h2>
 <p><strong>1. Animate the offset</strong> - In <code>CustomRenderNode</code>, add an <code>update()</code> method:</p>
 <p>Implement the <code>UpdateNode</code> behavior.</p>
-<pre class="hljs"><code><div><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">CustomRenderNode</span> :</span> <span class="hljs-keyword">public</span> engine::scene::nodes::ModelRenderNode, <span class="hljs-keyword">public</span> engine::scene::nodes::UpdateNode
-</div></code></pre>
+<pre><code class="language-cpp">class CustomRenderNode : public engine::scene::nodes::ModelRenderNode, public engine::scene::nodes::UpdateNode
+</code></pre>
 <p>Override the default <code>update(float deltaTime)</code> method.</p>
-<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">virtual</span> <span class="hljs-keyword">void</span> <span class="hljs-title">update</span><span class="hljs-params">(<span class="hljs-keyword">float</span> deltaTime)</span> <span class="hljs-keyword">override</span> </span>{
-    tileUniforms.tileOffset.x += deltaTime * <span class="hljs-number">0.1f</span>; <span class="hljs-comment">// Scroll right</span>
+<pre><code class="language-cpp">virtual void update(float deltaTime) override {
+    tileUniforms.tileOffset.x += deltaTime * 0.1f; // Scroll right
 }
-</div></code></pre>
+</code></pre>
 <p><strong>2. Different tiling per object</strong> - Create multiple floor nodes:</p>
-<pre class="hljs"><code><div><span class="hljs-keyword">auto</span> floor1 = <span class="hljs-built_in">std</span>::make_shared&lt;demo::CustomRenderNode&gt;(floorModel);
-floor1-&gt;tileUniforms.tileSize = glm::vec2(<span class="hljs-number">2.0f</span>, <span class="hljs-number">2.0f</span>);
-floor1-&gt;getTransform().setLocalPosition(glm::vec3(<span class="hljs-number">-5.0f</span>, <span class="hljs-number">0.0f</span>, <span class="hljs-number">0.0f</span>));
-floor1-&gt;getTransform().setLocalScale(glm::vec3(<span class="hljs-number">5.0f</span>, <span class="hljs-number">1.0f</span>, <span class="hljs-number">5.0f</span>));
+<pre><code class="language-cpp">auto floor1 = std::make_shared&lt;demo::CustomRenderNode&gt;(floorModel);
+floor1-&gt;tileUniforms.tileSize = glm::vec2(2.0f, 2.0f);
+floor1-&gt;getTransform().setLocalPosition(glm::vec3(-5.0f, 0.0f, 0.0f));
+floor1-&gt;getTransform().setLocalScale(glm::vec3(5.0f, 1.0f, 5.0f));
 rootNode-&gt;addChild(floor1);
 
-<span class="hljs-keyword">auto</span> floor2 = <span class="hljs-built_in">std</span>::make_shared&lt;demo::CustomRenderNode&gt;(floorModel);
-floor2-&gt;tileUniforms.tileSize = glm::vec2(<span class="hljs-number">8.0f</span>, <span class="hljs-number">8.0f</span>);
-floor2-&gt;getTransform().setLocalPosition(glm::vec3(<span class="hljs-number">5.0f</span>, <span class="hljs-number">0.0f</span>, <span class="hljs-number">0.0f</span>));
-floor2-&gt;getTransform().setLocalScale(glm::vec3(<span class="hljs-number">5.0f</span>, <span class="hljs-number">1.0f</span>, <span class="hljs-number">5.0f</span>));
+auto floor2 = std::make_shared&lt;demo::CustomRenderNode&gt;(floorModel);
+floor2-&gt;tileUniforms.tileSize = glm::vec2(8.0f, 8.0f);
+floor2-&gt;getTransform().setLocalPosition(glm::vec3(5.0f, 0.0f, 0.0f));
+floor2-&gt;getTransform().setLocalScale(glm::vec3(5.0f, 1.0f, 5.0f));
 rootNode-&gt;addChild(floor2);
-</div></code></pre>
+</code></pre>
 <p><strong>3. Add rotation</strong> - Extend TileUniforms:</p>
 <p>Adjust C++ Struct</p>
-<pre class="hljs"><code><div><span class="hljs-comment">// CustomRenderNode.h</span>
-<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">TileUniforms</span>
-{</span>
-    glm::vec2 tileOffset = glm::vec2(<span class="hljs-number">0.0f</span>);
-    glm::vec2 tileSize = glm::vec2(<span class="hljs-number">1.0f</span>);
-    glm::vec4 rotation = glm::vec4(<span class="hljs-number">0.0f</span>);
-    <span class="hljs-comment">// Rotation in .x, padding in .yzw for 16-byte alignment</span>
+<pre><code class="language-cpp">// CustomRenderNode.h
+struct TileUniforms
+{
+    glm::vec2 tileOffset = glm::vec2(0.0f);
+    glm::vec2 tileSize = glm::vec2(1.0f);
+    glm::vec4 rotation = glm::vec4(0.0f);
+    // Rotation in .x, padding in .yzw for 16-byte alignment
 };
-</div></code></pre>
+</code></pre>
 <p>Adjust WGSL Struct</p>
-<pre class="hljs"><code><div>struct TileUniforms {
+<pre><code class="language-wgsl">struct TileUniforms {
     tileOffset: vec2f,   // Offset
     tileSize: vec2f,     // Scale
     rotation: vec4f,     // rotation.x = angle in radians, yzw = padding
 }
-</div></code></pre>
+</code></pre>
 <p>Define WGSL Helper Function</p>
-<pre class="hljs"><code><div>fn rotate2D(uv: vec2f, angle: f32) -&gt; vec2f {
+<pre><code class="language-wgsl">fn rotate2D(uv: vec2f, angle: f32) -&gt; vec2f {
     let cosA = cos(angle);
     let sinA = sin(angle);
     return vec2f(
@@ -766,15 +592,15 @@ rootNode-&gt;addChild(floor2);
         uv.x * sinA + uv.y * cosA
     );
 }
-</div></code></pre>
+</code></pre>
 <p>Update Fragment Shader</p>
-<pre class="hljs"><code><div>let rotatedUV = rotate2D(input.texCoord - 0.5, tileUniforms.rotation.x) + 0.5;
+<pre><code class="language-wgsl">let rotatedUV = rotate2D(input.texCoord - 0.5, tileUniforms.rotation.x) + 0.5;
 let tiledUV = rotatedUV * tileUniforms.tileSize + tileUniforms.tileOffset;
-</div></code></pre>
+</code></pre>
 <p>Update <code>cpp</code> code to set a rotation of your choice</p>
-<pre class="hljs"><code><div>floorNode-&gt;tileUniforms.rotatedUV = glm::vec4(<span class="hljs-number">0.5f</span>, <span class="hljs-number">0.0f</span>, <span class="hljs-number">0.0f</span>, <span class="hljs-number">0.0f</span>);
-</div></code></pre>
-<hr>
+<pre><code class="language-cpp">floorNode-&gt;tileUniforms.rotation = glm::vec4(0.5f, 0.0f, 0.0f, 0.0f);
+</code></pre>
+<hr />
 <h2 id="understanding-webgpu-custom-resources">Understanding WebGPU Custom Resources</h2>
 <p><strong>WebGPU bind group creation:</strong></p>
 <p>When you call <code>BindGroupDataProvider::create()</code>, the engine internally:</p>
@@ -784,99 +610,82 @@ let tiledUV = rotatedUV * tileUniforms.tileSize + tileUniforms.tileOffset;
 <li><strong>Creates bind group</strong> - Links buffer to bind group layout via <code>device.createBindGroup()</code></li>
 <li><strong>Caches by key</strong> - Stores in <code>FrameCache::customBindGroupCache[key]</code> where key = (shader, bindGroup, instanceId)</li>
 </ol>
-<p><strong>Next frame:</strong></p>
-<ul>
-<li>Same object? Reuse cached bind group, just update buffer if data changed</li>
-<li>Different object? Create new bind group or fetch from cache by different instanceId</li>
-</ul>
-<p><strong>Memory management:</strong></p>
-<ul>
-<li>Bind groups live in <code>FrameCache</code> and are recreated each frame</li>
-<li>GPU buffers are pooled and reused when possible</li>
-<li>Old bind groups are automatically cleaned up at frame end</li>
-</ul>
-<hr>
+<p><strong>Next frame:</strong>
+- Same object? Reuse cached bind group, just update buffer if data changed
+- Different object? Create new bind group or fetch from cache by different instanceId</p>
+<p><strong>Memory management:</strong>
+- Bind groups live in <code>FrameCache::customBindGroupCache</code> and <strong>persist across frames</strong> - each one is created exactly once, then only its buffer contents are refreshed via <code>updateBuffer()</code>
+- The per-frame cleanup (<code>FrameCache::endFrame()</code>) drops only truly per-frame data (lights, shadow requests, render targets); the custom bind group cache survives it
+- The cache is only emptied by the full <code>FrameCache::clear()</code>, which runs on scene changes</p>
+<p><strong>Buffer sizing - the capacity is fixed at creation:</strong>
+- The auto-created buffer behind your custom group is sized at the layout's <code>minBindingSize</code> - exactly the size of the struct you declared in WGSL (for a runtime-sized array binding, that is ONE array element)
+- <code>WebGPUBindGroup::updateBuffer()</code> <strong>clamps</strong> any write that would exceed the buffer size and logs a warning (<code>updateBuffer: write ... exceeds buffer ... - clamping</code>) - the excess bytes are dropped, not uploaded
+- A fixed-size struct like our 16-byte <code>TileUniforms</code> never hits this. If you ever provide <strong>growing</strong> data (e.g. a runtime-sized array), preallocate a buffer at full capacity and hand it to the factory as an override - see how <code>DebugPass</code> does it in <a href="../../src/engine/rendering/DebugPass.cpp">DebugPass.cpp</a> (<code>bufferFactory().createStorageBuffer(...)</code> at max capacity, then a <code>BindGroupResource</code> override passed into <code>createBindGroup()</code>) - or keep the data fixed-size</p>
+<hr />
 <h2 id="key-takeaways">Key Takeaways</h2>
-<p>✅ <strong>Custom Bind Groups</strong> - Extend shader capabilities with Group 3+ for custom data<br>
-✅ <strong>BindGroupDataProvider</strong> - Simple API to pass CPU data to GPU shaders<br>
-✅ <strong>preRender() Lifecycle</strong> - Called before rendering, perfect for per-frame updates<br>
-✅ <strong>Reuse Policies</strong> - Control caching behavior (PerFrame, PerObject, PerMaterial)<br>
-✅ <strong>Node Customization</strong> - Extend ModelRenderNode to add custom shader data</p>
-<p><strong>WebGPU Concepts Learned:</strong></p>
-<ul>
-<li>Bind group indices beyond standard groups (3, 4, 5...)</li>
-<li>Custom uniform buffer creation and caching</li>
-<li>Alignment requirements for uniform structs (16-byte boundaries)</li>
-<li>Efficient resource reuse via caching policies</li>
-</ul>
-<hr>
+<p>✅ <strong>Custom Bind Groups</strong> - Extend shader capabilities with custom data in a free bind group slot, discovered by reflection<br />
+✅ <strong>BindGroupDataProvider</strong> - Simple API to pass CPU data to GPU shaders<br />
+✅ <strong>preRender() Lifecycle</strong> - Called before rendering, perfect for per-frame updates<br />
+✅ <strong>Reuse Policies</strong> - Control caching behavior (PerFrame, PerObject, PerMaterial)<br />
+✅ <strong>Node Customization</strong> - Extend ModelRenderNode to add custom shader data  </p>
+<p><strong>WebGPU Concepts Learned:</strong>
+- WebGPU's 4-bind-group limit, and reusing a free index for custom data
+- Custom uniform buffer creation and caching
+- Alignment requirements for uniform structs (16-byte boundaries)
+- Efficient resource reuse via caching policies</p>
+<hr />
 <h2 id="whats-next">What's Next?</h2>
-<p>In <strong>Tutorial 03</strong>, you'll learn:</p>
-<ul>
-<li>Shadow mapping with directional lights</li>
-<li>Sampling depth textures in shaders</li>
-<li>Transform coordinates from world space to light space</li>
-<li>Percentage Closer Filtering (PCF) for soft shadows</li>
-</ul>
-<p><strong>Next Tutorial:</strong> <a href="03_shadow_mapping.md">03_shadow_mapping.md</a> / <a href="03_shadow_mapping.pdf">03_shadow_mapping.pdf</a> / <a href="03_shadow_mapping.html">03_shadow_mapping.html</a></p>
-<hr>
+<p>In <strong>Tutorial 03</strong>, you'll write a glass shader and learn:
+- The Scene bind group (<code>@group(1)</code>): lights and shadow maps via <code>#include</code>
+- Fresnel-style rim lighting and a specular highlight (view-vector math)
+- Receiving shadows with the engine's shared <code>calculate_shadow()</code> (cascades, bias, PCF)
+- Transparency: the <code>Transparent</code> feature flag, alpha blending, and why transparent and custom-shader materials render back-to-front in the forward pass</p>
+<p><strong>Next Tutorial:</strong> <a href="03_glass_shader.md">03_glass_shader.md</a></p>
+<hr />
 <h2 id="further-reading">Further Reading</h2>
 <ul>
 <li><a href="../BindGroupSystem.md">Bind Group System Documentation</a></li>
-<li><a href="../NodeSystem.md">Node System Guide</a></li>
+<li><a href="../NodeTypeSystem.md">Node Type System Guide</a></li>
 <li><a href="https://www.w3.org/TR/webgpu/#bind-groups">WebGPU Bind Group Spec</a></li>
 <li><a href="01_unlit_shader.md">Tutorial 01: Unlit Shader</a></li>
 </ul>
-<hr>
+<hr />
 <h2 id="troubleshooting">Troubleshooting</h2>
-<h3 id="build-failures---reading-terminal-output">Build Failures - Reading Terminal Output</h3>
-<p><strong>⚠️ Important:</strong> When using <code>scripts/build.bat</code>, the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
-<p><strong>What to look for in terminal:</strong></p>
-<ol>
-<li>Scroll to the <strong>very end</strong> of the terminal output</li>
-<li>Look for <code>[SUCCESS] Build completed successfully!</code> - if this appears, build succeeded</li>
-<li>If you see <code>[ERROR] Build failed.</code> - the build failed regardless of task status</li>
-</ol>
-<p><strong>Common build issues:</strong></p>
-<ul>
-<li><strong>Missing semicolons</strong> - WGSL requires <code>;</code> at end of statements</li>
-<li><strong>Struct size mismatch</strong> - <code>tileUniforms</code> size must be 16 bytes (2 × vec2f)</li>
-<li><strong>Bind group naming</strong> - <code>&quot;TileUniforms&quot;</code> in registration must match shader <code>@group(3)</code></li>
-<li><strong>CMake cache</strong> - Run <code>rm -r build</code> (or delete <code>build/</code> folder) then rebuild clean</li>
-</ul>
+<h3 id="build-failures-reading-terminal-output">Build Failures - Reading Terminal Output</h3>
+<p><strong>⚠️ Important:</strong> When building via the VS Code task (which runs <code>scripts/build-example.bat</code> / <code>build-example.sh</code>), the task system may report success even if the build actually failed. You <strong>MUST check the terminal output</strong> to see the real result.</p>
+<p><strong>What to look for in terminal:</strong>
+1. Scroll to the <strong>very end</strong> of the terminal output
+2. Look for <code>[SUCCESS] Example 'tutorial' built successfully!</code> - if this appears, build succeeded
+3. If you see <code>[ERROR] Build failed.</code> (or <code>[ERROR] CMake configuration failed.</code>) - the build failed regardless of task status</p>
+<p><strong>Common build issues:</strong>
+- <strong>Missing semicolons</strong> - WGSL requires <code>;</code> at end of statements
+- <strong>Struct size mismatch</strong> - <code>tileUniforms</code> size must be 16 bytes (2 × vec2f)
+- <strong>Bind group naming</strong> - the <code>"TileUniforms"</code> name in <code>groups[1]</code> must match the group your <code>preRender()</code> targets; the <code>@group(1)</code> index in the shader must match the <code>groups[1]</code> key in the descriptor
+- <strong>CMake cache</strong> - Delete the example's build folder (<code>examples\build\tutorial</code>) then rebuild clean</p>
 <h3 id="bind-group-issues">Bind Group Issues</h3>
-<p><strong>&quot;Unable to find bind group 'TileUniforms'&quot;</strong></p>
-<ul>
-<li>Check shader name matches in <code>preRender()</code> (&quot;unlit&quot;) and registration as well as material assignment</li>
-<li>Ensure bind group name matches exactly (case-sensitive)</li>
-<li>Verify <code>@group(3)</code> in shader doesn't conflict with other bind groups</li>
-</ul>
-<p><strong>Floor appears stretched/wrong</strong></p>
-<ul>
-<li>Verify TileUniforms struct size matches shader (16 bytes = 2 × vec2f)</li>
-<li>Check reuse policy is <code>PerObject</code> in both registration and <code>preRender()</code></li>
-</ul>
-<p><strong>Data doesn't update</strong></p>
-<ul>
-<li>Ensure <code>preRender()</code> is called (check node is enabled and in scene graph)</li>
-<li>Verify you're modifying the member variable, not a local copy</li>
-<li>Check instance ID is correct in <code>BindGroupDataProvider::create()</code></li>
-</ul>
-<p><strong>Shader compilation error</strong></p>
-<ul>
-<li>Check <code>@group(3)</code> doesn't conflict with other bind groups</li>
-<li>Ensure TileUniforms struct is defined before use</li>
-<li>Verify binding index <code>@binding(0)</code> matches registration</li>
-<li>Verify there are no missing <code>;</code></li>
-</ul>
+<p><strong>"Unable to find bind group 'TileUniforms'"</strong>
+- Check shader name matches in <code>preRender()</code> ("unlit") and registration as well as material assignment
+- Ensure bind group name matches exactly (case-sensitive) between <code>groups[1]</code> and <code>preRender()</code>
+- Verify the custom group's index does not collide with an engine group the shader actually uses (here 0, 2 and 3)</p>
+<p><strong>"bindGroupLayoutCount (5) is larger than the maximum allowed (4)" / "BindGroupBinder: group index 4 exceeds wgpu's max of 4"</strong>
+- The custom group is declared at <code>@group(4)</code> or higher - WebGPU pipelines are limited to 4 bind groups (indices 0..3). Move the custom group into a slot the shader's engine roles leave free (for this shader, <code>@group(1)</code>), and key the descriptor entry accordingly (<code>groups[1]</code>)</p>
+<p><strong>Floor appears stretched/wrong</strong>
+- Verify TileUniforms struct size matches shader (16 bytes = 2 × vec2f)
+- Check reuse policy is <code>PerObject</code> in both registration and <code>preRender()</code></p>
+<p><strong>Data doesn't update</strong>
+- Ensure <code>preRender()</code> is called (check node is enabled and in scene graph)
+- Verify you're modifying the member variable, not a local copy
+- Check instance ID is correct in <code>BindGroupDataProvider::create()</code>
+- A log warning <code>updateBuffer: write ... exceeds buffer ... - clamping</code> means your C++ struct is larger than the WGSL struct - the write is clamped to the GPU buffer's size, so the tail of your data never reaches the shader</p>
+<p><strong>Shader compilation error</strong>
+- Ensure the custom group's index is not one the shader's engine roles already occupy (0, 2, 3 here) and stays below WebGPU's limit of 4 bind groups
+- Ensure TileUniforms struct is defined before use
+- In Debug builds the shader validator is fatal, so the load fails fast with the offending line
+- Verify there are no missing <code>;</code></p>
 <h3 id="debug-strategy">Debug Strategy</h3>
-<p><strong>If errors are unclear:</strong></p>
-<ol>
-<li>Open <code>MeshPass.cpp</code> in your editor</li>
-<li>Add a breakpoint in the <code>render()</code> method</li>
-<li>Press <code>F5</code> to start debugging with VS Code</li>
-<li>Check the <strong>Terminal Output</strong> panel - shader errors will be printed there</li>
-</ol>
-
+<p><strong>If errors are unclear:</strong>
+1. Run the tutorial - shader reflection and validation happen at load time
+2. Check the console / <code>run_out.log</code> - shader compile and validation errors are printed there with the line/column
+3. In Debug builds a malformed custom group (wrong index, redeclared engine struct) fails the load with a structured diagnostic</p>
 </body>
 </html>

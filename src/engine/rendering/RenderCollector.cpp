@@ -14,7 +14,8 @@ void RenderCollector::addModel(
 	const glm::mat4 &transform,
 	uint32_t layer,
 	uint64_t objectID,
-	std::shared_ptr<engine::scene::nodes::Node> node
+	std::shared_ptr<engine::scene::nodes::Node> node,
+	bool castsShadows
 )
 {
 	auto modelOpt = modelHandle.get();
@@ -46,6 +47,7 @@ void RenderCollector::addModel(
 		item.renderLayer = layer;
 		item.objectID = objectID;
 		item.renderNode = node;
+		item.castsShadows = castsShadows;
 
 		// Cache transparency flag for efficient sorting
 		auto matOpt = submesh.material.get();
@@ -149,10 +151,11 @@ std::vector<size_t> RenderCollector::extractForLightFrustum(const engine::math::
 
 	for (size_t i = 0; i < m_renderItems.size(); ++i)
 	{
-		if (isAABBVisibleInFrustum(m_renderItems[i].worldBounds, lightFrustum))
-		{
+		const auto &item = m_renderItems[i];
+		if (!item.castsShadows)
+			continue;
+		if (isAABBVisibleInFrustum(item.worldBounds, lightFrustum))
 			visibleIndices.push_back(i);
-		}
 	}
 
 	return visibleIndices;
@@ -165,10 +168,11 @@ std::vector<size_t> RenderCollector::extractForPointLight(const glm::vec3 &light
 
 	for (size_t i = 0; i < m_renderItems.size(); ++i)
 	{
-		if (isAABBInSphere(m_renderItems[i].worldBounds, lightPosition, lightRange))
-		{
+		const auto &item = m_renderItems[i];
+		if (!item.castsShadows)
+			continue;
+		if (isAABBInSphere(item.worldBounds, lightPosition, lightRange))
 			visibleIndices.push_back(i);
-		}
 	}
 
 	return visibleIndices;

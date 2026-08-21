@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,6 +20,7 @@ namespace webgpu
 class WebGPUBindGroup;
 class WebGPUBindGroupLayoutInfo;
 class WebGPUPipeline;
+class WebGPUContext;
 } // namespace webgpu
 
 /**
@@ -51,6 +53,12 @@ class BindGroupBinder
 {
   public:
 	explicit BindGroupBinder(FrameCache *frameCache) : m_frameCache(frameCache) {}
+
+	/// Optional context binding so the binder can fill unused @group slots
+	/// with the engine-wide empty bind group (required by wgpu when the
+	/// pipeline layout has empty placeholders at lower indices than the
+	/// shader actually uses).
+	void setContext(webgpu::WebGPUContext *context) { m_context = context; }
 
 	/**
 	 * @brief Binds all bind groups defined in the shader's layout.
@@ -107,6 +115,7 @@ class BindGroupBinder
 
 	// Dependencies
 	FrameCache *m_frameCache = nullptr;
+	webgpu::WebGPUContext *m_context = nullptr;
 
 	// State tracking for automatic rebinding detection
 	WGPURenderPassEncoder m_lastRenderPassHandle = nullptr;
@@ -114,8 +123,18 @@ class BindGroupBinder
 	std::optional<uint64_t> m_lastObjectId;
 	std::optional<uint64_t> m_lastMaterialId;
 
-	// Currently bound bind groups (group index → bind group pointer)
-	std::unordered_map<uint32_t, const webgpu::WebGPUBindGroup *> m_boundBindGroups;
+	/// wgpu's spec maximum bind groups per pipeline (@group 0..3). Every shader
+	/// packs into this range, so the binder treats any index >= 4 as invalid.
+	static constexpr uint32_t kMaxBindGroups = 4;
+
+	/// Currently bound bind groups, keyed by @group index. Array (not
+	/// hashmap) because this is touched on every layout iteration of every
+	/// draw call — that's potentially N_layouts × N_draws hashmap lookups
+	/// per frame, vs. the same number of direct array indexes. nullptr =
+	/// nothing bound, the sentinel `reinterpret_cast<...>(uintptr_t(1))` =
+	/// the shared empty bind group (see bind() — that lets us still detect
+	/// a real bind-group later replacing it).
+	std::array<const webgpu::WebGPUBindGroup *, kMaxBindGroups> m_boundBindGroups{};
 };
 
 } // namespace engine::rendering

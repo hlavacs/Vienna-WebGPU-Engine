@@ -30,8 +30,28 @@ CMakeUserPresets.json
 /local
 
 # private folders
+/examples/main_demo/build_vs
+/examples/main_demo/logs
 private
 /examples/build
 /build_vs
 /examples/main_demo/build_vs
 /examples/main_demo/logs
+*.png
+# ...but keep genuine texture assets (normal maps, model textures). The *.png
+# rule above is only meant to drop screenshots (repo root) and build output.
+!/examples/*/assets/**/*.png
+!/projects/**/*.png
+*.log
+/.claude
+
+# ImGui state — window positions / sizes / collapsed-flags, rewritten by
+# the runtime every session. Committing it just creates spurious diffs.
+imgui.ini
+
+# Editor runtime state (recent-file lists, shortcut config) - machine-specific,
+# rewritten each session; not source.
+/examples/scene_editor/configs/
+
+# Local History extension snapshots (editor-generated, not source).
+.history/

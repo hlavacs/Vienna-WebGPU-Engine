@@ -48,15 +48,11 @@ class SpatialNode : public virtual nodes::Node
 
 	/**
 	 * @brief Updates the Transform parent to match Node hierarchy.
-	 * Called internally when Node hierarchy changes.
+	 * Called internally when Node hierarchy changes. Descendants rebuild their
+	 * world matrices lazily via the transform world-version chain, so no eager
+	 * subtree sweep is needed here.
 	 * @param keepWorld If true, maintains world-space transform when reparenting.
 	 */
 	void updateTransformParent(bool keepWorld = true);
-
-	/**
-	 * @brief Propagates Transform dirty state to spatial children.
-	 * Recursively marks all spatial children's transforms as dirty.
-	 */
-	void propagateTransformDirty();
 };
 } // namespace engine::scene::nodes

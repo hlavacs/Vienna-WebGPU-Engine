@@ -36,7 +36,7 @@ std::shared_ptr<WebGPUBindGroupLayoutInfo> WebGPUBindGroupFactory::createBindGro
 			nextBinding = std::max(nextBinding, entry.binding + 1);
 	}
 	wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
-	desc.label = name.c_str();
+	desc.label = wgpu::StringView(name.c_str());
 	auto layout = m_context.getDevice().createBindGroupLayout(desc);
 	return std::make_shared<WebGPUBindGroupLayoutInfo>(
 		layout,
@@ -76,7 +76,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 		{
 			// Use the provided override resource
 			const auto &bindResource = resourceIt->second;
-			std::visit([&entry](const auto &resource)
+			std::visit([&entry, &groupBuffers](const auto &resource)
 					   {
 				using T = std::decay_t<decltype(resource)>;
 				
@@ -84,22 +84,30 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 				{
 					entry.textureView = resource->getTextureView();
 				}
-				else if constexpr (std::is_same_v<T, wgpu::Sampler>)
+				else if constexpr (std::is_same_v<T, std::shared_ptr<WebGPUSampler>>)
 				{
-					entry.sampler = resource;
+					// Pass the raw wgpu handle into the descriptor; wgpu's
+					// createBindGroup internally references the sampler so
+					// it stays alive for the bind group's lifetime even if
+					// the shared_ptr drops afterwards. The factory's
+					// SlotCache slot (or the consumer's shared_ptr) keeps
+					// the WebGPUSampler RAII wrapper alive across this call.
+					entry.sampler = resource ? resource->raw() : wgpu::Sampler(nullptr);
 				}
 				else if constexpr (std::is_same_v<T, std::shared_ptr<WebGPUBuffer>>)
 				{
 					entry.buffer = resource->getBuffer();
 					entry.offset = 0;
 					entry.size = resource->getSize();
+					groupBuffers.push_back(resource);
 				} },
 					   bindResource.resource);
 		}
 		else
 		{
-			// No override - create resource automatically based on layout
-			if (entryLayout.buffer.type != wgpu::BufferBindingType::Undefined)
+			// No override: auto-create from the layout. Test != BindingNotUsed (v24),
+			// not != Undefined.
+			if (entryLayout.buffer.type != wgpu::BufferBindingType::BindingNotUsed)
 			{
 				auto buffer = m_context.bufferFactory().createBufferFromLayoutEntry(
 					*layoutInfo,
@@ -115,9 +123,10 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 				}
 				entry.buffer = buffer->getBuffer();
 				entry.offset = 0;
-				entry.size = entryLayout.buffer.minBindingSize;
+				// Bind the buffer's actual size; a zero entry size is invalid in v24.
+				entry.size = buffer->getSize();
 			}
-			else if (entryLayout.texture.sampleType != wgpu::TextureSampleType::Undefined)
+			else if (entryLayout.texture.sampleType != wgpu::TextureSampleType::BindingNotUsed)
 			{
 				if (!material)
 				{
@@ -146,9 +155,12 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 					}
 				}
 			}
-			else if (entryLayout.sampler.type != wgpu::SamplerBindingType::Undefined)
+			else if (entryLayout.sampler.type != wgpu::SamplerBindingType::BindingNotUsed)
 			{
-				entry.sampler = m_context.samplerFactory().getDefaultSampler();
+				// Factory's slot keeps the WebGPUSampler alive across this
+				// expression; createBindGroup bumps the wgpu refcount
+				// internally so the bind group survives Clear All.
+				entry.sampler = m_context.samplerFactory().getDefaultSampler()->raw();
 			}
 		}
 
@@ -166,7 +178,7 @@ std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
 	desc.layout = layoutInfo->getLayout();
 	desc.entryCount = static_cast<uint32_t>(entries.size());
 	desc.entries = entries.data();
-	desc.label = labelStr.c_str();
+	desc.label = wgpu::StringView(labelStr.c_str());
 
 	wgpu::BindGroup rawBindGroup = m_context.getDevice().createBindGroup(desc);
 
@@ -268,6 +280,16 @@ bool WebGPUBindGroupFactory::storeGlobalBindGroupLayout(
 	return true;
 }
 
+wgpu::BindGroupLayout WebGPUBindGroupFactory::createBindGroupLayout(
+	const std::vector<wgpu::BindGroupLayoutEntry> &entries,
+	const char *label
+)
+{
+	wgpu::BindGroupLayoutDescriptor desc = createBindGroupLayoutDescriptor(entries);
+	desc.label = wgpu::StringView(label ? label : "");
+	return m_context.getDevice().createBindGroupLayout(desc);
+}
+
 // === Generic Bind Group Creation ===
 
 wgpu::BindGroup WebGPUBindGroupFactory::createBindGroup(
@@ -278,6 +300,17 @@ wgpu::BindGroup WebGPUBindGroupFactory::createBindGroup(
 	wgpu::BindGroupDescriptor desc = createBindGroupDescriptor(layout, entries);
 	auto group = m_context.getDevice().createBindGroup(desc);
 	return group;
+}
+
+std::shared_ptr<WebGPUBindGroup> WebGPUBindGroupFactory::createBindGroup(
+	const std::shared_ptr<WebGPUBindGroupLayoutInfo> &layoutInfo,
+	const std::vector<wgpu::BindGroupEntry> &entries,
+	std::vector<std::shared_ptr<WebGPUBuffer>> buffers
+)
+{
+	wgpu::BindGroupDescriptor desc = createBindGroupDescriptor(layoutInfo->getLayout(), entries);
+	wgpu::BindGroup group = m_context.getDevice().createBindGroup(desc);
+	return std::make_shared<WebGPUBindGroup>(group, layoutInfo, std::move(buffers));
 }
 
 } // namespace engine::rendering::webgpu

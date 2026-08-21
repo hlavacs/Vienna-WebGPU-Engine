@@ -1,0 +1,48 @@
+{
+  "name": "Floor",
+  "properties": {
+    "alphaCutoff": 0.0,
+    "alphaMode": 0,
+    "ambient": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "diffuse": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "emission": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "ior": 1.4500000476837158,
+    "metallic": 0.0,
+    "normalTextureScale": 1.0,
+    "roughness": 1.0,
+    "transmittance": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "shader": "PBR_Lit_Shader",
+  "textures": {
+    "diffuse": {
+      "colorSpace": "sRGB",
+      "path": "asset://textures/cobblestone_floor_08_diff_2k.jpg"
+    },
+    "normal": {
+      "colorSpace": "Linear",
+      "path": "asset://textures/cobblestone_floor_08_nor_gl_2k.png"
+    }
+  },
+  "type": "PBR",
+  "version": 1
+}

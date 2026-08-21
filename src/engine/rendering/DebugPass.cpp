@@ -5,6 +5,7 @@
 #include "engine/rendering/BindGroupBinder.h"
 #include "engine/rendering/DebugRenderCollector.h"
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUMaterial.h"
@@ -28,16 +29,19 @@ bool DebugPass::initialize()
 {
 	spdlog::info("Initializing DebugPass");
 
-	// Get debug line shader from registry (assume a default exists, e.g., DEBUG_PRIMITIVE)
-	m_shaderInfo = m_context->shaderRegistry().getShader(shader::defaults::DEBUG);
-	if (!m_shaderInfo || !m_shaderInfo->isValid())
-	{
-		spdlog::error("Debug primitive shader not found in registry");
+	m_shaderInfo = getValidatedShader(shader::defaults::DEBUG);
+	if (!m_shaderInfo)
 		return false;
-	}
 
+	// Preallocate the primitive buffer at capacity and hand it to the factory:
+	// auto-created buffers are sized minBindingSize = one array element.
+	m_debugPrimitiveBuffer = m_context->bufferFactory().createStorageBuffer(
+		"DebugPrimitives", 0, MAX_DEBUG_PRIMITIVES * sizeof(DebugPrimitive));
+	std::map<webgpu::BindGroupBindingKey, webgpu::BindGroupResource> overrides;
+	overrides.emplace(webgpu::BindGroupBindingKey{0, 0}, webgpu::BindGroupResource(m_debugPrimitiveBuffer));
 	m_debugBindGroup = m_context->bindGroupFactory().createBindGroup(
-		m_shaderInfo->getBindGroupLayout(bindgroup::defaults::DEBUG)
+		m_shaderInfo->getBindGroupLayout(bindgroup::defaults::DEBUG),
+		overrides
 	);
 
 	if (!m_debugBindGroup || !m_debugBindGroup->isValid())
@@ -94,22 +98,29 @@ void DebugPass::render(FrameCache &frameCache)
 
 	auto primitives = m_debugCollector->getPrimitives();
 	uint32_t primitiveCount = static_cast<uint32_t>(m_debugCollector->getPrimitiveCount());
+	if (primitiveCount > MAX_DEBUG_PRIMITIVES)
+	{
+		spdlog::warn("DebugPass: {} primitives exceed capacity {}; extra ones are dropped", primitiveCount, MAX_DEBUG_PRIMITIVES);
+		primitiveCount = MAX_DEBUG_PRIMITIVES;
+	}
 	m_debugBindGroup->updateBuffer(
 		0, // binding 0
 		primitives.data(),
 		primitiveCount * sizeof(DebugPrimitive),
-		0,
-		m_context->getQueue()
+		0
 	);
 
 	// Create command encoder
 	auto encoder = m_context->createCommandEncoder("DebugPass Encoder");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Debug", encoder);
 	wgpu::RenderPassEncoder renderPass = m_renderPassContext->begin(encoder);
 	{
 		renderPass.setPipeline(pipeline->getPipeline());
 
 		// Use BindGroupBinder to bind frame and debug bind groups
 		BindGroupBinder binder(&frameCache);
+		binder.setContext(m_context.get());
 		binder.bind(
 			renderPass,
 			pipeline,
@@ -121,6 +132,8 @@ void DebugPass::render(FrameCache &frameCache)
 		renderPass.draw(maxVertexCount, primitiveCount, 0, 0);
 	}
 	m_renderPassContext->end(renderPass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Debug", encoder);
 	m_context->submitCommandEncoder(encoder, "DebugPass Commands");
 }
 

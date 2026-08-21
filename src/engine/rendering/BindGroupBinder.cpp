@@ -4,7 +4,9 @@
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
+#include "engine/rendering/webgpu/WebGPUPipelineManager.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
 namespace engine::rendering
@@ -32,7 +34,7 @@ bool BindGroupBinder::bind(
 	if (m_lastRenderPassHandle != currentHandle)
 	{
 		m_lastRenderPassHandle = currentHandle;
-		m_boundBindGroups.clear();
+		m_boundBindGroups.fill(nullptr);
 		spdlog::trace("BindGroupBinder: New render pass");
 	}
 
@@ -45,9 +47,30 @@ bool BindGroupBinder::bind(
 	if (objectChanged) m_lastObjectId = objectId;
 	if (materialChanged) m_lastMaterialId = materialId;
 
-	// Bind all groups declared by shader
+	// Bind all groups declared by shader. Engine convention reserves
+	// @group(0..3) for Frame/Scene/Material/Object even if a particular
+	// shader doesn't use them all — wgpu requires SOMETHING bound at every
+	// pipeline-layout slot, so unused slots get the shared empty bind group.
+	const auto &layoutVector = shaderInfo->getBindGroupLayoutVector();
+	if (!layoutVector.empty() && pipeline->getShaderInfo())
+	{
+		auto emptyBg = m_context ? m_context->pipelineManager().getOrCreateEmptyBindGroup() : nullptr;
+		const uint32_t layoutCount = std::min<uint32_t>(
+			static_cast<uint32_t>(layoutVector.size()), kMaxBindGroups);
+		for (uint32_t slot = 0; slot < layoutCount; ++slot)
+		{
+			if (!layoutVector[slot] && emptyBg && m_boundBindGroups[slot] == nullptr)
+			{
+				renderPass.setBindGroup(slot, emptyBg, 0, nullptr);
+				// Sentinel — distinct from any real bind-group pointer so the
+				// rebind check above triggers if a real group later replaces it.
+				m_boundBindGroups[slot] = reinterpret_cast<webgpu::WebGPUBindGroup *>(uintptr_t(1));
+			}
+		}
+	}
+
 	bool allBound = true;
-	for (const auto &layoutInfo : shaderInfo->getBindGroupLayoutVector())
+	for (const auto &layoutInfo : layoutVector)
 	{
 		if (!layoutInfo) continue;
 
@@ -55,6 +78,14 @@ bool BindGroupBinder::bind(
 		auto indexOpt = shaderInfo->getBindGroupIndex(layoutInfo->getName());
 		if (!indexOpt.has_value()) continue;
 		uint32_t groupIndex = static_cast<uint32_t>(indexOpt.value());
+
+		if (groupIndex >= kMaxBindGroups)
+		{
+			spdlog::error("BindGroupBinder: group index {} exceeds wgpu's max of {}",
+				groupIndex, kMaxBindGroups);
+			allBound = false;
+			continue;
+		}
 
 		// Check if we need to rebind based on reuse policy
 		bool needsRebind = false;
@@ -68,11 +99,11 @@ bool BindGroupBinder::bind(
 
 		// Find the bind group
 		std::shared_ptr<webgpu::WebGPUBindGroup> bindGroup = findBindGroup(
-			layoutInfo, 
+			layoutInfo,
 			shaderInfo->getName(),
-			bindGroups, 
-			cameraId, 
-			objectId, 
+			bindGroups,
+			cameraId,
+			objectId,
 			materialId
 		);
 
@@ -150,16 +181,20 @@ bool BindGroupBinder::bindGroupAtIndex(
 )
 {
 	if (!bindGroup) return false;
+	if (groupIndex >= kMaxBindGroups)
+	{
+		spdlog::error("BindGroupBinder: group index {} exceeds wgpu's max of {}",
+			groupIndex, kMaxBindGroups);
+		return false;
+	}
 
-	// Check if already bound
-	auto it = m_boundBindGroups.find(groupIndex);
-	if (it != m_boundBindGroups.end() && it->second == bindGroup.get())
+	// Already bound? Direct array access — no hashmap lookup per call.
+	if (m_boundBindGroups[groupIndex] == bindGroup.get())
 	{
 		spdlog::trace("BindGroupBinder: Group {} already bound", groupIndex);
 		return true;
 	}
 
-	// Bind it
 	renderPass.setBindGroup(groupIndex, bindGroup->getBindGroup(), 0, nullptr);
 	m_boundBindGroups[groupIndex] = bindGroup.get();
 

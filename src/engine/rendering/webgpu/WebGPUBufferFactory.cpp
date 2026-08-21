@@ -1,6 +1,7 @@
 #include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/Material.h" // For Material::MaterialProperties
 
+#include <cassert>
 #include <cstring>
 #include <vector>
 #include <webgpu/webgpu.hpp>
@@ -41,87 +42,7 @@ wgpu::Buffer WebGPUBufferFactory::createBufferWithData(const void *data, size_t 
 	return buffer;
 }
 
-wgpu::Buffer WebGPUBufferFactory::createUniformBuffer(std::size_t size)
-{
-	wgpu::BufferDescriptor desc = {};
-	desc.size = size;
-	desc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-	return m_context.getDevice().createBuffer(desc);
-}
-
-template <typename T>
-wgpu::Buffer WebGPUBufferFactory::createUniformBuffer(const T *data, std::size_t count)
-{
-	wgpu::Buffer buffer = createUniformBuffer(sizeof(T) * count);
-	m_context.getQueue().writeBuffer(buffer, 0, data, sizeof(T) * count);
-	return buffer;
-}
-
-template <typename T>
-wgpu::Buffer WebGPUBufferFactory::createUniformBuffer(const std::vector<T> &data)
-{
-	return createUniformBuffer(data.data(), data.size());
-}
-
-wgpu::Buffer WebGPUBufferFactory::createStorageBuffer(std::size_t size)
-{
-	wgpu::BufferDescriptor desc = {};
-	desc.size = size;
-	desc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
-	return m_context.getDevice().createBuffer(desc);
-}
-
-template <typename T>
-wgpu::Buffer WebGPUBufferFactory::createStorageBuffer(const T *data, std::size_t count)
-{
-	wgpu::Buffer buffer = createStorageBuffer(sizeof(T) * count);
-	m_context.getQueue().writeBuffer(buffer, 0, data, sizeof(T) * count);
-	return buffer;
-}
-
-template <typename T>
-wgpu::Buffer WebGPUBufferFactory::createStorageBuffer(const std::vector<T> &data)
-{
-	return createStorageBuffer(data.data(), data.size());
-}
-
-template <typename T>
-wgpu::Buffer WebGPUBufferFactory::createVertexBuffer(const T *data, std::size_t count)
-{
-	wgpu::BufferDescriptor desc = {};
-	desc.size = sizeof(T) * count;
-	desc.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
-	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
-	m_context.getQueue().writeBuffer(buffer, 0, data, sizeof(T) * count);
-	return buffer;
-}
-
-template <typename T>
-wgpu::Buffer WebGPUBufferFactory::createVertexBuffer(const std::vector<T> &data)
-{
-	return createVertexBuffer(data.data(), data.size());
-}
-
-template <typename T>
-wgpu::Buffer WebGPUBufferFactory::createIndexBuffer(const T *data, std::size_t count)
-{
-	wgpu::BufferDescriptor desc = {};
-	desc.size = sizeof(T) * count;
-	desc.usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst;
-	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
-	m_context.getQueue().writeBuffer(buffer, 0, data, sizeof(T) * count);
-	return buffer;
-}
-
-template <typename T>
-wgpu::Buffer WebGPUBufferFactory::createIndexBuffer(const std::vector<T> &data)
-{
-	return createIndexBuffer(data.data(), data.size());
-}
-
-// === WebGPUBuffer Creation Methods ===
-
-std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped(
+std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBuffer(
 	const std::string &name,
 	uint32_t binding,
 	std::size_t size
@@ -130,40 +51,13 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped(
 	wgpu::BufferDescriptor desc = {};
 	desc.size = size;
 	desc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-	desc.label = name.c_str();
+	desc.label = wgpu::StringView(name.c_str());
 
-	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
-	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage));
+	wgpu::Buffer buffer = createBuffer(desc);
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsage>(desc.usage), m_context.getQueue());
 }
 
-template <typename T>
-std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped(
-	const std::string &name,
-	uint32_t binding,
-	const T *data,
-	std::size_t count
-)
-{
-	size_t size = sizeof(T) * count;
-	auto buffer = createUniformBufferWrapped(name, binding, size);
-	if (data && count > 0)
-	{
-		m_context.getQueue().writeBuffer(buffer->getBuffer(), 0, data, size);
-	}
-	return buffer;
-}
-
-template <typename T>
-std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createUniformBufferWrapped(
-	const std::string &name,
-	uint32_t binding,
-	const std::vector<T> &data
-)
-{
-	return createUniformBufferWrapped(name, binding, data.data(), data.size());
-}
-
-std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped(
+std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBuffer(
 	const std::string &name,
 	uint32_t binding,
 	std::size_t size
@@ -172,37 +66,10 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped(
 	wgpu::BufferDescriptor desc = {};
 	desc.size = size;
 	desc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
-	desc.label = name.c_str();
+	desc.label = wgpu::StringView(name.c_str());
 
-	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
-	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsageFlags>(desc.usage));
-}
-
-template <typename T>
-std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped(
-	const std::string &name,
-	uint32_t binding,
-	const T *data,
-	std::size_t count
-)
-{
-	size_t size = sizeof(T) * count;
-	auto buffer = createStorageBufferWrapped(name, binding, size);
-	if (data && count > 0)
-	{
-		m_context.getQueue().writeBuffer(buffer->getBuffer(), 0, data, size);
-	}
-	return buffer;
-}
-
-template <typename T>
-std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createStorageBufferWrapped(
-	const std::string &name,
-	uint32_t binding,
-	const std::vector<T> &data
-)
-{
-	return createStorageBufferWrapped(name, binding, data.data(), data.size());
+	wgpu::Buffer buffer = createBuffer(desc);
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, size, static_cast<WGPUBufferUsage>(desc.usage), m_context.getQueue());
 }
 
 std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
@@ -217,12 +84,19 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
 
 	// Determine buffer size
 	size_t bufferSize = size > 0 ? size : static_cast<size_t>(entry->buffer.minBindingSize);
-	assert(bufferSize > 0 && "Buffer size must be greater than 0");
+
+	// Runtime-sized bindings report minBindingSize == 0; a zero-size buffer is
+	// invalid in v24, so use a placeholder.
+	if (bufferSize == 0)
+	{
+		spdlog::warn("[WebGPU] Auto-created buffer '{}' resolved to zero size (runtime-sized binding); using a 16-byte placeholder.", name);
+		bufferSize = 16;
+	}
 
 	// Create buffer with appropriate usage flags based on buffer type
 	wgpu::BufferDescriptor desc;
 	desc.size = bufferSize;
-	desc.label = name.c_str();
+	desc.label = wgpu::StringView(name.c_str());
 
 	if (entry->buffer.type == wgpu::BufferBindingType::Uniform)
 	{
@@ -237,7 +111,14 @@ std::shared_ptr<WebGPUBuffer> WebGPUBufferFactory::createBufferFromLayoutEntry(
 		desc.usage = wgpu::BufferUsage::CopyDst;
 	}
 
-	wgpu::Buffer buffer = m_context.getDevice().createBuffer(desc);
-	return std::make_shared<WebGPUBuffer>(buffer, name, binding, bufferSize, static_cast<WGPUBufferUsageFlags>(desc.usage));
+	wgpu::Buffer buffer = createBuffer(desc);
+	return std::make_shared<WebGPUBuffer>(buffer, name, binding, bufferSize, static_cast<WGPUBufferUsage>(desc.usage), m_context.getQueue());
 }
+
+void WebGPUBufferFactory::writeToBuffer(const std::shared_ptr<WebGPUBuffer> &buffer, const void *data, size_t size)
+{
+	if (!buffer || !data || size == 0) return;
+	buffer->write(data, size);
+}
+
 } // namespace engine::rendering::webgpu

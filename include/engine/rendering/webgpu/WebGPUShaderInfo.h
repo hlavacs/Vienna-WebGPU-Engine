@@ -105,6 +105,20 @@ class WebGPUShaderInfo
 	[[nodiscard]] bool isDepthEnabled() const { return m_enableDepth; }
 
 	/**
+	 * @brief Depth comparison function used by the pipeline depth-stencil state.
+	 * Defaults to @c Less (standard z-buffer). Set to @c LessEqual for shaders
+	 * that emit fragments at the far plane (e.g. a skybox writing @c clip.xyww ).
+	 */
+	[[nodiscard]] wgpu::CompareFunction getDepthCompare() const { return m_depthCompare; }
+
+	/**
+	 * @brief Whether the fragment shader writes to the depth attachment.
+	 * Defaults to @c true. Set to @c false for read-only depth use (skybox
+	 * sampling the existing depth, post-processing reading depth, etc.).
+	 */
+	[[nodiscard]] bool isDepthWriteEnabled() const { return m_depthWriteEnabled; }
+
+	/**
 	 * @brief Wether the shader has a fragment stage.
 	 * @return True if fragment stage exists.
 	 */
@@ -165,6 +179,16 @@ class WebGPUShaderInfo
 	 */
 	[[nodiscard]] bool hasBindGroup(BindGroupType type) const;
 
+	/**
+	 * @brief Returns the explicit color attachment formats this shader writes.
+	 *
+	 * Used by @ref WebGPUPipelineFactory when the shader has more than one
+	 * color target (e.g. a G-buffer with four attachments) or when the format
+	 * differs from the renderer-provided default. An empty vector means
+	 * "single attachment, use the format supplied at pipeline creation".
+	 */
+	[[nodiscard]] const std::vector<wgpu::TextureFormat> &getColorTargetFormats() const { return m_colorTargetFormats; }
+
   private:
 	void setName(std::string name);
 	void setPath(std::string path);
@@ -174,10 +198,15 @@ class WebGPUShaderInfo
 	void setShaderType(engine::rendering::ShaderType type);
 	void setShaderFeatures(engine::rendering::ShaderFeature::Flag features);
 	void setEnableDepth(bool enable);
+	void setColorTargetFormats(std::vector<wgpu::TextureFormat> formats) { m_colorTargetFormats = std::move(formats); }
+	void setDepthCompare(wgpu::CompareFunction compare) { m_depthCompare = compare; }
+	void setDepthWriteEnabled(bool enabled) { m_depthWriteEnabled = enabled; }
 	void addBindGroupLayout(uint32_t groupIndex, std::shared_ptr<WebGPUBindGroupLayoutInfo> layout);
 
 	bool m_enableDepth;
 	bool m_cullBackFaces;
+	bool m_depthWriteEnabled = true;
+	wgpu::CompareFunction m_depthCompare = wgpu::CompareFunction::Less;
 
 	std::string m_name;
 	std::filesystem::path m_path;
@@ -188,6 +217,7 @@ class WebGPUShaderInfo
 	engine::rendering::VertexLayout m_vertexLayout = engine::rendering::VertexLayout::PositionNormalUVTangentColor;
 	engine::rendering::ShaderFeature::Flag m_features = engine::rendering::ShaderFeature::Flag::None;
 
+	std::vector<wgpu::TextureFormat> m_colorTargetFormats;
 	std::unordered_map<uint64_t, std::shared_ptr<WebGPUBindGroupLayoutInfo>> m_bindGroupLayouts;
 	std::unordered_map<std::string, uint64_t> m_nameToIndex;
 	std::unordered_map<BindGroupType, uint64_t> m_typeToIndex;

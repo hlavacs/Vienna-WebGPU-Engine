@@ -6,10 +6,13 @@
 
 #include "engine/rendering/FrameCache.h"
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/ResourceSlot.h"
 #include "engine/rendering/RenderTarget.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
+#include "engine/rendering/webgpu/WebGPUBuffer.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPURenderPassContext.h"
+#include "engine/rendering/webgpu/WebGPUSampler.h"
 #include "engine/rendering/webgpu/WebGPUTexture.h"
 
 #include <webgpu/webgpu.hpp>
@@ -37,6 +40,8 @@ class CompositePass : public RenderPass
 	 * @brief Initialize the composite pass.
 	 * @return True if initialization succeeded.
 	 */
+	[[nodiscard]] const char *name() const override { return "Composite (Tonemap)"; }
+
 	bool initialize() override;
 
 	/**
@@ -60,27 +65,36 @@ class CompositePass : public RenderPass
 	 */
 	void cleanup() override;
 
+	/// Toggle ACES Filmic tonemap. When off, the shader just clamps the (exposed) value.
+	void setHDREnabled(bool enabled);
+	[[nodiscard]] bool isHDREnabled() const { return m_hdrEnabled; }
+
+	/// Linear exposure multiplier applied before tonemapping.
+	void setExposure(float exposure);
+	[[nodiscard]] float getExposure() const { return m_exposure; }
+
   private:
-	/**
-	 * @brief Get or create a bind group for the given texture.
-	 * @param texture The texture to create a bind group for.
-	 * @param layerIndex Optional array layer index for array or cube map textures. Default is -1 (entire texture).
-	 * @return Cached or newly created bind group.
-	 */
 	std::shared_ptr<webgpu::WebGPUBindGroup> getOrCreateBindGroup(
 		const std::shared_ptr<webgpu::WebGPUTexture> &texture,
 		int layerIndex = -1
 	);
 
-	std::shared_ptr<webgpu::WebGPUPipeline> m_pipeline;
-	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
-	wgpu::Sampler m_sampler = nullptr;
+	void flushPostProcessUniformsIfDirty();
 
-	// External dependencies (set via setters)
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> m_pipeline;
+	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
+	std::shared_ptr<webgpu::WebGPUSampler> m_sampler;
+
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 
-	// Bind group cache by texture pointer
 	std::unordered_map<uint64_t, std::shared_ptr<webgpu::WebGPUBindGroup>> m_bindGroupCache;
+
+	// Layout must match PostProcessUniforms in fullscreen_quad.wgsl.
+	std::shared_ptr<webgpu::WebGPUBuffer> m_postUniformBuffer;
+	std::shared_ptr<webgpu::WebGPUBindGroup> m_postBindGroup;
+	bool m_hdrEnabled{true};
+	float m_exposure{1.6f};
+	bool m_postDirty{true};
 };
 
 } // namespace engine::rendering

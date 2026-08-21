@@ -1,0 +1,68 @@
+{
+  "version": 2,
+  "scene": "Demo",
+  "root": {
+    "name": "Demo",
+    "enabled": true,
+    "type": "Node",
+    "props": {},
+    "scripts": [],
+    "children": [
+      {
+        "name": "Main Camera",
+        "enabled": true,
+        "type": "Camera",
+        "main": true,
+        "props": { "fov": 55.0, "near": 0.1, "far": 100.0, "perspective": true, "background": [0.09, 0.11, 0.15, 1.0], "skybox": false },
+        "transform": { "position": [0.0, 3.0, 7.0], "euler": [-18.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0] },
+        "scripts": [],
+        "children": []
+      },
+      {
+        "name": "Sun",
+        "enabled": true,
+        "type": "Light",
+        "props": { "lightType": "Directional", "color": [1.0, 0.96, 0.88], "intensity": 3.2, "castShadows": true },
+        "transform": { "position": [0.0, 0.0, 0.0], "euler": [52.0, -34.0, 0.0], "scale": [1.0, 1.0, 1.0] },
+        "scripts": [],
+        "children": []
+      },
+      {
+        "name": "Ambient",
+        "enabled": true,
+        "type": "Light",
+        "props": { "lightType": "Ambient", "color": [0.8, 0.85, 1.0], "intensity": 0.4 },
+        "scripts": [],
+        "children": []
+      },
+      {
+        "name": "Floor",
+        "enabled": true,
+        "type": "Model",
+        "props": { "path": "asset://plane.obj", "material": "FloorMat", "layer": 0 },
+        "transform": { "position": [0.0, 0.0, 0.0], "euler": [0.0, 0.0, 0.0], "scale": [12.0, 1.0, 12.0] },
+        "scripts": [],
+        "children": []
+      },
+      {
+        "name": "Spinner",
+        "enabled": true,
+        "type": "Rotator",
+        "props": { "axis": [0.0, 1.0, 0.0], "degreesPerSecond": 40.0 },
+        "transform": { "position": [0.0, 1.0, 0.0], "euler": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0] },
+        "scripts": [],
+        "children": [
+          {
+            "name": "Cube",
+            "enabled": true,
+            "type": "Model",
+            "props": { "path": "resource://cube.obj", "material": "CubeMat", "layer": 0 },
+            "transform": { "position": [0.0, 0.0, 0.0], "euler": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0] },
+            "scripts": [],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include <webgpu/webgpu.hpp>
@@ -64,6 +65,30 @@ class RenderPass
 	 */
 	virtual void cleanup() = 0;
 
+	/**
+	 * @brief Stable, short name for this pass — used by the debug UI and the
+	 *        render graph for enable/disable toggles.
+	 *
+	 * Derived classes override to return a constant string literal (e.g.
+	 * "GBuffer", "Composition", "Skybox"). The default returns "Pass" so
+	 * unnamed passes still show up in the toggle panel.
+	 */
+	[[nodiscard]] virtual const char *name() const { return "Pass"; }
+
+	/**
+	 * @brief Enable / disable this pass.
+	 *
+	 * When disabled, the Renderer skips calling @ref render() entirely for
+	 * the corresponding stage. Useful for A/B-ing the visual contribution
+	 * of one pass without recompiling, and for debugging which pass owns a
+	 * given artifact. Disabling a pass whose output other passes consume
+	 * (e.g. disabling GBuffer while Composition is on) will leave those
+	 * downstream passes sampling stale or zero textures — the toggle does
+	 * not try to enforce dependency consistency, that's the user's call.
+	 */
+	void                       setEnabled(bool enabled) { m_enabled = enabled; }
+	[[nodiscard]] bool         isEnabled() const { return m_enabled; }
+
   protected:
 	/**
 	 * @brief Constructor for derived classes.
@@ -74,7 +99,17 @@ class RenderPass
 	{
 	}
 
+	/**
+	 * @brief Fetch a registered shader by name and verify it compiled.
+	 *
+	 * Centralises the lookup + validity check + error log every pass runs in
+	 * initialize(). Returns null on failure so the caller can simply
+	 * `if (!getValidatedShader(name)) return false;`.
+	 */
+	[[nodiscard]] std::shared_ptr<webgpu::WebGPUShaderInfo> getValidatedShader(std::string_view shaderName) const;
+
 	std::shared_ptr<webgpu::WebGPUContext> m_context;
+	bool                                   m_enabled = true;
 };
 
 } // namespace engine::rendering

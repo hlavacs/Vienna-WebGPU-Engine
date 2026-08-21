@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "engine/rendering/BindGroupDataProvider.h"
@@ -83,6 +84,17 @@ class Scene
 		return m_cameras.emplace(camera).second;
 	}
 
+	/** @brief Remove all cameras and clear the main camera.
+	 * @note Used by the deserializer before loading a scene's own cameras so the
+	 * constructor-seeded camera neither lingers in the active set nor pre-empts
+	 * the saved main camera.
+	 */
+	void clearCameras()
+	{
+		m_cameras.clear();
+		m_mainCamera.reset();
+	}
+
 	/** @brief Get the debug render collector for this frame */
 	[[nodiscard]] const engine::rendering::DebugRenderCollector &getDebugCollector() const { return m_debugCollector; }
 
@@ -97,6 +109,15 @@ class Scene
 	{
 		return m_customBindGroupProviders;
 	}
+
+	/** @brief Optional per-scene engine-settings override, stored as a JSON object
+	 *  string of the overridden keys (empty = inherit the project's settings).
+	 *  Kept as a string so this widely-included header stays free of nlohmann.
+	 *  Applied on top of the project settings when the scene is loaded. */
+	void setSettingsOverride(const std::string &json) { m_settingsOverride = json; }
+
+	/** @brief The per-scene settings override JSON (empty = none). */
+	[[nodiscard]] const std::string &getSettingsOverride() const { return m_settingsOverride; }
 
   protected:
 	friend class engine::GameEngine;
@@ -133,6 +154,7 @@ class Scene
 	engine::rendering::DebugRenderCollector m_debugCollector;
 	engine::EngineContext *m_engineContext = nullptr;
 	bool m_loaded = false;
+	std::string m_settingsOverride; // JSON object of overridden engine settings (empty = none)
 
 	/** @brief Custom bind group providers collected during preRender() */
 	std::vector<engine::rendering::BindGroupDataProvider> m_customBindGroupProviders;

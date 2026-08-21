@@ -1,9 +1,13 @@
 #include "engine/rendering/webgpu/WebGPUPipelineManager.h"
-#include "engine/rendering/webgpu/WebGPUContext.h"
-#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
-#include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
 #include <spdlog/spdlog.h>
+#include <unordered_set>
+
+#include "engine/rendering/ShaderRegistry.h"
+#include "engine/rendering/webgpu/WebGPUContext.h"
+#include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
+#include "engine/rendering/webgpu/WebGPUShaderFactory.h"
+#include "engine/rendering/webgpu/WebGPUShaderInfo.h"
 
 namespace engine::rendering::webgpu
 {
@@ -16,10 +20,14 @@ WebGPUPipelineManager::WebGPUPipelineManager(webgpu::WebGPUContext &context) :
 
 WebGPUPipelineManager::~WebGPUPipelineManager()
 {
+	// SlotCache::cleanup() (also invoked by its destructor) snapshots every
+	// slot, clears the map, then resets each slot's build_fn before
+	// returning — so an outstanding Handle that lock()s after we're gone
+	// gets nullptr instead of dereferencing this dead manager.
 	cleanup();
 }
 
-std::shared_ptr<WebGPUPipeline> WebGPUPipelineManager::getOrCreatePipeline(
+WebGPUPipelineManager::PipelineHandle WebGPUPipelineManager::getOrCreatePipeline(
 	const std::shared_ptr<engine::rendering::Mesh> &mesh,
 	const std::shared_ptr<engine::rendering::Material> &material,
 	const std::shared_ptr<engine::rendering::webgpu::WebGPURenderPassContext> &renderPass
@@ -41,22 +49,18 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineManager::getOrCreatePipeline(
 			: false,
 		1 // ToDo: Get sample count from render target
 	};
-	auto it = m_pipelines.find(key);
-	if (it != m_pipelines.end())
-	{
-		return it->second;
-	}
-	std::shared_ptr<WebGPUPipeline> pipeline;
-	if (!createPipelineInternal(key, shaderInfo, pipeline))
-	{
-		spdlog::error("Failed to create pipeline for mesh '{}' and material '{}'", mesh->getName().value_or("Unnamed"), material->getName().value_or("Unnamed"));
-		return nullptr;
-	}
-	m_pipelines[key] = pipeline;
-	return pipeline;
+	return getOrCreatePipeline(
+		shaderInfo,
+		key.colorFormat,
+		key.depthFormat,
+		key.topology,
+		key.cullMode,
+		key.blendEnabled,
+		key.sampleCount
+	);
 }
 
-std::shared_ptr<WebGPUPipeline> WebGPUPipelineManager::getOrCreatePipeline(
+WebGPUPipelineManager::PipelineHandle WebGPUPipelineManager::getOrCreatePipeline(
 	const std::shared_ptr<WebGPUShaderInfo> &shaderInfo,
 	wgpu::TextureFormat colorFormat,
 	wgpu::TextureFormat depthFormat,
@@ -76,118 +80,78 @@ std::shared_ptr<WebGPUPipeline> WebGPUPipelineManager::getOrCreatePipeline(
 		sampleCount
 	};
 
-	// Check cache first
-	auto it = m_pipelines.find(key);
-	if (it != m_pipelines.end())
-	{
-		return it->second;
-	}
-
-	// Create new pipeline
-	std::shared_ptr<WebGPUPipeline> pipeline;
-	if (!createPipelineInternal(key, shaderInfo, pipeline))
-	{
-		spdlog::error("Failed to create pipeline with explicit parameters");
-		return nullptr;
-	}
-
-	m_pipelines[key] = pipeline;
-	return pipeline;
-}
-
-bool WebGPUPipelineManager::reloadPipeline(std::shared_ptr<WebGPUPipeline> pipeline)
-{
-	if (!pipeline)
-	{
-		spdlog::warn("Cannot reload null pipeline");
-		return false;
-	}
-
-	// Mark pipeline for reload after frame finishes
-	m_pendingReloads.insert(pipeline);
-	auto name = pipeline->getDescriptor().label ? pipeline->getDescriptor().label : "unnamed";
-	spdlog::info("Pipeline '{}' marked for reload after frame finishes", name);
-	return true;
+	// One getOrCreate covers both paths: cache hit returns the existing
+	// Handle and discards the lambda; cache miss runs the lambda for the
+	// initial build AND stores it as the slot's auto-rebuild function.
+	// Captures `this` + key by value; the shader is looked up fresh every
+	// time so hot-reloaded shaders are picked up automatically. The
+	// manager's destructor calls cleanup() which resets every build_fn,
+	// so dangling-this after destruction is impossible.
+	return m_pipelines.getOrCreate(key, [this, key]() -> std::shared_ptr<WebGPUPipeline> {
+		auto shader = m_context.shaderRegistry().getShader(key.shaderName);
+		if (!shader || !shader->isValid())
+		{
+			spdlog::warn("Pipeline build: shader '{}' is invalid", key.shaderName);
+			return nullptr;
+		}
+		std::shared_ptr<WebGPUPipeline> built;
+		if (!createPipelineInternal(key, shader, built))
+		{
+			spdlog::error("Pipeline build: failed for shader '{}'", key.shaderName);
+			return nullptr;
+		}
+		return built;
+	});
 }
 
 size_t WebGPUPipelineManager::reloadAllPipelines()
 {
-	spdlog::info("Marking all pipelines for reload...");
-	for (auto &pair : m_pipelines)
+	// 1. Reload every shader source synchronously. shaderFactory.reloadShader
+	//    creates a new WebGPUShaderInfo and re-registers it via
+	//    shaderRegistry.registerShader(..., replaceIfExists=true), so any
+	//    subsequent getShader(name) returns the fresh one.
+	std::unordered_set<std::string> shaderNames;
+	for (const auto &key : m_pipelines.keys())
+		shaderNames.insert(key.shaderName);
+
+	for (const auto &name : shaderNames)
 	{
-		m_pendingReloads.insert(pair.second);
-	}
-	return m_pendingReloads.size();
-}
-
-size_t WebGPUPipelineManager::processPendingReloads()
-{
-	if (m_pendingReloads.empty())
-		return 0;
-
-	spdlog::info("Processing {} pending pipeline reload(s) after frame...", m_pendingReloads.size());
-	size_t successCount = 0;
-
-	// Step 1: Collect unique shaders to reload
-	std::unordered_set<std::string> shadersToReload;
-	for (const auto &pair : m_pipelines)
-	{
-		if (m_pendingReloads.find(pair.second) != m_pendingReloads.end())
-			shadersToReload.insert(pair.first.shaderName);
-	}
-
-	// Step 2: Reload each shader once
-	std::unordered_map<std::string, std::shared_ptr<WebGPUShaderInfo>> reloadedShaders;
-	for (const auto &shaderName : shadersToReload)
-	{
-		auto shaderInfo = m_context.shaderRegistry().getShader(shaderName);
-		if (!shaderInfo || !shaderInfo->isValid())
+		auto info = m_context.shaderRegistry().getShader(name);
+		if (!info || !info->isValid())
 		{
-			spdlog::error("Cannot reload shader '{}' — not found or invalid", shaderName);
+			spdlog::error("Cannot reload shader '{}' — not found or invalid", name);
 			continue;
 		}
-
-		spdlog::info("Reloading shader: {}", shaderName);
-		m_context.shaderFactory().reloadShader(shaderInfo);
-
-		shaderInfo = m_context.shaderRegistry().getShader(shaderName);
-		if (!shaderInfo || !shaderInfo->isValid())
-		{
-			spdlog::error("Failed to reload shader: {}", shaderName);
-			continue;
-		}
-
-		reloadedShaders[shaderName] = shaderInfo;
+		spdlog::info("Reloading shader: {}", name);
+		if (!m_context.shaderFactory().reloadShader(info))
+			spdlog::error("Failed to reload shader: {}", name);
 	}
 
-	// Step 3: Rebuild pipelines that use reloaded shaders
-	for (auto &pair : m_pipelines)
-	{
-		const auto &key = pair.first;
-		auto it = reloadedShaders.find(key.shaderName);
-		if (it == reloadedShaders.end())
-			continue; // shader not reloaded, skip
+	// 2. Soft-clear every pipeline slot. Outstanding PipelineHandles keep
+	//    working — their next lock() runs the captured build_fn, which
+	//    fetches the freshly-reloaded shader from the registry and recreates
+	//    the pipeline transparently. Old pipelines stay alive in any pinned
+	//    lock() snapshot until the consumer drops it, which keeps in-flight
+	//    GPU work safe even when reloadAllPipelines is invoked mid-frame.
+	m_pipelines.clearResources();
 
-		std::shared_ptr<WebGPUPipeline> newPipeline;
-		if (!createPipelineInternal(key, it->second, newPipeline))
-		{
-			spdlog::error("Failed to recreate pipeline for shader: {}", key.shaderName);
-			continue;
-		}
-
-		pair.second = newPipeline;
-		successCount++;
-		spdlog::info("Pipeline reloaded successfully for shader: {}", key.shaderName);
-	}
-
-	m_pendingReloads.clear();
-	spdlog::info("Completed: {}/{} pipeline(s) reloaded", successCount, m_pipelines.size());
-	return successCount;
+	spdlog::info("Marked {} pipeline(s) for soft-clear; auto-rebuild on next lock()", m_pipelines.cacheSize());
+	return m_pipelines.cacheSize();
 }
 
 void WebGPUPipelineManager::cleanup()
 {
-	m_pipelines.clear();
+	m_pipelines.cleanup();
+}
+
+wgpu::BindGroup WebGPUPipelineManager::getOrCreateEmptyBindGroup()
+{
+	return m_pipelineFactory->getOrCreateEmptyBindGroup();
+}
+
+WebGPUPipelineFactory &WebGPUPipelineManager::factory()
+{
+	return *m_pipelineFactory;
 }
 
 bool WebGPUPipelineManager::createPipelineInternal(

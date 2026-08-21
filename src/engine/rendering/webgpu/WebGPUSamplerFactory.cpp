@@ -12,210 +12,178 @@ using namespace wgpu;
 WebGPUSamplerFactory::WebGPUSamplerFactory(WebGPUContext &context) :
 	m_context(context) {}
 
-wgpu::Sampler WebGPUSamplerFactory::getSampler(const std::string &name)
+WebGPUSamplerFactory::SamplerPtr WebGPUSamplerFactory::getSampler(const std::string &name)
 {
-	// already cached?
-	auto it = m_samplerCache.find(name);
-	if (it != m_samplerCache.end())
-		return it->second;
+	if (name == SamplerNames::DEFAULT
+		|| name == SamplerNames::MIPMAP_LINEAR
+		|| name == SamplerNames::CLAMP_LINEAR
+		|| name == SamplerNames::CLAMP_NEAREST
+		|| name == SamplerNames::REPEAT_LINEAR
+		|| name == SamplerNames::SHADOW_COMPARISON)
+	{
+		// Known name: slot's build_fn rebuilds on demand after eviction or
+		// soft-clear, so calling getSampler again after Clear All still
+		// returns a valid SamplerPtr. We materialise the shared_ptr via
+		// Handle::lock() — the consumer holds its own reference, so the
+		// underlying wgpu sampler stays alive even after the slot is
+		// dropped by the factory.
+		return m_cache.getOrCreate(name, [this, name]() { return buildKnown(name); }).lock();
+	}
 
-	// lazy-create only known defaults
-	if (name == SamplerNames::DEFAULT)
-		return createDefaultSampler();
-
-	if (name == SamplerNames::MIPMAP_LINEAR)
-		return createMipmapSampler();
-
-	if (name == SamplerNames::CLAMP_LINEAR)
-		return createClampLinearSampler();
-
-	if (name == SamplerNames::CLAMP_NEAREST)
-		return createClampNearestSampler();
-
-	if (name == SamplerNames::REPEAT_LINEAR)
-		return createRepeatLinearSampler();
-
-	if (name == SamplerNames::SHADOW_COMPARISON)
-		return createShadowComparisonSampler();
-
+	spdlog::warn("WebGPUSamplerFactory::getSampler: unknown sampler '{}' — falling back to default", name);
 	return getSampler(SamplerNames::DEFAULT);
 }
 
-wgpu::Sampler WebGPUSamplerFactory::createSampler(
-	const std::string &name,
+WebGPUSamplerFactory::SamplerPtr WebGPUSamplerFactory::createSampler(
+	const std::string             &name,
 	const wgpu::SamplerDescriptor &desc
 )
 {
-	wgpu::Sampler sampler = m_context.getDevice().createSampler(desc);
-	registerSampler(name, sampler);
-	return sampler;
+	// Capture desc by value so the build_fn can re-create the sampler after
+	// eviction without relying on the caller keeping the descriptor alive.
+	wgpu::SamplerDescriptor captured = desc;
+	auto                    build    = [this, name, captured]() -> SamplerPtr {
+        wgpu::Sampler raw = m_context.getDevice().createSampler(captured);
+        if (!raw)
+        {
+            spdlog::error("WebGPUSamplerFactory::createSampler: device.createSampler failed for '{}'", name);
+            return nullptr;
+        }
+        return std::make_shared<WebGPUSampler>(raw, name, /*addRef=*/false);
+	};
+
+	// If a slot already exists for this name, replace its resource in place
+	// — existing consumers see the new sampler on next lock(), without
+	// invalidating the slot or breaking any shared_ptrs they hold.
+	if (m_cache.find(name).valid())
+	{
+		auto fresh = build();
+		if (!fresh) return nullptr;
+		m_cache.replace(name, fresh);
+		spdlog::warn("WebGPUSamplerFactory: replaced existing sampler '{}'", name);
+		return fresh;
+	}
+	return m_cache.getOrCreate(name, build).lock();
 }
 
-void WebGPUSamplerFactory::registerSampler(const std::string &name, wgpu::Sampler sampler)
+WebGPUSamplerFactory::SamplerPtr WebGPUSamplerFactory::buildKnown(const std::string &name)
 {
-	if (!sampler)
-	{
-		spdlog::warn("Attempted to register null sampler with name '{}'", name);
-		return;
-	}
-
-	auto it = m_samplerCache.find(name);
-	if (it != m_samplerCache.end())
-	{
-		spdlog::warn("Sampler '{}' already exists, replacing it", name);
-		it->second.release();
-		it->second = sampler;
-	}
+	wgpu::SamplerDescriptor desc;
+	if (name == SamplerNames::DEFAULT)                desc = describeDefault();
+	else if (name == SamplerNames::MIPMAP_LINEAR)     desc = describeMipmap();
+	else if (name == SamplerNames::CLAMP_LINEAR)      desc = describeClampLinear();
+	else if (name == SamplerNames::CLAMP_NEAREST)     desc = describeClampNearest();
+	else if (name == SamplerNames::REPEAT_LINEAR)     desc = describeRepeatLinear();
+	else if (name == SamplerNames::SHADOW_COMPARISON) desc = describeShadowComparison();
 	else
 	{
-		m_samplerCache.insert({name, sampler});
+		spdlog::error("WebGPUSamplerFactory::buildKnown: '{}' is not a known sampler name", name);
+		return nullptr;
 	}
-}
 
-wgpu::Sampler WebGPUSamplerFactory::getDefaultSampler()
-{
-	return getSampler(SamplerNames::DEFAULT);
-}
-
-wgpu::Sampler WebGPUSamplerFactory::getMipmapSampler()
-{
-	return getSampler(SamplerNames::MIPMAP_LINEAR);
-}
-
-wgpu::Sampler WebGPUSamplerFactory::getClampLinearSampler()
-{
-	return getSampler(SamplerNames::CLAMP_LINEAR);
-}
-
-wgpu::Sampler WebGPUSamplerFactory::getClampNearestSampler()
-{
-	return getSampler(SamplerNames::CLAMP_NEAREST);
-}
-
-wgpu::Sampler WebGPUSamplerFactory::getRepeatLinearSampler()
-{
-	return getSampler(SamplerNames::REPEAT_LINEAR);
-}
-
-wgpu::Sampler WebGPUSamplerFactory::getShadowComparisonSampler()
-{
-	return getSampler(SamplerNames::SHADOW_COMPARISON);
-}
-
-void WebGPUSamplerFactory::cleanup()
-{
-	for (auto &[name, sampler] : m_samplerCache)
+	wgpu::Sampler raw = m_context.getDevice().createSampler(desc);
+	if (!raw)
 	{
-		sampler.release();
+		spdlog::error("WebGPUSamplerFactory::buildKnown: device.createSampler failed for '{}'", name);
+		return nullptr;
 	}
-	m_samplerCache.clear();
+	return std::make_shared<WebGPUSampler>(raw, name, /*addRef=*/false);
 }
 
-wgpu::Sampler WebGPUSamplerFactory::createDefaultSampler()
+wgpu::SamplerDescriptor WebGPUSamplerFactory::describeDefault() const
 {
 	wgpu::SamplerDescriptor desc{};
-	desc.addressModeU = AddressMode::Repeat;
-	desc.addressModeV = AddressMode::Repeat;
-	desc.addressModeW = AddressMode::Repeat;
-	desc.magFilter = FilterMode::Linear;
-	desc.minFilter = FilterMode::Linear;
-	desc.mipmapFilter = MipmapFilterMode::Linear;
-	desc.lodMinClamp = 0.0f;
-	desc.lodMaxClamp = 8.0f;
-	desc.compare = CompareFunction::Undefined;
+	desc.addressModeU  = AddressMode::Repeat;
+	desc.addressModeV  = AddressMode::Repeat;
+	desc.addressModeW  = AddressMode::Repeat;
+	desc.magFilter     = FilterMode::Linear;
+	desc.minFilter     = FilterMode::Linear;
+	desc.mipmapFilter  = MipmapFilterMode::Linear;
+	desc.lodMinClamp   = 0.0f;
+	desc.lodMaxClamp   = 8.0f;
+	desc.compare       = CompareFunction::Undefined;
 	desc.maxAnisotropy = 1;
-
-	return createSampler(SamplerNames::DEFAULT, desc);
+	return desc;
 }
 
-wgpu::Sampler WebGPUSamplerFactory::createMipmapSampler()
+wgpu::SamplerDescriptor WebGPUSamplerFactory::describeMipmap() const
 {
-	wgpu::SamplerDescriptor samplerDesc{};
-	// Mipmap generation sampler (clamp to edge, linear filtering)
-	samplerDesc.addressModeU = AddressMode::ClampToEdge;
-	samplerDesc.addressModeV = AddressMode::ClampToEdge;
-	samplerDesc.addressModeW = AddressMode::ClampToEdge;
-	samplerDesc.magFilter = FilterMode::Linear;
-	samplerDesc.minFilter = FilterMode::Linear;
-	samplerDesc.mipmapFilter = MipmapFilterMode::Linear;
-	samplerDesc.lodMinClamp = 0.0f;
-	samplerDesc.lodMaxClamp = 1.0f;
-	samplerDesc.compare = CompareFunction::Undefined;
-	samplerDesc.maxAnisotropy = 1;
-
-	return createSampler(SamplerNames::MIPMAP_LINEAR, samplerDesc);
+	wgpu::SamplerDescriptor desc{};
+	desc.addressModeU  = AddressMode::ClampToEdge;
+	desc.addressModeV  = AddressMode::ClampToEdge;
+	desc.addressModeW  = AddressMode::ClampToEdge;
+	desc.magFilter     = FilterMode::Linear;
+	desc.minFilter     = FilterMode::Linear;
+	desc.mipmapFilter  = MipmapFilterMode::Linear;
+	desc.lodMinClamp   = 0.0f;
+	desc.lodMaxClamp   = 1.0f;
+	desc.compare       = CompareFunction::Undefined;
+	desc.maxAnisotropy = 1;
+	return desc;
 }
 
-wgpu::Sampler WebGPUSamplerFactory::createClampLinearSampler()
+wgpu::SamplerDescriptor WebGPUSamplerFactory::describeClampLinear() const
 {
-	wgpu::SamplerDescriptor samplerDesc{};
-	// Clamp sampler (clamp to edge, linear filtering)
-	samplerDesc.addressModeU = AddressMode::ClampToEdge;
-	samplerDesc.addressModeV = AddressMode::ClampToEdge;
-	samplerDesc.addressModeW = AddressMode::ClampToEdge;
-	samplerDesc.magFilter = FilterMode::Linear;
-	samplerDesc.minFilter = FilterMode::Linear;
-	samplerDesc.mipmapFilter = MipmapFilterMode::Linear;
-	samplerDesc.lodMinClamp = 0.0f;
-	samplerDesc.lodMaxClamp = 8.0f;
-	samplerDesc.compare = CompareFunction::Undefined;
-	samplerDesc.maxAnisotropy = 1;
-
-	return createSampler(SamplerNames::CLAMP_LINEAR, samplerDesc);
+	wgpu::SamplerDescriptor desc{};
+	desc.addressModeU  = AddressMode::ClampToEdge;
+	desc.addressModeV  = AddressMode::ClampToEdge;
+	desc.addressModeW  = AddressMode::ClampToEdge;
+	desc.magFilter     = FilterMode::Linear;
+	desc.minFilter     = FilterMode::Linear;
+	desc.mipmapFilter  = MipmapFilterMode::Linear;
+	desc.lodMinClamp   = 0.0f;
+	desc.lodMaxClamp   = 8.0f;
+	desc.compare       = CompareFunction::Undefined;
+	desc.maxAnisotropy = 1;
+	return desc;
 }
 
-wgpu::Sampler WebGPUSamplerFactory::createClampNearestSampler()
+wgpu::SamplerDescriptor WebGPUSamplerFactory::describeClampNearest() const
 {
-	wgpu::SamplerDescriptor samplerDesc{};
-	// Clamp sampler (clamp to edge, nearest/non-filtering)
-	samplerDesc.addressModeU = AddressMode::ClampToEdge;
-	samplerDesc.addressModeV = AddressMode::ClampToEdge;
-	samplerDesc.addressModeW = AddressMode::ClampToEdge;
-	samplerDesc.magFilter = FilterMode::Nearest;
-	samplerDesc.minFilter = FilterMode::Nearest;
-	samplerDesc.mipmapFilter = MipmapFilterMode::Nearest;
-	samplerDesc.lodMinClamp = 0.0f;
-	samplerDesc.lodMaxClamp = 0.0f;
-	samplerDesc.compare = CompareFunction::Undefined;
-	samplerDesc.maxAnisotropy = 1;
-
-	return createSampler(SamplerNames::CLAMP_NEAREST, samplerDesc);
+	wgpu::SamplerDescriptor desc{};
+	desc.addressModeU  = AddressMode::ClampToEdge;
+	desc.addressModeV  = AddressMode::ClampToEdge;
+	desc.addressModeW  = AddressMode::ClampToEdge;
+	desc.magFilter     = FilterMode::Nearest;
+	desc.minFilter     = FilterMode::Nearest;
+	desc.mipmapFilter  = MipmapFilterMode::Nearest;
+	desc.lodMinClamp   = 0.0f;
+	desc.lodMaxClamp   = 0.0f;
+	desc.compare       = CompareFunction::Undefined;
+	desc.maxAnisotropy = 1;
+	return desc;
 }
 
-wgpu::Sampler WebGPUSamplerFactory::createRepeatLinearSampler()
+wgpu::SamplerDescriptor WebGPUSamplerFactory::describeRepeatLinear() const
 {
-	wgpu::SamplerDescriptor samplerDesc{};
-	// Repeat sampler (repeat, linear filtering)
-	samplerDesc.addressModeU = AddressMode::Repeat;
-	samplerDesc.addressModeV = AddressMode::Repeat;
-	samplerDesc.addressModeW = AddressMode::Repeat;
-	samplerDesc.magFilter = FilterMode::Linear;
-	samplerDesc.minFilter = FilterMode::Linear;
-	samplerDesc.mipmapFilter = MipmapFilterMode::Linear;
-	samplerDesc.lodMinClamp = 0.0f;
-	samplerDesc.lodMaxClamp = 8.0f;
-	samplerDesc.compare = CompareFunction::Undefined;
-	samplerDesc.maxAnisotropy = 1;
-
-	return createSampler(SamplerNames::REPEAT_LINEAR, samplerDesc);
+	wgpu::SamplerDescriptor desc{};
+	desc.addressModeU  = AddressMode::Repeat;
+	desc.addressModeV  = AddressMode::Repeat;
+	desc.addressModeW  = AddressMode::Repeat;
+	desc.magFilter     = FilterMode::Linear;
+	desc.minFilter     = FilterMode::Linear;
+	desc.mipmapFilter  = MipmapFilterMode::Linear;
+	desc.lodMinClamp   = 0.0f;
+	desc.lodMaxClamp   = 8.0f;
+	desc.compare       = CompareFunction::Undefined;
+	desc.maxAnisotropy = 1;
+	return desc;
 }
 
-wgpu::Sampler WebGPUSamplerFactory::createShadowComparisonSampler()
+wgpu::SamplerDescriptor WebGPUSamplerFactory::describeShadowComparison() const
 {
-	wgpu::SamplerDescriptor shadowSamplerDesc{};
-	// Shadow comparison sampler (clamp to edge, linear filtering, depth comparison)
-	shadowSamplerDesc.addressModeU = AddressMode::ClampToEdge;
-	shadowSamplerDesc.addressModeV = AddressMode::ClampToEdge;
-	shadowSamplerDesc.addressModeW = AddressMode::ClampToEdge;
-	shadowSamplerDesc.magFilter = FilterMode::Linear;
-	shadowSamplerDesc.minFilter = FilterMode::Linear;
-	shadowSamplerDesc.mipmapFilter = MipmapFilterMode::Linear;
-	shadowSamplerDesc.compare = CompareFunction::LessEqual; // This enables depth comparison
-	shadowSamplerDesc.lodMinClamp = 0.0f;
-	shadowSamplerDesc.lodMaxClamp = 8.0f;
-	shadowSamplerDesc.maxAnisotropy = 1;
-
-	return createSampler(SamplerNames::SHADOW_COMPARISON, shadowSamplerDesc);
+	wgpu::SamplerDescriptor desc{};
+	desc.addressModeU  = AddressMode::ClampToEdge;
+	desc.addressModeV  = AddressMode::ClampToEdge;
+	desc.addressModeW  = AddressMode::ClampToEdge;
+	desc.magFilter     = FilterMode::Linear;
+	desc.minFilter     = FilterMode::Linear;
+	desc.mipmapFilter  = MipmapFilterMode::Linear;
+	desc.compare       = CompareFunction::LessEqual; // Enables depth comparison.
+	desc.lodMinClamp   = 0.0f;
+	desc.lodMaxClamp   = 8.0f;
+	desc.maxAnisotropy = 1;
+	return desc;
 }
 
 } // namespace engine::rendering::webgpu

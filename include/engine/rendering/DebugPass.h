@@ -1,6 +1,8 @@
 #pragma once
 
 #include "engine/rendering/RenderPass.h"
+#include "engine/rendering/cache/ResourceSlot.h"
+#include "engine/rendering/webgpu/WebGPUSampler.h"
 
 #include <memory>
 
@@ -15,6 +17,7 @@ namespace webgpu
     class WebGPUShaderInfo;
     class WebGPUPipeline;
     class WebGPUBindGroup;
+    class WebGPUBuffer;
     struct WebGPURenderPassContext;
 } // namespace webgpu
 
@@ -23,6 +26,8 @@ class DebugPass : public RenderPass
   public:
 	explicit DebugPass(std::shared_ptr<webgpu::WebGPUContext> context);
 	~DebugPass() override = default;
+
+	[[nodiscard]] const char *name() const override { return "Debug"; }
 
 	bool initialize() override;
 	void render(FrameCache &frameCache) override;
@@ -47,12 +52,17 @@ class DebugPass : public RenderPass
 	uint64_t m_cameraId = 0;
 
 	// Pipeline, shader, and sampler for debug rendering
+	/// Preallocated capacity of the debug-primitive storage buffer: the shader's
+	/// array is runtime-sized, so the factory's auto-buffer would hold ONE element.
+	static constexpr size_t MAX_DEBUG_PRIMITIVES = 4096;
+
 	std::shared_ptr<webgpu::WebGPUShaderInfo> m_shaderInfo;
-	std::weak_ptr<webgpu::WebGPUPipeline> m_pipeline;
+	engine::rendering::cache::Handle<webgpu::WebGPUPipeline> m_pipeline;
 	std::shared_ptr<webgpu::WebGPUBindGroup> m_debugBindGroup;
+	std::shared_ptr<webgpu::WebGPUBuffer> m_debugPrimitiveBuffer;
 	std::shared_ptr<webgpu::WebGPURenderPassContext> m_renderPassContext;
 
-	wgpu::Sampler m_sampler = nullptr;
+	std::shared_ptr<webgpu::WebGPUSampler> m_sampler;
 };
 
 } // namespace engine::rendering

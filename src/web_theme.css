@@ -1,0 +1,168 @@
+/* Shared theme for the web demo pages: shell_web.html (per-demo) and
+   web_index.html (landing). Deployed next to each page as web_theme.css. */
+
+* { box-sizing: border-box; margin: 0; }
+
+html, body {
+	min-height: 100%;
+	background: #131313;
+	color: #d8d4cc;
+	font-family: "Consolas", "SF Mono", "DejaVu Sans Mono", monospace;
+	font-size: 13px;
+}
+
+a, .linklike {
+	background: none;
+	border: none;
+	padding: 0;
+	font: inherit;
+	color: #d8d4cc;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+	cursor: pointer;
+}
+
+a:hover, .linklike:hover { color: #fff; }
+
+.wordmark {
+	letter-spacing: 0.18em;
+	font-weight: bold;
+	color: #efece6;
+}
+
+.wordmark-big {
+	letter-spacing: 0.28em;
+	font-size: 17px;
+	color: #efece6;
+	font-weight: bold;
+}
+
+.dim { color: #7a766e; }
+
+hr {
+	border: 0;
+	border-top: 1px solid #2a2a2a;
+	margin: 28px 0;
+}
+
+/* ---- demo shell (shell_web.html) ---- */
+
+body.shell { height: 100%; display: flex; flex-direction: column; }
+
+.shell header {
+	display: flex;
+	align-items: baseline;
+	padding: 14px 20px 12px;
+	border-bottom: 1px solid #2a2a2a;
+}
+
+.shell header .sep { flex: 1; }
+
+.shell main {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 0;
+	position: relative;
+}
+
+/* The canvas must have no border or padding, or mouse coords will be wrong. */
+canvas.emscripten {
+	border: 0 none;
+	background: #000;
+	max-width: 100%;
+	max-height: 100%;
+	outline: none;
+	display: block;
+}
+
+#overlay {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	background: #131313;
+	transition: opacity 0.5s ease;
+	padding: 0 24px;
+	text-align: center;
+}
+
+#overlay.hidden { opacity: 0; pointer-events: none; }
+
+#bar-track {
+	width: min(380px, 80vw);
+	height: 2px;
+	background: #2a2a2a;
+}
+
+#bar-fill {
+	height: 100%;
+	width: 0%;
+	background: #d8d4cc;
+	transition: width 0.15s ease;
+}
+
+#status-line { color: #7a766e; min-height: 1.2em; }
+
+#error-block { display: none; max-width: 60ch; line-height: 1.7; }
+#error-block .err-title { color: #e2b007; }
+
+.shell footer {
+	padding: 8px 20px 10px;
+	border-top: 1px solid #2a2a2a;
+	color: #7a766e;
+}
+
+.shell footer summary { cursor: pointer; user-select: none; }
+
+#output {
+	width: 100%;
+	height: 150px;
+	margin-top: 8px;
+	resize: vertical;
+	background: #0d0d0d;
+	color: #8d8a83;
+	border: 1px solid #2a2a2a;
+	font: inherit;
+	font-size: 11px;
+	padding: 6px 8px;
+}
+
+/* ---- landing page (web_index.html) ---- */
+
+body.landing { line-height: 1.7; }
+
+.page {
+	max-width: 68ch;
+	margin: 0 auto;
+	padding: 56px 24px 40px;
+}
+
+.page h1 {
+	font-size: 17px;
+	letter-spacing: 0.28em;
+	color: #efece6;
+	font-weight: bold;
+}
+
+.page .sub { color: #7a766e; margin-top: 4px; }
+
+.page table { border-collapse: collapse; width: 100%; }
+
+.page td {
+	padding: 10px 0;
+	border-bottom: 1px solid #222;
+	vertical-align: top;
+}
+
+.page td.name { white-space: nowrap; padding-right: 28px; }
+.page td.desc { color: #9d9992; }
+
+.page .note { color: #7a766e; margin-top: 24px; }
+.page .note .warn { color: #e2b007; }
+
+.page footer { color: #55524c; margin-top: 40px; }

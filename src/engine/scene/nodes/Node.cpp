@@ -96,21 +96,39 @@ void Node::disable()
 
 bool Node::isEnabled() const { return enabled; }
 
-void Node::addChild(Ptr child)
+void Node::addChild(Ptr child, bool keepWorldTransform)
 {
-	if (!child)
+	if (!child || child.get() == this)
 		return;
+
+	// Reject cycles: a node cannot be reparented under one of its own
+	// descendants (that would orphan a loop from the scene root).
+	for (Node *ancestor = this; ancestor; ancestor = ancestor->parent)
+	{
+		if (ancestor == child.get())
+			return;
+	}
+
+	// Detach from any previous parent first so it is not owned by two parents
+	// at once. The by-value `child` argument keeps it alive across the erase.
+	if (child->parent && child->parent != this)
+		child->parent->removeChild(child);
+
 	child->parent = this;
 	child->setEngineContext(m_engineContext); // This will propagate to all descendants
 	children.push_back(child);
 
-	// Update Transform hierarchy if child is spatial
+	// Update Transform hierarchy if child is spatial. keepWorldTransform=true is
+	// the Unity-style default and is correct when moving an already-positioned
+	// node into a new parent. Pass false when adopting a fresh child you want
+	// to inherit the parent's world transform (e.g. markers / attached models
+	// whose local transform should stay at identity).
 	if (child->isSpatial())
 	{
 		auto spatialChild = std::dynamic_pointer_cast<SpatialNode>(child);
 		if (spatialChild)
 		{
-			spatialChild->updateTransformParent(true); // Keep world transform
+			spatialChild->updateTransformParent(keepWorldTransform);
 		}
 	}
 

@@ -1,12 +1,18 @@
 #include "engine/rendering/CompositePass.h"
 
+#include <algorithm>
+#include <array>
+
+#include <glm/glm.hpp>
 #include <spdlog/spdlog.h>
 
 #include "engine/rendering/FrameCache.h"
+#include "engine/rendering/FrameProfiler.h"
 #include "engine/rendering/ShaderRegistry.h"
 #include "engine/rendering/webgpu/WebGPUBindGroup.h"
 #include "engine/rendering/webgpu/WebGPUBindGroupFactory.h"
 #include "engine/rendering/webgpu/WebGPUBuffer.h"
+#include "engine/rendering/webgpu/WebGPUBufferFactory.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUPipeline.h"
 #include "engine/rendering/webgpu/WebGPUPipelineFactory.h"
@@ -29,18 +35,16 @@ bool CompositePass::initialize()
 {
 	spdlog::info("Initializing CompositePass");
 
-	// Get fullscreen quad shader from registry
-	m_shaderInfo = m_context->shaderRegistry().getShader(shader::defaults ::FULLSCREEN_QUAD);
-	if (!m_shaderInfo || !m_shaderInfo->isValid())
-	{
-		spdlog::error("Fullscreen quad shader not found in registry");
+	m_shaderInfo = getValidatedShader(shader::defaults::FULLSCREEN_QUAD);
+	if (!m_shaderInfo)
 		return false;
-	}
 
 	// Create pipeline using the pipeline manager
 	m_pipeline = m_context->pipelineManager().getOrCreatePipeline(
 		m_shaderInfo,
-		m_context->surfaceManager().currentConfig().format,
+		// Render format, not the surface's base format: the surface may present
+		// through an sRGB view (viewFormats reinterpretation on D3D12).
+		m_context->getSwapChainFormat(),
 		wgpu::TextureFormat::Undefined, // No depth
 		Topology::Triangles,
 		wgpu::CullMode::None,
@@ -48,17 +52,81 @@ bool CompositePass::initialize()
 		1
 	);
 
-	if (!m_pipeline || !m_pipeline->isValid())
+	if (auto pipe = m_pipeline.lock(); !pipe || !pipe->isValid())
 	{
 		spdlog::error("Failed to create fullscreen quad pipeline");
 		return false;
 	}
 
-	// Create sampler using the sampler factory
 	m_sampler = m_context->samplerFactory().getClampLinearSampler();
+
+	// Tonemap settings are global, so one shared post-process bind group lives
+	// here instead of one per render target.
+	m_postUniformBuffer = m_context->bufferFactory().createUniformBuffer(
+		"PostProcessUniforms",
+		0,
+		sizeof(glm::vec4)
+	);
+
+	auto postLayout = m_shaderInfo->getBindGroupLayout("PostProcess_BindGroup");
+	if (!postLayout || !m_postUniformBuffer)
+	{
+		spdlog::error("CompositePass: failed to create post-process bind group / buffer");
+		return false;
+	}
+
+	std::vector<wgpu::BindGroupEntry> postEntries;
+	postEntries.reserve(1);
+	{
+		wgpu::BindGroupEntry e{};
+		e.binding = 0;
+		e.buffer  = m_postUniformBuffer->getBuffer();
+		e.offset  = 0;
+		e.size    = sizeof(glm::vec4);
+		postEntries.push_back(e);
+	}
+
+	m_postBindGroup = m_context->bindGroupFactory().createBindGroup(
+		postLayout,
+		postEntries,
+		std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{m_postUniformBuffer}
+	);
 
 	spdlog::info("CompositePass initialized successfully");
 	return true;
+}
+
+void CompositePass::setHDREnabled(bool enabled)
+{
+	if (m_hdrEnabled == enabled)
+		return;
+	m_hdrEnabled = enabled;
+	m_postDirty = true;
+}
+
+void CompositePass::setExposure(float exposure)
+{
+	exposure = std::max(exposure, 0.0f);
+	if (m_exposure == exposure)
+		return;
+	m_exposure = exposure;
+	m_postDirty = true;
+}
+
+void CompositePass::flushPostProcessUniformsIfDirty()
+{
+	if (!m_postDirty || !m_postUniformBuffer)
+		return;
+
+	// Layout must match PostProcessUniforms in fullscreen_quad.wgsl.
+	const std::array<float, 4> params{
+		m_exposure,
+		m_hdrEnabled ? 1.0f : 0.0f,
+		0.0f,
+		0.0f
+	};
+	m_postUniformBuffer->write(params.data(), sizeof(params));
+	m_postDirty = false;
 }
 
 void CompositePass::render(FrameCache &frameCache)
@@ -76,15 +144,40 @@ void CompositePass::render(FrameCache &frameCache)
 		return;
 	}
 
+	// Upload HDR settings if the user changed them since last frame. Cheap
+	// equality check - writeBuffer is skipped when nothing changed.
+	flushPostProcessUniformsIfDirty();
+
 	auto encoder = m_context->createCommandEncoder("CompositePass Encoder");
+	if (auto *prof = m_context->frameProfiler())
+		prof->beginGpuScope("Pass.Composite", encoder);
+	// Pin a pipeline snapshot for the lifetime of this pass. Hot reload swaps
+	// the slot's resource; pinning ensures the in-flight GPU work keeps the
+	// pipeline it started with even if a swap happens mid-frame.
+	auto pipelineSnapshot = m_pipeline.lock();
+	if (!pipelineSnapshot)
+	{
+		spdlog::error("CompositePass::render: pipeline handle is empty");
+		return;
+	}
 	auto renderPass = m_renderPassContext->begin(encoder);
-	renderPass.setPipeline(m_pipeline->getPipeline());
+	renderPass.setPipeline(pipelineSnapshot->getPipeline());
+
+	// Post-process settings (@group 1) are identical for every per-camera draw,
+	// so bind once for the whole pass instead of per iteration.
+	if (m_postBindGroup)
+		renderPass.setBindGroup(1, m_postBindGroup->getBindGroup(), 0, nullptr);
 
 	const uint32_t surfaceW = surfaceTex->getWidth();
 	const uint32_t surfaceH = surfaceTex->getHeight();
 
 	for (const auto &[targetId, target] : frameCache.renderTargets)
 	{
+		// Off-screen cameras (e.g. an editor viewport) render into their own
+		// texture and are displayed by the caller; never blit them to the surface.
+		if (target.offscreenOnly)
+			continue;
+
 		auto renderToTexture = frameCache.finalTextures[targetId];
 		if (!renderToTexture)
 		{
@@ -108,19 +201,23 @@ void CompositePass::render(FrameCache &frameCache)
 			continue;
 		}
 
-		// --- Bind the texture bind group (group 0) ---
+		// --- Bind the camera texture bind group (@group 0) ---
 		renderPass.setBindGroup(0, bindGroup->getBindGroup(), 0, nullptr);
 
 		// --- Draw fullscreen triangle constrained by viewport ---
 		renderPass.draw(3, 1, 0, 0);
 	}
 	m_renderPassContext->end(renderPass);
+	if (auto *prof = m_context->frameProfiler())
+		prof->endGpuScope("Pass.Composite", encoder);
 	m_context->submitCommandEncoder(encoder, "CompositePass Commands");
 }
 
 void CompositePass::cleanup()
 {
 	m_bindGroupCache.clear();
+	// Keep m_postBindGroup / m_postUniformBuffer alive - they don't depend on
+	// the per-camera HDR target and survive resize.
 }
 
 std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
@@ -138,7 +235,7 @@ std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
 	if (it != m_bindGroupCache.end())
 		return it->second;
 
-	auto bindGroupLayout = m_shaderInfo->getBindGroupLayout(0);
+	auto bindGroupLayout = m_shaderInfo->getBindGroupLayout(bindgroup::defaults::FULLSCREEN_QUAD);
 	if (!bindGroupLayout)
 		return nullptr;
 
@@ -150,23 +247,17 @@ std::shared_ptr<webgpu::WebGPUBindGroup> CompositePass::getOrCreateBindGroup(
 		wgpu::BindGroupEntry entry{};
 		entry.binding = layoutEntry.binding;
 
-		if (layoutEntry.texture.sampleType != wgpu::TextureSampleType::Undefined)
+		if (layoutEntry.texture.sampleType != wgpu::TextureSampleType::BindingNotUsed)
 			entry.textureView = texture->getTextureView(layerIndex);
-		else if (layoutEntry.sampler.type != wgpu::SamplerBindingType::Undefined)
-			entry.sampler = m_sampler;
+		else if (layoutEntry.sampler.type != wgpu::SamplerBindingType::BindingNotUsed)
+			entry.sampler = m_sampler ? m_sampler->raw() : wgpu::Sampler(nullptr);
 
 		entries.push_back(entry);
 	}
 
-	wgpu::BindGroup rawBindGroup = m_context->bindGroupFactory().createBindGroup(
-		bindGroupLayout->getLayout(),
-		entries
-	);
-
-	auto bindGroup = std::make_shared<webgpu::WebGPUBindGroup>(
-		rawBindGroup,
+	auto bindGroup = m_context->bindGroupFactory().createBindGroup(
 		bindGroupLayout,
-		std::vector<std::shared_ptr<webgpu::WebGPUBuffer>>{}
+		entries
 	);
 
 	m_bindGroupCache[cacheKey] = bindGroup;

@@ -30,29 +30,14 @@ Transform *SpatialNode::findSpatialParentTransform() const
 
 void SpatialNode::updateTransformParent(bool keepWorld)
 {
-	// Find the nearest spatial parent in the Node hierarchy
+	// Find the nearest spatial parent in the Node hierarchy and rebind. This
+	// marks our transform dirty; descendants do not need an eager dirty sweep -
+	// each one rebuilds lazily the next time its world matrix is read, because
+	// getWorldMatrix() compares against the parent's world version, which our
+	// rebuild bumps. Walking the subtree here would also wrongly bump every
+	// descendant's local version (Versioned) without a local change.
 	auto spatialParent = findSpatialParentTransform();
-
-	// Update Transform parent using friend access
 	m_transform.setParentInternal(spatialParent, keepWorld);
-
-	// Propagate dirty state to all spatial children
-	propagateTransformDirty();
-}
-
-void SpatialNode::propagateTransformDirty()
-{
-	m_transform.markDirty();
-
-	// Recursively mark all spatial children as dirty
-	for (const auto &child : children)
-	{
-		if (child && child->isSpatial())
-		{
-			auto spatialChild = child->asSpatialNode();
-			spatialChild->propagateTransformDirty();
-		}
-	}
 }
 
 } // namespace engine::scene::nodes

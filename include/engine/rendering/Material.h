@@ -82,17 +82,39 @@ inline ColorSpace defaultColorSpaceForSlot(const std::string &slotName)
 	return ColorSpace::Linear;
 }
 
+/**
+ * @brief Per-material alpha mode. Mirrors GLTF alphaMode and selects the render
+ * path: Opaque / Mask go through the deferred G-buffer, Blend through
+ * ForwardTransparencyPass.
+ */
+enum class AlphaMode : uint32_t
+{
+	Opaque = 0,
+	Mask   = 1,
+	Blend  = 2,
+};
+
 struct PBRProperties
 {
-	float diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // RGBA
-	float emission[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-	float transmittance[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-	float ambient[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+	// glm::vec4 instead of float[4]: same ABI / `[]` access, but plays nicely
+	// with the aggregate-reflect codegen (array members can't be reflected
+	// through structured bindings without extra plumbing).
+	glm::vec4 diffuse       {1.0f, 1.0f, 1.0f, 1.0f};
+	glm::vec4 emission      {0.0f, 0.0f, 0.0f, 0.0f};
+	glm::vec4 transmittance {0.0f, 0.0f, 0.0f, 0.0f};
+	glm::vec4 ambient       {1.0f, 1.0f, 1.0f, 1.0f};
 
-	float roughness = 0.5f;
-	float metallic = 0.0f;
-	float ior = 1.5f;
-	float normalTextureScale = 1.0f;
+	float roughness           = 0.5f;
+	float metallic            = 0.0f;
+	float ior                 = 1.5f;
+	float normalTextureScale  = 1.0f;
+
+	// alphaCutoff is only used when alphaMode == Mask. Trailing pads keep the
+	// struct 16-byte aligned for WGSL std140.
+	uint32_t alphaMode   = static_cast<uint32_t>(AlphaMode::Opaque);
+	float    alphaCutoff = 0.0f;
+	uint32_t _alphaPad0  = 0;
+	uint32_t _alphaPad1  = 0;
 };
 static_assert(sizeof(PBRProperties) % 16 == 0, "PBRProperties must be 16-byte aligned");
 
@@ -389,6 +411,20 @@ struct Material : public engine::core::Identifiable<Material>,
 	/**
 	 * @brief Check if this material is configured as transparent.
 	 */
+	/**
+	 * @brief True when this material must render in the forward pass.
+	 *
+	 * Two reasons: the material is transparent (blending needs back-to-front
+	 * forward rendering), or it is shaded by a custom shader - the deferred
+	 * G-buffer path runs a fixed shader and would ignore it. Opaque custom
+	 * materials still get depth-write + no blending from the pipeline factory,
+	 * so they render correctly in the forward pass.
+	 */
+	bool usesForwardShading() const
+	{
+		return isTransparent() || (!m_shader.empty() && m_shader != shader::defaults::PBR);
+	}
+
 	bool isTransparent() const
 	{
 		return (m_featureMask & MaterialFeature::Flag::Transparent) != MaterialFeature::Flag::None;

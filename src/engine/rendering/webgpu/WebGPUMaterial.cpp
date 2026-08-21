@@ -3,6 +3,7 @@
 #include "engine/rendering/webgpu/WebGPUBindGroupLayoutInfo.h"
 #include "engine/rendering/webgpu/WebGPUContext.h"
 #include "engine/rendering/webgpu/WebGPUShaderInfo.h"
+#include "engine/rendering/webgpu/WebGPUTexture.h"
 #include <spdlog/spdlog.h>
 
 namespace engine::rendering::webgpu
@@ -26,6 +27,13 @@ bool WebGPUMaterial::needsSync(const Material &cpuMaterial) const
 {
 	// Check material version
 	if (cpuMaterial.getVersion() > m_lastSyncedVersion)
+		return true;
+
+	// Check if the bound shader hot-reloaded. A shader reload bumps the shader
+	// slot version (SlotCache::replace) but leaves the CPU material version
+	// untouched, so without this the material bind group keeps the OLD shader's
+	// layout — the scene renders flat / untextured until a scene switch.
+	if (m_shaderHandle.valid() && m_shaderHandle.version() != m_lastSyncedShaderVersion)
 		return true;
 
 	// Check if any texture versions changed
@@ -53,18 +61,28 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 {
 	// Determine shader type and custom shader
 	const std::string &shaderName = cpuMaterial.getShader();
-	// ToDo: bool shaderChanged = shaderName != m_shaderName;
+	const bool         shaderNameChanged = shaderName != m_shaderName;
 	m_shaderName = shaderName;
 
-	// Get shader info
-	std::shared_ptr<WebGPUShaderInfo> shaderInfo =
-		m_context.shaderRegistry().getShader(shaderName);
+	// Refresh the slot Handle when the shader-name changes (initial sync or
+	// material was edited to point at a different shader). Otherwise reuse
+	// the cached Handle — its version() is the channel that propagates
+	// in-place shader hot-reload through to the material bind-group cache.
+	if (shaderNameChanged || !m_shaderHandle.valid())
+	{
+		m_shaderHandle = m_context.shaderRegistry().getShaderHandle(shaderName);
+	}
 
+	auto shaderInfo = m_shaderHandle.lock();
 	if (!shaderInfo)
 	{
 		spdlog::warn("WebGPUMaterial: Shader not found (name='{}')", shaderName);
 		return;
 	}
+
+	// Remember the shader version we're syncing against so needsSync() detects
+	// a later in-place shader hot-reload.
+	m_lastSyncedShaderVersion = m_shaderHandle.version();
 
 	auto layout = shaderInfo->getBindGroupLayout(bindgroup::defaults::MATERIAL); // ToDo: Handle Custom Material Bind Groups
 	if (!layout)
@@ -73,25 +91,77 @@ void WebGPUMaterial::syncFromCPU(const Material &cpuMaterial)
 		return;
 	}
 
-	if (!m_materialBindGroup || layout != m_materialBindGroup->getLayoutInfo())
+	// Refresh the GPU texture dictionary from the CPU material. A texture slot can
+	// change after creation (the editor assigns or clears a slot), and a WebGPU bind
+	// group is immutable - a new texture view only takes effect once the bind group
+	// is rebuilt. createFromHandle is cached, so an unchanged slot resolves to the
+	// same WebGPUTexture and texturesChanged stays false.
+	bool texturesChanged = false;
 	{
-		m_materialBindGroup = m_context.bindGroupFactory().createBindGroup(layout, {}, shared_from_this());
+		auto &textureFactory = m_context.textureFactory();
+		std::unordered_map<std::string, std::shared_ptr<WebGPUTexture>> refreshed;
+		for (const auto &[slotName, textureSlot] : cpuMaterial.getTextureSlots())
+		{
+			std::shared_ptr<WebGPUTexture> gpuTexture;
+			if (textureSlot.handle.valid() && textureSlot.handle.get().has_value())
+			{
+				WebGPUTextureOptions textureOptions{};
+				textureOptions.colorSpace = textureSlot.colorSpace;
+				gpuTexture = textureFactory.createFromHandle(textureSlot.handle, textureOptions);
+			}
+			else
+			{
+				gpuTexture = textureFactory.getWhiteTexture();
+			}
+			refreshed[slotName] = gpuTexture;
+			auto existing = m_textures.find(slotName);
+			if (existing == m_textures.end() || existing->second != gpuTexture)
+				texturesChanged = true;
+		}
+		if (refreshed.size() != m_textures.size())
+			texturesChanged = true;
+		m_textures = std::move(refreshed);
 	}
 
-	auto materialBindGroupBindingIndex = layout->getBindingIndex(bindgroup::entry::defaults::MATERIAL_PROPERTIES);
-	if(!materialBindGroupBindingIndex.has_value())
+	// Cache invalidation: layout pointer covers the "shader-name swap"
+	// case; the Handle's version covers the "in-place reload via
+	// SlotCache::replace" case; texturesChanged covers an edited texture slot.
+	// Any of them forces a rebuild — none silently sneaks an out-of-date bind
+	// group through to a draw.
+	engine::rendering::cache::BindGroupSignature signature;
+	signature.add(layout);
+	signature.addVersioned(m_shaderHandle);
+
+	if (!m_materialBindGroup || m_bindGroupSignature != signature || texturesChanged)
 	{
-		spdlog::warn("WebGPUMaterial: Material bind group layout missing MATERIAL binding");
+		m_materialBindGroup = m_context.bindGroupFactory().createBindGroup(layout, {}, shared_from_this());
+		m_bindGroupSignature = signature;
+	}
+
+	// The material properties uniform is the Material group's uniform-buffer
+	// binding (binding 0 by convention). Located by kind rather than by WGSL
+	// variable name, which varies per shader (u_material, unlitMaterialUniforms).
+	std::optional<uint32_t> materialUniformBinding;
+	for (const auto &b : layout->getBindings())
+	{
+		if (b.type == BindingType::UniformBuffer)
+		{
+			materialUniformBinding = b.bindingIndex;
+			break;
+		}
+	}
+	if (!materialUniformBinding.has_value())
+	{
+		spdlog::warn("WebGPUMaterial: Material bind group layout has no uniform-buffer binding");
 		return;
 	}
 
 	// Update material properties buffer
 	m_materialBindGroup->updateBuffer(
-		static_cast<uint32_t>(materialBindGroupBindingIndex.value()),
+		materialUniformBinding.value(),
 		reinterpret_cast<const uint8_t *>(cpuMaterial.getPropertiesData()),
 		cpuMaterial.getPropertiesSize(),
-		0,
-		m_context.getQueue()
+		0
 	);
 
 	// Update cached texture versions

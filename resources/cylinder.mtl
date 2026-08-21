@@ -8,11 +8,3 @@ Ni 1.53
 Pr 1.0
 d 1.0
 illum 2
-
-# Base color (albedo)
-map_Kd cobblestone_floor_08_diff_2k.jpg
-
-# Normal map (GL-style, +Y)
-norm cobblestone_floor_08_nor_gl_2k.png
-
-map_Bump -bm 0.300000 cobblestone_floor_08_nor_gl_2k.png

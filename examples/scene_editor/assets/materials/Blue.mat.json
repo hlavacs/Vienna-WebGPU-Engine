@@ -1,0 +1,39 @@
+{
+  "name": "Blue",
+  "properties": {
+    "alphaCutoff": 0.0,
+    "alphaMode": 0,
+    "ambient": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "diffuse": [
+      0.05790303647518158,
+      0.29261213541030884,
+      0.6356021165847778,
+      1.0
+    ],
+    "emission": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "ior": 1.4500000476837158,
+    "metallic": 0.5400000214576721,
+    "normalTextureScale": 1.0,
+    "roughness": 0.3400000035762787,
+    "transmittance": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "shader": "PBR_Lit_Shader",
+  "textures": {},
+  "type": "PBR",
+  "version": 1
+}
