@@ -184,18 +184,33 @@ bool PrefilteredEnv::bake(
 		return false;
 	}
 
-	// Clamp the mip count to what the source resolution supports. A scene with
+	uint32_t dstWidth = srcWidth;
+	uint32_t dstHeight = srcHeight;
+#ifdef __EMSCRIPTEN__
+	// Each non-mirror texel needs 1024 GGX samples. Baking a 4K HDR at full
+	// resolution can exceed the browser GPU watchdog during the first frame.
+	// Bound the reflection bake's work independently of the skybox resolution,
+	// preserving the aspect ratio and keeping small inputs at their native size.
+	constexpr uint32_t maxBakeDimension = 512;
+	while (dstWidth > maxBakeDimension || dstHeight > maxBakeDimension)
+	{
+		dstWidth = dstWidth > 1 ? dstWidth / 2 : 1;
+		dstHeight = dstHeight > 1 ? dstHeight / 2 : 1;
+	}
+#endif
+
+	// Clamp the mip count to what the destination resolution supports. A scene with
 	// no skybox prefilters the 1x1 default env (createFromColor); a 1x1 texture
 	// allows only one mip, so requesting MIP_LEVELS=6 trips a device validation
 	// error ("mip level count 6 is invalid, maximum allowed is 1").
-	const uint32_t srcMaxDim = srcWidth > srcHeight ? srcWidth : srcHeight;
+	const uint32_t dstMaxDim = dstWidth > dstHeight ? dstWidth : dstHeight;
 	uint32_t       maxMips   = 1;
-	for (uint32_t d = srcMaxDim; d > 1; d >>= 1) ++maxMips;
+	for (uint32_t d = dstMaxDim; d > 1; d >>= 1) ++maxMips;
 	const uint32_t mipLevels = maxMips < MIP_LEVELS ? maxMips : MIP_LEVELS;
 	m_mipLevels              = mipLevels;
 
 	const wgpu::TextureFormat dstFormat = wgpu::TextureFormat::RGBA16Float;
-	m_texture = allocateMipChainTarget(context, srcWidth, srcHeight, mipLevels, dstFormat);
+	m_texture = allocateMipChainTarget(context, dstWidth, dstHeight, mipLevels, dstFormat);
 	if (!m_texture)
 	{
 		spdlog::error("PrefilteredEnv: failed to allocate destination texture");
@@ -251,7 +266,7 @@ bool PrefilteredEnv::bake(
 	}
 
 	spdlog::info("PrefilteredEnv baked: {}x{} RGBA16Float, {} mips",
-		srcWidth, srcHeight, mipLevels);
+		dstWidth, dstHeight, mipLevels);
 	return true;
 }
 

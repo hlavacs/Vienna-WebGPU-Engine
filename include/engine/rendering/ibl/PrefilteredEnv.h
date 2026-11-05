@@ -18,7 +18,9 @@ namespace engine::rendering::ibl
  *        split-sum IBL specular approximation.
  *
  * Given a source equirect HDR texture, bakes a destination RGBA16Float
- * texture with `log2(width) + 1` mip levels. Each mip stores the source
+ * texture with up to MIP_LEVELS mip levels. Browser builds cap the bake's
+ * largest dimension at 512 to bound startup GPU work; the original skybox
+ * texture is unchanged. Each mip stores the source
  * environment convolved with the GGX kernel at roughness = mipIndex /
  * (mipCount - 1). The IBL specular tap then does:
  *
@@ -34,9 +36,8 @@ namespace engine::rendering::ibl
  *
  * **Lifetime model.** Built when the env texture changes — typically once
  * at engine init from the default env, and again when a scene supplies a
- * custom skybox. Cheap-ish (~50ms for 1024×512 src × 6 mips on integrated
- * GPUs, less on discrete); fast enough to recompute on scene change but
- * not per-frame.
+ * custom skybox. The bake performs 1024 samples per non-mirror output texel
+ * and must not run per-frame.
  */
 class PrefilteredEnv
 {
@@ -58,7 +59,7 @@ class PrefilteredEnv
 	/// The baked mip-chain texture. nullptr until bake() succeeds.
 	[[nodiscard]] std::shared_ptr<webgpu::WebGPUTexture> getTexture() const { return m_texture; }
 
-	/// log2(width) of the baked texture — i.e. the highest mip index that
+	/// The highest baked mip index that
 	/// downstream samples should clamp `roughness * maxMip` to. 0 when no
 	/// bake has succeeded yet.
 	[[nodiscard]] uint32_t maxMipLevel() const
@@ -68,7 +69,7 @@ class PrefilteredEnv
 
   private:
 	std::shared_ptr<webgpu::WebGPUTexture> m_texture;
-	/// Actual mip count of the last successful bake — clamped to the source
+	/// Actual mip count of the last successful bake — clamped to the destination
 	/// resolution, so it can be < MIP_LEVELS for tiny sources (e.g. the 1x1
 	/// default env used when a scene has no skybox).
 	uint32_t m_mipLevels = 0;
